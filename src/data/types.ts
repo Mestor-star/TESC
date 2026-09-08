@@ -17,9 +17,18 @@ export interface RegionReading {
 
 export type StationStatus = '在场' | '出击' | '疗养' | '待命' | '未知';
 
+/**
+ * 能力五轴评定值。标尺：10 ≈ 普通成年人的该轴水准（高于 10 为超凡/武装加持）。
+ * '∞' = 无法测量（该轴已超出委员会可评定的量级，如恋兔光的破坏力）。
+ */
+export type AxisVal = number | '∞'
+
+/** 五轴数值在视觉 meter 上的参考刻度上限（仅供画条用，非语义上限） */
+export const AXIS_MAX = 60
+
 export interface CharacterStat {
-  key: string;   // 中文标签
-  value: number; // 0-100
+  key: string;          // 中文标签
+  value: number;        // 五轴评定（P2 起切为 AxisVal 以支持 '∞'）
 }
 
 export interface Character {
@@ -304,4 +313,10 @@ export interface ArmEntry {
   power: string;         // 能力说明（原文考据）
   awakened?: string;     // 到达点（觉醒的深层核心力量）
   ref: string;           // 主要出处，如 'V1'
+  /** 图鉴门禁：持有人 id（属于角色档案名录时）；玩家「遇见」该持有人即解锁本条目 */
+  holderId?: string
+  /** 图鉴门禁：完成该 eventId 事件后解锁（用于后期才出线的武装，如操作员的 noapusa / a Session.） */
+  revealAt?: string
+  /** 门禁取并/或：缺省 = holder 或 reveal 任一满足即显 */
+  gate?: 'holder' | 'event'
 }

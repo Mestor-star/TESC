@@ -19,11 +19,15 @@ export function rSeverity(r: number): { cls: 'sev-ok' | 'sev-warn' | 'sev-hi'; c
   return { cls: 'sev-hi', color: 'var(--red)', label: '崩坏' }
 }
 
-/** 羁绊值 → 关系阶段名 */
-export function bondName(v: number): string {
-  if (v >= 95) return '约定'
-  if (v >= 80) return '羁绊'
-  if (v >= 60) return '信任'
+/** 羁绊目标角色的性别视角：女性高羁绊 → 恋爱类称谓；男性 → 友情类；缺省/未知 → 中性旧文案 */
+export type BondGender = 'f' | 'm' | '?'
+
+/** 羁绊值 → 关系阶段名（按目标性别取称谓；女性→爱慕/倾心/心动，男性→挚友/信赖/投缘） */
+export function bondName(v: number, opts?: { gender?: BondGender }): string {
+  const g = opts?.gender
+  if (v >= 95) return g === 'f' ? '爱慕' : g === 'm' ? '挚友' : '约定'
+  if (v >= 80) return g === 'f' ? '倾心' : g === 'm' ? '信赖' : '羁绊'
+  if (v >= 60) return g === 'f' ? '心动' : g === 'm' ? '投缘' : '信任'
   if (v >= 40) return '熟识'
   return '初见'
 }
