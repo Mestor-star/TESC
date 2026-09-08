@@ -199,6 +199,13 @@ export function Plot() {
       if (fx.ends.length) {
         push('info', '图鉴登记', `${fx.ends.length} 条实体已登记进终末图鉴。`, false)
       }
+      if (fx.flags.length) {
+        const shown = fx.flags
+          .map(([k, v]) => `${k} = ${typeof v === 'string' ? v : String(v)}`)
+          .slice(0, 3)
+          .join(' · ')
+        push('info', '变量已自动更新', fx.flags.length > 3 ? `${shown} 等 ${fx.flags.length} 项` : shown, false)
+      }
       if (fx.eventDone) {
         const digest = (fx.digest?.trim() || ev?.summary || '').trim()
         completeEvent(evId, digest || ev?.summary || '', 'online', fx.diverged)

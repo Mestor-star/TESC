@@ -199,7 +199,7 @@ export function VariablePanel() {
         <div className={css.body}>
           <div className={css.hint}>
             <b>命名变量 · 随世界状态存档。</b>
-            <span>AI 在推演中既可读取（系统提示里的变量块），也能经结构化指令写入；你在这里同样可增、改、删。</span>
+            <span>在线推演中，主角的行为会由导演回执自动更新受影响变量的值（回执会先附当前登记表）；短信可带轻量更新。你在这里也可增、改、删。</span>
           </div>
 
           <div className={css.secHead}>

@@ -282,7 +282,7 @@ export function Tavern() {
         if (sum !== 0) {
           push('success', '短信效果', `${c.name} · 羁绊 ${sum > 0 ? '+' : ''}${sum}${bondNote(sum) ? ` · ${bondNote(sum)}` : ''}`, false)
         } else if (flags.length > 0) {
-          push('info', '短信效果', `${c.name} · 留下了一枚对话标记`, false)
+          push('info', '短信效果', `${c.name} · 变量更新：${flags.map(([k]) => k).join('、')}`, false)
         }
       } catch (e) {
         if ((e as Error).name === 'AbortError') {

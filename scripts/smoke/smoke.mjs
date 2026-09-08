@@ -427,6 +427,9 @@ try {
   await poll(`(${wState}).fl.resend_ok===true`, 30000, 'C flag resend_ok')
   st = await state()
   ok('C7 补发后 flag 落地', st.fl.resend_ok === true, JSON.stringify(st.fl))
+  // 变量自动更新 toast（主角行为 → 回执 flag → 行内提示上屏）
+  await poll(`document.body.innerText.includes('变量已自动更新') && document.body.innerText.includes('resend_ok = true')`, 12000, 'C var toast')
+  ok('C7b 变量自动更新 toast（resend_ok = true）', true)
   // 短信：自动选中 hikari → 发一条 → bond +10 被 clamp 到 +3
   await goto('短信')
   await poll(`document.body.innerText.includes('角色短信')`, 20000, 'C sms view')

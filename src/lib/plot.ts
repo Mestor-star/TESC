@@ -493,9 +493,18 @@ export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string
     .map(([k, v]) => `  ${k}: ${v}`)
     .join('\n')
 
-  const flagNote = ctx.flags && Object.keys(ctx.flags).length > 0
-    ? `\n- 已分支标记：${Object.entries(ctx.flags).map(([k, v]) => `${k}=${String(v)}`).join('，')}`
-    : ''
+  // 用户变量登记：把「主角行为改变了什么」稳定地写回同名变量（world.flags = 变量面板 A 区）
+  const varEntries = ctx.flags ? Object.entries(ctx.flags) : []
+  const varList = varEntries.length
+    ? varEntries.map(([k, v]) => `  ${k} = ${typeof v === 'string' ? `「${v}」` : String(v)}`).join('\n')
+    : '  （暂无登记）'
+  const varBlock = `
+
+【用户变量 · 依主角行为自动更新】
+当前登记表（每次写回后会持久化，并在下一回合前回显现值）：
+${varList}
+
+更新规则：本回合言万心叶的行动若改变了某登记键所指的状态，就把该键连同新值写进下方事件指令的 flag（未变化的键不要写）；先前登记过的键要更新其值、不要另建同名键；若行动带来值得长期记录的新状态（约定／承诺／隐瞒／共同秘密／称号／处境档位等）可新建键，键名用英文小写加下划线、无空格、≤48 字符；不要为了写而写。`
 
   const reask = ctx.needDirective
     ? '\n- 注意：上一回合你没有给出可解析的事件指令块。本回合请务必补发一个事件指令块。'
@@ -521,7 +530,7 @@ ${entList}
   }
 
 【羁绊基准（数值仅参考，勿过度解读）】
-${baseline.trim() || '（无）'}${flagNote}${reask}${loreSection}
+${baseline.trim() || '（无）'}${reask}${loreSection}${varBlock}
 
 【事件指令 · 每回合末尾必须输出】
 标签行（单独一行）：
@@ -531,7 +540,7 @@ ${baseline.trim() || '（无）'}${flagNote}${reask}${loreSection}
   "met":    ["新遇见角色id"],                 // 仅限本段在场或新登场的档案角色：hikari/luna/mefisa/nyau（其余档案角色仅当其确实登场时方可出现）
   "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊增减，正=更亲近；本事件相关角色单次 1~4，勿过度
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
-  "flag":   { "标记名": 值 },                  // 需要记录的分支标记（布尔/数值/字符串）
+  "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
   "diverged": true,                           // 已与原著相异（否则省略）
   "eventDone": true,                          // 本事件大纲关键收束达成才置 true
   "digest": "第三人称收官记录两三句"
