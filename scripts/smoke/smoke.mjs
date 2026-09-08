@@ -397,10 +397,15 @@ try {
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('剧情推进')
-  // 自动铺开场 req1 → 归档 v1-1
-  await poll(`(${wState}).rec.length===1`, 40000, 'C v1-1 archived (auto open)')
+  // v1-1 开场白自足完整（standby）→ 注入原文后原地待命，不自动发导演请求
+  await poll(`document.body.innerText.includes('开场白 · 原文')`, 30000, 'C v1-1 opening injected')
+  await sleep(800)
+  ok('C0 v1-1 standby：开场已注入且无自动导演请求（rec=0 · plotReq=0）', (await state()).rec.length === 0 && plotReq === 0, 'plotReq=' + plotReq)
+  // 操作员手动回话 → req1 触发导演回执收束 → 在线归档 v1-1
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我抓住浮木的残片，朝拉法挣扎的方向划去。')
+  await poll(`(${wState}).rec.length===1`, 40000, 'C v1-1 archived (manual turn)')
   st = await state()
-  ok('C1 自动铺开场并归档 v1-1 online', st.rec.length === 1 && st.rec[0].mode === 'online' && st.rec[0].ts > 0, JSON.stringify(st.rec))
+  ok('C1 手动回话后导演收束并在线归档 v1-1', st.rec.length === 1 && st.rec[0].mode === 'online' && st.rec[0].ts > 0, JSON.stringify(st.rec))
   await poll(`document.body.innerText.includes('上一事件已收束')`, 15000, 'C endedBar')
   // 事件已收束并推进到下一段，叙述存进该事件会话（zts-plot:v1）——验证叙述上屏且指令已剥离
   await poll(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');const l=o['v1-1']||[];return l.some(x=>x.text.includes('【DIR1】'))}catch(e){return false}})()`, 10000, 'C dir1 log')
@@ -472,9 +477,14 @@ try {
   const canonChar = await loreBook('book-canon-char')
   ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
 
-  // 进入剧情推进：req0 = 标签回执（<maintext>+<vars>）驱动 v1-1 在线收束
+  // 进入剧情推进：v1-1 开场自足完整（standby）→ 注入原文后原地待命；
+  // 操作员手动回话 → 唯一一次剧情请求，由标签回执（<maintext>+<vars>）驱动 v1-1 在线收束
   await goto('剧情推进')
-  await poll(`(${wState}).rec.length===1`, 40000, 'E v1-1 auto archived (tag)')
+  await poll(`document.body.innerText.includes('开场白 · 原文')`, 30000, 'E v1-1 opening injected (standby)')
+  await sleep(800)
+  ok('E2b v1-1 standby：注入后无自动请求（rec=0 · eSeq=0）', (await state()).rec.length === 0 && eSeq === 0, 'eSeq=' + eSeq)
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我抱住浮木，回头去找拉法的手。')
+  await poll(`(${wState}).rec.length===1`, 40000, 'E v1-1 archived (manual tag turn)')
   st = await state()
   ok('E3 标签回执驱动同一 completeEvent', st.rec.length === 1 && st.rec[0].id === 'v1-1' && st.rec[0].mode === 'online', JSON.stringify(st.rec))
   ok('E4 标签路径确有且仅有一次剧情请求', eSeq === 1, 'eSeq=' + eSeq)

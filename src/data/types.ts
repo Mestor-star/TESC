@@ -210,6 +210,8 @@ export interface SagaChoice {
 /** 一个时间线段的现场：开场白（按原文第三人称）+ 可选抉择 */
 export interface SagaScene {
   open: string            // 开场白
+  /** 开场白是否「自足完整」：注入后停在开场等操作员回话，不再自动让导演续写 */
+  standby?: boolean
   openTag?: string        // 出处/章节标注，如「— 第1卷 序章」
   quote?: string          // 可选：该段最贴切的原文一句（语录）
   quoteWho?: string       // 语录说话人

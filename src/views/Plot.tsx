@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Key } from 'react'
-import { ArrowRight, Check, Eraser, MagicWand, PaperPlaneTilt, Stop } from '@phosphor-icons/react'
+import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, Stop, UploadSimple } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
@@ -15,6 +15,8 @@ import type { ChatMsg, CharId, RecordMode } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply } from '../lib/plot'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
+import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, readJsonFile, storeSchemes } from '../lib/schemes'
+import type { Scheme } from '../lib/schemes'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
 import { splitSpeech } from '../lib/dialogue'
 import { Linkified } from '../components/Linkified'
@@ -121,6 +123,9 @@ export function Plot() {
   const [drafting, setDrafting] = useState(false)
   const [draftSugg, setDraftSugg] = useState<string[] | null>(null)
   const [draftErr, setDraftErr] = useState<string | null>(null)
+  /** 内嵌预设条：本机方案列表 + 存当前参数用的命名输入 */
+  const [schemes, setSchemes] = useState<Scheme[]>(listSchemes)
+  const [presetName, setPresetName] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const draftAbortRef = useRef<AbortController | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -548,7 +553,8 @@ export function Plot() {
     if (!openings.length && scOpen) {
       const opening: ChatMsg = { id: idFor(), from: 'them', text: scOpen, time: clock(), meta: { opening: true } }
       appendMsg(evId, opening)
-      if (!skipAutoOpen.current) void pushTurn(evId, CONTINUE_PROMPT, [opening])
+      // 自足完整的开场（SagaScene.standby）注入后原地待命，等操作员回话，不再自动让导演续写
+      if (!skipAutoOpen.current && !SCENES[evId]?.standby) void pushTurn(evId, CONTINUE_PROMPT, [opening])
     } else if (!skipAutoOpen.current) {
       // 已有开场白（此前只铺了原文）→ 接续；或本段无开场白 → 导演自拟
       void pushTurn(evId, openings.length ? CONTINUE_PROMPT : OPEN_PROMPT)
@@ -592,6 +598,62 @@ export function Plot() {
       : ready
         ? `在线推演 · ${cfgMain?.model ?? '—'}`
         : '主线通道未配置'
+
+  /* —— 内嵌预设条：套用/另存/导入「方案」（不含密钥，存于本机 zts-schemes:v1） —— */
+
+  /** 同步方案下拉的数据源（打开时重读一次，兼容在设置页刚新增/删除的情形） */
+  const refreshSchemes = () => {
+    const cur = listSchemes()
+    setSchemes((prev) => (prev.length === cur.length && prev.every((s, i) => s.id === cur[i]?.id) ? prev : cur))
+  }
+
+  const applySchemePreset = async (s: Scheme) => {
+    try {
+      const cfg = await applySchemePersisted(s)
+      if (cfg && cfgMain !== undefined) setCfgMain(cfg.main)
+      push('success', '已应用方案', `${s.name} · 主线/短信两通道参数与世界书启用已套用`, false)
+    } catch (e) {
+      push('danger', '应用失败', e instanceof Error ? e.message : String(e), false)
+    }
+  }
+
+  const saveCurrentAsScheme = async () => {
+    const n = presetName.trim()
+    if (!n) {
+      push('warn', '方案名不能为空', '先为当前两通道参数命名。', false)
+      return
+    }
+    try {
+      const s = await capturePersisted(n)
+      const next = [...schemes.filter((x) => x.id !== s.id), s]
+      setSchemes(next)
+      storeSchemes(next)
+      setPresetName('')
+      push('success', '已存为方案', `${n}（不含接口密钥）`, false)
+    } catch (e) {
+      push('danger', '保存失败', e instanceof Error ? e.message : String(e), false)
+    }
+  }
+
+  /** 导入外部 ST ChatPreset：解析并整体落地（加入本机方案 + 套用），顺带刷新本页主线配置 */
+  const importPresetFile = async () => {
+    const data = await readJsonFile()
+    if (data === null) return
+    try {
+      const r = await importChatPresetFile(data)
+      if (!r.ok) {
+        push('warn', '无法识别为 ChatPreset', r.warn, false)
+        return
+      }
+      const next = [...schemes.filter((x) => x.id !== r.scheme.id), r.scheme]
+      setSchemes(next)
+      storeSchemes(next)
+      if (r.cfg && cfgMain !== undefined) setCfgMain(r.cfg.main)
+      push('success', '已导入并应用 ChatPreset', `${r.scheme.name} · ${r.model}${r.note ? `（${r.note}）` : ''}`, false)
+    } catch (e) {
+      push('danger', '导入失败', e instanceof Error ? e.message : String(e), false)
+    }
+  }
 
   /* —— 事件卡片（侧栏）：只读大纲信息 —— */
   const eventCard = focusEv ? (
@@ -693,31 +755,34 @@ export function Plot() {
       )
     }
     if (seg.kind === 'you') {
+      // 言万心叶（操作员）：黑块 + 名字在上 + 立绘在块右侧、与块等高（整组靠右）
       return (
         <div key={key} className={css.youRow} data-you="1">
-          <Portrait avatarId="operator" size={30} round />
           <div className={css.youMain}>
             <span className={css.opName}>{opName}</span>
-            <span className={css.youBubble}>
-              <Linkified text={seg.text} />
-            </span>
+            <div className={css.youBlockRow}>
+              <span className={css.youBubble}>
+                <Linkified text={seg.text} />
+              </span>
+              <Portrait avatarId="operator" width={56} style={{ width: 56, height: '100%', borderRadius: 0 }} className={css.rowPortrait} />
+            </div>
           </div>
         </div>
       )
     }
     const c = personOf(seg.id)
     const hue = c?.hue ?? '#7fb4ff'
+    // 其他角色台词：黑块 + 名字在上 + 立绘在块左侧、与块等高（整组靠左）
     return (
       <div key={key} className={css.sayRow} data-say="1" data-say-for={seg.id}>
-        <Portrait avatarId={seg.id} size={30} round />
         <div className={css.sayMain}>
           <span className={css.sayName} style={{ color: hue }}>{c?.name ?? seg.id}</span>
-          <span
-            className={css.sayBubble}
-            style={{ borderColor: `${hue}66`, background: `linear-gradient(150deg, ${hue}24, ${hue}0d)` }}
-          >
-            <Linkified text={seg.text} />
-          </span>
+          <div className={css.sayBlockRow}>
+            <Portrait avatarId={seg.id} width={56} style={{ width: 56, height: '100%', borderRadius: 0 }} className={css.rowPortrait} />
+            <span className={css.sayBubble}>
+              <Linkified text={seg.text} />
+            </span>
+          </div>
         </div>
       </div>
     )
@@ -784,6 +849,56 @@ export function Plot() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* 内嵌预设条：套用/另存/导入方案（不含密钥；随时可在「设置」里做更细的方案管理） */}
+      <div className={css.presetBar}>
+        <span className={`tiny muted ${css.presetKicker}`}>方案 · PRESET</span>
+        <select
+          className="field"
+          style={{ width: 'auto', maxWidth: 220, fontSize: 12 }}
+          aria-label="套用本机方案"
+          title="把方案参数一键套用到主线/短信两通道（不含密钥）"
+          defaultValue=""
+          onFocus={refreshSchemes}
+          onChange={(e) => {
+            const id = e.currentTarget.value
+            e.currentTarget.value = ''
+            const s = schemes.find((x) => x.id === id)
+            if (s) void applySchemePreset(s)
+          }}
+        >
+          <option value="">{schemes.length ? `选择方案套用（${schemes.length}）…` : '暂无本机方案'}</option>
+          {schemes.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        <span className={css.presetDivider} />
+        <input
+          className="field"
+          style={{ width: 'auto', maxWidth: 150, fontSize: 12 }}
+          placeholder="存当前参数为方案…"
+          value={presetName}
+          onChange={(e) => setPresetName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveCurrentAsScheme() } }}
+        />
+        <button
+          className="btn btn--ghost"
+          style={{ fontSize: 12, padding: '6px 11px', flex: '0 0 auto' }}
+          onClick={() => void saveCurrentAsScheme()}
+          title="把当前主线/短信参数存成命名方案（密钥不进方案）"
+        >
+          <FloppyDisk size={13} weight="bold" /> 存
+        </button>
+        <button
+          className="btn btn--ghost"
+          style={{ fontSize: 12, padding: '6px 11px', flex: '0 0 auto' }}
+          onClick={() => void importPresetFile()}
+          title="导入外部 SillyTavern ChatPreset 为方案并套用"
+        >
+          <UploadSimple size={13} weight="bold" /> 导入预设
+        </button>
+        <span className={`tiny muted ${css.presetHint}`}>密钥不进方案，仅存本机</span>
       </div>
 
       <div className={css.layout}>

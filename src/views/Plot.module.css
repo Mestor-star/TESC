@@ -41,6 +41,40 @@
   margin-left: auto;
 }
 
+/* —— 内嵌预设条：套用 / 另存 / 导入「方案」（与设置页共享本机 zts-schemes:v1） —— */
+.presetBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  border: 1px dashed var(--line-2);
+  background: var(--bg-1);
+}
+.presetBar .field { flex: 0 1 auto; min-width: 0; }
+.presetKicker {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.presetDivider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line-2);
+  margin: 0 2px;
+}
+.presetHint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .presetHint { display: none; }
+}
+
 /* —— 在线 / 离线 切换 —— */
 .seg {
   display: inline-flex;
@@ -187,51 +221,77 @@
   word-break: break-word;
 }
 
-/* —— P6 台词气泡：say = 左头像（非操作员角色）；you = 右头像（言万心叶） —— */
+/* —— P6 AVG 台词：名字在上；文本与立绘头部特写融于同一深色方框，无边框 ——
+   立绘贴合本组靠外的一侧边缘（say 组靠左、you 组靠右），与文本同框同高，
+   内缘以淡化渐变融入文本区，不加描边。 */
 .sayRow,
 .youRow {
   display: flex;
-  gap: 9px;
-  align-items: flex-end;
-  margin-top: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
 }
 .sayRow { justify-content: flex-start; }
-.youRow { flex-direction: row-reverse; justify-content: flex-end; }
+.youRow { justify-content: flex-end; }
 .sayMain,
 .youMain {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-width: min(86%, 620px);
+  max-width: min(88%, 680px);
 }
 .sayMain { align-items: flex-start; }
 .youMain { align-items: flex-end; }
 .sayName,
 .opName {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  margin: 0 4px 4px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  margin: 0 3px 7px;
 }
 .sayName { color: var(--ink-mute); }
 .opName { color: var(--steel); }
+.sayBlockRow,
+.youBlockRow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #14141c 0%, #0a0a11 100%);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+}
+/* 文本区：透明承接框体背景，无边框 */
 .sayBubble,
 .youBubble {
-  padding: 8px 13px;
-  font-size: 13.5px;
-  line-height: 1.75;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--ink);
+  padding: 12px 17px;
+  font-size: 13.5px;
+  line-height: 1.85;
   white-space: pre-line;
   word-break: break-word;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
 }
-.sayBubble {
-  border: 1px solid var(--line-2);
-  border-radius: 3px 13px 13px 13px;
-  background: var(--bg-3);
+/* 立绘头部特写：贴对应边缘、与框同高、无自身边框，内缘淡化「融入」文本区 */
+.rowPortrait {
+  flex: none;
+  align-self: stretch;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 62%, transparent 100%);
 }
-.youBubble {
-  background: linear-gradient(160deg, var(--red), var(--red-deep));
-  color: #fff;
-  border-radius: 13px 3px 13px 13px;
+.rowPortrait img {
+  object-position: 50% 8%;
+}
+/* 操作员框：立绘贴右缘 → 自右向左淡化 */
+.youBlockRow .rowPortrait {
+  -webkit-mask-image: linear-gradient(to left, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to left, #000 62%, transparent 100%);
 }
 .youFoot {
   margin-top: 4px;
