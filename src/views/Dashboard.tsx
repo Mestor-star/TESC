@@ -11,14 +11,10 @@ import type { Character } from '../data/types'
 
 import css from './Dashboard.module.css'
 
-function openCommsWith(charId: string) {
-  window.dispatchEvent(new CustomEvent('zts:comms', { detail: charId }))
-}
-
 const CIRC = 2 * Math.PI * 90
 
 export function Dashboard() {
-  const { operatorName, navigate, focusRegion, setFocusId, epDone, bondNow, unlocked } = useTerminal()
+  const { operatorName, navigate, requestSms, focusRegion, setFocusId, epDone, bondNow, unlocked } = useTerminal()
   const name = operatorName.trim() ? operatorName : '低语者'
   const sev = rSeverity(focusRegion.r)
   const doneEvents = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).slice(-4).reverse(), [epDone])
@@ -43,7 +39,7 @@ export function Dashboard() {
             {unlocked ? (
               <span className="chip chip--on">作战子系统已解锁</span>
             ) : (
-              <span className="chip chip--warn">通讯 / 任务 / 图鉴 / 短信待解锁</span>
+              <span className="chip chip--warn">任务 / 武装图鉴 / 终末图鉴 / 短信待解锁</span>
             )}
           </div>
           <div className={css.heroActions}>
@@ -149,9 +145,9 @@ export function Dashboard() {
                     <button
                       className={`${css.miniAction} btn--icon`}
                       style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      title="打开通讯信道"
-                      aria-label={`与 ${c.name} 通讯`}
-                      onClick={() => { openCommsWith(c.id); navigate('comms') }}
+                      title="打开短信"
+                      aria-label={`与 ${c.name} 短信`}
+                      onClick={() => requestSms(c.id)}
                     >
                       <ChatCircle size={15} weight="bold" />
                     </button>

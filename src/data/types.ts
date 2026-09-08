@@ -104,17 +104,6 @@ export interface LogEntry {
   tags: string[];
 }
 
-/** 通讯联系人 */
-export interface Contact {
-  charId: string;
-  name: string;
-  sigil: string;
-  hue: string;
-  lastActive: string;
-  unread: number;
-  topic: string;         // 会话主题
-}
-
 /** 会话消息的轻量元数据（纯增量；旧存档无 meta 照常解析） */
 export interface ChatMsgMeta {
   /** 回执来源：json=事件指令围栏 / tags=标签化回执 / none=无指令 */

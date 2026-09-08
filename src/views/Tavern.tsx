@@ -76,7 +76,7 @@ function bondNote(delta: number): string {
 }
 
 export function Tavern() {
-  const { operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world } = useTerminal()
+  const { operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world, smsRequest, clearSmsRequest } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
   const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadLogs)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -156,6 +156,17 @@ export function Tavern() {
       })
     }
   }, [metIds])
+
+  /* 跨视图意图：由档案卡 / 出击小队等请求打开某联系人（未遇见则由 enter 提示解锁） */
+  const smsReqHandled = useRef(0)
+  useEffect(() => {
+    if (!smsRequest) return
+    if (smsReqHandled.current === smsRequest.ts) return
+    smsReqHandled.current = smsRequest.ts
+    const id = smsRequest.id
+    clearSmsRequest()
+    if (TAVERN_PERSONAS.some((p) => p.charId === id)) enter(id)
+  }, [smsRequest, clearSmsRequest, enter])
 
   const activeChar = activeId ? charOf(activeId) : undefined
   const activeMeta = activeId ? TAVERN_PERSONAS.find((p) => p.charId === activeId) : undefined

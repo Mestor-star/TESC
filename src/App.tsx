@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Gauge, Users, MapPin, ChatCircle, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk } from '@phosphor-icons/react'
+import { Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -17,7 +17,6 @@ import { Lore } from './views/Lore'
 import { Arms } from './views/Arms'
 import { Archive } from './views/Archive'
 import { Missions } from './views/Missions'
-import { Comms } from './views/Comms'
 import { Codex } from './views/Codex'
 import { Tavern } from './views/Tavern'
 import { Plot } from './views/Plot'
@@ -35,7 +34,6 @@ const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
   { id: 'arms', en: 'ARMORY', cn: '武装图鉴', icon: <Sword size={21} weight="bold" /> },
   { id: 'archive', en: 'ARCHIVE', cn: '角色档案', icon: <Users size={21} weight="bold" /> },
   { id: 'missions', en: 'MISSIONS', cn: '任务简报', icon: <MapPin size={21} weight="bold" /> },
-  { id: 'comms', en: 'COMMS', cn: '通讯终端', icon: <ChatCircle size={21} weight="bold" /> },
   { id: 'codex', en: 'CODEX', cn: '终末图鉴', icon: <BookOpen size={21} weight="bold" /> },
   { id: 'tavern', en: 'SMS / CHARACTER CHAT', cn: '短信', icon: <ChatDots size={21} weight="bold" /> },
   { id: 'settings', en: 'SYSTEM', cn: '终端设置', icon: <GearSix size={21} weight="bold" /> },
@@ -49,7 +47,6 @@ const TITLE: Record<ViewId, { en: string; cn: string }> = {
   arms: { en: 'DATA / ARMORY', cn: '武装图鉴' },
   archive: { en: 'DATA / ARCHIVE', cn: '角色档案' },
   missions: { en: 'FIELD / MISSIONS', cn: '任务简报' },
-  comms: { en: 'LINK / COMMS', cn: '通讯终端' },
   codex: { en: 'CODEX / ENDINGS', cn: '终末图鉴' },
   tavern: { en: 'SMS / CHARACTER CHAT', cn: '短信' },
   settings: { en: 'SYSTEM / SETTINGS', cn: '终端设置' },
@@ -266,7 +263,6 @@ function Stage() {
     case 'arms': return <Arms />
     case 'archive': return <Archive />
     case 'missions': return <Missions />
-    case 'comms': return <Comms />
     case 'codex': return <Codex />
     case 'tavern': return <Tavern />
     case 'settings': return <Settings />

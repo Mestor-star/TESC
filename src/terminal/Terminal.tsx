@@ -22,13 +22,13 @@ import {
   writeSlot,
 } from '../lib/slots'
 
-export type ViewId = 'dashboard' | 'plot' | 'saga' | 'lore' | 'arms' | 'archive' | 'missions' | 'comms' | 'codex' | 'tavern' | 'settings'
+export type ViewId = 'dashboard' | 'plot' | 'saga' | 'lore' | 'arms' | 'archive' | 'missions' | 'codex' | 'tavern' | 'settings'
 
 /**
  * 需完成「欢迎来到，终末停滞委员会」事件才能解锁的视图。
  * 角色档案自始开放（全员档案 + 羁绊照常显示），故不在锁定之列。
  */
-export const LOCKED_VIEWS: ViewId[] = ['arms', 'missions', 'comms', 'codex', 'tavern']
+export const LOCKED_VIEWS: ViewId[] = ['arms', 'missions', 'codex', 'tavern']
 const LOCKED_SET = new Set<ViewId>(LOCKED_VIEWS)
 
 interface Saved {
@@ -135,6 +135,11 @@ export interface TerminalState {
   codexRequest: { id: string; name: string; ts: number } | null
   requestCodex: (id: string) => void
   clearCodexRequest: () => void
+
+  /** 跨视图「打开某角色短信」意图（档案卡 / 出击小队等 → 短信页并选中该联系人） */
+  smsRequest: { id: string; ts: number } | null
+  requestSms: (charId: string) => void
+  clearSmsRequest: () => void
 
   toasts: Toast[]
   push: (kind: ToastKind, title: string, body?: string, live?: boolean) => void
@@ -299,6 +304,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [profileRequest, setProfileRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
   /** 跨视图「打开图鉴条目」意图（正文关键词跳转用；图鉴页消费后清除） */
   const [codexRequest, setCodexRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
+  /** 跨视图「打开某角色短信」意图（短信页消费后清除） */
+  const [smsRequest, setSmsRequest] = useState<{ id: string; ts: number } | null>(null)
 
   const focusRegion: RegionReading = REGIONS.find((r) => r.id === focusId) ?? REGIONS[0]
   const saved = useMemo<Saved>(
@@ -579,6 +586,17 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
   const clearCodexRequest = useCallback(() => setCodexRequest(null), [])
 
+  /** 请求打开某角色短信（自动切到短信页；短信页消费后选中并展开对应联系人） */
+  const requestSms = useCallback(
+    (charId: string) => {
+      if (!PERSON_IDS.includes(charId)) return
+      navigate('tavern')
+      setSmsRequest({ id: charId, ts: Date.now() })
+    },
+    [navigate],
+  )
+  const clearSmsRequest = useCallback(() => setSmsRequest(null), [])
+
   /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 21 名登场者） */
   const meetChar = useCallback((charId: string) => {
     if (!PERSON_IDS.includes(charId)) return
@@ -767,6 +785,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     codexRequest,
     requestCodex,
     clearCodexRequest,
+    smsRequest,
+    requestSms,
+    clearSmsRequest,
     toasts,
     push,
     dismiss,
