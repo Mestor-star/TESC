@@ -5,7 +5,9 @@
      它们仍是唯一内容源，这里只做聚合与查表。
    — 21 名登场者的性别按各卷卷首「登场人物」彩页 / 正文逐字措辞考据
      （她／他／少女／千金／姐姐／少年…）；确实无法判定的标 '?'，
-     UI 依 '?' 走无性别文案。羁绊基线为终端近似值（非正文原文）。
+     UI 依 '?' 走无性别文案。
+   — 羁绊「起步值」为终端近似（非正文原文）：初见≈20、随性格小幅浮动；
+     升高由主角行为驱动（剧情推演抉择 / 导演好感回执 / 短信往来 → offset）。
    ============================================================ */
 
 import { CHARACTERS } from './chars'
@@ -23,7 +25,7 @@ export interface CastPerson {
   /** 全名 + 常用别名/昵称（台词识别与关键词跳转；长词优先匹配） */
   names: string[]
   gender: Gender
-  /** 羁绊基线（core 取自 chars.defaultBond；side 为终端近似） */
+  /** 羁绊「起步值」＝初见≈20±性格（core 取自 chars.defaultBond；side 见 SIDE_BOND） */
   defaultBond: number
   /** 主题色（core 取 chars.hue；side 按登场顺序取用调色板，与档案页一致） */
   hue: string
@@ -70,29 +72,32 @@ const GENDER: Record<string, Gender> = {
   'yuina-yoshito': 'm',   // 野性派少年
 }
 
-/* 21 名登场者的羁绊基线（终端近似；core 主役直接读 chars.defaultBond） */
+/* 21 名登场者的羁绊「起步值」—— 皆按初见（陌生≈20、因性格小有浮动）标定。
+   此值只在主角尚未与之深交时作为基线；升高一律由「主角行为」驱动：
+   在线推演中的抉择/导演好感回执、短信往来等 → 写入 world.offset 累积，
+   绝不因单纯读过剧情段就自动抬升。（core 主役另由已读段的原著快照随剧情推进。） */
 const SIDE_BOND: Record<string, number> = {
-  'rafael-garcia': 70,   // 叔父辈旧识，心存歉意
-  youshihan: 46,         // 万年留级的前辈，慵懒但照应你
-  katherine: 66,         // 并肩过的企业警备队长，惺惺相惜
-  phidra: 42,
-  'alex-cave': 36,
-  maria: 30,
-  'merwen-gray': 40,     // 针锋相对的武斗派文学少女
-  'alive-anatolia': 54,  // 让你做「狗」的会长，态度复杂
-  'vern-simon': 50,      // 实用主义副会长
-  'kuro-no-maou': 70,    // 期盼与你结婚的 Stage5 少女
-  'nana-kamiru': 58,     // 卡乌斯黑锤部队中难得柔和的人
-  reiya: 78,             // 名门千金「挚友」，见面就扑通扑通
-  emei: 54,              // 姐姐式照拂，评议会副议长
-  'isis-halid': 24,      // 盯上你的独家新闻的记者
-  'skull-mask': 18,      // 敌意的异次元「另一个你」
-  'xiaochai-lin': 40,    // 喵呜的天才妹妹
-  'touyi-caojiro': 64,   // 爱开玩笑的共战友人
-  'huda-nayume': 26,     // 对外毫不留情的领队
-  'yuina-yoshito': 30,
-  ameria: 56,            // 注视着的亡者会长
-  yiregel: 20,           // 艾美莉亚的心腹
+  'rafael-garcia': 26,   // 旧识重逢 · 仍受命诀别，愧疚又无力
+  youshihan: 26,         // 慵懒照应你的万年留级学姐
+  katherine: 22,         // 规行矩步的警备队长 · 初交锋是公事对手
+  phidra: 16,            // 来历不明 · 一开口就让人警觉
+  'alex-cave': 18,       // 一较高下的竞争心
+  maria: 20,
+  'merwen-gray': 16,     // 嘴不饶人的武斗派文学少女
+  'alive-anatolia': 20,  // 居高临下、让你「做狗」的会长 · 态度难测
+  'vern-simon': 18,      // 实用主义、说话不绕弯的副会长
+  'kuro-no-maou': 24,    // 同船相识的漆黑少女 · 初见就口出「结婚」
+  'nana-kamiru': 24,     // 卡乌斯黑锤部队中难得温和的一人
+  reiya: 26,             // 名门千金 · 重逢即雀跃的旧识
+  emei: 24,              // 姐姐式照拂 · 评议会副议长
+  'isis-halid': 16,      // 盯上独家新闻、寸步不让的记者
+  'skull-mask': 12,      // 敌意而来的「另一个你」
+  'xiaochai-lin': 22,    // 喵呜的天才妹妹 · 初见就机灵
+  'touyi-caojiro': 24,   // 自来熟、爱开玩笑的共战友人
+  'huda-nayume': 14,     // 对外毫不留情、纪律严明的领队
+  'yuina-yoshito': 18,   // 野性派少年 · 试探着接近
+  ameria: 20,            // 自另一时代注视着的亡者会长
+  yiregel: 14,           // 冷面心腹 · 公事公办
 }
 
 /** 登场者登记主题色（按 SIDECAST 登场顺序取用；与档案页一致） */
@@ -183,7 +188,7 @@ export function personOf(id: string): CastPerson | undefined {
   return CAST.find((p) => p.id === id)
 }
 
-/** 羁绊基线（core → chars.defaultBond；side → 近似基线；未知 → 0） */
+/** 羁绊「起步值」：初见≈20±性格。core → chars.defaultBond；side → SIDE_BOND；未知 → 0 */
 export function defaultBondOf(id: string): number {
   if (id === OPERATOR_ID) return 0
   const c = CORE.get(id)

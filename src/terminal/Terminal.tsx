@@ -91,14 +91,14 @@ export interface TerminalState {
   markRead: (id: string) => void
   resetRead: (id: string) => void
 
-  /** 好感（随时间线逐段变化 + 抉择偏移 = 可增可减的变量） */
+  /** 好感：起步＝初见≈20±性格；主役随已走剧情段原著快照推进，全体再叠主角行为（抉择/推演/短信）偏移——可增可减的变量 */
   bondNow: (charId: string) => number
   bondSnapAt: (epId: string | null) => BondSnap
 
   /** —— 动态世界状态（持久化变量） —— */
   world: WorldState
   isMet: (charId: string) => boolean
-  /** 直接增减某角色的羁绊偏移（抉择、对话效果统一走这里；接受档案名录内任意角色） */
+  /** 直接增减某角色的羁绊偏移（主角行为的效果统一走这里；接受档案名录内任意角色） */
   bumpBond: (charId: string, delta: number) => void
   /** 结算整段事件：标记完成 → 遇见角色自动解锁 + 推进图鉴自动登记 */
   resolveEvent: (id: string) => void
@@ -488,7 +488,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
 
 
-  /* —— 好感：取当前所在「段」的快照 —— */
+  /* —— 好感：起步＝初见（无段可依时），主役取当前所在「段」的原著快照作基准 —— */
   const bondSnapAt = useCallback(
     (epId: string | null): BondSnap => {
       if (epId) {
@@ -501,14 +501,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
 
   /**
-   * 好感变量 = 当前段原著快照（基准）+ 操作员抉择累积偏移。
-   * 随着读到的段推进，基准沿原著抬升/回落；抉择可在此基础上增减 → 可增可减的动态变量。
+   * 好感变量：基准 + 主角行为累积偏移。
+   * 基准 = 四位主役：当前段原著快照（读到哪段就跟到哪段的原著推进）；
+   *        其余 21 名登场者及未读段的主役：castmeta 起步值（初见≈20±性格）。
+   * 主角行为（在线推演抉择/导演回执、短信往来）→ world.offset 增减 → 可增可减的动态变量。
    */
   const bondNow = useCallback(
     (charId: string) => {
       const ep = cur ? TIMELINE.find((e) => e.id === cur) : undefined
       const v = ep?.bond[charId as keyof BondSnap]
-      // 主役锚点 = 当前段原著快照；其余 21 名登场者 = castmeta 登记基线；均叠加抉择偏移
+      // 主役锚点 = 当前段原著快照；其余 21 名登场者 = 起步值（初见）；均叠加主角行为偏移
       const base = typeof v === 'number' ? v : defaultBondOf(charId)
       const off = world.offset[charId] ?? 0
       return clamp(base + off, 0, 100)
