@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Key } from 'react'
-import { ArrowRight, Check, Eraser, PaperPlaneTilt, Stop } from '@phosphor-icons/react'
+import { ArrowRight, Check, Eraser, MagicWand, PaperPlaneTilt, Stop } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
@@ -28,6 +28,18 @@ const LOG_KEY = 'zts-plot:v1'
 const OPEN_PROMPT =
   '（开场）请依据「事件大纲」与在场角色，铺陈这一事件的开端：写清此时此地、在场者的状态与正悬而未决的局面，'
   + '然后停在一个言万心叶可以回应、可以行动的地方。先不要收束事件；本回合若无变量变化，指令块给 {} 即可。'
+
+/** 当原文「开场白」已注入为首条消息时，让导演接着开场续写、而非另起一段开场 */
+const CONTINUE_PROMPT =
+  '（接续开场）上面那条「开场白 · 原文」即是本事件的起点。请接着它继续铺陈此刻的局势：写清言万心叶身在何地、'
+  + '在场者的状态与正悬而未决的局面，然后停在言万心叶可以回应、可以行动的地方。不要重复或改写过开场白本身；'
+  + '先不要收束事件；本回合若无变量变化，指令块给 {} 即可。'
+
+/** 「AI 起草」的请求：站在言万心叶视角草拟下一步可说的话/行动（仅供操作员择一填入，不落导演状态） */
+const DRAFT_PROMPT =
+  '（起草助手）请暂时站在言万心叶的视角，依据当前事件与最近的对话，为言万心叶草拟 2~3 个下一步可以说出口的话或可以做的行动。\n'
+  + '要求：一行一条，以「- 」开头；每条须是一句可以直接照说的完整话或一个明确的小行动，贴合当前局势与角色语气；'
+  + '不要用导演叙述口吻，不要写成小说段落，不要输出事件指令或变量，也不要带「言万心叶：」之类的前缀。'
 
 const MODE_LABEL: Record<RecordMode, string> = {
   online: '在线推演',
@@ -58,6 +70,31 @@ function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
   )
 }
 
+/** 把「AI 起草」的原始返回切成一句句可直接填入的候选行动（条理性 best-effort） */
+function parseDraftLines(raw: string): string[] {
+  const out: string[] = []
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim()
+    if (!t) continue
+    const cleaned = t
+      .replace(/^[-–—•·*▪‣]\s*/, '')
+      .replace(/^\(\d+\s*\)\s*/, '')
+      .replace(/^\d+[.)、]\s*/, '')
+      .replace(/^[①②③④⑤]\s*/, '')
+      .trim()
+    if (!cleaned || cleaned.length < 2 || cleaned.length > 90) continue
+    out.push(cleaned)
+    if (out.length >= 4) break
+  }
+  if (out.length) return out
+  // 兜底：模型没按行给 → 按句子切前三条
+  return raw
+    .split(/(?<=[。！？])/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 1 && s.length <= 90)
+    .slice(0, 4)
+}
+
 export function Plot() {
   const {
     operatorName, navigate, push,
@@ -76,7 +113,12 @@ export function Plot() {
   const [live, setLive] = useState<{ evId: string; text: string } | null>(null)
   const [offState, setOffState] = useState<{ id: string | null; state: 'idle' | 'loading' | 'ok' | 'miss'; text?: string; msg?: string }>({ id: null, state: 'idle' })
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
+  /** 「AI 起草」：起草中 / 候选行动 / 失败提示（纯呈现，不落导演状态） */
+  const [drafting, setDrafting] = useState(false)
+  const [draftSugg, setDraftSugg] = useState<string[] | null>(null)
+  const [draftErr, setDraftErr] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const draftAbortRef = useRef<AbortController | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   /** 事件收束后自动推进到下一段时，先不自动铺开场（等操作员发话） */
   const skipAutoOpen = useRef(false)
@@ -305,9 +347,50 @@ export function Plot() {
   const send = async () => {
     const text = draft.trim()
     if (!focusEv || busy || !text) return
+    // 若「AI 起草」仍在跑，先中断它，让位给操作员的实际发言
+    if (drafting) { draftAbortRef.current?.abort(); setDrafting(false) }
     setDraft('')
     appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
     await pushTurn(focusEv.id, text)
+  }
+
+  /** 「AI 起草」：让模型从言万心叶视角草拟下一步行动候选 → 点选填入输入框（可编辑后再发送） */
+  const draftCandidates = async () => {
+    const ev = focusEv
+    if (!ev || busy || drafting || !ready) return
+    setDrafting(true)
+    setDraftErr(null)
+    setDraftSugg(null)
+    const ctrl = new AbortController()
+    draftAbortRef.current = ctrl
+    try {
+      const system = buildDirectorSystem(ev, { operatorName, bondNow, flags: world.flags, needDirective: false })
+      const messages: ChatTurn[] = [
+        { role: 'system', content: system },
+        ...toTurns(logs[ev.id]),
+        { role: 'user', content: DRAFT_PROMPT },
+      ]
+      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: 320 })
+      const text = (res ?? '').trim()
+      if (!text) {
+        setDraftErr('模型没有返回可用内容，可再试一次。')
+        return
+      }
+      const sugg = parseDraftLines(text)
+      if (!sugg.length) {
+        setDraftErr('未解析出可用的候选，可再试一次。')
+        return
+      }
+      setDraftSugg(sugg)
+      push('info', 'AI 起草', `已草拟 ${sugg.length} 条可发送的行动/话语，点选一条填入。`, false)
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return
+      const msg = e instanceof Error ? e.message : String(e)
+      setDraftErr(`起草失败：${msg}`)
+    } finally {
+      draftAbortRef.current = null
+      setDrafting(false)
+    }
   }
 
   const stop = () => {
@@ -417,17 +500,38 @@ export function Plot() {
     }
   }
 
-  /* —— 在线自动铺开场：某事件尚无会话且刚进入在线时 —— */
+  /* —— 在线开场：某事件尚无实质会话且刚进入在线时 ——
+     优先注入原文「开场白」（SCENES.open，无 AI 参与、随会话持久化）作为首条；
+     只有「开场白」而尚无 AI/操作员回合，视为未开篇：若未被收束跳过，仍让导演接着开场续写；
+     事件收束推进后自动铺的下一段开场白（skipAutoOpen）则只注入、等操作员发话；
+     无开场白的段沿用导演自拟开场。 */
   useEffect(() => {
     if (!focusEv || !showOnline || !ready || busy) return
-    if (skipAutoOpen.current) return
-    const lg = logs[focusEv.id]
-    if (lg && lg.length) return
-    if (lastOpen.current === focusEv.id) return
-    lastOpen.current = focusEv.id
-    void pushTurn(focusEv.id, OPEN_PROMPT)
+    const evId = focusEv.id
+    const lg = logs[evId] ?? []
+    const openings = lg.filter((m) => m.meta?.opening)
+    // 已开篇 = 开场白之外还有 AI 回执或操作员回合（首条开场白单独存在不算会话）
+    if (lg.length > openings.length) return
+    if (lastOpen.current === evId) return
+    lastOpen.current = evId
+
+    const scOpen = SCENES[evId]?.open?.trim()
+    if (!openings.length && scOpen) {
+      const opening: ChatMsg = { id: idFor(), from: 'them', text: scOpen, time: clock(), meta: { opening: true } }
+      appendMsg(evId, opening)
+      if (!skipAutoOpen.current) void pushTurn(evId, CONTINUE_PROMPT, [opening])
+    } else if (!skipAutoOpen.current) {
+      // 已有开场白（此前只铺了原文）→ 接续；或本段无开场白 → 导演自拟
+      void pushTurn(evId, openings.length ? CONTINUE_PROMPT : OPEN_PROMPT)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusEv?.id, showOnline, ready, busy])
+
+  /* 切换事件/离线时清掉上一段的起草结果 */
+  useEffect(() => {
+    setDraftSugg(null)
+    setDraftErr(null)
+  }, [focusEv?.id, showOnline])
 
   /* —— 离线原文加载 —— */
   useEffect(() => {
@@ -719,9 +823,9 @@ export function Plot() {
                 ) : (
                   activeLog.map((m, i) =>
                     m.from === 'them' ? (
-                      <div key={m.id} className={css.narr}>
+                      <div key={m.id} className={m.meta?.opening ? `${css.narr} ${css.open}` : css.narr}>
                         <div className={css.narrMeta}>
-                          <b>导演叙述</b>
+                          <b>{m.meta?.opening ? '开场白 · 原文' : '导演叙述'}</b>
                           <span className="muted tiny">{m.time}</span>
                         </div>
                         {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
@@ -758,7 +862,7 @@ export function Plot() {
                           </div>
                         ) : null}
 
-                        {showOnline && ready && !busy ? (
+                        {showOnline && ready && !busy && !m.meta?.opening ? (
                           <div className={css.rowActs}>
                             <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
                             {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true ? (
@@ -809,36 +913,69 @@ export function Plot() {
               </div>
 
               {ready ? (
-                <div className={css.composer}>
-                  <input
-                    className="field"
-                    placeholder={`推进事件：向导演传达言万心叶的行动…（Enter 发送）`}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        if (busy) stop()
-                        else void send()
-                      }
-                    }}
-                    disabled={!ready}
-                  />
-                  {busy ? (
-                    <button className={`btn btn--amber ${css.composerBtn}`} onClick={stop} aria-label="中断推演">
-                      <Stop size={18} weight="bold" />
-                    </button>
-                  ) : (
+                <>
+                  {draftSugg && draftSugg.length ? (
+                    <div className={css.draftSugg}>
+                      <div className={css.draftSuggHead}>
+                        <b>AI 起草 · 言万心叶可说的下一步</b>
+                        <button type="button" className="linkGo" onClick={() => setDraftSugg(null)}>收起</button>
+                      </div>
+                      <div className={css.draftRow}>
+                        {draftSugg.map((s, si) => (
+                          <button
+                            key={si}
+                            type="button"
+                            className={css.draftOpt}
+                            onClick={() => { setDraft(s); setDraftSugg(null); }}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {draftErr ? <div className={css.draftErr}>{draftErr}</div> : null}
+                  <div className={css.composer}>
+                    <input
+                      className="field"
+                      placeholder={`推进事件：向导演传达言万心叶的行动…（Enter 发送）`}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          if (busy) stop()
+                          else void send()
+                        }
+                      }}
+                      disabled={!ready}
+                    />
                     <button
-                      className={`btn btn--primary ${css.composerBtn}`}
-                      onClick={() => void send()}
-                      disabled={!draft.trim()}
-                      aria-label="发送"
+                      className={`btn btn--ghost ${css.draftBtn}`}
+                      onClick={() => void draftCandidates()}
+                      disabled={busy || drafting}
+                      aria-label="AI 起草行动候选"
                     >
-                      <PaperPlaneTilt size={18} weight="bold" />
+                      {drafting ? <span className={css.draftSpin} aria-hidden="true" /> : null}
+                      <MagicWand size={16} weight="bold" />
+                      <span>{drafting ? '起草中…' : 'AI 起草'}</span>
                     </button>
-                  )}
-                </div>
+                    {busy ? (
+                      <button className={`btn btn--amber ${css.composerBtn}`} onClick={stop} aria-label="中断推演">
+                        <Stop size={18} weight="bold" />
+                      </button>
+                    ) : (
+                      <button
+                        className={`btn btn--primary ${css.composerBtn}`}
+                        onClick={() => void send()}
+                        disabled={!draft.trim()}
+                        aria-label="发送"
+                      >
+                        <PaperPlaneTilt size={18} weight="bold" />
+                      </button>
+                    )}
+                  </div>
+                </>
               ) : null}
             </div>
           ) : (

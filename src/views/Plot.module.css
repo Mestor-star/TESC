@@ -156,6 +156,14 @@
 }
 .narrMeta b { font-size: 11px; letter-spacing: 0.16em; color: var(--amber); text-transform: uppercase; }
 .userMeta b { font-size: 11px; letter-spacing: 0.16em; color: var(--steel); text-transform: uppercase; }
+
+/* —— 开场白 · 原文：原文注入的事件开头（无 AI 参与），与导演叙述稍作区分 —— */
+.open {
+  border-left-color: var(--steel);
+  background: linear-gradient(180deg, rgba(127, 180, 255, 0.05), rgba(127, 180, 255, 0) 55%), var(--bg-2);
+}
+.open .narrMeta b { color: var(--steel); }
+.open .narrText { color: var(--ink-mute); }
 .narrText {
   margin-top: 8px;
   font-size: 13.5px;
@@ -272,15 +280,77 @@
 
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 2px;
 }
-.composer .field { flex: 1; }
+.composer .field { flex: 1; min-width: 180px; }
 .composerBtn {
   flex: 0 0 auto;
   width: 44px; height: 44px;
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
+}
+.draftBtn {
+  flex: 0 0 auto;
+  height: 44px;
+  padding: 0 13px;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.draftBtn[disabled] { cursor: not-allowed; }
+.draftSpin {
+  width: 11px; height: 11px;
+  flex: 0 0 auto;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: plotSpin 0.7s linear infinite;
+}
+@keyframes plotSpin { to { transform: rotate(360deg); } }
+
+/* —— AI 起草：候选行动 chips + 失败提示（输入框上方） —— */
+.draftSugg {
+  margin-bottom: 10px;
+  border: 1px dashed var(--line-2);
+  background: var(--bg-1);
+  padding: 10px 12px;
+}
+.draftSuggHead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.draftSuggHead b {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-mute);
+}
+.draftRow { display: flex; flex-wrap: wrap; gap: 8px; }
+.draftOpt {
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: left;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 11px;
+  cursor: pointer;
+}
+.draftOpt:hover { border-color: var(--amber); color: var(--amber); }
+.draftErr {
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--danger);
+  background: rgba(255, 122, 122, 0.06);
+  border: 1px solid rgba(255, 122, 122, 0.28);
+  padding: 7px 11px;
+  border-radius: 5px;
 }
 
 /* —— 离线通读体 —— */

@@ -120,6 +120,8 @@ export interface ChatMsgMeta {
   thinking?: string
   /** 本条回复的指令是否实际改变了世界状态（决定可否「重写」） */
   hasFx?: boolean
+  /** 开场白标记：由终端按原文注入的事件开场（无 AI 参与，渲染为「开场白 · 原文」） */
+  opening?: boolean
 }
 
 export interface ChatMsg {
