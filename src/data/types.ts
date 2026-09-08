@@ -23,8 +23,8 @@ export type StationStatus = '在场' | '出击' | '疗养' | '待命' | '未知'
  */
 export type AxisVal = number | '∞'
 
-/** 五轴数值在视觉 meter 上的参考刻度上限（仅供画条用，非语义上限） */
-export const AXIS_MAX = 60
+/** 五轴数值在视觉 meter 上的观测刻度上限 = 200（观测上限；仅供画条用，非语义上限） */
+export const AXIS_MAX = 200
 
 export interface CharacterStat {
   key: string;          // 中文标签
