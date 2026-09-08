@@ -163,6 +163,50 @@
 .chev { font-family: var(--font-mono); color: var(--c); font-size: 12px; transition: transform var(--t-mid) var(--ease-out); }
 .itemRow.open .chev { transform: rotate(90deg); }
 
+/* ---- 未点亮条目（门禁灰卡：？？？/首见或被告知后解锁） ---- */
+.itemLocked {
+  display: block;
+  width: 100%;
+  border-style: dashed;
+  border-color: var(--line-2);
+  border-left: 3px dashed var(--line-3);
+  background:
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 3%, transparent) 0 10px, transparent 10px 20px),
+    var(--bg-1);
+  color: var(--ink-faint);
+}
+.itemLocked:hover { border-color: var(--line-3); background: var(--bg-2); }
+.lockRow {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 18px;
+  width: 100%;
+}
+.lockBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: var(--ink-faint);
+  opacity: 0.7;
+}
+.lockMain { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lockMain b { font-size: 20px; font-weight: 900; letter-spacing: 0.3em; color: var(--ink-faint); }
+.lockMain i { font-style: normal; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint); }
+.lockCode {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+  border: 1px dashed var(--line-2);
+  padding: 3px 8px;
+}
+@media (max-width: 900px) {
+  .lockRow { grid-template-columns: 1fr; gap: 8px; }
+  .lockBadge { justify-content: flex-start; }
+}
+
 .expand { display: none; padding: 0 18px 16px; }
 .expand.open { display: block; }
 .expBody { padding: 4px 18px 16px 18px; }

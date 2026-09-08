@@ -780,6 +780,32 @@ try {
   await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='言万心叶'}catch(e){return false}})()`, 12000, 'J10 fresh run default operator')
   ok('J12 行动开始 → 运行归零（操作员代号回到默认）', true)
 
+  /* ============ Phase K：P8 武装图鉴门禁 —— noapusa / a Session. 在 v2-2 / v4-5 前灰卡、读毕点亮 ============ */
+  console.log('\n[Phase K] P8 武装图鉴门禁：操作员武装 揭示前灰卡不泄 · 读毕点亮 · 计数过滤后算')
+  // 播种：系统已解锁（读完 v1-3），但操作员双武装的揭示事件 v2-2 / v4-5 尚未完成 → 应灰卡
+  const kSeed = await ev(`(()=>{localStorage.setItem('zts-terminal:v3',JSON.stringify({unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'图鉴观察员',focusId:'gcn'}));localStorage.setItem('zts-plot:v1',JSON.stringify({}));localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
+  ok('K0 播种「已解锁 v1-3 · 未达 v2-2/v4-5」的运行', kSeed === true, 'seed=' + kSeed)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()   // 行动继续 → 直达总览（Plot 不挂载，不消耗任何 stub 回包）
+  await goto('武装图鉴')
+  await poll(`!!document.querySelector('[data-arm-id]') || !!document.querySelector('[data-locked-id]')`, 20000, 'K arms mounted')
+  const kBefore = await ev(`(()=>{const t=document.body.innerText;const lc=[...document.querySelectorAll('[data-locked-id]')];const leak=lc.some(c=>/noapusa|NOAPUSA|a Session\\\\.|A SESSION\\\\.|言万心叶/i.test(c.innerText));return {noapLocked:!!document.querySelector('[data-locked-id="kokoro-noapusa"]'),sessLocked:!!document.querySelector('[data-locked-id="kokoro-session"]'),lit:document.querySelectorAll('[data-arm-id]').length,locked:lc.length,leak,hasQ:!!document.querySelector('[data-locked-id]')&&document.querySelector('[data-locked-id]').innerText.includes('？？？'),chip:(t.match(/已点亮\\s*(\\d+)\\s*件/)||[])[1]}})()`)
+  ok('K1 揭示前 → noapusa / a Session. 均为灰卡（data-locked-id）', kBefore.noapLocked === true && kBefore.sessLocked === true, JSON.stringify({ noap: kBefore.noapLocked, sess: kBefore.sessLocked }))
+  ok('K2 灰卡不泄本体 / 持有者（？？？占位，内文无 noapusa/a Session./言万心叶）', kBefore.leak === false && kBefore.hasQ === true, 'leak=' + kBefore.leak + ' q=' + kBefore.hasQ)
+  ok('K3 计数在过滤后算（chip=已点亮 N 件 = 页内实卡数）', kBefore.chip !== undefined && Number(kBefore.chip) === kBefore.lit && kBefore.lit > 0, JSON.stringify({ chip: kBefore.chip, lit: kBefore.lit }))
+
+  // 补齐揭示事件（模拟读毕 v2-2 / v4-5）→ 两武装应点亮为实卡并显示本体
+  const kReveal = await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-terminal:v3'));o.epDone['v2-2']=true;o.epDone['v4-5']=true;o.cur='v4-5';localStorage.setItem('zts-terminal:v3',JSON.stringify(o));return true})()`)
+  ok('K4 播种已读 v2-2/v4-5', kReveal === true, '')
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('武装图鉴')
+  await poll(`!!document.querySelector('[data-arm-id="kokoro-noapusa"]') && !!document.querySelector('[data-arm-id="kokoro-session"]')`, 20000, 'K arms lit after reveal')
+  const kAfter = await ev(`(()=>{const t=document.body.innerText;return {noap:!!document.querySelector('[data-arm-id="kokoro-noapusa"]'),sess:!!document.querySelector('[data-arm-id="kokoro-session"]'),stillLocked:!!document.querySelector('[data-locked-id="kokoro-noapusa"]')||!!document.querySelector('[data-locked-id="kokoro-session"]'),name:t.includes('noapusa')&&t.includes('a Session.'),lit:document.querySelectorAll('[data-arm-id]').length}})()`)
+  ok('K5 读毕揭示事件 → 双武装点亮为实卡（灰卡移除）', kAfter.noap === true && kAfter.sess === true && kAfter.stillLocked === false, JSON.stringify(kAfter))
+  ok('K6 点亮后显示本体（noapusa / a Session.）', kAfter.name === true, 'name=' + kAfter.name)
+  ok('K7 点亮后计数随之上调（实卡数增加）', kAfter.lit > kBefore.lit, 'lit ' + kBefore.lit + ' → ' + kAfter.lit)
+
 } catch (e) {
   passAll = false
   console.error('\nSMOKE ERROR: ' + e.message)
