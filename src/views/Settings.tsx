@@ -5,65 +5,13 @@ import { useTerminal } from '../terminal/Terminal'
 import type { AiChannel, ApiSettings } from '../lib/api'
 import { API_DEFAULTS, chatCompletion, isReady, listModels, readProfiles, saveProfile } from '../lib/api'
 import * as lore from '../lib/lorestore'
+import { applySchemeTo, captureFrom, listSchemes, parseChatPreset, parseSchemeFile, readJsonFile, storeSchemes } from '../lib/schemes'
+import type { Scheme, SchemePart } from '../lib/schemes'
 import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
 import type { SillyTavernLorebookExport } from '../lib/tavernlike/types'
 
 import css from './Settings.module.css'
-
-/* —— 轻量「方案」：通道参数 + 激活世界书（不含密钥），存 localStorage —— */
-
-interface SchemePart { baseUrl: string; model: string; temperature: number; maxTokens: number }
-interface Scheme {
-  id: string
-  name: string
-  main: SchemePart
-  sms: SchemePart
-  activeLoreIds: string[]
-}
-
-const SCHEME_KEY = 'zts-schemes:v1'
-
-function loadSchemes(): Scheme[] {
-  try {
-    const raw = localStorage.getItem(SCHEME_KEY)
-    const p = raw ? JSON.parse(raw) as unknown : []
-    return Array.isArray(p) ? p as Scheme[] : []
-  } catch {
-    return []
-  }
-}
-
-function persistSchemes(list: Scheme[]): void {
-  try {
-    localStorage.setItem(SCHEME_KEY, JSON.stringify(list))
-  } catch {
-    /* 隐私模式下降级 */
-  }
-}
-
-function schemePart(cfg: ApiSettings): SchemePart {
-  return { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature, maxTokens: cfg.maxTokens }
-}
-
-/** 读取单个本地 .json 文件（返回解析值；非 JSON 时为 null） */
-function readOneJson(): Promise<unknown | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json,application/json'
-    input.onchange = async () => {
-      const f = input.files?.[0]
-      if (!f) { resolve(null); return }
-      try {
-        resolve(JSON.parse(await f.text()) as unknown)
-      } catch {
-        resolve(null)
-      }
-    }
-    input.click()
-  })
-}
 
 /** 读取本地 .json 文件（可多选）为待导入对象；JSON 解析失败标 null */
 function pickJsons(multiple: boolean): Promise<Array<{ fileName: string; json: unknown }>> {
@@ -118,7 +66,7 @@ export function Settings() {
   const abortRef = useRef<AbortController | null>(null)
   const [confirmAct, setConfirmAct] = useState<'clear' | 'restore' | null>(null)
   const [loreInfo, setLoreInfo] = useState<{ books: number; active: number }>({ books: -1, active: -1 })
-  const [schemes, setSchemes] = useState<Scheme[]>(loadSchemes)
+  const [schemes, setSchemes] = useState<Scheme[]>(listSchemes)
   const [schemeSel, setSchemeSel] = useState<string | null>(null)
   const [newSchemeName, setNewSchemeName] = useState('')
   const [modelList, setModelList] = useState<Record<Channel, string[] | null>>({ main: null, sms: null })
@@ -267,93 +215,24 @@ export function Settings() {
     }
   }
 
-  /* —— 导入 ChatPreset：openai_model/temp_openai → 新方案并套用（baseUrl/密钥沿用通道现值） —— */
+  /* —— 导入 ChatPreset：映射为方案并套用两通道（baseUrl/密钥沿用现值） —— */
   const importChatPreset = async () => {
     if (!cfgs) return
-    const data = await readOneJson()
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
-      push('warn', '无法识别', '所选文件不是 ChatPreset JSON。', false)
+    const data = await readJsonFile()
+    const r = parseChatPreset(data, cfgs)
+    if (!r.ok) {
+      push('warn', '无法识别为 ChatPreset', r.warn, false)
       return
     }
-    const d = data as Record<string, unknown>
-    // 现行酒馆 ChatCompletion 预设的文件结构有两类：顶层即设置对象，或包一层 settings
-    // （ChatCompletionPresets 分享包还会再包一层 data.settings）。这里两级都扫。
-    const settingsRaw =
-      (d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings)
-        ? d.settings
-        : (d.data && typeof d.data === 'object' && !Array.isArray(d.data) ? (d.data as Record<string, unknown>).settings : null)) ?? {}
-    const settings = (settingsRaw && typeof settingsRaw === 'object' && !Array.isArray(settingsRaw) ? settingsRaw : {}) as Record<string, unknown>
-    // 各家酒馆 API 的模型字段随通道而别：优先 oai_model/openai_model，再兜 *_model 通配；
-    // 温度多为 temp_openai，其次 temperature / temp。
-    const MODEL_KEYS = ['oai_model', 'openai_model', 'claude_model', 'anthropic_model']
-    const TEMP_KEYS = ['temp_openai', 'temperature', 'temp']
-
-    const pickFrom = (src: Record<string, unknown>) => {
-      const mKey = MODEL_KEYS.find((k) => typeof src[k] === 'string' && (src[k] as string).trim().length > 0)
-        ?? Object.keys(src).find((k) => /_model$/i.test(k) && typeof src[k] === 'string' && (src[k] as string).trim().length > 0)
-        ?? (typeof src.model === 'string' && src.model.trim() ? 'model' : undefined)
-      const tKey = TEMP_KEYS.find((k) => typeof src[k] === 'number')
-      return {
-        model: mKey ? (src[mKey] as string).trim() : '',
-        temp: tKey ? (src[tKey] as number) : null,
-        modelKey: mKey ?? null,
-      }
-    }
-    let pf = pickFrom(settings)
-    if (!pf.model) pf = pickFrom(d)
-    let model = pf.model
-    const temp = pf.temp ?? cfgs.main.temperature ?? 0.8
-    let note = pf.modelKey ? (MODEL_KEYS.includes(pf.modelKey) ? '' : `读自 ${pf.modelKey}`) : ''
-    // 现行酒馆预设常带 openai_max_tokens：一并映射到本应用的「输出预算」（max_tokens）
-    const budgetKey = (['openai_max_tokens', 'oai_max_tokens', 'max_tokens'] as const)
-      .find((k) => typeof settings[k] === 'number' || typeof d[k] === 'number')
-    const rawBudget = budgetKey ? (typeof settings[budgetKey] === 'number' ? settings[budgetKey] : d[budgetKey]) as number : NaN
-    const maxTokens = Number.isFinite(rawBudget) && rawBudget > 0
-      ? Math.max(256, Math.min(64000, Math.round(rawBudget)))
-      : (cfgs.main.maxTokens || cfgs.sms.maxTokens || 1500)
-    const budgetNote = Number.isFinite(rawBudget) && rawBudget > 0 ? `输出预算 ${maxTokens}` : ''
-
-    if (!model) {
-      // 确属预设（含采样器键）但没带模型名 → 沿用当前通道模型，仅应用温度等参数（同酒馆“导入即套用”语义）
-      const samplerish = Object.keys(settings).some((k) => /^(top_p|top_k|rep_pen|min_p|presence_penalty|frequency_penalty|stream_|temp|temperature)/i.test(k))
-        || Object.keys(d).some((k) => /^(top_p|top_k|rep_pen|temp|temperature|stream_)/i.test(k))
-      const curModel = cfgs.main.model.trim() || cfgs.sms.model.trim()
-      if (samplerish && curModel) {
-        model = curModel
-        note = '预设未含模型名，已沿用当前通道模型'
-      } else {
-        const isLorebook = Array.isArray(d.entries)
-          || (d.data && typeof d.data === 'object' && !Array.isArray(d.data) && Array.isArray((d.data as Record<string, unknown>).entries))
-        const keysShown = (Object.keys(settings).length ? Object.keys(settings) : Object.keys(d)).slice(0, 8).join('、')
-        const hint = isLorebook
-          ? '这份是酒馆世界书（world info，含 entries）——请改用上方「导入 ST 世界书」，而不是 ChatPreset。'
-          : `未找到模型名。文件键：${keysShown || '（空对象）'}；可识别 ${MODEL_KEYS.join(' / ')} 或以 _model 结尾的字段。`
-        push('warn', '无法识别为 ChatPreset', hint, false)
-        return
-      }
-    }
-    const name = typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `ChatPreset · ${model}`
-    const actIds = await lore.getActiveLorebookIds()
-    const s: Scheme = {
-      id: crypto.randomUUID(),
-      name,
-      main: { baseUrl: cfgs.main.baseUrl, model, temperature: temp, maxTokens },
-      sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp, maxTokens },
-      activeLoreIds: actIds,
-    }
-    const next = [...schemes, s]
+    const { scheme, model, note } = r
+    scheme.activeLoreIds = await lore.getActiveLorebookIds()
+    const next = [...schemes, scheme]
     setSchemes(next)
-    persistSchemes(next)
-    setSchemeSel(s.id)
-    // 直接套用两通道（密钥留 IndexedDB，baseUrl 不变）
-    const nextMain = { ...cfgs.main, model, temperature: temp, maxTokens }
-    const nextSms = { ...cfgs.sms, model, temperature: temp, maxTokens }
-    setCfgs({ main: nextMain, sms: nextSms })
-    try {
-      await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
-    } catch { /* 写入失败时本次会话内仍生效 */ }
-    const parts = [note, budgetNote].filter(Boolean).join(' · ')
-    push('success', '已导入并应用 ChatPreset', `${name} · ${model}${parts ? `（${parts}）` : ''}`, false)
+    storeSchemes(next)
+    setSchemeSel(scheme.id)
+    const cfg = await applySchemeTo(cfgs, scheme)
+    setCfgs(cfg)
+    push('success', '已导入并应用 ChatPreset', `${scheme.name} · ${model}${note ? `（${note}）` : ''}`, false)
   }
 
   /* ============ 世界书数据管理 + 方案 ============ */
@@ -371,7 +250,7 @@ export function Settings() {
   const doRestoreLore = async () => {
     if (confirmAct !== 'restore') { setConfirmAct('restore'); return }
     setConfirmAct(null)
-    const data = await readOneJson()
+    const data = await readJsonFile()
     if (!data || (data as { kind?: unknown }).kind !== 'zts-lore-backup') {
       push('warn', '无法识别', '请选择此前导出的「世界书整库备份」。', false)
       return
@@ -404,11 +283,10 @@ export function Settings() {
       push('warn', '方案名不能为空', '请先为这套参数命名。', false)
       return
     }
-    const ids = await lore.getActiveLorebookIds()
-    const s: Scheme = { id: crypto.randomUUID(), name: n, main: schemePart(cfgs.main), sms: schemePart(cfgs.sms), activeLoreIds: ids }
+    const s = await captureFrom(cfgs, n)
     const next = [...schemes, s]
     setSchemes(next)
-    persistSchemes(next)
+    storeSchemes(next)
     setNewSchemeName('')
     setSchemeSel(s.id)
     push('success', '已存为方案', `${n}（不含接口密钥）`, false)
@@ -416,16 +294,8 @@ export function Settings() {
 
   const applyScheme = async (s: Scheme) => {
     if (!cfgs) return
-    const nextMain = { ...cfgs.main, baseUrl: s.main.baseUrl, model: s.main.model, temperature: s.main.temperature, maxTokens: s.main.maxTokens ?? cfgs.main.maxTokens ?? 1500 }
-    const nextSms = { ...cfgs.sms, baseUrl: s.sms.baseUrl, model: s.sms.model, temperature: s.sms.temperature, maxTokens: s.sms.maxTokens ?? cfgs.sms.maxTokens ?? 1500 }
-    setCfgs({ main: nextMain, sms: nextSms })
-    try {
-      await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
-    } catch { /* 写入失败时本次会话内仍生效 */ }
-    const curIds = await lore.getActiveLorebookIds()
-    const want = new Set(s.activeLoreIds)
-    for (const id of curIds) if (!want.has(id)) await lore.setBookActive(id, false)
-    for (const id of s.activeLoreIds) if (!curIds.includes(id)) await lore.setBookActive(id, true)
+    const cfg = await applySchemeTo(cfgs, s)
+    setCfgs(cfg)
     push('success', '已应用方案', `${s.name} · 两通道参数与世界书启用已套用`, false)
     void refreshLoreInfo()
   }
@@ -433,7 +303,7 @@ export function Settings() {
   const deleteScheme = (id: string) => {
     const next = schemes.filter((x) => x.id !== id)
     setSchemes(next)
-    persistSchemes(next)
+    storeSchemes(next)
     if (schemeSel === id) setSchemeSel(null)
     push('info', '已删除方案', '', false)
   }
@@ -444,35 +314,15 @@ export function Settings() {
   }
 
   const importScheme = async () => {
-    const data = await readOneJson()
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
-      push('warn', '无法识别', '所选文件不是方案 JSON。', false)
+    const data = await readJsonFile()
+    const s = parseSchemeFile(data)
+    if (!s) {
+      push('warn', '无法识别', '所选文件不是方案 JSON（需含名称与 main/sms 参数）。', false)
       return
-    }
-    const d = data as Record<string, unknown>
-    if (typeof d.name !== 'string' || !d.name.trim()) {
-      push('warn', '无法识别', '方案缺少名称字段。', false)
-      return
-    }
-    const mk = (p: unknown, fb: SchemePart): SchemePart => {
-      const o = (p && typeof p === 'object' ? p as Record<string, unknown> : {}) as Record<string, unknown>
-      return {
-        baseUrl: typeof o.baseUrl === 'string' ? o.baseUrl : fb.baseUrl,
-        model: typeof o.model === 'string' ? o.model : fb.model,
-        temperature: typeof o.temperature === 'number' ? o.temperature : fb.temperature,
-        maxTokens: typeof o.maxTokens === 'number' ? o.maxTokens : fb.maxTokens,
-      }
-    }
-    const s: Scheme = {
-      id: crypto.randomUUID(),
-      name: d.name.trim(),
-      main: mk(d.main, { baseUrl: '', model: '', temperature: 0.7, maxTokens: 1500 }),
-      sms: mk(d.sms, { baseUrl: '', model: '', temperature: 0.7, maxTokens: 1500 }),
-      activeLoreIds: Array.isArray(d.activeLoreIds) ? (d.activeLoreIds as unknown[]).filter((x): x is string => typeof x === 'string') : [],
     }
     const next = [...schemes, s]
     setSchemes(next)
-    persistSchemes(next)
+    storeSchemes(next)
     push('success', '已导入方案', s.name, false)
   }
 
