@@ -64,8 +64,12 @@ export interface TerminalState {
   resume: () => void
   /** 行动开始 / 重置：清当前 run（手动槽保留），进入全新记录 */
   startNew: () => void
-  /** 终端连接：进入终端并直达终端设置（密钥仅运行时录入） */
+  /** 终端连接：进入设置专用界面（仅此一页 · 隐藏侧边栏；密钥仅运行时录入） */
   enterSettings: () => void
+  /** 设置专用界面态：只渲染终端设置一页（无侧边栏/无其他导航） */
+  setupMode: boolean
+  /** 从设置专用界面返回标题菜单 */
+  exitSetup: () => void
   /** 退出终端：回到指纹认证开屏 */
   exitToBoot: () => void
   /** 读档：写入第 i 槽快照后全量重挂载 */
@@ -157,6 +161,7 @@ const KEY = RUN_KEY
  */
 let sessionAuthed = false
 let sessionStage: 'title' | 'game' = 'title'
+let sessionSetup = false
 let pendingView: ViewId | null = null
 /** 重挂载后由 provider 首个 effect 弹一次的通知（重置/读档的落地反馈） */
 let pendingToast: { kind: ToastKind; title: string; body: string } | null = null
@@ -290,6 +295,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   // authed：同会话读档重挂载时经 sessionAuthed 跳过 Boot；冷启动仍回 false
   const [authed, setAuthed] = useState<boolean>(initial.authed || sessionAuthed)
   const [stage, setStageState] = useState<'title' | 'game'>(sessionStage)
+  const [setupMode, setSetupMode] = useState<boolean>(sessionSetup)
   const [unlocked, setUnlocked] = useState<boolean>(initial.unlocked)
   const [epDone, setEpDone] = useState<Record<string, true>>(initial.epDone)
   const [cur, setCur] = useState<string | null>(initial.cur)
@@ -390,6 +396,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   /** 行动继续：沿用当前进度进终端；无运行进度但有自动档 → 先读自动档 */
   const resume = useCallback(() => {
+    sessionSetup = false
+    setSetupMode(false)
     const a = readAutosave()
     if (!hasRunProgress() && a) {
       applySnapshot(a.snapshot)
@@ -407,6 +415,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     clearRunStorage()
     sessionAuthed = true
     sessionStage = 'game'
+    sessionSetup = false
+    setSetupMode(false)
     pendingView = 'plot'
     pendingToast = { kind: 'warn', title, body }
     requestRemount()
@@ -417,12 +427,27 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [hardReset])
 
   const enterSettings = useCallback(() => {
+    // 标题「终端连接」：进入仅含设置一页的设置专用界面（无侧边栏）
+    sessionSetup = true
+    setSetupMode(true)
     sessionStage = 'game'
     setStageState('game')
     setViewRaw('settings')
   }, [])
 
+  /** 设置专用界面 → 返回标题菜单 */
+  const exitSetup = useCallback(() => {
+    sessionSetup = false
+    setSetupMode(false)
+    sessionStage = 'title'
+    pendingView = null
+    setStageState('title')
+    setViewRaw('dashboard')
+  }, [])
+
   const exitToBoot = useCallback(() => {
+    sessionSetup = false
+    setSetupMode(false)
     sessionAuthed = false
     sessionStage = 'title'
     pendingView = null
@@ -442,6 +467,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       applySnapshot(slot.snapshot)
       sessionAuthed = true
       sessionStage = 'game'
+      sessionSetup = false
+      setSetupMode(false)
       pendingToast = { kind: 'success', title: '存档已读取', body: `载入「${slot.name}」。` }
       requestRemount()
     },
@@ -745,6 +772,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     resume,
     startNew,
     enterSettings,
+    setupMode,
+    exitSetup,
     exitToBoot,
     loadSlot,
     saveSlot,

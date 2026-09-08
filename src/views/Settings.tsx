@@ -108,7 +108,7 @@ const CH_META: Record<Channel, { title: string; kicker: string; hint: string; te
 const SUB_FIELD = { fontFamily: 'inherit', fontSize: 11.5, letterSpacing: 0.02, color: 'var(--ink-faint)', textTransform: 'none' } as const
 
 export function Settings() {
-  const { push, navigate } = useTerminal()
+  const { push, navigate, setupMode } = useTerminal()
   const [cfgs, setCfgs] = useState<Record<Channel, ApiSettings> | null>(null)
   const [eye, setEye] = useState<Record<Channel, boolean>>({ main: false, sms: false })
   const [busy, setBusy] = useState<Channel | null>(null)
@@ -556,9 +556,13 @@ export function Settings() {
           <div className="vhead__sub">双通道 AI 配置：主线剧情与角色短信彼此独立，可同可异。所有字段仅保存在本机浏览器，随时可清除。</div>
         </div>
         <div className="vhead__right">
-          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('tavern')}>
-            前往角色短信
-          </button>
+          {setupMode ? (
+            <span className="chip">连接配置 · 返回标题可继续</span>
+          ) : (
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('tavern')}>
+              前往角色短信
+            </button>
+          )}
         </div>
       </div>
 

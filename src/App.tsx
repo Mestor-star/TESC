@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk } from '@phosphor-icons/react'
+import { ArrowLeft, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -308,11 +308,38 @@ function Shell() {
   )
 }
 
+/** 标题「终端连接」进入的设置专用界面：只呈现终端设置一页（无侧边栏），顶部含返回标题按钮 */
+function SetupShell() {
+  const { exitSetup } = useTerminal()
+  return (
+    <div className={`${css.root} app--stage ${css.bootPop}`}>
+      <div className={css.main}>
+        <header className={css.topbar}>
+          <span className={css.tbTitleSlash} />
+          <span className={css.tbTitleEn}>SETUP / CHANNEL</span>
+          <span className={css.tbTitleCn}>终端连接 · 配置推演通道</span>
+          <div className={css.tbRight}>
+            <span className="muted tiny" style={{ letterSpacing: '0.06em' }}>仅此一页 · 侧边栏在进入终端后出现</span>
+            <button className="btn btn--amber" style={{ fontSize: 12 }} onClick={exitSetup} title="返回标题菜单">
+              <ArrowLeft size={14} weight="bold" /> 返回标题
+            </button>
+          </div>
+        </header>
+        <main className={css.screen}>
+          <Settings />
+        </main>
+      </div>
+      <ToastHost />
+    </div>
+  )
+}
+
 function Gate() {
-  const { authed, stage, enter } = useTerminal()
-  // 认证开屏 → 标题菜单 → 终端本体（读档/重置经 key 重挂载后按阶段直达）
+  const { authed, stage, setupMode, enter } = useTerminal()
+  // 认证开屏 → 标题菜单 → 终端本体 / 设置专用界面（读档/重置经 key 重挂载后按阶段直达）
   if (!authed) return <Boot onDone={enter} />
   if (stage !== 'game') return <TitleMenu />
+  if (setupMode) return <SetupShell />
   return <Shell />
 }
 

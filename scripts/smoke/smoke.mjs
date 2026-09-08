@@ -807,6 +807,24 @@ try {
   ok('K6 点亮后显示本体（noapusa / a Session.）', kAfter.name === true, 'name=' + kAfter.name)
   ok('K7 点亮后计数随之上调（实卡数增加）', kAfter.lit > kBefore.lit, 'lit ' + kBefore.lit + ' → ' + kAfter.lit)
 
+  /* ============ Phase L：标题「终端连接」→ 设置专用界面（无侧边栏）+ 返回标题按钮 ============ */
+  console.log('\n[Phase L] P9 标题「终端连接」：仅设置一页（无侧边栏）· 返回标题按钮回标题')
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'L boot screen')
+  const lr = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: lr.x, y: lr.y, button: 'left', clickCount: 1 })
+  await sleep(2200)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: lr.x, y: lr.y, button: 'left', clickCount: 1 })
+  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'L title menu')
+  await goto('终端连接')
+  await poll(`document.body.innerText.includes('返回标题') && !document.querySelector('[data-title="1"]')`, 15000, 'L setup shell mounts')
+  const setupProbe = await ev(`(()=>{const t=document.body.innerText;return {settings:t.includes('终端设置'),back:t.includes('返回标题'),rail:t.includes('Main System'),top:t.includes('配置推演通道'),titleLeft:!!document.querySelector('[data-title="1"]')}})()`)
+  ok('L1 终端连接 → 仅设置一页（含返回标题 · 无侧边栏 Main System）', setupProbe.settings === true && setupProbe.back === true && setupProbe.rail === false && setupProbe.top === true && setupProbe.titleLeft === false, JSON.stringify(setupProbe))
+  await goto('返回标题')
+  await poll(`!!document.querySelector('[data-title="1"]')`, 15000, 'L back to title')
+  const backProbe = await ev(`(()=>{const t=document.body.innerText;return {title:!!document.querySelector('[data-title="1"]'),gone:!t.includes('SETUP / CHANNEL')}})()`)
+  ok('L2 返回标题按钮 → 回到标题菜单', backProbe.title === true && backProbe.gone === true, JSON.stringify(backProbe))
+
 } catch (e) {
   passAll = false
   console.error('\nSMOKE ERROR: ' + e.message)
