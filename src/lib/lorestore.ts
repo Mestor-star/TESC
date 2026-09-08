@@ -1,10 +1,10 @@
 /* ============================================================
-   词条库 · 数据层门面
+   世界书 · 数据层门面
    ------------------------------------------------------------
    正面使用 tavernlike/database（Dexie 'zts-lore'）+ importer，
    向视图层暴露窄而稳的符号。绝不 export * from './tavernlike'
    （避免与 src/lib/api.ts 的 ApiSettings 撞名）。
-   密钥从不落本库：备份/整库导出只含词条库与激活标记。
+   密钥从不落本库：备份/整库导出只含世界书与激活标记。
    ============================================================ */
 
 import type { Lorebook, SillyTavernLorebookExport } from './tavernlike/types'
@@ -19,7 +19,7 @@ let activeCache: string[] | null = null
 
 /* ---------- 播种 ---------- */
 
-/** 幂等播种 canon 词条库（首次写库 + 记录种子版本；绝不覆盖既有 meta/用户库） */
+/** 幂等播种 canon 世界书（首次写库 + 记录种子版本；绝不覆盖既有 meta/用户库） */
 export async function ensureSeeded(): Promise<void> {
   const seeded = await db.metaGet(CANON_SEED_KEY)
   if (seeded) return
@@ -138,10 +138,10 @@ export async function backupAll(): Promise<LoreBackupFile> {
   return { kind: 'zts-lore-backup', v: 1, books, activeIds, exportedAt: Date.now() }
 }
 
-/** 恢复整库：先清空 zts-lore（词条库 + meta），再写入备份内容 */
+/** 恢复整库：先清空 zts-lore（世界书 + meta），再写入备份内容 */
 export async function restoreAll(data: LoreBackupFile): Promise<void> {
   if (!data || data.kind !== 'zts-lore-backup' || !Array.isArray(data.books)) {
-    throw new Error('不是有效的词条库备份文件')
+    throw new Error('不是有效的世界书备份文件')
   }
   await db.wipeDatabase()
   await db.bulkPutLorebooks(data.books)
@@ -151,7 +151,7 @@ export async function restoreAll(data: LoreBackupFile): Promise<void> {
   activeCache = null
 }
 
-/** 清空全部词条库数据（含种子版本标记）→ 下次挂载 ensureSeeded 自动重播 canon */
+/** 清空全部世界书数据（含种子版本标记）→ 下次挂载 ensureSeeded 自动重播 canon */
 export async function clearAll(): Promise<void> {
   await db.wipeDatabase()
   activeCache = null

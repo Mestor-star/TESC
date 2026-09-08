@@ -1,10 +1,10 @@
 /**
- * 词条库数据层（改编自 tavernlike v3 的 database.ts）
+ * 世界书数据层（改编自 tavernlike v3 的 database.ts）
  * ------------------------------------------------------------
  * 原版 DB 'SillyTavernWebDB' v3（lorebooks / presets / settings / chats）。
  * 本改编仅保留 cnm 需要的部分，并改用中性命名、中性数据库名：
  *   - DB 'zts-lore' v1
- *   - 表 lorebooks:'id, name, updatedAt'   —— 词条库
+ *   - 表 lorebooks:'id, name, updatedAt'   —— 世界书
  *   - 表 meta:'key'                        —— 轻量 KV（激活库 id 集、种子版本号等）
  * 去掉 presets / settings / chats 与上游默认方案播种；密钥仍只存在于
  * zts-terminal-store（api:main / api:sms），本库永不写入任何密钥。
@@ -75,7 +75,7 @@ export async function metaSet(key: string, value: unknown): Promise<void> {
   await getDatabase().meta.put({ key, value })
 }
 
-/** 删除整个 zts-lore 库并重置单例（用于「清空词条库」） */
+/** 删除整个 zts-lore 库并重置单例（用于「清空世界书」） */
 export async function wipeDatabase(): Promise<void> {
   if (dbInstance) {
     await dbInstance.delete()

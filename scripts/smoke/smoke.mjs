@@ -478,11 +478,11 @@ try {
   const logV11 = await plotLogText('v1-1')
   ok('E5 正文入库且标签/围栏已剥离', logV11.includes('【E1】') && !logV11.includes('<maintext>') && !logV11.includes('<vars>') && !logV11.includes('```'), logV11.slice(0, 80))
   ok('E6 收束记录 digest 来自 <vars>', (await recDigest('v1-1')).includes('E自动开场'), await recDigest('v1-1'))
-  // P3：词条库按钮 → 智库页（管理器整页内嵌），验证编辑层可开合（不保存）
-  await poll(`!!document.querySelector('button') && [...document.querySelectorAll('button')].some(b=>b.textContent.includes('词条库'))`, 15000, 'E lb btn')
-  const opened = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('词条库'));if(!b)return false;b.click();return true})()`)
-  await poll(`!!document.querySelector('[data-loremanager]') && document.body.innerText.includes('命中规则') && document.body.innerText.includes('词条库管理器')`, 15000, 'E lore manager embedded')
-  ok('E7 词条库按钮 → 智库页 · 管理器整页内嵌', opened === true, '')
+  // P3：世界书按钮 → 智库页（管理器整页内嵌），验证编辑层可开合（不保存）
+  await poll(`!!document.querySelector('button') && [...document.querySelectorAll('button')].some(b=>b.textContent.includes('世界书'))`, 15000, 'E lb btn')
+  const opened = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('世界书'));if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-loremanager]') && document.body.innerText.includes('命中规则') && document.body.innerText.includes('世界书管理器')`, 15000, 'E lore manager embedded')
+  ok('E7 世界书按钮 → 智库页 · 管理器整页内嵌', opened === true, '')
   await ev(clickTxt('浏览 / 编辑'))
   await poll(`document.body.innerText.includes('选择或新增一个词条')`, 10000, 'E lore editor open')
   await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('新增词条'));if(!b)return false;b.click();return true})()`)
@@ -500,13 +500,13 @@ try {
   const lunaRaw = await loreEntry('book-canon-char', '露娜')
   const lunaNeed = String((lunaRaw && lunaRaw.content) || '').replace(/\s+/g, ' ').trim().slice(0, 40)
   const sys1 = () => { const m = (eLast && eLast.messages || []).find((x) => x.role === 'system'); return String((m && m.content) || '') }
-  // req（v1-3）：叙述里带角色名 → 词条库命中注入（露娜档案）
+  // req（v1-3）：叙述里带角色名 → 世界书命中注入（露娜档案）
   await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3')
   await sleep(700)
   await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）露娜把半盒布丁推到他面前，尾音压得很低。')
   await waitSeq(3)
   await poll(`document.body.innerText.includes('上一回未解析到事件指令')`, 30000, 'E injection needDir')
-  ok('E10 命中注入：system 含词条库块与角色档案', sys1().includes('词条库 · 命中参考') && sys1().includes(lunaNeed), 'lunaNeed=' + lunaNeed.slice(0, 24))
+  ok('E10 命中注入：system 含世界书块与角色档案', sys1().includes('世界书 · 命中参考') && sys1().includes(lunaNeed), 'lunaNeed=' + lunaNeed.slice(0, 24))
   ok('E11 注入请求确为一次 · 无指令不误归档', eSeq === 3 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
 
   // req2：反剧透闸门。同一条消息同时带 已做(v1-2) 与 未做(v1-9) 的事件专名
@@ -542,10 +542,11 @@ try {
   await sleep(800)
   stNow = await state()
   ok('E19 从此重来只动日志不动世界', stNow.rec.length === 2 && stNow.rec.every((r) => r.mode === 'online'), JSON.stringify(stNow.rec))
-  const bodyE = await ev(`document.body.innerText`)
-  const banned = ['酒馆', '世界书', '预设', '应答酒馆', '客官', '开席', '点单', '上菜']
-  ok('E20 页面无禁用词', !banned.some((t) => bodyE.includes(t)), '')
-  ok('E21 页面无残留标签围栏', !bodyE.includes('<maintext>') && !bodyE.includes('<vars>') && !bodyE.includes('```json'), '')
+  // 只扫事件会话区（data-session-area）：页眉的「世界书」按钮等导航文案不算泄漏
+  const sessionBody = await ev(`(()=>{const el=document.querySelector('[data-session-area]');return el?el.innerText:document.body.innerText})()`)
+  const banned = ['酒馆', '预设', '应答酒馆', '客官', '开席', '点单', '上菜']
+  ok('E20 会话区无禁用词（酒馆风泄漏）', !banned.some((t) => sessionBody.includes(t)), '')
+  ok('E21 会话区无残留标签围栏', !sessionBody.includes('<maintext>') && !sessionBody.includes('<vars>') && !sessionBody.includes('```json'), '')
 
   // P5 流式中止：慢流挂起（正文已上屏、[DONE] 未到）→ 点「中断推演」
   // 断言已生成部分保留为正式消息、半截 <vars> 指令不落地、无标签/围栏泄漏
@@ -586,8 +587,8 @@ try {
   // Settings 视图挂载冒烟：防「首帧 effect 引用后置 const(TDZ)」类整页黑屏回归（曾致设置黑屏）
   await goto('终端设置')
   await sleep(900)
-  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('词条库数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,hasFetch:v?v.innerText.includes('拉取模型'):false,hasSt:v?v.innerText.includes('导入 ST 世界书'):false,hasPreset:v?v.innerText.includes('导入 ChatPreset'):false,len:v?v.innerText.length:0}})()`)
-  ok('F1 设置视图挂载无黑屏（词条库数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
+  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('世界书数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,hasFetch:v?v.innerText.includes('拉取模型'):false,hasSt:v?v.innerText.includes('导入 ST 世界书'):false,hasPreset:v?v.innerText.includes('导入 ChatPreset'):false,len:v?v.innerText.length:0}})()`)
+  ok('F1 设置视图挂载无黑屏（世界书数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
   ok('F2 P3 增强就位：拉取模型 / 导入 ST 世界书 / 导入 ChatPreset', setProbe.hasFetch === true && setProbe.hasSt === true && setProbe.hasPreset === true, JSON.stringify(setProbe))
 
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */

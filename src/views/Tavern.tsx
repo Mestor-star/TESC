@@ -190,7 +190,7 @@ export function Tavern() {
       setErr(null)
       setBusy(true)
 
-      // 词条库命中注入（仅放行已登记实体 / 已完成事件；失败静默）
+      // 世界书命中注入（仅放行已登记实体 / 已完成事件；失败静默）
       let loreBlock = ''
       try {
         const books = await loadActiveBooks()

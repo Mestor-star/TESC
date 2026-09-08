@@ -349,10 +349,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* 词条库：挂载时幂等播种 canon 库（惰性、失败静默、不阻塞渲染） */
+  /* 世界书：挂载时幂等播种 canon 库（惰性、失败静默、不阻塞渲染） */
   useEffect(() => {
     void ensureSeeded().catch(() => {
-      /* 隐私模式/IndexedDB 不可用时静默降级：词条库缺席不影响主线 */
+      /* 隐私模式/IndexedDB 不可用时静默降级：世界书缺席不影响主线 */
     })
   }, [])
 

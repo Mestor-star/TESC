@@ -1,5 +1,5 @@
 /* ============================================================
-   词条库管理器（双形态）
+   世界书管理器（双形态）
    ------------------------------------------------------------
    形态一  modal（缺省）  ：浮层式，由 剧情推进/智库 的按钮打开；
    形态二  embedded      ：作为智库页正文直接内嵌（整页自持管理）。
@@ -106,9 +106,9 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
     try {
       await store.setBookActive(id, on)
       const b = books.find((x) => x.id === id)
-      push('info', on ? '已启用词条库' : '已停用词条库', on ? `「${b?.name ?? ''}」命中即注入词条。` : `「${b?.name ?? ''}」不再参与命中。`, false)
+      push('info', on ? '已启用世界书' : '已停用世界书', on ? `「${b?.name ?? ''}」命中即注入词条。` : `「${b?.name ?? ''}」不再参与命中。`, false)
     } catch {
-      push('danger', '操作失败', '词条库启用状态未能保存。', false)
+      push('danger', '操作失败', '世界书启用状态未能保存。', false)
     }
     void refresh()
   }
@@ -124,7 +124,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
       const results = await store.importStLorebookMulti(inputs)
       const ok = results.filter((r) => r.book)
       const bad = results.filter((r) => r.error)
-      if (ok.length) push('success', '导入词条库', ok.map((r) => r.book?.name ?? '').filter(Boolean).join(' · '), false)
+      if (ok.length) push('success', '导入世界书', ok.map((r) => r.book?.name ?? '').filter(Boolean).join(' · '), false)
       if (bad.length) push('warn', '部分文件未识别', bad.map((r) => r.fileName).join('、'), false)
     } catch {
       push('danger', '导入失败', '读取文件时出错。', false)
@@ -137,10 +137,10 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
   /* —— 导出单个库 —— */
   const doExport = (b: Lorebook) => {
     try {
-      exportToJson(store.exportBookAsStJson(b), `${b.name || '词条库'}.json`)
-      push('success', '已导出', `${b.name || '词条库'} · 词条库 JSON`, false)
+      exportToJson(store.exportBookAsStJson(b), `${b.name || '世界书'}.json`)
+      push('success', '已导出', `${b.name || '世界书'} · 世界书 JSON`, false)
     } catch {
-      push('danger', '导出失败', '词条库导出未完成。', false)
+      push('danger', '导出失败', '世界书导出未完成。', false)
     }
   }
 
@@ -148,14 +148,14 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
   const doCreate = async () => {
     const n = newName.trim()
     if (!n) {
-      push('warn', '名称不能为空', '请为新词条库填一个名字。', false)
+      push('warn', '名称不能为空', '请为新世界书填一个名字。', false)
       return
     }
     const lb = createDefaultLorebook(n)
     await store.saveBook(lb)
     setNewName('')
     setCreating(false)
-    push('success', '已创建词条库', n, false)
+    push('success', '已创建世界书', n, false)
     void refresh()
   }
 
@@ -169,9 +169,9 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
     setConfirmDel(null)
     try {
       await store.deleteBook(id)
-      push('info', '已删除词条库', `${b?.name ?? ''}（若为内置种子，可在设置里清空后自动重建）`, false)
+      push('info', '已删除世界书', `${b?.name ?? ''}（若为内置种子，可在设置里清空后自动重建）`, false)
     } catch {
-      push('danger', '删除失败', '词条库未能删除。', false)
+      push('danger', '删除失败', '世界书未能删除。', false)
     }
     void refresh()
   }
@@ -190,15 +190,15 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
     if (!editBook) return
     const nm = editBook.name.trim()
     if (!nm) {
-      push('warn', '名称不能为空', '保存前请为词条库填一个名字。', false)
+      push('warn', '名称不能为空', '保存前请为世界书填一个名字。', false)
       return
     }
     try {
       await store.saveBook(editBook)
-      push('success', '已保存词条库', nm, false)
+      push('success', '已保存世界书', nm, false)
       exitEditor()
     } catch {
-      push('danger', '保存失败', '词条库未能保存。', false)
+      push('danger', '保存失败', '世界书未能保存。', false)
     }
     void refresh()
   }
@@ -246,11 +246,11 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
   /* ================= 列表视图 ================= */
   if (!editBook) {
     const list = (
-      <div className={`${css.panel} ${embedded ? '' : ''}`} style={panelStyle} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'} aria-label="词条库管理">
+      <div className={`${css.panel} ${embedded ? '' : ''}`} style={panelStyle} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'} aria-label="世界书管理">
         <div className={css.head}>
           <div>
-            <div className={css.kicker}>LOREFILE / MANAGER</div>
-            <b className={css.title}>词条库</b>
+            <div className={css.kicker}>WORLD INFO / MANAGER</div>
+            <b className={css.title}>世界书</b>
           </div>
           {listHeadActs(!!onClose)}
         </div>
@@ -259,7 +259,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
           <div className={css.createRow}>
             <input
               className="field"
-              placeholder="新词条库名称…"
+              placeholder="新世界书名称…"
               value={newName}
               autoFocus
               onChange={(e) => setNewName(e.target.value)}
@@ -279,12 +279,12 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
 
         <div className={css.body}>
           <div className={css.listHint}>
-            <span className="muted tiny">命中规则：词条关键词出现在操作员/剧情叙述或短信里即注入。内置 5 库由 canon 数据生成，内容只读建议；可按需停用或删除。</span>
+            <span className="muted tiny">命中规则：某条词条的关键词出现在操作员/剧情叙述或短信里即注入。内置 5 本世界书由 canon 数据生成，内容只读建议；可按需停用或删除。</span>
           </div>
           {books.length === 0 ? (
             <div className={css.empty}>
-              <b>还没有词条库</b>
-              <span>点「新建」从零建一个，或用「导入」读入外部 lorebook JSON。</span>
+              <b>还没有世界书</b>
+              <span>点「新建」从零建一本，或用「导入」读入外部世界书 JSON。</span>
             </div>
           ) : (
             <div className={css.list}>
@@ -302,7 +302,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
                       {isOn ? '启用' : '停用'}
                     </button>
                     <div className={css.rowMain}>
-                      <b>{b.name || '未命名词条库'}</b>
+                      <b>{b.name || '未命名世界书'}</b>
                       {b.description ? <span className="muted tiny">{b.description}</span> : null}
                     </div>
                     <span className={css.count}>{b.entries?.length ?? 0} 词条</span>
@@ -310,7 +310,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
                       <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => openEditor(b)}>
                         浏览 / 编辑
                       </button>
-                      <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => doExport(b)} title="导出为词条库 JSON">
+                      <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => doExport(b)} title="导出为世界书 JSON">
                         <Download size={12} weight="bold" />
                       </button>
                       <button
@@ -331,7 +331,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
 
         {onClose ? (
           <div className={css.foot}>
-            <span className="muted tiny">词条库数据与激活标记保存在本地（Dexie · zts-lore），不含任何接口密钥。</span>
+            <span className="muted tiny">世界书数据与激活标记保存在本地（Dexie · zts-lore），不含任何接口密钥。</span>
             <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={onClose}>
               完成
             </button>
@@ -346,14 +346,14 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
   const selected = editSel ? editBook.entries.find((e) => e.id === editSel) : null
 
   const edit = (
-    <div className={`${css.panel} ${css.wide}`} style={panelStyle} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'} aria-label="词条库编辑">
+    <div className={`${css.panel} ${css.wide}`} style={panelStyle} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'} aria-label="世界书编辑">
       <div className={css.head}>
         <button className={`btn btn--ghost ${css.iconBtn}`} onClick={exitEditor} aria-label="返回列表">
           <ArrowLeft size={16} weight="bold" />
         </button>
         <div style={{ minWidth: 0 }}>
-          <div className={css.kicker}>LOREBOOK / EDIT</div>
-          <input className={`${css.titleInput}`} value={editBook.name} onChange={(e) => patchBook({ name: e.target.value })} aria-label="词条库名称" />
+          <div className={css.kicker}>WORLD INFO / EDIT</div>
+          <input className={`${css.titleInput}`} value={editBook.name} onChange={(e) => patchBook({ name: e.target.value })} aria-label="世界书名称" />
         </div>
         <div className={css.headActs}>
           <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => void saveEdit()}>
@@ -402,7 +402,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
           {!selected ? (
             <div className={css.formEmpty}>
               <b>选择或新增一个词条</b>
-              <span>左侧点选词条以编辑关键词与内容；编辑后记得「保存」整个词条库。</span>
+              <span>左侧点选词条以编辑关键词与内容；编辑后记得「保存」整本世界书。</span>
             </div>
           ) : (
             <>

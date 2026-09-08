@@ -1,8 +1,8 @@
 /* ============================================================
-   词条库 · canon 种子 —— 把既有 canon 数据编译为开箱即用的词条库
+   世界书 · canon 种子 —— 把既有 canon 数据编译为开箱即用的世界书
    ------------------------------------------------------------
    纯函数、确定性 id：每次重建产出相同 id 的书与词条，重复播种
-   （bulkPut）幂等，绝不覆盖用户自建的词条库（不同 id 互不相干）。
+   （bulkPut）幂等，绝不覆盖用户自建的世界书（不同 id 互不相干）。
    内容一律取自 src/data 下的原文考据数据，不新增任何设定。
    反剧透靠词条 meta 标注（eventId / codexId）＋ lorescan 的闸门，
    不在本文件里做剧透判断。
@@ -88,7 +88,7 @@ function splitKeywords(...parts: Array<string | undefined>): string[] {
   return out
 }
 
-/* ---------- 词条库：角色档案 ---------- */
+/* ---------- 世界书：角色档案 ---------- */
 
 function charEntry(c: Character): LorebookEntry {
   const content = [
@@ -109,7 +109,7 @@ function buildCharBook(): Lorebook {
   return book('book-canon-char', '角色档案', '四名核心角色：按原文档案生成。命中角色名/称号时提供其设定参考。', CHARACTERS.map(charEntry))
 }
 
-/* ---------- 词条库：实体图鉴（登记过的才会放行，见 lorescan） ---------- */
+/* ---------- 世界书：实体图鉴（登记过的才会放行，见 lorescan） ---------- */
 
 function codexEntry(e: EndEntry): LorebookEntry {
   const content = [
@@ -132,7 +132,7 @@ function buildCodexBook(): Lorebook {
   return book('book-canon-codex', '实体图鉴', '已登记进终末图鉴的实体（仅遭遇登记过的会被放行，避免剧透）。', CODEX.map(codexEntry))
 }
 
-/* ---------- 词条库：世界 · 势力 · 概念 ---------- */
+/* ---------- 世界书：世界 · 势力 · 概念 ---------- */
 
 function loreEntry(e: LoreEntry): LorebookEntry {
   const content = [`${e.title}（${e.cat} · ${e.sub || ''}）`.trim(), e.body, e.ref ? `出处：${e.ref}` : ''].join('\n')
@@ -149,7 +149,7 @@ function buildLoreBook(): Lorebook {
   return book('book-canon-lore', '世界 · 势力 · 概念', '智库条目：世界观/势力/概念的背景参考。', LORE.map(loreEntry))
 }
 
-/* ---------- 词条库：事件回顾（已完成/当前事件才会放行，见 lorescan） ---------- */
+/* ---------- 世界书：事件回顾（已完成/当前事件才会放行，见 lorescan） ---------- */
 
 function evTitleKeys(title: string): string[] {
   // 取标题里较有辨识度的段（去掉卷副题与泛用词），最多 5 段
@@ -182,7 +182,7 @@ function buildEventBook(): Lorebook {
   )
 }
 
-/* ---------- 词条库：登场者登记 ---------- */
+/* ---------- 世界书：登场者登记 ---------- */
 
 function sidecastEntry(s: SideCastEntry): LorebookEntry {
   const content = [
@@ -204,7 +204,7 @@ function buildSidecastBook(): Lorebook {
   return book('book-canon-sidecast', '登场者登记', '协力者/敌对者/重要他人（默认不激活）。', SIDECAST.map(sidecastEntry))
 }
 
-/** 全部 canon 种子词条库 */
+/** 全部 canon 种子世界书 */
 export function buildCanonLorebooks(): Lorebook[] {
   return [buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook(), buildSidecastBook()]
 }

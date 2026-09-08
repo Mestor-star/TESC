@@ -456,7 +456,7 @@ export interface DirectorCtx {
   flags?: Record<string, FlagValue> | null
   /** 是否处于「重试补发指令」：要求本回合必须带指令块 */
   needDirective?: boolean
-  /** 词条库命中参考段（由 lorescan 生成；置顶在指令说明之前，仅作延续性背景） */
+  /** 世界书命中参考段（由 lorescan 生成；置顶在指令说明之前，仅作延续性背景） */
   loreContext?: string
 }
 

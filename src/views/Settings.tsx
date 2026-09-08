@@ -11,7 +11,7 @@ import type { SillyTavernLorebookExport } from '../lib/tavernlike/types'
 
 import css from './Settings.module.css'
 
-/* —— 轻量「方案」：通道参数 + 激活词条库（不含密钥），存 localStorage —— */
+/* —— 轻量「方案」：通道参数 + 激活世界书（不含密钥），存 localStorage —— */
 
 interface SchemePart { baseUrl: string; model: string; temperature: number }
 interface Scheme {
@@ -304,15 +304,15 @@ export function Settings() {
     push('success', '已导入并应用 ChatPreset', `${name} · ${model}`, false)
   }
 
-  /* ============ 词条库数据管理 + 方案 ============ */
+  /* ============ 世界书数据管理 + 方案 ============ */
 
   const doExportLore = async () => {
     try {
       const backup = await lore.backupAll()
       exportToJson(backup, 'zts-lore-backup.json')
-      push('success', '已导出备份', '词条库整库备份已下载（不含接口密钥）。', false)
+      push('success', '已导出备份', '世界书整库备份已下载（不含接口密钥）。', false)
     } catch {
-      push('danger', '导出失败', '词条库备份未能生成。', false)
+      push('danger', '导出失败', '世界书备份未能生成。', false)
     }
   }
 
@@ -321,12 +321,12 @@ export function Settings() {
     setConfirmAct(null)
     const data = await readOneJson()
     if (!data || (data as { kind?: unknown }).kind !== 'zts-lore-backup') {
-      push('warn', '无法识别', '请选择此前导出的「词条库整库备份」。', false)
+      push('warn', '无法识别', '请选择此前导出的「世界书整库备份」。', false)
       return
     }
     try {
       await lore.restoreAll(data as lore.LoreBackupFile)
-      push('success', '已恢复词条库', '备份内容已覆盖词条库与启用标记。', false)
+      push('success', '已恢复世界书', '备份内容已覆盖世界书与启用标记。', false)
     } catch (e) {
       push('danger', '恢复失败', e instanceof Error ? e.message : String(e), false)
     }
@@ -338,9 +338,9 @@ export function Settings() {
     setConfirmAct(null)
     try {
       await lore.clearAll()
-      push('info', '已清空词条库', '下次打开剧情推进会重新生成内置 canon 词条库。', false)
+      push('info', '已清空世界书', '下次打开剧情推进会重新生成内置 canon 世界书。', false)
     } catch {
-      push('danger', '清空失败', '词条库未能清空。', false)
+      push('danger', '清空失败', '世界书未能清空。', false)
     }
     void refreshLoreInfo()
   }
@@ -374,7 +374,7 @@ export function Settings() {
     const want = new Set(s.activeLoreIds)
     for (const id of curIds) if (!want.has(id)) await lore.setBookActive(id, false)
     for (const id of s.activeLoreIds) if (!curIds.includes(id)) await lore.setBookActive(id, true)
-    push('success', '已应用方案', `${s.name} · 两通道参数与词条库启用已套用`, false)
+    push('success', '已应用方案', `${s.name} · 两通道参数与世界书启用已套用`, false)
     void refreshLoreInfo()
   }
 
@@ -567,21 +567,21 @@ export function Settings() {
         {card('sms')}
       </div>
 
-      {/* 词条库数据管理与方案 */}
+      {/* 世界书数据管理与方案 */}
       <section className="panel" style={{ marginBottom: 16 }}>
         <div className="panel__head">
-          <span className="panel__title"><Database size={15} weight="bold" /> 词条库数据管理</span>
-          <span className="muted tiny" style={{ marginLeft: 'auto' }}>LOREFILE / LOCAL</span>
+          <span className="panel__title"><Database size={15} weight="bold" /> 世界书数据管理</span>
+          <span className="muted tiny" style={{ marginLeft: 'auto' }}>WORLD INFO / LOCAL</span>
         </div>
         <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className={css.note}>
-            <b>词条库与「方案」仅存本机，绝不包含密钥。</b><br />
-            词条库（Dexie · zts-lore）存有从 canon 生成的种子库与你导入/编辑的内容，可整库导出一份备份 JSON；
-            备份不含接口密钥（密钥在 api:main / api:sms，也不会被写进任何文件）。导入会覆盖当前词条库与启用标记。
+            <b>世界书与「方案」仅存本机，绝不包含密钥。</b><br />
+            世界书（Dexie · zts-lore）存有从 canon 生成的种子书与你导入/编辑的内容，可整库导出一份备份 JSON；
+            备份不含接口密钥（密钥在 api:main / api:sms，也不会被写进任何文件）。导入会覆盖当前世界书与启用标记。
           </div>
 
           <div className={css.dataLine}>
-            <span className="chip">词条库 {loreInfo.books >= 0 ? loreInfo.books : '…'}</span>
+            <span className="chip">世界书 {loreInfo.books >= 0 ? loreInfo.books : '…'}</span>
             <span className="chip">启用 {loreInfo.active >= 0 ? loreInfo.active : '…'}</span>
             <span className={css.grow} />
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => void doExportLore()}>
@@ -602,21 +602,21 @@ export function Settings() {
               style={{ fontSize: 12 }}
               onClick={() => void doClearLore()}
             >
-              <Trash size={14} weight="bold" /> {confirmAct === 'clear' ? '再次点击确认清空' : '清空词条库'}
+              <Trash size={14} weight="bold" /> {confirmAct === 'clear' ? '再次点击确认清空' : '清空世界书'}
             </button>
           </div>
 
           {confirmAct ? (
             <div className={css.confirmNote}>
               {confirmAct === 'restore'
-                ? '导入会覆盖当前全部词条库与启用标记，不可撤销。'
-                : '清空会删除全部词条库（含你导入的），下次打开剧情推进会重建内置 canon 库。'}
+                ? '导入会覆盖当前全部世界书与启用标记，不可撤销。'
+                : '清空会删除全部世界书（含你导入的），下次打开剧情推进会重建内置 canon 世界书。'}
             </div>
           ) : null}
 
           <div className={css.schemeBox}>
             <div className={css.schemeHead}>
-              <b className="muted tiny" style={{ letterSpacing: '0.12em' }}>方案（不含密钥 · 通道参数 + 激活词条库）</b>
+              <b className="muted tiny" style={{ letterSpacing: '0.12em' }}>方案（不含密钥 · 通道参数 + 激活世界书）</b>
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
                 <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 10px' }} onClick={() => void importChatPreset()} title="导入 ST ChatPreset（data.settings.openai_model/temp_openai 映射为方案并套用）">
                   <UploadSimple size={13} weight="bold" /> 导入 ChatPreset
@@ -651,7 +651,7 @@ export function Settings() {
                       <div className={css.schemeMain}>
                         <b>{s.name}</b>
                         <span className="muted tiny">
-                          主线 {chip(s.main)} ｜ 短信 {chip(s.sms)} ｜ 启用词条库 {s.activeLoreIds.length}
+                          主线 {chip(s.main)} ｜ 短信 {chip(s.sms)} ｜ 启用世界书 {s.activeLoreIds.length}
                         </span>
                       </div>
                       <div className={css.rowActs} onClick={(e) => e.stopPropagation()}>

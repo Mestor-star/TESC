@@ -42,20 +42,20 @@ export function Lore() {
           <div className="vhead__kicker">DATA / THINK TANK</div>
           <h1>智库</h1>
           <div className="vhead__sub">
-            本页即词条库管理器：上方管理与编辑你的词条库（启用命中 / 浏览编辑 / 新建 / 删除 / 导入 / 导出）；
-            下方为内置 canon 词条的只读速览，共 {LORE.length} 条，亦已并入可编辑的内置词条库。
+            本页即世界书管理器：上方管理与编辑你的世界书（启用命中 / 浏览编辑 / 新建 / 删除 / 导入 / 导出）；
+            下方为内置 canon 词条的只读速览，共 {LORE.length} 条，亦已并入可编辑的内置世界书。
           </div>
         </div>
         <div className="vhead__right">
           <span className="chip">canon 词条 {LORE.length}</span>
-          <span className="chip">管理器 · 词条库启停</span>
+          <span className="chip">管理器 · 世界书启停</span>
         </div>
       </div>
 
-      {/* 词条库管理器（整页内嵌） */}
+      {/* 世界书管理器（整页内嵌） */}
       <div style={{ ...secHead, marginTop: 0 }}>
-        <span style={secKicker}>LOREFILE / MANAGER</span>
-        <h2 style={secTitle}>词条库管理器</h2>
+        <span style={secKicker}>WORLDINFO / MANAGER</span>
+        <h2 style={secTitle}>世界书管理器</h2>
         <span className="chip chip--warn" style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>
           密级 · 委员会内部
         </span>
@@ -67,7 +67,7 @@ export function Lore() {
         <span style={secKicker}>CANON / OVERVIEW</span>
         <h2 style={secTitle}>内置 canon 词条 · 速览</h2>
         <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
-          只读陈列 · 内容编辑请在上方词条库管理器
+          只读陈列 · 内容编辑请在上方世界书管理器
         </span>
       </div>
 

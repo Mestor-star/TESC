@@ -1,5 +1,5 @@
 /* ============================================================
-   词条库 · 扫描闸门 + 上下文拼块
+   世界书 · 扫描闸门 + 上下文拼块
    ------------------------------------------------------------
    反剧透的「单点闸门」就在本文件：把命中词条在格式化成块
    **之前**按 gate 过滤。词条的 meta 标注约定：
@@ -61,11 +61,11 @@ export interface LoreContextOpts {
   maxChars?: number
 }
 
-const LABEL_HEAD = '【词条库 · 命中参考】'
+const LABEL_HEAD = '【世界书 · 命中参考】'
 const LABEL_TAIL = '（仅作延续性背景，与本段事件大纲冲突时以大纲为准）'
 
 /**
- * 对激活词条库做一次有界扫描 → 命中块文本（或 ''）。
+ * 对激活世界书做一次有界扫描 → 命中块文本（或 ''）。
  * 排序：关键词命中的按 order 升序在前；constant 词条排最后（最多补位）。
  */
 export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): string {
@@ -122,7 +122,7 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
   return parts.join('\n')
 }
 
-/** 词条库摘要：id → { name, count, active }（供头部 chip 与管理器列表） */
+/** 世界书摘要：id → { name, count, active }（供头部 chip 与管理器列表） */
 export interface LorebookSummary {
   id: string
   name: string
@@ -135,7 +135,7 @@ export function summarizeBooks(books: Lorebook[], activeIds: string[]): Lorebook
   const active = new Set(activeIds)
   return books.map((b) => ({
     id: b.id,
-    name: b.name || '未命名词条库',
+    name: b.name || '未命名世界书',
     description: b.description,
     count: b.entries?.length ?? 0,
     active: active.has(b.id),

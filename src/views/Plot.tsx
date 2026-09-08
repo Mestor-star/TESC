@@ -183,7 +183,7 @@ export function Plot() {
       setBusy(true)
       setErr(null)
 
-      // 词条库命中注入（仅就绪在线；失败静默，主线不受影响）
+      // 世界书命中注入（仅就绪在线；失败静默，主线不受影响）
       let loreBlock = ''
       try {
         const books = await loadActiveBooks()
@@ -604,8 +604,8 @@ export function Plot() {
           <span className={showOnline ? 'chip chip--on' : 'chip chip--warn'}>
             <span className="chip__dot" /> {modelChip}
           </span>
-          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('lore')} title="词条库：智库页管理命中词条与启用开关">
-            词条库
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('lore')} title="世界书：智库页管理命中词条与启用开关">
+            世界书
           </button>
           <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
             前往设置
@@ -654,7 +654,7 @@ export function Plot() {
       </div>
 
       <div className={css.layout}>
-        <section className="panel">
+        <section className="panel" data-session-area="1">
           <div className="panel__head">
             <span className="panel__title">事件会话 <span className="slash" /></span>
             {showOnline ? (

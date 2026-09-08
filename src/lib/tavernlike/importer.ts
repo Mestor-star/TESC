@@ -82,7 +82,7 @@ export function importLorebook(data: SillyTavernLorebookExport): Omit<Lorebook, 
     }));
 
   return {
-    name: data.name || '导入的词条库',
+    name: data.name || '导入的世界书',
     description: data.description,
     entries,
     recursiveScanning: data.settings?.recursive_scanning ?? false,
