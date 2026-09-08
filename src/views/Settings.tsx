@@ -276,12 +276,53 @@ export function Settings() {
       return
     }
     const d = data as Record<string, unknown>
-    const settings = (d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings) ? d.settings : {}) as Record<string, unknown>
-    const model = typeof settings.openai_model === 'string' ? settings.openai_model.trim() : ''
-    const temp = typeof settings.temp_openai === 'number' ? settings.temp_openai : 0.8
+    // 现行酒馆 ChatCompletion 预设的文件结构有两类：顶层即设置对象，或包一层 settings
+    // （ChatCompletionPresets 分享包还会再包一层 data.settings）。这里两级都扫。
+    const settingsRaw =
+      (d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings)
+        ? d.settings
+        : (d.data && typeof d.data === 'object' && !Array.isArray(d.data) ? (d.data as Record<string, unknown>).settings : null)) ?? {}
+    const settings = (settingsRaw && typeof settingsRaw === 'object' && !Array.isArray(settingsRaw) ? settingsRaw : {}) as Record<string, unknown>
+    // 各家酒馆 API 的模型字段随通道而别：优先 oai_model/openai_model，再兜 *_model 通配；
+    // 温度多为 temp_openai，其次 temperature / temp。
+    const MODEL_KEYS = ['oai_model', 'openai_model', 'claude_model', 'anthropic_model']
+    const TEMP_KEYS = ['temp_openai', 'temperature', 'temp']
+
+    const pickFrom = (src: Record<string, unknown>) => {
+      const mKey = MODEL_KEYS.find((k) => typeof src[k] === 'string' && (src[k] as string).trim().length > 0)
+        ?? Object.keys(src).find((k) => /_model$/i.test(k) && typeof src[k] === 'string' && (src[k] as string).trim().length > 0)
+        ?? (typeof src.model === 'string' && src.model.trim() ? 'model' : undefined)
+      const tKey = TEMP_KEYS.find((k) => typeof src[k] === 'number')
+      return {
+        model: mKey ? (src[mKey] as string).trim() : '',
+        temp: tKey ? (src[tKey] as number) : null,
+        modelKey: mKey ?? null,
+      }
+    }
+    let pf = pickFrom(settings)
+    if (!pf.model) pf = pickFrom(d)
+    let model = pf.model
+    const temp = pf.temp ?? 0.8
+    let note = pf.modelKey ? (MODEL_KEYS.includes(pf.modelKey) ? '' : `读自 ${pf.modelKey}`) : ''
+
     if (!model) {
-      push('warn', '预设缺模型', 'ChatPreset 未含 openai_model 字段，无法导入。', false)
-      return
+      // 确属预设（含采样器键）但没带模型名 → 沿用当前通道模型，仅应用温度等参数（同酒馆“导入即套用”语义）
+      const samplerish = Object.keys(settings).some((k) => /^(top_p|top_k|rep_pen|min_p|presence_penalty|frequency_penalty|stream_|temp|temperature)/i.test(k))
+        || Object.keys(d).some((k) => /^(top_p|top_k|rep_pen|temp|temperature|stream_)/i.test(k))
+      const curModel = cfgs.main.model.trim() || cfgs.sms.model.trim()
+      if (samplerish && curModel) {
+        model = curModel
+        note = '预设未含模型名，已沿用当前通道模型'
+      } else {
+        const isLorebook = Array.isArray(d.entries)
+          || (d.data && typeof d.data === 'object' && !Array.isArray(d.data) && Array.isArray((d.data as Record<string, unknown>).entries))
+        const keysShown = (Object.keys(settings).length ? Object.keys(settings) : Object.keys(d)).slice(0, 8).join('、')
+        const hint = isLorebook
+          ? '这份是酒馆世界书（world info，含 entries）——请改用上方「导入 ST 世界书」，而不是 ChatPreset。'
+          : `未找到模型名。文件键：${keysShown || '（空对象）'}；可识别 ${MODEL_KEYS.join(' / ')} 或以 _model 结尾的字段。`
+        push('warn', '无法识别为 ChatPreset', hint, false)
+        return
+      }
     }
     const name = typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `ChatPreset · ${model}`
     const actIds = await lore.getActiveLorebookIds()
@@ -303,7 +344,7 @@ export function Settings() {
     try {
       await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
     } catch { /* 写入失败时本次会话内仍生效 */ }
-    push('success', '已导入并应用 ChatPreset', `${name} · ${model}`, false)
+    push('success', '已导入并应用 ChatPreset', `${name} · ${model}${note ? `（${note}）` : ''}`, false)
   }
 
   /* ============ 世界书数据管理 + 方案 ============ */
