@@ -13,7 +13,7 @@ import css from './Settings.module.css'
 
 /* —— 轻量「方案」：通道参数 + 激活世界书（不含密钥），存 localStorage —— */
 
-interface SchemePart { baseUrl: string; model: string; temperature: number }
+interface SchemePart { baseUrl: string; model: string; temperature: number; maxTokens: number }
 interface Scheme {
   id: string
   name: string
@@ -43,7 +43,7 @@ function persistSchemes(list: Scheme[]): void {
 }
 
 function schemePart(cfg: ApiSettings): SchemePart {
-  return { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature }
+  return { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature, maxTokens: cfg.maxTokens }
 }
 
 /** 读取单个本地 .json 文件（返回解析值；非 JSON 时为 null） */
@@ -302,8 +302,16 @@ export function Settings() {
     let pf = pickFrom(settings)
     if (!pf.model) pf = pickFrom(d)
     let model = pf.model
-    const temp = pf.temp ?? 0.8
+    const temp = pf.temp ?? cfgs.main.temperature ?? 0.8
     let note = pf.modelKey ? (MODEL_KEYS.includes(pf.modelKey) ? '' : `读自 ${pf.modelKey}`) : ''
+    // 现行酒馆预设常带 openai_max_tokens：一并映射到本应用的「输出预算」（max_tokens）
+    const budgetKey = (['openai_max_tokens', 'oai_max_tokens', 'max_tokens'] as const)
+      .find((k) => typeof settings[k] === 'number' || typeof d[k] === 'number')
+    const rawBudget = budgetKey ? (typeof settings[budgetKey] === 'number' ? settings[budgetKey] : d[budgetKey]) as number : NaN
+    const maxTokens = Number.isFinite(rawBudget) && rawBudget > 0
+      ? Math.max(256, Math.min(64000, Math.round(rawBudget)))
+      : (cfgs.main.maxTokens || cfgs.sms.maxTokens || 1500)
+    const budgetNote = Number.isFinite(rawBudget) && rawBudget > 0 ? `输出预算 ${maxTokens}` : ''
 
     if (!model) {
       // 确属预设（含采样器键）但没带模型名 → 沿用当前通道模型，仅应用温度等参数（同酒馆“导入即套用”语义）
@@ -329,8 +337,8 @@ export function Settings() {
     const s: Scheme = {
       id: crypto.randomUUID(),
       name,
-      main: { baseUrl: cfgs.main.baseUrl, model, temperature: temp },
-      sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp },
+      main: { baseUrl: cfgs.main.baseUrl, model, temperature: temp, maxTokens },
+      sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp, maxTokens },
       activeLoreIds: actIds,
     }
     const next = [...schemes, s]
@@ -338,13 +346,14 @@ export function Settings() {
     persistSchemes(next)
     setSchemeSel(s.id)
     // 直接套用两通道（密钥留 IndexedDB，baseUrl 不变）
-    const nextMain = { ...cfgs.main, model, temperature: temp }
-    const nextSms = { ...cfgs.sms, model, temperature: temp }
+    const nextMain = { ...cfgs.main, model, temperature: temp, maxTokens }
+    const nextSms = { ...cfgs.sms, model, temperature: temp, maxTokens }
     setCfgs({ main: nextMain, sms: nextSms })
     try {
       await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
     } catch { /* 写入失败时本次会话内仍生效 */ }
-    push('success', '已导入并应用 ChatPreset', `${name} · ${model}${note ? `（${note}）` : ''}`, false)
+    const parts = [note, budgetNote].filter(Boolean).join(' · ')
+    push('success', '已导入并应用 ChatPreset', `${name} · ${model}${parts ? `（${parts}）` : ''}`, false)
   }
 
   /* ============ 世界书数据管理 + 方案 ============ */
@@ -407,8 +416,8 @@ export function Settings() {
 
   const applyScheme = async (s: Scheme) => {
     if (!cfgs) return
-    const nextMain = { ...cfgs.main, baseUrl: s.main.baseUrl, model: s.main.model, temperature: s.main.temperature }
-    const nextSms = { ...cfgs.sms, baseUrl: s.sms.baseUrl, model: s.sms.model, temperature: s.sms.temperature }
+    const nextMain = { ...cfgs.main, baseUrl: s.main.baseUrl, model: s.main.model, temperature: s.main.temperature, maxTokens: s.main.maxTokens ?? cfgs.main.maxTokens ?? 1500 }
+    const nextSms = { ...cfgs.sms, baseUrl: s.sms.baseUrl, model: s.sms.model, temperature: s.sms.temperature, maxTokens: s.sms.maxTokens ?? cfgs.sms.maxTokens ?? 1500 }
     setCfgs({ main: nextMain, sms: nextSms })
     try {
       await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
@@ -451,13 +460,14 @@ export function Settings() {
         baseUrl: typeof o.baseUrl === 'string' ? o.baseUrl : fb.baseUrl,
         model: typeof o.model === 'string' ? o.model : fb.model,
         temperature: typeof o.temperature === 'number' ? o.temperature : fb.temperature,
+        maxTokens: typeof o.maxTokens === 'number' ? o.maxTokens : fb.maxTokens,
       }
     }
     const s: Scheme = {
       id: crypto.randomUUID(),
       name: d.name.trim(),
-      main: mk(d.main, { baseUrl: '', model: '', temperature: 0.7 }),
-      sms: mk(d.sms, { baseUrl: '', model: '', temperature: 0.7 }),
+      main: mk(d.main, { baseUrl: '', model: '', temperature: 0.7, maxTokens: 1500 }),
+      sms: mk(d.sms, { baseUrl: '', model: '', temperature: 0.7, maxTokens: 1500 }),
       activeLoreIds: Array.isArray(d.activeLoreIds) ? (d.activeLoreIds as unknown[]).filter((x): x is string => typeof x === 'string') : [],
     }
     const next = [...schemes, s]
