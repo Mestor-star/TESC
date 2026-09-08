@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
 import { SIDECAST } from '../data/sidecast'
-import type { SideCastEntry } from '../data/sidecast'
+import { ROSTER_GROUPS, SIDE_AXIS, SIDE_TRAIT } from '../data/roster'
 import { bondName } from '../lib/format'
 import type { Character, CharacterStat } from '../data/types'
 
@@ -26,10 +26,135 @@ function statOf(c: Character, key: string): number {
   return s ? s.value : 0
 }
 
+/** 每组所属的原貌介绍（仅复述三学园系谱与原文定位，不新造设定） */
+const GROUP_NOTE: Record<string, string> = {
+  ao: '「弹痕」的摇篮。以石像「弹痕的天使」授予的反现实武装闻名；主角所属的光明会 · 突击队与学生中枢皆在此园。',
+  kaus: '持「斩击」的武斗学院。由学生会组织评议会[The Council] 统领，精锐「黑锤部队[Écraseurs]」名震弗尔克图斯。',
+  corp: '持「片羽」的资本都市学园。以商业与学生自治著称，学生会长麾下统率学园内部警察——企业警备队。',
+  out: '弗尔克图斯之外的来客与无名者——黑手党干部、异次元的访客、心叶故乡的人们。',
+}
+
+/** 非主役登场者的登记主题色（按登场顺序取用） */
+const SIDE_PALETTE = [
+  '#8fd8ff', '#ffb454', '#54d2a0', '#ff7a9b', '#c9b2ff',
+  '#f0a35e', '#5fe6c8', '#ff5d73', '#9fd0ff', '#e2d27c',
+  '#b48cff', '#6fe0e0', '#ff9a8a', '#a7e06f',
+]
+
+/* ---------------- 统一档案行 ---------------- */
+interface Row {
+  kind: 'core' | 'side'
+  id: string
+  groupKey: string
+  groupLabel: string
+  kicker: string      // 顶部小字（终端编号 / 登场卷）
+  name: string
+  alias: string       // 呼号/昵称（主役 = 定位；登场者 = 昵称）
+  epithet: string     // 称号行
+  division: string    // 所属
+  trait: string       // 弹痕 / 片羽 / 斩击 / 特性
+  potential: string   // 终末潜力
+  state: string       // 状态 / 出场
+  quote: string
+  bio: string
+  axis: number[]      // 与 AXIS_ORDER 对齐的五轴值
+  hue: string
+  sigil: string
+  stationNote?: string
+  page?: string
+}
+
+function buildRows(): Row[] {
+  const core = new Map(CHARACTERS.map((c) => [c.id, c]))
+  const side = new Map(SIDECAST.map((e) => [e.id, e]))
+  const sideIndex = new Map(SIDECAST.map((e, i) => [e.id, i]))
+
+  const rows: Row[] = []
+  for (const g of ROSTER_GROUPS) {
+    for (const id of g.ids) {
+      const c = core.get(id)
+      if (c) {
+        rows.push({
+          kind: 'core',
+          id: c.id,
+          groupKey: g.key,
+          groupLabel: g.label,
+          kicker: `${c.no} · ${c.callsign}`,
+          name: c.name,
+          alias: c.role,
+          epithet: c.epithet,
+          division: c.division,
+          trait: c.scar,
+          potential: c.potential,
+          state: c.station,
+          quote: c.quote,
+          bio: c.bio,
+          axis: AXIS_ORDER.map((k) => statOf(c, k)),
+          hue: c.hue,
+          sigil: c.sigil,
+          stationNote: c.stationNote,
+        })
+        continue
+      }
+      const e = side.get(id)
+      if (e) {
+        const idx = sideIndex.get(id) ?? 0
+        const hue = SIDE_PALETTE[idx % SIDE_PALETTE.length]
+        rows.push({
+          kind: 'side',
+          id: e.id,
+          groupKey: g.key,
+          groupLabel: g.label,
+          kicker: `${e.volLabel} · 登场登记`,
+          name: e.name,
+          alias: e.alias,
+          epithet: e.role,
+          division: g.label,
+          trait: SIDE_TRAIT[id] ?? '—',
+          potential: '—',
+          state: `第 ${e.vol} 卷 · 登场`,
+          quote: e.quote,
+          bio: e.desc,
+          axis: SIDE_AXIS[id] ?? [0, 0, 0, 0, 0],
+          hue,
+          sigil: e.name.slice(0, 1),
+          page: e.page,
+        })
+      }
+    }
+  }
+  return rows
+}
+
+function Meters({ row }: { row: Row }) {
+  return (
+    <>
+      {AXIS_ORDER.map((k, i) => {
+        const v = row.axis[i] ?? 0
+        return (
+          <div key={k} className={css.stat}>
+            <small>{k}</small>
+            <div className="meter">
+              <div
+                className="meter__fill"
+                style={{ width: `${v}%`, background: `linear-gradient(90deg, ${row.hue}66, ${row.hue})` }}
+              />
+            </div>
+            <span className="num">{v}</span>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 export function Archive() {
   const { operatorName, bondNow, push } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
-  const focus = CHARACTERS.find((c) => c.id === openId) ?? null
+
+  const rows = useMemo(buildRows, [])
+  const focus = rows.find((r) => r.id === openId) ?? null
+  const focusBond = focus && focus.kind === 'core' ? bondNow(focus.id) : null
   const name = operatorName.trim() ? operatorName : '低语者'
 
   return (
@@ -39,13 +164,14 @@ export function Archive() {
           <div className="vhead__kicker">DATA / ARCHIVE</div>
           <h1>角色档案</h1>
           <div className="vhead__sub">
-            苍之学园体验入学者的个人档案。能力参数以委员会状态模拟五轴评定：
-            破坏力 · 敏捷度 · 物理抗性 · 反现实亲和 · 意志力。羁绊值随时间线逐段事件而变化。
+            委员会全量角色档案：主役与其余登场者并置同一名册，按学院／所属归组，格式一致。
+            能力参数以委员会状态模拟五轴评定——破坏力 · 敏捷度 · 物理抗性 · 反现实亲和 · 意志力；
+            其余登场者数值为终端近似评定。羁绊值随时间线逐段事件而变化。
           </div>
         </div>
         <div className="vhead__right">
-          <span className="chip chip--warn">参数为终端内模拟值</span>
-          <span className="chip">档案随事件解锁</span>
+          <span className="chip chip--warn">登场者五轴为近似评定</span>
+          <span className="chip">全员档案 · 按所属归组</span>
         </div>
       </div>
 
@@ -86,63 +212,73 @@ export function Archive() {
         </div>
       </div>
 
-      {/* 成员卡片 */}
-      <div className={css.cards}>
-        {CHARACTERS.map((c) => {
-          const bond = bondNow(c.id)
-          return (
-            <article key={c.id} className={css.card} style={{ '--c': c.hue } as CSSProperties}>
-              <div className={css.cardHead}>
-                <span className="glyph" style={{ '--g': c.hue, width: 46, height: 46 }}>
-                  <span>{c.sigil}</span>
-                </span>
-                <div>
-                  <div className={css.cardNo}>{c.no} · {c.callsign}</div>
-                  <div className={css.cardName}>
-                    <h3>{c.name}</h3>
-                    <span>{c.role}</span>
-                  </div>
-                  <div className={css.cardEpithet}>{c.epithet}</div>
-                </div>
+      {/* 全量档案 · 按所属归组 */}
+      {ROSTER_GROUPS.map((g) => {
+        const members = rows.filter((r) => r.groupKey === g.key)
+        return (
+          <section key={g.key} className={css.group} style={{ '--ga': groupAccent(g.key) } as CSSProperties}>
+            <header className={css.groupBand}>
+              <div className={css.groupTitleBox}>
+                <h2 className={css.groupTitle}>
+                  {g.label}
+                  <i>{members.length} 人</i>
+                </h2>
+                <p className={css.groupNote}>{GROUP_NOTE[g.key] ?? ''}</p>
               </div>
-
-              <div className={css.cardQuote}>{c.quote}</div>
-
-              <div className={css.cardBody}>
-                <div className={css.kvBlock}>
-                  <div className={css.kvCell}><small>所属</small><b>{c.division}</b></div>
-                  <div className={css.kvCell}><small>弹痕 / 特性</small><b>{c.scar}</b></div>
-                  <div className={css.kvCell}><small>终末潜力</small><b>{c.potential}</b></div>
-                  <div className={css.kvCell}><small>状态</small><b>{c.station}</b></div>
-                </div>
-
-                <div>
-                  {AXIS_ORDER.map((k) => (
-                    <div key={k} className={css.stat}>
-                      <small>{k}</small>
-                      <div className="meter">
-                        <div className="meter__fill" style={{ width: `${statOf(c, k)}%`, background: `linear-gradient(90deg, ${c.hue}66, ${c.hue})` }} />
+            </header>
+            <div className={css.cards}>
+              {members.map((r) => {
+                const bond = r.kind === 'core' ? bondNow(r.id) : null
+                return (
+                <article key={r.id} className={css.card} style={{ '--c': r.hue } as CSSProperties}>
+                  <div className={css.cardHead}>
+                    <span className="glyph" style={{ '--g': r.hue, width: 46, height: 46 }}>
+                      <span>{r.sigil}</span>
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className={css.cardNo}>{r.kicker}</div>
+                      <div className={css.cardName}>
+                        <h3>{r.name}</h3>
+                        {r.alias && r.alias !== r.name ? <span>{r.alias}</span> : null}
                       </div>
-                      <span className="num">{statOf(c, k)}</span>
+                      <div className={css.cardEpithet}>{r.epithet}</div>
                     </div>
-                  ))}
-                </div>
+                  </div>
 
-                <div className={css.bondRow}>
-                  <span className={css.bondName} style={{ color: c.hue, borderColor: `${c.hue}88`, background: `${c.hue}1e` }}>
-                    当前羁绊 {bondName(bond)} · {bond}
-                  </span>
-                </div>
-              </div>
+                  <div className={css.cardQuote}>{r.quote}</div>
 
-              <div className={css.cardFoot}>
-                <span className={css.cardStatusNote}>{c.stationNote}</span>
-                <button className="linkGo" onClick={() => setOpenId(c.id)}>展开档案</button>
-              </div>
-            </article>
-          )
-        })}
-      </div>
+                  <div className={css.cardBody}>
+                    <div className={css.kvBlock}>
+                      <div className={css.kvCell}><small>所属</small><b>{r.division}</b></div>
+                      <div className={css.kvCell}><small>弹痕 / 特性</small><b>{r.trait}</b></div>
+                      <div className={css.kvCell}><small>终末潜力</small><b>{r.potential}</b></div>
+                      <div className={css.kvCell}><small>状态 · 出场</small><b>{r.state}</b></div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <Meters row={r} />
+                    </div>
+
+                    {bond !== null ? (
+                      <div className={css.bondRow}>
+                        <span className={css.bondName} style={{ color: r.hue, borderColor: `${r.hue}88`, background: `${r.hue}1e` }}>
+                          当前羁绊 {bondName(bond)} · {bond}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className={css.cardFoot}>
+                    <span className={css.cardStatusNote}>{r.stationNote ?? r.page ?? ''}</span>
+                    <button className="linkGo" onClick={() => setOpenId(r.id)}>展开档案</button>
+                  </div>
+                </article>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })}
 
       {/* 详情弹窗 */}
       {focus ? (
@@ -153,7 +289,10 @@ export function Archive() {
                 <span>{focus.sigil}</span>
               </span>
               <div className={css.dialogTitle}>
-                <small>{focus.no} · {focus.callsign} · {focus.role}</small>
+                <small>
+                  {focus.kicker} · {focus.groupLabel}
+                  {focus.kind === 'side' ? ' · 逐字摘录' : ''}
+                </small>
                 <h3>{focus.name}</h3>
                 <div style={{ color: focus.hue, fontSize: 13, marginTop: 2 }}>{focus.epithet}</div>
               </div>
@@ -168,10 +307,15 @@ export function Archive() {
                 <h4>档案信息</h4>
                 <div className={css.kvBlock}>
                   <div className={css.kvCell}><small>所属</small><b>{focus.division}</b></div>
-                  <div className={css.kvCell}><small>定位</small><b>{focus.role}</b></div>
-                  <div className={css.kvCell}><small>弹痕 / 特性</small><b>{focus.scar}</b></div>
+                  <div className={css.kvCell}><small>定位 / 呼号</small><b>{focus.alias}</b></div>
+                  <div className={css.kvCell}><small>弹痕 / 特性</small><b>{focus.trait}</b></div>
                   <div className={css.kvCell}><small>终末潜力</small><b>{focus.potential}</b></div>
-                  <div className={css.kvCell}><small>状态</small><b>{focus.station} · {focus.stationNote}</b></div>
+                  <div className={css.kvCell}><small>状态 · 出场</small><b>{focus.state}</b></div>
+                  {focus.page ? (
+                    <div className={css.kvCell}><small>原文出处</small><b>{focus.page}</b></div>
+                  ) : focus.stationNote ? (
+                    <div className={css.kvCell}><small>状态备注</small><b>{focus.stationNote}</b></div>
+                  ) : null}
                   <div className={css.kvCell}><small>代表台词</small><b>{focus.quote}</b></div>
                 </div>
               </div>
@@ -179,104 +323,42 @@ export function Archive() {
               <div className={css.dialogSection}>
                 <h4>能力参数（五轴评定）</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {AXIS_ORDER.map((k) => (
-                    <div key={k} className={css.stat}>
-                      <small>{k}</small>
-                      <div className="meter">
-                        <div className="meter__fill" style={{ width: `${statOf(focus, k)}%`, background: `linear-gradient(90deg, ${focus.hue}66, ${focus.hue})` }} />
-                      </div>
-                      <span className="num">{statOf(focus, k)}</span>
-                    </div>
-                  ))}
+                  <Meters row={focus} />
                 </div>
+                {focus.kind === 'side' ? (
+                  <div className="tiny muted" style={{ marginTop: 8 }}>本条目数值为终端近似评定；台词与介绍逐字摘录自各卷卷首人物页 / 正文初登场，不作杜撰。</div>
+                ) : null}
               </div>
 
-              <div className={css.dialogSection}>
-                <h4>当前羁绊</h4>
-                <div className={css.relationGrid}>
-                  <div className="meter meter--thick">
-                    <div className="meter__fill" style={{ width: `${bondNow(focus.id)}%`, background: `linear-gradient(90deg, ${focus.hue}66, ${focus.hue})` }} />
-                  </div>
-                  <div>
-                    <span className={css.bondName} style={{ color: focus.hue, borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }}>
-                      {bondNow(focus.id)} · {bondName(bondNow(focus.id))}
-                    </span>
-                    <div className="tiny muted" style={{ marginTop: 6 }}>随你读到的每一段事件变化。</div>
+              {focusBond !== null ? (
+                <div className={css.dialogSection}>
+                  <h4>当前羁绊</h4>
+                  <div className={css.relationGrid}>
+                    <div className="meter meter--thick">
+                      <div className="meter__fill" style={{ width: `${focusBond}%`, background: `linear-gradient(90deg, ${focus.hue}66, ${focus.hue})` }} />
+                    </div>
+                    <div>
+                      <span className={css.bondName} style={{ color: focus.hue, borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }}>
+                        {focusBond} · {bondName(focusBond)}
+                      </span>
+                      <div className="tiny muted" style={{ marginTop: 6 }}>随你读到的每一段事件变化。</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </div>
         </div>
       ) : null}
-
-      <SideCastSection />
     </div>
   )
 }
 
-/* ================= 其余登场者（协力者登记） ================= */
-const SIDE_PALETTE = [
-  '#8fd8ff', '#ffb454', '#54d2a0', '#ff7a9b', '#c9b2ff',
-  '#f0a35e', '#5fe6c8', '#ff5d73', '#9fd0ff', '#e2d27c',
-  '#b48cff', '#6fe0e0', '#ff9a8a', '#a7e06f',
-]
-
-function SideCastSection() {
-  const [sel, setSel] = useState(0)
-  const vols = Array.from(new Set(SIDECAST.map((e) => e.vol))).sort((a, b) => a - b)
-  const shown = sel === 0 ? SIDECAST : SIDECAST.filter((e) => e.vol === sel)
-
-  return (
-    <section className={css.sideSection}>
-      <div className={css.sideBand}>
-        <div className={css.sideBandIntro}>
-          <div className={css.sideKicker}>REGISTER / 协力者 · 敌对者 · 其他重要他人</div>
-          <h2>登场者登记</h2>
-          <p>
-            主役四人之外，于时间线中实际出场、留下名字的人们。自第 1 卷起逐卷登记——
-            以下条目均逐字摘录自各卷卷首「登场人物」页或原文初登场叙述，不作杜撰。
-          </p>
-        </div>
-        <div className={css.sideFilters} role="tablist" aria-label="按登场卷筛选登记人物">
-          <button className={`${css.filt} ${sel === 0 ? css.filtOn : ''}`} onClick={() => setSel(0)}>
-            全部 <i>{SIDECAST.length}</i>
-          </button>
-          {vols.map((v) => (
-            <button key={v} className={`${css.filt} ${sel === v ? css.filtOn : ''}`} onClick={() => setSel(v)}>
-              第{v}卷 <i>{SIDECAST.filter((e) => e.vol === v).length}</i>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className={css.sideGrid}>
-        {shown.map((e: SideCastEntry) => {
-          const idx = SIDECAST.indexOf(e)
-          const hue = SIDE_PALETTE[idx % SIDE_PALETTE.length]
-          return (
-            <article key={e.id} className={`${css.card} ${css.sideCard}`} style={{ '--c': hue } as CSSProperties}>
-              <div className={css.cardHead}>
-                <span className={css.sideMonogram} style={{ color: hue, borderColor: `${hue}77`, background: `${hue}18` }}>
-                  {e.name.slice(0, 1)}
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <div className={css.cardNo}>{e.volLabel} · 登场</div>
-                  <div className={css.cardName}>
-                    <h3>{e.name}</h3>
-                  </div>
-                  <div className={css.cardEpithet}>{e.role}</div>
-                </div>
-              </div>
-              <div className={css.sideDesc}>{e.desc}</div>
-              <div className={`${css.cardQuote} ${css.sideQuote}`}>{e.quote}</div>
-              <div className={css.cardFoot}>
-                <span className={css.sideSrc}>{e.page}</span>
-              </div>
-            </article>
-          )
-        })}
-      </div>
-    </section>
-  )
+function groupAccent(key: string): string {
+  switch (key) {
+    case 'ao': return '#3fd3bf'
+    case 'kaus': return '#ff5d73'
+    case 'corp': return '#ffb454'
+    default: return '#8f9cb8'
+  }
 }
