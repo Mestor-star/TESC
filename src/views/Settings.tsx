@@ -90,18 +90,20 @@ function pickJsons(multiple: boolean): Promise<Array<{ fileName: string; json: u
 
 type Channel = AiChannel
 
-const CH_META: Record<Channel, { title: string; kicker: string; hint: string; tempNote: string }> = {
+const CH_META: Record<Channel, { title: string; kicker: string; hint: string; tempNote: string; maxNote: string }> = {
   main: {
     title: '主线剧情',
     kicker: 'STORY / DIRECTOR',
     hint: '剧情推演通道：AI 以第三人称「导演 + 在场角色」推进当前事件，回执带结构化指令自动落地。',
     tempNote: '叙事通道。越低越贴原作基调；建议 0.6–0.9。',
+    maxNote: '每次推演的单回合输出上限。思考型模型（DeepSeek reasoner 等）会先消耗预算思考——若提示“达长度上限但正文为空”，就调大此项（如 3000–5000）。',
   },
   sms: {
     title: '角色短信',
     kicker: 'SMS / CHARACTER CHAT',
     hint: '角色一对一短信通道，回复可带轻量羁绊。可与此前的历史线程无缝衔接。',
     tempNote: '聊天通道。越放飞越跳脱；建议 0.7–1.0。',
+    maxNote: '每条短信回复的输出上限。同一思考型模型同理，偏低会先被思考耗尽。',
   },
 }
 
@@ -523,6 +525,27 @@ export function Settings() {
               <span className={css.tempVal}>{cfg.temperature.toFixed(2)}</span>
             </span>
             <span style={SUB_FIELD}>{meta.tempNote}</span>
+          </label>
+
+          <label className={css.fieldRow}>
+            <span>输出预算 MAX TOKENS</span>
+            <span className={css.rowInline}>
+              <input
+                type="number"
+                min={256}
+                max={32000}
+                step={256}
+                className="field"
+                style={{ maxWidth: 140 }}
+                value={cfg.maxTokens}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  set(ch, 'maxTokens', Number.isFinite(n) && n >= 256 ? Math.min(32000, Math.round(n)) : 1500)
+                }}
+              />
+              <span className="muted tiny" style={{ flex: '0 0 auto' }}>tokens / 回合</span>
+            </span>
+            <span style={SUB_FIELD}>{meta.maxNote}</span>
           </label>
 
           <div className={css.actions}>

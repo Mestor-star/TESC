@@ -17,6 +17,9 @@ export interface ApiSettings {
   apiKey: string
   model: string
   temperature: number
+  /** 单回合最大输出 token（max_tokens）。思考型模型（DeepSeek reasoner 等经中继）
+   *  会把预算先耗在内部思考上，正文可能被饿死 —— 值偏小就会出现“达长度上限但正文为空”。 */
+  maxTokens: number
 }
 
 export const API_DEFAULTS: ApiSettings = {
@@ -24,6 +27,7 @@ export const API_DEFAULTS: ApiSettings = {
   apiKey: '',
   model: '',
   temperature: 0.8,
+  maxTokens: 1500,
 }
 
 export interface ChatTurn {
@@ -184,10 +188,17 @@ export async function chatCompletion(
     throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
   }
   const data = (await res.json().catch(() => null)) as {
-    choices?: { message?: { content?: string | null } }[]
+    choices?: { message?: { content?: string | null; reasoning_content?: string | null } }[]
   } | null
   const text = data?.choices?.[0]?.message?.content?.trim()
-  if (!text) throw new Error('模型未返回可用内容')
+  if (!text) {
+    const thought = data?.choices?.[0]?.message?.reasoning_content?.trim() ?? ''
+    throw new Error(
+      thought
+        ? `模型仅产出了内部思考、未输出正文（思考约 ${thought.length} 字，可能触发了长度上限）。可调高该通道的输出预算后重试。`
+        : '模型未返回可用内容',
+    )
+  }
   return text
 }
 
@@ -209,6 +220,9 @@ export interface StreamResult {
   refusal?: string
   /** 回包里的模型名（部分网关回显） */
   model?: string
+  /** 内部思考原文（delta.reasoning_content；DeepSeek 系等思考型模型的独立通道，
+   *  不计入正文也不上屏）。可用于诊断“预算被思考吃光、正文为空”。 */
+  reasoning?: string
 }
 
 export interface StreamOpts extends ChatOpts {
@@ -262,7 +276,7 @@ export async function chatCompletionStream(
     if (!line.startsWith('data:')) return
     const payload = line.slice(5).trim()
     if (payload === '[DONE]') return true
-    let j: { model?: unknown; choices?: Array<{ delta?: { content?: unknown; refusal?: unknown }; finish_reason?: unknown; refusal?: unknown }> }
+    let j: { model?: unknown; choices?: Array<{ delta?: { content?: unknown; reasoning_content?: unknown; refusal?: unknown }; finish_reason?: unknown; refusal?: unknown }> }
     try {
       j = JSON.parse(payload) as typeof j
     } catch {
@@ -276,6 +290,10 @@ export async function chatCompletionStream(
     const d = choice.delta
     if (d) {
       if (typeof d.refusal === 'string') out.refusal = d.refusal
+      // 思考通道单独累积（不触发 onDelta，避免思考被误当正文上屏）
+      if (typeof d.reasoning_content === 'string' && d.reasoning_content) {
+        out.reasoning = (out.reasoning ?? '') + d.reasoning_content
+      }
       if (typeof d.content === 'string' && d.content) {
         out.text += d.content
         opts?.onDelta?.(d.content)

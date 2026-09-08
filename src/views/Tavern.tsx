@@ -221,6 +221,7 @@ export function Tavern() {
       try {
         const res = await chatCompletionStream(cfg, messages, {
           signal: ctrl.signal,
+          maxTokens: cfg.maxTokens || 1500,
           onDelta: (chunk) => {
             if (settled || !chunk) return
             acc += chunk
@@ -232,10 +233,13 @@ export function Tavern() {
 
         const reply = (res.text ?? '').trim()
         if (!reply) {
+          const thought = (res.reasoning ?? '').trim()
           const why = res.refusal
             ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
             : res.finishReason === 'length'
-              ? '回复已达长度上限，且未产出任何正文。'
+              ? (thought
+                  ? `模型在内部思考上花费过久（约 ${thought.length} 字）把输出预算耗尽，短信正文为空。可在终端设置调高该通道输出预算后重发。`
+                  : '回复已达长度上限，且未产出任何正文。')
               : '模型未返回任何内容。'
           setErr(`收发中断：${why}`)
           push('danger', '短信收发失败', why, false)

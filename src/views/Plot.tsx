@@ -41,6 +41,10 @@ const DRAFT_PROMPT =
   + '要求：一行一条，以「- 」开头；每条须是一句可以直接照说的完整话或一个明确的小行动，贴合当前局势与角色语气；'
   + '不要用导演叙述口吻，不要写成小说段落，不要输出事件指令或变量，也不要带「言万心叶：」之类的前缀。'
 
+/** 自动补发提示：上一回正文为空（多为思考型模型把预算耗在内部思考上）时，用它催模型直接作答 */
+const RETRY_NUDGE =
+  '（系统注：上一回你的回复为空。请直接给出正文叙述并附事件指令作答；如需内部思考请压缩篇幅，不要让思考超过正文。）'
+
 const MODE_LABEL: Record<RecordMode, string> = {
   online: '在线推演',
   offline: '离线通读',
@@ -260,91 +264,109 @@ export function Plot() {
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
       if (userMsg) messages.push({ role: 'user', content: userMsg })
 
-      const ctrl = new AbortController()
-      abortRef.current = ctrl
-      // 流式：途中只累积原文并以无副作用投影上屏活气泡；
-      // 收尾（或长度上限/中断）才落正式消息，指令只在完整收口时落地一次。
-      let acc = ''
-      let settled = false
+      // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）
+      const budget = Math.max(800, cfgMain!.maxTokens || 1500)
+      // 正文为空且疑似思考耗尽预算 → 自动加大预算补发一次，避免动辄卡在手动「要求补发」
       try {
-        const res = await chatCompletionStream(cfgMain!, messages, {
-          signal: ctrl.signal,
-          maxTokens: 1500,
-          onDelta: (chunk) => {
-            if (settled || !chunk) return
-            acc += chunk
-            setLive({ evId, text: acc })
-          },
-        })
-        settled = true
-        setLive(null)
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const ctrl = new AbortController()
+          abortRef.current = ctrl
+          // 流式：途中只累积原文并以无副作用投影上屏活气泡；
+          // 收尾（或长度上限/中断）才落正式消息，指令只在完整收口时落地一次。
+          let acc = ''
+          let settled = false
+          try {
+            const res = await chatCompletionStream(cfgMain!, messages, {
+              signal: ctrl.signal,
+              maxTokens: attempt === 1 ? budget : Math.max(4000, Math.round(budget * 1.8)),
+              onDelta: (chunk) => {
+                if (settled || !chunk) return
+                acc += chunk
+                setLive({ evId, text: acc })
+              },
+            })
+            settled = true
+            setLive(null)
 
-        const full = (res.text ?? '').trim()
+            const full = (res.text ?? '').trim()
 
-        // 空答 / 拒答诊断
-        if (!full) {
-          const why = res.refusal
-            ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
-            : res.finishReason === 'length'
-              ? '回复已达长度上限，且未产出任何正文。'
-              : '模型未返回任何内容。'
-          needDir.current = true
-          setErr(why)
-          push('danger', 'AI 推演失败', why, false)
-          return
-        }
+            // 空答 / 拒答诊断；若是思考把预算吃光，先自动重试一次
+            if (!full) {
+              const thought = (res.reasoning ?? '').trim()
+              const why = res.refusal
+                ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
+                : res.finishReason === 'length'
+                  ? (thought
+                      ? `模型在内部思考上花费过久（约 ${thought.length} 字）把输出预算耗尽，正文为空。`
+                      : '回复已达长度上限，且未产出任何正文。')
+                  : '模型未返回任何内容。'
+              if (attempt < 2) {
+                push('info', '正文为空，自动重试', '已提示模型直接作答并加大输出预算，正在补发一次。', false)
+                messages.push({ role: 'user', content: RETRY_NUDGE })
+                continue
+              }
+              needDir.current = true
+              setErr(why)
+              push('danger', 'AI 推演失败', why, false)
+              return
+            }
 
-        // 到达长度上限：指令块可能被截断在半途 → 只保留叙述、绝不落地半截指令
-        if (res.finishReason === 'length') {
-          const shown = extractLiveDisplay(acc)
-          if (shown) {
-            appendMsg(evId, { id: idFor(), from: 'them', text: shown, time: clock() })
-            needDir.current = true
+            // 到达长度上限：指令块可能被截断在半途 → 只保留叙述、绝不落地半截指令
+            if (res.finishReason === 'length') {
+              const shown = extractLiveDisplay(acc)
+              if (shown) {
+                appendMsg(evId, { id: idFor(), from: 'them', text: shown, time: clock() })
+                needDir.current = true
+              }
+              push('warn', '回复已达长度上限', '正文可能被截断；本回合未自动落地指令，可点「要求补发指令」补收，或在终端设置里调高该通道的输出预算。', false)
+              return
+            }
+
+            const parsed = parseDirectorReply(full)
+            needDir.current = !parsed.found
+            if (!parsed.found) {
+              push('warn', '未解析到事件指令', '叙述已上屏；本回合无变量自动落地，下一回会附带补发提醒。', false)
+            }
+            const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim()
+            if (shown) {
+              appendMsg(evId, {
+                id: idFor(),
+                from: 'them',
+                text: shown,
+                time: clock(),
+                meta: {
+                  source: parsed.source,
+                  options: parsed.options.length ? parsed.options : undefined,
+                  thinking: parsed.thinking || undefined,
+                  hasFx: directiveHasFx(parsed.directive),
+                },
+              })
+            }
+            applyReply(parsed, evId)
+            return
+          } catch (e) {
+            if ((e as Error).name === 'AbortError') {
+              settled = true
+              // 主动中断：保留已生成的部分叙述上屏，但不落地任何（可能是半截的）指令
+              const partial = extractLiveDisplay(acc).trim()
+              setLive(null)
+              if (partial) {
+                appendMsg(evId, { id: idFor(), from: 'them', text: partial, time: clock() })
+                push('info', '生成已中断', '已保留到当前生成的部分，未落地任何指令。', false)
+              }
+              return
+            }
+            settled = true
+            setLive(null)
+            const msg = e instanceof Error ? e.message : String(e)
+            setErr(`推演中断：${msg}`)
+            push('danger', 'AI 推演失败', msg, false)
+            return
+          } finally {
+            abortRef.current = null
           }
-          push('warn', '回复已达长度上限', '正文可能被截断；本回合未自动落地指令，可点「要求补发指令」补收。', false)
-          return
         }
-
-        const parsed = parseDirectorReply(full)
-        needDir.current = !parsed.found
-        if (!parsed.found) {
-          push('warn', '未解析到事件指令', '叙述已上屏；本回合无变量自动落地，下一回会附带补发提醒。', false)
-        }
-        const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim()
-        if (shown) {
-          appendMsg(evId, {
-            id: idFor(),
-            from: 'them',
-            text: shown,
-            time: clock(),
-            meta: {
-              source: parsed.source,
-              options: parsed.options.length ? parsed.options : undefined,
-              thinking: parsed.thinking || undefined,
-              hasFx: directiveHasFx(parsed.directive),
-            },
-          })
-        }
-        applyReply(parsed, evId)
-      } catch (e) {
-        if ((e as Error).name === 'AbortError') {
-          settled = true
-          // 主动中断：保留已生成的部分叙述上屏，但不落地任何（可能是半截的）指令
-          const partial = extractLiveDisplay(acc).trim()
-          setLive(null)
-          if (partial) {
-            appendMsg(evId, { id: idFor(), from: 'them', text: partial, time: clock() })
-            push('info', '生成已中断', '已保留到当前生成的部分，未落地任何指令。', false)
-          }
-          return
-        }
-        settled = true
-        setLive(null)
-        const msg = e instanceof Error ? e.message : String(e)
-        setErr(`推演中断：${msg}`)
-        push('danger', 'AI 推演失败', msg, false)
       } finally {
-        abortRef.current = null
         setBusy(false)
       }
     },
@@ -377,7 +399,7 @@ export function Plot() {
         ...toTurns(logs[ev.id]),
         { role: 'user', content: DRAFT_PROMPT },
       ]
-      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: 320 })
+      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: cfgMain!.maxTokens || 1500 })
       const text = (res ?? '').trim()
       if (!text) {
         setDraftErr('模型没有返回可用内容，可再试一次。')
@@ -487,7 +509,7 @@ export function Plot() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
-      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: 900 })
+      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: cfgMain!.maxTokens || 1500 })
       const parsed = parseDirectorReply(res)
       needDir.current = !parsed.found
       if (parsed.found) {
