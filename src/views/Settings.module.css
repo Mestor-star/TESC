@@ -60,7 +60,7 @@
 .okLine { font-family: var(--font-mono); font-size: 12px; color: var(--jade); word-break: break-all; }
 .errLine { font-family: var(--font-mono); font-size: 12px; color: var(--red); word-break: break-all; }
 
-/* —— 词条库数据管理 —— */
+/* —— 世界书数据管理 —— */
 .grow { flex: 1; }
 .dataLine {
   display: flex;
@@ -68,6 +68,32 @@
   align-items: center;
   gap: 8px;
 }
+
+/* —— 导入簇：把外部预设 / 方案 / 备份导入排列在一处、显眼可找 —— */
+.importBox {
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.importHead { display: flex; align-items: center; gap: 8px; }
+.importHead b { color: var(--amber); letter-spacing: 0.12em; font-size: 11px; }
+.importHead span { font-size: 11px; color: var(--ink-faint); }
+.importRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  padding: 9px 12px;
+}
+.importInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.importInfo b { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.importInfo b svg { color: var(--ink-mute); flex: 0 0 auto; }
+.importInfo span { font-size: 11.5px; color: var(--ink-faint); line-height: 1.6; }
+.importAct { flex: 0 0 auto; }
 .confirmNote {
   border-left: 2px solid var(--red);
   background: rgba(255, 46, 67, 0.07);

@@ -577,7 +577,71 @@ export function Settings() {
           <div className={css.note}>
             <b>世界书与「方案」仅存本机，绝不包含密钥。</b><br />
             世界书（Dexie · zts-lore）存有从 canon 生成的种子书与你导入/编辑的内容，可整库导出一份备份 JSON；
-            备份不含接口密钥（密钥在 api:main / api:sms，也不会被写进任何文件）。导入会覆盖当前世界书与启用标记。
+            备份不含接口密钥（密钥在 api:main / api:sms，也不会被写进任何文件）。下方「整库备份」导入会覆盖当前世界书与启用标记。
+          </div>
+
+          {/* 导入簇：全部外部预设 / 方案 / 备份导入排列在同一区，显眼好找 */}
+          <div className={css.importBox}>
+            <div className={css.importHead}>
+              <b>数据导入 / IMPORT</b>
+              <span style={{ marginLeft: 'auto' }}>外部预设与备份读回本机 · 密钥永不在文件里</span>
+            </div>
+
+            <div className={css.importRow}>
+              <div className={css.importInfo}>
+                <b>ST 世界书 JSON（追加导入）</b>
+                <span>多选外部 SillyTavern 世界书文件，追加为本机世界书；可到智库页启停与编辑。</span>
+              </div>
+              <div className={css.importAct}>
+                <button className="btn btn--amber" style={{ fontSize: 12, padding: '7px 14px' }} onClick={() => void doImportStLore()} disabled={importBusy}>
+                  <UploadSimple size={14} weight="bold" /> {importBusy ? '导入中…' : '导入 ST 世界书'}
+                </button>
+              </div>
+            </div>
+
+            <div className={css.importRow}>
+              <div className={css.importInfo}>
+                <b>ChatPreset · 预设映射为方案</b>
+                <span>读取 ST 预设的模型与温度，生成新方案并套用两通道（接口地址沿用当前值）。</span>
+              </div>
+              <div className={css.importAct}>
+                <button className="btn btn--ghost" style={{ fontSize: 12, padding: '7px 14px' }} onClick={() => void importChatPreset()}>
+                  <UploadSimple size={14} weight="bold" /> 导入 ChatPreset
+                </button>
+              </div>
+            </div>
+
+            <div className={css.importRow}>
+              <div className={css.importInfo}>
+                <b>方案 JSON（读回本机）</b>
+                <span>导入此前导出的方案文件，加入下方「方案」列表，随时一键套用。</span>
+              </div>
+              <div className={css.importAct}>
+                <button className="btn btn--ghost" style={{ fontSize: 12, padding: '7px 14px' }} onClick={() => void importScheme()}>
+                  <UploadSimple size={14} weight="bold" /> 导入方案
+                </button>
+              </div>
+            </div>
+
+            <div className={css.importRow}>
+              <div className={css.importInfo}>
+                <b>整库备份 JSON（覆盖还原）</b>
+                <span>用此前导出的整库备份覆盖当前全部世界书与启用标记，不可撤销。</span>
+              </div>
+              <div className={css.importAct}>
+                <button
+                  className={`btn ${confirmAct === 'restore' ? `${css.danger} btn--ghost` : 'btn--ghost'}`}
+                  style={{ fontSize: 12, padding: '7px 14px' }}
+                  onClick={() => void doRestoreLore()}
+                >
+                  <UploadSimple size={14} weight="bold" /> {confirmAct === 'restore' ? '再次点击确认覆盖' : '导入备份覆盖'}
+                </button>
+              </div>
+            </div>
+
+            {confirmAct === 'restore' ? (
+              <div className={css.confirmNote}>导入会覆盖当前全部世界书与启用标记，不可撤销。</div>
+            ) : null}
           </div>
 
           <div className={css.dataLine}>
@@ -586,16 +650,6 @@ export function Settings() {
             <span className={css.grow} />
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => void doExportLore()}>
               <DownloadSimple size={14} weight="bold" /> 导出备份
-            </button>
-            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => void doImportStLore()} disabled={importBusy}>
-              <UploadSimple size={14} weight="bold" /> {importBusy ? '导入中…' : '导入 ST 世界书'}
-            </button>
-            <button
-              className={`btn ${confirmAct === 'restore' ? `${css.danger} btn--ghost` : 'btn--ghost'}`}
-              style={{ fontSize: 12 }}
-              onClick={() => void doRestoreLore()}
-            >
-              <UploadSimple size={14} weight="bold" /> {confirmAct === 'restore' ? '再次点击确认覆盖' : '导入备份覆盖'}
             </button>
             <button
               className={`btn ${confirmAct === 'clear' ? `${css.danger} btn--ghost` : 'btn--ghost'}`}
@@ -606,25 +660,13 @@ export function Settings() {
             </button>
           </div>
 
-          {confirmAct ? (
-            <div className={css.confirmNote}>
-              {confirmAct === 'restore'
-                ? '导入会覆盖当前全部世界书与启用标记，不可撤销。'
-                : '清空会删除全部世界书（含你导入的），下次打开剧情推进会重建内置 canon 世界书。'}
-            </div>
+          {confirmAct === 'clear' ? (
+            <div className={css.confirmNote}>清空会删除全部世界书（含你导入的），下次打开剧情推进会重建内置 canon 世界书。</div>
           ) : null}
 
           <div className={css.schemeBox}>
             <div className={css.schemeHead}>
               <b className="muted tiny" style={{ letterSpacing: '0.12em' }}>方案（不含密钥 · 通道参数 + 激活世界书）</b>
-              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 10px' }} onClick={() => void importChatPreset()} title="导入 ST ChatPreset（data.settings.openai_model/temp_openai 映射为方案并套用）">
-                  <UploadSimple size={13} weight="bold" /> 导入 ChatPreset
-                </button>
-                <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 10px' }} onClick={() => void importScheme()}>
-                  <UploadSimple size={13} weight="bold" /> 导入方案
-                </button>
-              </div>
             </div>
             <div className={css.schemeNew}>
               <input

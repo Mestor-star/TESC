@@ -4,8 +4,9 @@
    分区 A · 用户变量：列出世界状态 flags 全部（AI 亦经结构化指令
    写入同一份），可新增 / 编辑（键名+类型+值）/ 删除，删除走行内
    二次确认。
-   分区 B · 系统派生 · 只读：操作员代号、全员实时羁绊 bond:<id>、
-   及 met / epDone / cur / unlocked 计数——不落档，随世界现算。
+   分区 B · 系统派生 · 只读：操作员代号、全员实时羁绊 bond:<id>，
+   及整个 web 前端运行状态的计数（met / ends / own / records / picks /
+   epDone / cur / unlocked）——不落档，随世界现算。
    无 emoji，改动一律行内 toast。浮层经 portal 挂到 body，避免
    被带 transform 的 view-transition 祖先捕获。
    ============================================================ */
@@ -82,11 +83,15 @@ export function VariablePanel() {
       ['operatorName', operatorName.trim() || '低语者'],
       ...bondRows,
       ['met', `${PERSON_IDS.filter((id) => isMet(id)).length}/${PERSON_IDS.length}`],
+      ['ends', String(Object.keys(world.ends).length)],
+      ['own', String(world.own.length)],
+      ['records', String(world.records.length)],
+      ['picks', String(Object.keys(world.pick).length)],
       ['epDone', String(Object.keys(epDone).length)],
       ['cur', cur ?? '—'],
       ['unlocked', unlocked ? 'true' : 'false'],
     ] as Array<[string, string]>
-  }, [operatorName, bondNow, isMet, epDone, cur, unlocked])
+  }, [operatorName, bondNow, isMet, epDone, cur, unlocked, world])
 
   const close = () => setVarsOpen(false)
 
