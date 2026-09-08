@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { ArrowRight, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
+import { Linkified } from '../components/Linkified'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
 import { CHARACTERS } from '../data/chars'
 import { SCENES } from '../data/scenes'
@@ -224,7 +225,7 @@ export function Saga() {
                         {r.ts > 0 ? clock(new Date(r.ts)) : '回填'}
                       </span>
                     </div>
-                    <p className={css.recDigest}>{r.digest}</p>
+                    <p className={css.recDigest}><Linkified text={r.digest} /></p>
                     <div className={css.recMeta}>
                       <span>{ev ? `${ev.group} · ${ev.phase}` : r.eventId}</span>
                       {ev ? <span>{ev.place}</span> : null}

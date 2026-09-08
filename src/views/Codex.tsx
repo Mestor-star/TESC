@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { CODEX } from '../data/codex'
 import type { EndEntry, OwnEndEntry } from '../data/types'
@@ -62,7 +62,9 @@ function fmtTs(ts: number): string {
 }
 
 export function Codex() {
-  const { ownEnds, isEndReg, registerEnd, addOwnEnd, removeOwnEnd, push } = useTerminal()
+  const { ownEnds, isEndReg, registerEnd, addOwnEnd, removeOwnEnd, push, codexRequest, clearCodexRequest } = useTerminal()
+
+  const rootRef = useRef<HTMLDivElement | null>(null)
 
   const [cls, setCls] = useState<string>('全部')
   const [mode, setMode] = useState<CodexMode>('all')
@@ -126,6 +128,24 @@ export function Codex() {
 
   const ownSorted = useMemo(() => [...ownEnds].sort((a, b) => b.ts - a.ts), [ownEnds])
 
+  /* 跨视图意图：正文关键词跳转 → 图鉴页重置过滤、滚动并展开对应条目 */
+  const handledReq = useRef(0)
+  useEffect(() => {
+    if (!codexRequest) return
+    if (handledReq.current === codexRequest.ts) return
+    handledReq.current = codexRequest.ts
+    setCls('全部')
+    setMode('all')
+    setOpenId(null)
+    const raf = window.requestAnimationFrame(() => {
+      const el = rootRef.current?.querySelector(`[data-codex-id="${codexRequest.id}"]`) as HTMLElement | null
+      if (el) el.scrollIntoView({ block: 'center' })
+      setOpenId(codexRequest.id)
+      clearCodexRequest()
+    })
+    return () => window.cancelAnimationFrame(raf)
+  }, [codexRequest, clearCodexRequest])
+
   const switchMode = (m: CodexMode) => {
     setMode(m)
     setOpenId(null)
@@ -177,7 +197,7 @@ export function Codex() {
         : { text: '仅档案 · 未遭遇', cls: css.tagIntel }
 
   return (
-    <div className="vpage">
+    <div className="vpage" ref={rootRef}>
       <div className="vhead">
         <div>
           <div className="vhead__kicker">CODEX / ENDINGS</div>
@@ -365,7 +385,7 @@ export function Codex() {
               const open = openId === o.id
               const st = STATE_META[o.state] ?? { cls: 'chip', color: 'var(--ink-mute)', label: o.state }
               return (
-                <article key={o.id} className={css.item} style={{ '--c': 'var(--amber)' } as CSSProperties}>
+                <article key={o.id} data-codex-id={o.id} className={css.item} style={{ '--c': 'var(--amber)' } as CSSProperties}>
                   <button
                     className={`${css.itemRow} ${open ? css['open'] : ''}`}
                     onClick={() => setOpenId(open ? null : o.id)}
@@ -443,6 +463,7 @@ export function Codex() {
               return (
                 <article
                   key={e.id}
+                  data-codex-id={e.id}
                   className={`${css.item} ${reg ? css['itemReg'] : sealed ? css['itemSeal'] : ''}`}
                   style={{ '--c': accent } as CSSProperties}
                 >

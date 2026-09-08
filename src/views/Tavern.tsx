@@ -4,6 +4,7 @@ import { Lock, PaperPlaneTilt, Stop, Eraser } from '@phosphor-icons/react'
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { genderOf } from '../data/castmeta'
+import { Linkified } from '../components/Linkified'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import { clock, bondName } from '../lib/format'
@@ -448,7 +449,7 @@ export function Tavern() {
                   <Fragment key={m.id}>
                     <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`}>
                       <span className={comm.msgAuthor}>{m.from === 'them' ? activeChar.name : operatorName}</span>
-                      <span className={comm.bubble}>{m.text}</span>
+                      <span className={comm.bubble}><Linkified text={m.text} /></span>
                       <span className={comm.msgTime}>{m.time}</span>
                     </div>
 
@@ -497,7 +498,7 @@ export function Tavern() {
                 {live && live.charId === activeId && live.text ? (
                   <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
                     <span className={comm.msgAuthor}>{activeChar.name}</span>
-                    <span className={comm.bubble}>{extractLiveDisplay(live.text)}</span>
+                    <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
                     <span className={comm.msgTime}>生成中…</span>
                   </div>
                 ) : null}

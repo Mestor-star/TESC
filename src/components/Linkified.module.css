@@ -1,0 +1,18 @@
+/* 正文可点词：虚线强调，随所在气泡文字色自适应（红气泡白字亦可） */
+.lk {
+  color: inherit;
+  opacity: 0.88;
+  border-bottom: 1px dotted currentColor;
+  padding-bottom: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.lk:hover,
+.lk:focus-visible {
+  opacity: 1;
+  border-bottom-style: solid;
+}
+.lk:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.08);
+}

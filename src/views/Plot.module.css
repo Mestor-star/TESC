@@ -179,6 +179,70 @@
   word-break: break-word;
 }
 
+/* —— P6 台词气泡：say = 左头像（非操作员角色）；you = 右头像（言万心叶） —— */
+.sayRow,
+.youRow {
+  display: flex;
+  gap: 9px;
+  align-items: flex-end;
+  margin-top: 10px;
+}
+.sayRow { justify-content: flex-start; }
+.youRow { flex-direction: row-reverse; justify-content: flex-end; }
+.sayMain,
+.youMain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: min(86%, 620px);
+}
+.sayMain { align-items: flex-start; }
+.youMain { align-items: flex-end; }
+.sayName,
+.opName {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin: 0 4px 4px;
+}
+.sayName { color: var(--ink-mute); }
+.opName { color: var(--steel); }
+.sayBubble,
+.youBubble {
+  padding: 8px 13px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ink);
+  white-space: pre-line;
+  word-break: break-word;
+}
+.sayBubble {
+  border: 1px solid var(--line-2);
+  border-radius: 3px 13px 13px 13px;
+  background: var(--bg-3);
+}
+.youBubble {
+  background: linear-gradient(160deg, var(--red), var(--red-deep));
+  color: #fff;
+  border-radius: 13px 3px 13px 13px;
+}
+.youFoot {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.youFoot .linkGo {
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* 离线通读的旁白段落 */
+.offP {
+  margin: 0 0 13px;
+  white-space: pre-line;
+}
+.offP:last-child { margin-bottom: 0; }
+
 .errLine {
   font-family: var(--font-mono);
   font-size: 12px;

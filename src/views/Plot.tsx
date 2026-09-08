@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Key } from 'react'
 import { ArrowRight, Check, Eraser, PaperPlaneTilt, Stop } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
@@ -15,6 +16,9 @@ import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
+import { splitSpeech } from '../lib/dialogue'
+import { Linkified } from '../components/Linkified'
+import { Portrait } from '../components/Portrait'
 
 import css from './Plot.module.css'
 
@@ -544,6 +548,48 @@ export function Plot() {
 
   const quickReady = !busy && showOnline && ready
 
+  /* —— P6 气泡渲染辅助 —— */
+  const opName = operatorName.trim() ? operatorName : '言万心叶'
+  /** 把一段正文按「旁白 / 台词气泡」逐段渲染（narr→纯文本行；say→左头像；you→右头像操作员） */
+  const segNode = (seg: ReturnType<typeof splitSpeech>[number], key: Key) => {
+    if (seg.kind === 'narr') {
+      return (
+        <div key={key} className={css.narrText}>
+          <Linkified text={seg.text} />
+        </div>
+      )
+    }
+    if (seg.kind === 'you') {
+      return (
+        <div key={key} className={css.youRow} data-you="1">
+          <Portrait avatarId="operator" size={30} round />
+          <div className={css.youMain}>
+            <span className={css.opName}>{opName}</span>
+            <span className={css.youBubble}>
+              <Linkified text={seg.text} />
+            </span>
+          </div>
+        </div>
+      )
+    }
+    const c = personOf(seg.id)
+    const hue = c?.hue ?? '#7fb4ff'
+    return (
+      <div key={key} className={css.sayRow} data-say="1" data-say-for={seg.id}>
+        <Portrait avatarId={seg.id} size={30} round />
+        <div className={css.sayMain}>
+          <span className={css.sayName} style={{ color: hue }}>{c?.name ?? seg.id}</span>
+          <span
+            className={css.sayBubble}
+            style={{ borderColor: `${hue}66`, background: `linear-gradient(150deg, ${hue}24, ${hue}0d)` }}
+          >
+            <Linkified text={seg.text} />
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="vpage">
       <div className="vhead">
@@ -678,7 +724,7 @@ export function Plot() {
                           <b>导演叙述</b>
                           <span className="muted tiny">{m.time}</span>
                         </div>
-                        <div className={css.narrText}>{m.text}</div>
+                        {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
 
                         {m.meta?.thinking ? (
                           <div className={css.thinkFold}>
@@ -722,17 +768,20 @@ export function Plot() {
                         ) : null}
                       </div>
                     ) : (
-                      <div key={m.id} className={css.user}>
-                        <div className={css.userMeta}>
-                          <b>言万心叶</b>
-                          <span className="muted tiny">{m.time}</span>
+                      <div key={m.id} className={css.youRow} data-you="1">
+                        <Portrait avatarId="operator" size={30} round />
+                        <div className={css.youMain}>
+                          <span className={css.opName}>{opName}</span>
+                          <span className={css.youBubble}>
+                            <Linkified text={m.text} />
+                          </span>
+                          <span className={`muted tiny ${css.youFoot}`}>
+                            {m.time}
+                            {showOnline && ready && !busy ? (
+                              <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                            ) : null}
+                          </span>
                         </div>
-                        <div className={css.userText}>{m.text}</div>
-                        {showOnline && ready && !busy ? (
-                          <div className={css.rowActs}>
-                            <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
-                          </div>
-                        ) : null}
                       </div>
                     ),
                   )
@@ -743,7 +792,9 @@ export function Plot() {
                       <b>导演叙述</b>
                       <span className="muted tiny">生成中…</span>
                     </div>
-                    <div className={css.narrText}>{extractLiveDisplay(live.text)}</div>
+                    <div className={css.narrText}>
+                      <Linkified text={extractLiveDisplay(live.text)} />
+                    </div>
                   </div>
                 ) : null}
                 {err ? <div className={css.errLine}>{err}</div> : null}
@@ -810,7 +861,15 @@ export function Plot() {
                 </div>
               ) : (
                 <div className={css.offText} data-event={focusEv.id}>
-                  {offState.text}
+                  {splitSpeech(offState.text).map((seg, si) =>
+                    seg.kind === 'narr' ? (
+                      <p key={si} className={css.offP}>
+                        <Linkified text={seg.text} />
+                      </p>
+                    ) : (
+                      segNode(seg, si)
+                    ),
+                  )}
                 </div>
               )}
               <div className={css.offFoot}>

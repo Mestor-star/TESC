@@ -4,7 +4,7 @@ import type { RegionReading, Toast, ToastKind, BondSnap, WorldState, OwnEndEntry
 import { CHARACTERS } from '../data/chars'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
-import { resolveEntityToCodexId } from '../data/codex'
+import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { clamp } from '../lib/format'
 import { ensureSeeded } from '../lib/lorestore'
@@ -99,6 +99,11 @@ export interface TerminalState {
   profileRequest: { id: string; name: string; ts: number } | null
   requestProfile: (id: string) => void
   clearProfileRequest: () => void
+
+  /** 跨视图「打开某图鉴条目」意图（正文关键词跳转 → 图鉴页滚动并展开） */
+  codexRequest: { id: string; name: string; ts: number } | null
+  requestCodex: (id: string) => void
+  clearCodexRequest: () => void
 
   toasts: Toast[]
   push: (kind: ToastKind, title: string, body?: string, live?: boolean) => void
@@ -239,6 +244,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const toastId = useRef(0)
   /** 跨视图「打开档案」意图（正文关键词跳转用；档案页消费后清除） */
   const [profileRequest, setProfileRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
+  /** 跨视图「打开图鉴条目」意图（正文关键词跳转用；图鉴页消费后清除） */
+  const [codexRequest, setCodexRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
 
   const focusRegion: RegionReading = REGIONS.find((r) => r.id === focusId) ?? REGIONS[0]
   const saved = useMemo<Saved>(
@@ -403,6 +410,17 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [navigate],
   )
   const clearProfileRequest = useCallback(() => setProfileRequest(null), [])
+
+  /** 请求打开某图鉴条目（自动切到终末图鉴；图鉴页滚动并展开该条） */
+  const requestCodex = useCallback(
+    (id: string) => {
+      navigate('codex')
+      const ent = CODEX.find((e) => e.id === id)
+      setCodexRequest({ id, name: ent?.name ?? id, ts: Date.now() })
+    },
+    [navigate],
+  )
+  const clearCodexRequest = useCallback(() => setCodexRequest(null), [])
 
   /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 21 名登场者） */
   const meetChar = useCallback((charId: string) => {
@@ -592,6 +610,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     profileRequest,
     requestProfile,
     clearProfileRequest,
+    codexRequest,
+    requestCodex,
+    clearCodexRequest,
     toasts,
     push,
     dismiss,

@@ -545,7 +545,7 @@ try {
   const recPre = (await state()).rec.length
   await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E abt composer idle')
   await sleep(400)
-  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）E-SLOW-ABORT 先把终端放到一边，听听夜风。')
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）E-SLOW-ABORT 先把终端放到一边，听听夜风。终端里闪过「灵魂蓄积器TM」的字样。')
   await poll(`!!document.querySelector('[data-stream-live]') && document.body.innerText.includes('【E-SLOW】')`, 20000, 'E abt live bubble')
   const sawLive = await ev(`(()=>{const el=document.querySelector('[data-stream-live]');return el?el.innerText.includes('【E-SLOW】'):false})()`)
   ok('EA1 流式活气泡上屏（data-stream-live 含正文）', sawLive === true, 'saw=' + sawLive)
@@ -556,6 +556,14 @@ try {
   ok('EA2 中止后保留已生成部分（正文仍在屏）', bodyAb.includes('【E-SLOW】'), '')
   ok('EA3 中止未落地半截指令（rec 不变）', (await state()).rec.length === recPre, 'rec=' + (await state()).rec.length)
   ok('EA4 中止后无标签/围栏泄漏', !bodyAb.includes('<vars>') && !bodyAb.includes('<maintext>') && !bodyAb.includes('```'), '')
+
+  // P6 气泡版式 + 关键词跳转：
+  // 操作员消息已升级为「右头像」气泡（data-you，含头像 + 正文）；
+  // 气泡内可点词 → 图鉴条目（requestCodex）应自动打开对应档案。
+  const youInfo = await ev(`(()=>{const el=document.querySelector('[data-you]');if(!el)return null;return {text:el.innerText, hasAvatar:!!el.querySelector('[role="img"]'), hasLink:!!el.querySelector('span[role="link"]')}})()`)
+  ok('EA5 操作员消息为右头像气泡（data-you 含头像+正文）', !!youInfo && youInfo.hasAvatar === true && (youInfo.text || '').includes('E-SLOW-ABORT'), JSON.stringify(youInfo))
+  const hasLink = await ev(`!![...document.querySelectorAll('[data-you] span[role="link"]')].find(x=>x.textContent==='灵魂蓄积器TM')`)
+  ok('EA6 气泡内图鉴名可点（Linkified 命中）', hasLink === true, 'hasLink=' + hasLink)
 
   // 播种非破坏：外插用户自建库 + 强制重播 canon（删种子标记 → 重载）
   const insUser = await ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const tx=db.transaction(['lorebooks','meta'],'readwrite');tx.objectStore('lorebooks').put({id:'user-book-test-1',name:'E测试库',description:'user-sentinel-7',entries:[],createdAt:Date.now(),updatedAt:Date.now()});tx.objectStore('meta').delete('zts-lore-seed-v1');tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)})})()`)
@@ -637,6 +645,32 @@ try {
   await ev(`(()=>{const b=[...document.querySelectorAll('[data-vars-panel] button')].find(x=>x.getAttribute('aria-label')==='关闭变量面板');if(!b)return false;b.click();return true})()`)
   await poll(`!document.querySelector('[data-vars-panel]')`, 8000, 'H panel close')
   ok('H8 变量面板可关闭', true)
+
+  /* ============ Phase I：P6 气泡版式 + 关键词跳转（图鉴子系统已解锁） ============ */
+  console.log('\n[Phase I] P6 台词气泡 + 关键词跳转：解锁后 点正文图鉴名 → 图鉴页展开对应条目')
+  // 冒烟本地放行图鉴子系统（不动剧情本体）：仅用于验证「可点词 → requestCodex」闭环
+  await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-terminal:v3')||'{}');o.unlocked=true;localStorage.setItem('zts-terminal:v3',JSON.stringify(o));return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  // 进剧情视图，读出当前聚焦事件 id（用于把一段「带台词+图鉴名」的叙述预置进该会话）
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('.tag')`, 15000, 'I plot tag')
+  const fid = await ev(`(()=>{const t=document.querySelector('.tag');return t?t.textContent.trim().toLowerCase():''})()`)
+  const seedOk = await ev(`(()=>{try{const k=${JSON.stringify(fid)};if(!k)return 'no-key';const text=['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。','露娜：别走神，先听我说。','她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n');const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');o[k]=[{id:'p6-'+Date.now().toString(36),from:'them',text:text,time:'20:00'}];localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true}catch(e){return String(e)}})()`)
+  ok('I1 预置含台词行的叙述到当前会话', seedOk === true, 'seed=' + seedOk)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('剧情推进')
+  // 在线线程渲染：旁白 + 「露娜：……」→ 左头像 say 气泡；气泡带说话人头像
+  await poll(`!!document.querySelector('[data-say]')`, 15000, 'I say bubble')
+  const sayProbe = await ev(`(()=>{const el=document.querySelector('[data-say]');if(!el)return null;return {text:el.innerText,hasAvatar:!!el.querySelector('[role="img"]'),forWho:el.getAttribute('data-say-for')}})()`)
+  ok('I2 台词行拆成左头像气泡（say 含说话人+正文）', !!sayProbe && sayProbe.hasAvatar === true && (sayProbe.text || '').includes('别走神'), JSON.stringify(sayProbe))
+  // 点旁白中的图鉴名 → 图鉴页自动展开该条目
+  const lnk = await ev(`(()=>{const s=[...document.querySelectorAll('span[role="link"]')].find(x=>x.textContent==='灵魂蓄积器TM');if(!s)return false;s.click();return true})()`)
+  ok('I3 旁白图鉴名可点（Linkified）', lnk === true, 'lnk=' + lnk)
+  await poll(`document.body.innerText.includes('CODEX / ENDINGS') && document.body.innerText.includes('应对要点')`, 12000, 'I codex open')
+  const cxProbe = await ev(`(()=>{const t=document.body.innerText;return {codex:t.includes('CODEX / ENDINGS'), hasName:t.includes('灵魂蓄积器TM'), expanded:t.includes('应对要点')}})()`)
+  ok('I4 点词 → 终末图鉴自动滚动并展开对应条目', cxProbe.codex === true && cxProbe.hasName === true && cxProbe.expanded === true, JSON.stringify(cxProbe))
 
 } catch (e) {
   passAll = false
