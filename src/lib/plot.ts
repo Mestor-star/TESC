@@ -13,6 +13,7 @@
 import type { CharId, FlagValue, TimelineEvent } from '../data/types'
 import { CHARACTERS } from '../data/chars'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
+import { genderOf, PERSON_IDS } from '../data/castmeta'
 import { bondName, clamp } from './format'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
@@ -22,7 +23,7 @@ import { aggregateEvents } from './tavernlike/variables'
    ============================================================ */
 
 export interface PlotDirective {
-  /** 新遇见并解锁档案的角色（仅接受 4 位档案角色 id） */
+  /** 新遇见并解锁档案的角色（接受档案名录内全部 id：4 主役 + 21 登场者） */
   met?: string[]
   /** 羁绊偏移：只接受档案角色，delta 为有限数值 */
   bond?: { char: string; delta: number }[]
@@ -38,8 +39,8 @@ export interface PlotDirective {
   digest?: string
 }
 
-/** 档案角色 id 白名单 */
-const CHAR_IDS = new Set<string>(CHARACTERS.map((c) => c.id))
+/** 档案角色 id 白名单（角色档案全员 25 人，不含操作员） */
+const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
   'met', 'bond', 'ends', 'flag', 'diverged', 'eventDone', 'digest',
@@ -324,7 +325,7 @@ export function parseDirectorReply(raw: string): DirectorReply {
 
 export interface DirectiveApi {
   meetChar: (charId: string) => void
-  bumpBond: (charId: CharId, delta: number) => void
+  bumpBond: (charId: string, delta: number) => void
   registerEnd: (id: string) => void
   setFlag: (k: string, v: FlagValue) => void
 }
@@ -348,10 +349,9 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
     fx.met.push(id)
   }
   for (const b of d.bond ?? []) {
-    const char = b.char as CharId
     const delta = clamp(Math.round(b.delta), -100, 100)
-    api.bumpBond(char, delta)
-    fx.bonds.push({ char, delta })
+    api.bumpBond(b.char, delta)
+    fx.bonds.push({ char: b.char, delta })
   }
   for (const key of d.ends ?? []) {
     const id = resolveEndKey(key)
@@ -432,7 +432,7 @@ function relationLine(charId: string, ev: TimelineEvent, ctx: DirectorCtx): stri
   const c = CHARACTERS.find((x) => x.id === charId)
   if (!c) return ''
   const cur = ctx.bondNow ? ctx.bondNow(charId) : ev.bond[charId as keyof typeof ev.bond]
-  const stage = typeof cur === 'number' ? bondName(cur) : '初见'
+  const stage = typeof cur === 'number' ? bondName(cur, { gender: genderOf(charId) }) : '初见'
   return `${c.name}｜${c.epithet}（${c.role}）｜关系：${stage}｜台词「${c.quote}」`
 }
 
@@ -485,7 +485,7 @@ ${baseline.trim() || '（无）'}${flagNote}${reask}${loreSection}
 —— 事件指令 ——
 紧接着一个 \`\`\`json 围栏块，仅含一个对象。字段（全部可选）：
 {
-  "met":    ["新遇见角色id"],                 // 仅限在场或新登场角色：hikari/luna/mefisa/nyau
+  "met":    ["新遇见角色id"],                 // 仅限本段在场或新登场的档案角色：hikari/luna/mefisa/nyau（其余档案角色仅当其确实登场时方可出现）
   "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊增减，正=更亲近；本事件相关角色单次 1~4，勿过度
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
   "flag":   { "标记名": 值 },                  // 需要记录的分支标记（布尔/数值/字符串）

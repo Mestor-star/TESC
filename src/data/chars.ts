@@ -4,6 +4,7 @@ import type { Character } from './types'
  * 苍之学园 · 终末停滞委员会（光明会）核心成员档案
  * 按《这里是，终末停滞委员会。》原文修订：名称、弹痕、终末潜力、台词均出自原作。
  * 能力参数为五轴评定：破坏力 / 敏捷度 / 物理抗性 / 反现实亲和 / 意志力（终端内状态模拟值）。
+ * 标尺 10 ≈ 普通成年人的该轴水准（详见 types.AXIS_MAX）；'∞' = 无法测量。
  * 言万心叶（低语者持有者 / 登记为 Stage4『活性化』）为操作员本人，不在此列表，由终端状态动态渲染。
  */
 export const CHARACTERS: Character[] = [
@@ -29,11 +30,11 @@ export const CHARACTERS: Character[] = [
       + '「言万同学，你这样下去，总有一天会毁灭世界的。」——那是她唯一一次，没用玩笑的口吻说话。',
     defaultBond: 58,
     stats: [
-      { key: '破坏力', value: 100 },
-      { key: '敏捷度', value: 94 },
-      { key: '物理抗性', value: 90 },
-      { key: '反现实亲和', value: 68 },
-      { key: '意志力', value: 96 },
+      { key: '破坏力', value: '∞' },
+      { key: '敏捷度', value: 53 },
+      { key: '物理抗性', value: 49 },
+      { key: '反现实亲和', value: 25 },
+      { key: '意志力', value: 55 },
     ],
   },
   {
@@ -57,11 +58,11 @@ export const CHARACTERS: Character[] = [
       + '她管心叶叫「言万同学」，却在他转身之后，独自把那段「不该有的感情」按回喉咙里。',
     defaultBond: 82,
     stats: [
-      { key: '破坏力', value: 74 },
-      { key: '敏捷度', value: 80 },
-      { key: '物理抗性', value: 84 },
-      { key: '反现实亲和', value: 98 },
-      { key: '意志力', value: 88 },
+      { key: '破坏力', value: 31 },
+      { key: '敏捷度', value: 37 },
+      { key: '物理抗性', value: 42 },
+      { key: '反现实亲和', value: 58 },
+      { key: '意志力', value: 46 },
     ],
   },
   {
@@ -85,11 +86,11 @@ export const CHARACTERS: Character[] = [
       + '「这孩子，明明是男生，个子却比我矮啊……」对「笨蛋队长」的乱来一面叹气一面收拾干净，是她独有的温柔。管心叶叫「心叶同学」。',
     defaultBond: 42,
     stats: [
-      { key: '破坏力', value: 78 },
-      { key: '敏捷度', value: 82 },
-      { key: '物理抗性', value: 72 },
-      { key: '反现实亲和', value: 74 },
-      { key: '意志力', value: 95 },
+      { key: '破坏力', value: 35 },
+      { key: '敏捷度', value: 40 },
+      { key: '物理抗性', value: 28 },
+      { key: '反现实亲和', value: 31 },
+      { key: '意志力', value: 54 },
     ],
   },
   {
@@ -112,11 +113,11 @@ export const CHARACTERS: Character[] = [
       + '有点天然呆，认定的事就一头扎到底，比如认定「心叶学长需要照顾」，就真的会把这事写进自己的值日表里。',
     defaultBond: 60,
     stats: [
-      { key: '破坏力', value: 68 },
-      { key: '敏捷度', value: 96 },
-      { key: '物理抗性', value: 62 },
-      { key: '反现实亲和', value: 76 },
-      { key: '意志力', value: 88 },
+      { key: '破坏力', value: 25 },
+      { key: '敏捷度', value: 55 },
+      { key: '物理抗性', value: 22 },
+      { key: '反现实亲和', value: 33 },
+      { key: '意志力', value: 46 },
     ],
   },
 ]

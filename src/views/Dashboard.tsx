@@ -18,7 +18,7 @@ function openCommsWith(charId: string) {
 const CIRC = 2 * Math.PI * 90
 
 export function Dashboard() {
-  const { operatorName, navigate, focusRegion, setFocusId, epDone, bondNow, unlocked, push } = useTerminal()
+  const { operatorName, navigate, focusRegion, setFocusId, epDone, bondNow, unlocked } = useTerminal()
   const name = operatorName.trim() ? operatorName : '低语者'
   const sev = rSeverity(focusRegion.r)
   const doneEvents = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).slice(-4).reverse(), [epDone])
@@ -41,9 +41,9 @@ export function Dashboard() {
             <span className="chip chip--on">低语者 Susurrador</span>
             <span className="chip">苍之学园 · 体验入学</span>
             {unlocked ? (
-              <span className="chip chip--on">档案子系统已解锁</span>
+              <span className="chip chip--on">作战子系统已解锁</span>
             ) : (
-              <span className="chip chip--warn">档案子系统锁定 · 待完成「欢迎来到」</span>
+              <span className="chip chip--warn">通讯 / 任务 / 图鉴 / 短信待解锁</span>
             )}
           </div>
           <div className={css.heroActions}>
@@ -53,8 +53,8 @@ export function Dashboard() {
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('lore')}>
               智库 · 世界观
             </button>
-            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => push('info', '终端总览', '档案视图需完成事件「欢迎来到，终末停滞委员会」后解锁。', false)}>
-              档案与通讯
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('archive')}>
+              角色档案
             </button>
           </div>
         </div>

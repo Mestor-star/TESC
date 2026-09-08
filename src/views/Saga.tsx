@@ -66,7 +66,7 @@ export function Saga() {
         <div className="vhead__right">
           <span className="chip" style={{ borderColor: 'var(--line-3)' }}>事件 {doneCount}/{TIMELINE.length} · 记录 {records.length}</span>
           <span className={unlocked ? 'chip chip--on' : 'chip chip--warn'}>
-            {unlocked ? <><LockSimpleOpen size={13} weight="bold" /> 档案子系统已解锁</> : <><Lock size={13} weight="bold" /> 档案子系统锁定中</>}
+            {unlocked ? <><LockSimpleOpen size={13} weight="bold" /> 作战子系统已解锁</> : <><Lock size={13} weight="bold" /> 通讯 / 任务 / 图鉴 / 短信待解锁</>}
           </span>
         </div>
       </div>
@@ -98,8 +98,8 @@ export function Saga() {
 
       {!unlocked ? (
         <div className={css.gate}>
-          门禁提示：角色档案 / 任务简报 / 通讯终端 / 终末图鉴 需先完成事件「欢迎来到，终末停滞委员会」（第 1 卷 · 序章至第 1 章）。
-          于「剧情推进」中收束该事件后自动解锁。
+          门禁提示：任务简报 / 通讯终端 / 终末图鉴 / 武装图鉴 / 角色短信 需先完成事件「欢迎来到，终末停滞委员会」（第 1 卷 · 序章至第 1 章）。
+          于「剧情推进」中收束该事件后自动解锁。（角色档案自始开放，可直接查阅。）
         </div>
       ) : null}
 

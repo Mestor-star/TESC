@@ -104,6 +104,7 @@
   flex-direction: column;
   --c: var(--violet);
   overflow: hidden;
+  cursor: pointer;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background:
@@ -116,6 +117,11 @@
   border-color: color-mix(in srgb, var(--c) 46%, var(--line-2));
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
 }
+.card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--c) 75%, #fff);
+  outline-offset: 2px;
+}
+.card:active { transform: translateY(-1px); }
 .card::before {
   content: "";
   position: absolute;
@@ -192,31 +198,39 @@
 }
 .cardStatusNote { flex: 1; font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
 
-/* ---- 详情弹窗 ---- */
-.overlay {
+/* ---- 详情弹窗（就近锚定：测量卡片 rect → fixed 落位） ---- */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes riseIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* 半透明底幕：点按即关闭 */
+.scrim {
   position: fixed;
   inset: 0;
-  z-index: 70;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(5, 5, 10, 0.72);
-  backdrop-filter: blur(5px);
-  animation: fadeIn 220ms ease both;
+  z-index: 75;
+  background: rgba(4, 4, 8, 0.5);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 200ms ease both;
 }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .dialog {
-  width: min(760px, 100%);
-  max-height: 88vh;
+  position: fixed;
+  z-index: 80;
+  width: min(720px, calc(100vw - 28px));
+  max-height: min(76vh, 640px);
   overflow-y: auto;
-  position: relative;
+  overscroll-behavior: contain;
   border: 1px solid var(--line-2);
+  border-top: 3px solid var(--c, var(--violet));
   border-radius: var(--radius);
   background: var(--bg-1);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
-  animation: riseIn 300ms var(--ease-out) both;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.66);
+  opacity: 0;
+  pointer-events: none;
+}
+.dialog.open {
+  opacity: 1;
+  pointer-events: auto;
+  animation: riseIn 240ms var(--ease-out) both;
 }
 .dialogHead {
   position: relative;
@@ -254,7 +268,66 @@
 
 .relationGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
 
+/* 带∞的满格读数（条纹在组件内联 background 完成，此处仅收边框高亮） */
+.infFill { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
+
+/* ---- 立绘位（真图就位即点亮，缺图显示纹章占位） ---- */
+.stoodRow {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+  background:
+    repeating-linear-gradient(115deg, transparent 0 30px, color-mix(in srgb, var(--c, var(--violet)) 4%, transparent) 30px 60px),
+    var(--bg-2);
+}
+.stoodInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+.stoodInfo p { margin: 0; font-size: 12.5px; line-height: 1.75; color: var(--ink-mute); }
+.stoodInfo .btn { cursor: pointer; }
+
+/* ---- 立绘全图查看器（大图 contain + 半透明幕） ---- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 96;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 3, 6, 0.86);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 200ms ease both;
+}
+.lightboxStage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  animation: riseIn 240ms var(--ease-out) both;
+}
+.lightboxMeta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(760px, calc(100vw - 48px));
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+.lightboxMeta b { color: #fff; font-size: 16px; }
+.lightboxMeta .dialogClose { margin-left: auto; cursor: pointer; }
+.lightboxStage img { box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7); }
+
 @media (max-width: 680px) {
   .kvBlock, .relationGrid { grid-template-columns: 1fr; }
   .cards { grid-template-columns: 1fr; }
+  .stoodRow { flex-direction: column; align-items: flex-start; }
+  .dialogHead { flex-wrap: wrap; }
+  .dialogTitle h3 { font-size: 20px; }
 }

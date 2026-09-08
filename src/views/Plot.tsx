@@ -4,6 +4,7 @@ import { ArrowRight, Check, Eraser, PaperPlaneTilt, Stop } from '@phosphor-icons
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
 import { CHARACTERS } from '../data/chars'
+import { personOf } from '../data/castmeta'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, isReady, loadProfile } from '../lib/api'
@@ -139,12 +140,12 @@ export function Plot() {
       const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag })
       const ev = TIMELINE.find((e) => e.id === evId)
       if (fx.met.length) {
-        const names = fx.met.map((id) => CHARACTERS.find((c) => c.id === id)?.name ?? id).join(' · ')
+        const names = fx.met.map((id) => personOf(id)?.name ?? id).join(' · ')
         push('decode', '档案解锁 · 新遇见', `${names}，已录入角色档案。`, false)
       }
       if (fx.bonds.length) {
         const parts = fx.bonds.map((b) => {
-          const nm = CHARACTERS.find((c) => c.id === b.char)?.name ?? b.char
+          const nm = personOf(b.char)?.name ?? b.char
           return `${nm} ${b.delta > 0 ? '+' : ''}${b.delta}`
         }).join(' · ')
         push('success', '羁绊变化', parts, false)

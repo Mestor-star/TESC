@@ -28,7 +28,7 @@ export const AXIS_MAX = 60
 
 export interface CharacterStat {
   key: string;          // 中文标签
-  value: number;        // 五轴评定（P2 起切为 AxisVal 以支持 '∞'）
+  value: AxisVal;       // 五轴评定：10≈普通成年人；'∞'=无法测量（满格+徽记）
 }
 
 export interface Character {

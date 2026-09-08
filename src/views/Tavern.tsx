@@ -3,6 +3,7 @@ import { Lock, PaperPlaneTilt, Stop, Eraser } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
+import { genderOf } from '../data/castmeta'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, isReady, loadProfile } from '../lib/api'
 import { clock, bondName } from '../lib/format'
@@ -352,7 +353,7 @@ export function Tavern() {
                       <>
                         <span className={css.castSub}>{c.epithet}</span>
                         <span className={css.castSub} style={{ color: 'var(--ink-faint)' }}>
-                          {bondName(bond)} {bond}/100
+                          {bondName(bond, { gender: genderOf(pid) })} {bond}/100
                         </span>
                       </>
                     ) : (

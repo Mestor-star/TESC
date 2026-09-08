@@ -21,12 +21,16 @@ export interface PortraitProps {
   hue?: string
   /** 回退占位纹章字（缺省按 avatarId 查 castmeta） */
   sigil?: string
-  /** 边长 px（缺省 44；head = 头像尺寸，整图位请传大值或经 style 覆写） */
+  /** 盒宽 px：缺省取 size；头像等方形用 */
+  width?: number
+  /** 盒高 px：缺省取 size；立绘整图（如 150×212）用 */
+  height?: number
+  /** 方形边长兜底（width/height 皆缺省时使用） */
   size?: number
-  /** 圆形头像（聊天用）；缺省方形小圆角（档案/立绘用） */
+  /** 圆形头像（聊天用）；缺省方形小圆角 */
   round?: boolean
-  /** 视口内图片尺寸放大的理想像素（如立绘整图传 512） */
-  fetchSize?: number
+  /** 图像裁切：cover 填满裁剪 · contain 完整可见（立绘用） */
+  fit?: 'cover' | 'contain'
   eager?: boolean
   className?: string
   style?: CSSProperties
@@ -43,18 +47,21 @@ function metaOf(props: PortraitProps) {
 }
 
 export function Portrait(props: PortraitProps) {
-  const { avatarId, size = 44, round, className, style, eager } = props
+  const { avatarId, size = 44, width, height, round, fit = 'cover', className, style, eager } = props
 
   const candidates = useMemo(() => charImgCandidates(avatarId), [avatarId])
-  const meta = useMemo(() => metaOf(props), [props.avatarId, props.name, props.hue, props.sigil])
+  const meta = useMemo(() => metaOf(props), [avatarId, props.name, props.hue, props.sigil])
+
+  const w = width ?? size
+  const h = height ?? size
 
   // 候选命中进度：-1 = 全部 404，回退纹章
   const [idx, setIdx] = useState(0)
   useEffect(() => { setIdx(0) }, [avatarId])
 
   const box: CSSProperties = {
-    width: size,
-    height: size,
+    width: w,
+    height: h,
     flex: 'none',
     overflow: 'hidden',
     borderRadius: round ? '50%' : 8,
@@ -70,15 +77,15 @@ export function Portrait(props: PortraitProps) {
         <img
           src={shown}
           alt={meta.name}
-          width={size}
-          height={size}
+          width={w}
+          height={h}
           loading={eager ? 'eager' : 'lazy'}
           decoding="async"
           onError={() => setIdx((i) => (i + 1 >= candidates.length ? -1 : i + 1))}
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            objectFit: fit,
             display: 'block',
             background: '#0b0e14',
           }}
@@ -92,7 +99,7 @@ export function Portrait(props: PortraitProps) {
             alignItems: 'center',
             justifyContent: 'center',
             color: meta.hue,
-            fontSize: Math.max(12, Math.round(size * 0.46)),
+            fontSize: Math.max(12, Math.round(Math.min(w, h) * 0.46)),
             fontWeight: 700,
             fontFamily: 'var(--font-serif, serif)',
             lineHeight: 1,

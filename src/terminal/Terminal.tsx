@@ -5,13 +5,17 @@ import { CHARACTERS } from '../data/chars'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { resolveEntityToCodexId } from '../data/codex'
+import { defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { clamp } from '../lib/format'
 import { ensureSeeded } from '../lib/lorestore'
 
 export type ViewId = 'dashboard' | 'plot' | 'saga' | 'lore' | 'arms' | 'archive' | 'missions' | 'comms' | 'codex' | 'tavern' | 'settings'
 
-/** 需完成「欢迎来到，终末停滞委员会」事件才能解锁的视图 */
-export const LOCKED_VIEWS: ViewId[] = ['arms', 'archive', 'missions', 'comms', 'codex', 'tavern']
+/**
+ * 需完成「欢迎来到，终末停滞委员会」事件才能解锁的视图。
+ * 角色档案自始开放（全员档案 + 羁绊照常显示），故不在锁定之列。
+ */
+export const LOCKED_VIEWS: ViewId[] = ['arms', 'missions', 'comms', 'codex', 'tavern']
 const LOCKED_SET = new Set<ViewId>(LOCKED_VIEWS)
 
 interface Saved {
@@ -59,8 +63,8 @@ export interface TerminalState {
   /** —— 动态世界状态（持久化变量） —— */
   world: WorldState
   isMet: (charId: string) => boolean
-  /** 直接增减某角色的羁绊偏移（抉择、对话效果统一走这里） */
-  bumpBond: (charId: CharId, delta: number) => void
+  /** 直接增减某角色的羁绊偏移（抉择、对话效果统一走这里；接受档案名录内任意角色） */
+  bumpBond: (charId: string, delta: number) => void
   /** 结算整段事件：标记完成 → 遇见角色自动解锁 + 推进图鉴自动登记 */
   resolveEvent: (id: string) => void
   /** 登记图鉴条目 id（剧情推进 / 操作员手动登记共用） */
@@ -82,6 +86,11 @@ export interface TerminalState {
   /** 收束当前事件：resolveEvent + 追加一条记录，返回是否成功（true=已归档） */
   completeEvent: (id: string, digest: string, mode: RecordMode, diverged?: boolean) => boolean
 
+  /** 跨视图「打开某角色档案」意图（正文关键词跳转 → 档案页就近展开） */
+  profileRequest: { id: string; name: string; ts: number } | null
+  requestProfile: (id: string) => void
+  clearProfileRequest: () => void
+
   toasts: Toast[]
   push: (kind: ToastKind, title: string, body?: string, live?: boolean) => void
   dismiss: (id: number) => void
@@ -90,10 +99,6 @@ export interface TerminalState {
 
 const Ctx = createContext<TerminalState | null>(null)
 const KEY = 'zts-terminal:v3'
-
-function defaultBond(id: string): number {
-  return CHARACTERS.find((c) => c.id === id)?.defaultBond ?? 0
-}
 
 function emptyWorld(): WorldState {
   return { offset: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [] }
@@ -221,6 +226,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [world, setWorld] = useState<WorldState>(() => hydrateWorld(initial.epDone, initial.cur, initial.world))
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
+  /** 跨视图「打开档案」意图（正文关键词跳转用；档案页消费后清除） */
+  const [profileRequest, setProfileRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
 
   const focusRegion: RegionReading = REGIONS.find((r) => r.id === focusId) ?? REGIONS[0]
   const saved = useMemo<Saved>(
@@ -292,7 +299,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     (charId: string) => {
       const ep = cur ? TIMELINE.find((e) => e.id === cur) : undefined
       const v = ep?.bond[charId as keyof BondSnap]
-      const base = typeof v === 'number' ? v : defaultBond(charId)
+      // 主役锚点 = 当前段原著快照；其余 21 名登场者 = castmeta 登记基线；均叠加抉择偏移
+      const base = typeof v === 'number' ? v : defaultBondOf(charId)
       const off = world.offset[charId] ?? 0
       return clamp(base + off, 0, 100)
     },
@@ -300,7 +308,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
 
   /* —— 动态世界操作 —— */
-  const bumpBond = useCallback((charId: CharId, delta: number) => {
+  const bumpBond = useCallback((charId: string, delta: number) => {
     setWorld((prev) => ({
       ...prev,
       offset: {
@@ -326,9 +334,20 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setWorld((prev) => ({ ...prev, pick: { ...prev.pick, [id]: key } }))
   }, [])
 
-  /** 立即把某角色标记为「遇见」（仅接受档案内角色 id） */
+  /** 请求打开某角色档案（自动切到档案页；角色档案自始开放，无需解锁） */
+  const requestProfile = useCallback(
+    (id: string) => {
+      if (!PERSON_IDS.includes(id)) return
+      navigate('archive')
+      setProfileRequest({ id, name: personOf(id)?.name ?? id, ts: Date.now() })
+    },
+    [navigate],
+  )
+  const clearProfileRequest = useCallback(() => setProfileRequest(null), [])
+
+  /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 21 名登场者） */
   const meetChar = useCallback((charId: string) => {
-    if (!CHARACTERS.some((c) => c.id === charId)) return
+    if (!PERSON_IDS.includes(charId)) return
     setWorld((prev) => (prev.met[charId] ? prev : { ...prev, met: { ...prev.met, [charId]: true } }))
   }, [])
 
@@ -506,6 +525,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     records: world.records,
     meetChar,
     completeEvent,
+    profileRequest,
+    requestProfile,
+    clearProfileRequest,
     toasts,
     push,
     dismiss,

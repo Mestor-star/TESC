@@ -270,6 +270,11 @@ try {
   /* ============ Phase A：离线通读 1→2→3 → 解锁 + 记录 ============ */
   console.log('\n[Phase A] 离线通读 原文 → 归档 → 记录流 / 解锁')
   await boot()
+  // A0：P2 角色档案自始开放——此时仍是全新世界、unlocked=false，档案即已可查
+  await goto('角色档案')
+  await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 15000, 'A0 archive pre-unlock')
+  const preUnlock = await ev(`(${wState}).unlocked`)
+  ok('A0 未解锁时角色档案已开放（25 卡）', preUnlock === false && (await ev(`document.querySelectorAll('[data-archive-card]').length`)) === 25, 'unlocked=' + preUnlock)
   await goto('剧情推进')
   await poll(`document.body.innerText.includes('剧情推进')`, 20000, 'A plot h1')
   // 未配主线 → 自动离线；读到 v1-1 原文
@@ -486,6 +491,39 @@ try {
   await sleep(900)
   const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('词条库数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,len:v?v.innerText.length:0}})()`)
   ok('F1 设置视图挂载无黑屏（词条库数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
+
+  /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
+  console.log('\n[Phase G] P2 Archive：25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
+  await goto('角色档案')
+  await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'G archive 25 cards')
+  ok('G1 全员 25 张档案卡（自始开放 · 无需解锁）', true)
+  const infCount = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?(c.innerText.split('∞').length-1):-1})()`)
+  ok('G2 恋兔光破坏力读数为唯一 ∞（满格 · 无法测量）', infCount === 1, 'inf=' + infCount)
+  const bondChips = await ev(`(()=>[...document.querySelectorAll('[data-archive-card]')].filter(c=>c.innerText.includes('当前羁绊')).length)()`)
+  ok('G3 25 张卡均带「当前羁绊」chip', bondChips === 25, 'n=' + bondChips)
+  // 名称/数值都有实义：chip 文本形如「当前羁绊 <称谓> · <0-100>」，且数值在界内
+  const lunaChip = await ev(`(()=>{const c=document.querySelector('[data-archive-card="luna"]');const m=c?c.innerText.match(/当前羁绊\\s*([^·\\n]+?)\\s*·\\s*(\\d+)/):null;return m?{label:m[1].trim(),val:Number(m[2])}:null})()`)
+  ok('G4 档案羁绊 chip 有实义称谓与界内数值', !!lunaChip && lunaChip.val >= 0 && lunaChip.val <= 100 && lunaChip.label.length > 0, JSON.stringify(lunaChip))
+  // 打开恋兔光详情（就近锚定）
+  await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
+  await poll(`(()=>{const d=document.querySelector('[data-archive-dialog]');return !!d && d.innerText.includes('无法测量')})()`, 15000, 'G dialog open ∞ note')
+  const dg = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;const r=d.getBoundingClientRect();return {l:Math.round(r.left),t:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),vw:innerWidth,vh:innerHeight,text:d.innerText}})()`)
+  ok('G5 就近弹窗视口内落位（未越界）', !!dg && dg.t >= 0 && dg.l >= 0 && dg.l + dg.w <= dg.vw + 2 && dg.t + dg.h <= dg.vh + 2, JSON.stringify(dg && { l: dg.l, t: dg.t, w: dg.w, h: dg.h }))
+  ok('G6 弹窗含 立绘位 与 当前羁绊 区', !!dg && dg.text.includes('立绘') && dg.text.includes('当前羁绊'), '')
+  ok('G7 弹窗含 ∞/无法测量 说明行', !!dg && dg.text.includes('无法测量'), '')
+  // 立绘全图查看器
+  await ev(clickTxt('查看全图'))
+  await poll(`!!document.querySelector('[data-archive-lightbox]')`, 10000, 'G lightbox open')
+  const lbText = await ev(`document.querySelector('[data-archive-lightbox]')?document.querySelector('[data-archive-lightbox]').innerText:''`)
+  ok('G8 立绘全图查看器开启（缺图纹章占位 → 真图即点亮）', lbText.includes('立绘全图'), '')
+  await ev(`(()=>{const b=[...document.querySelectorAll('[data-archive-lightbox] button')].find(x=>x.getAttribute('aria-label')==='关闭');if(b){b.click();return true}return false})()`)
+  await poll(`!document.querySelector('[data-archive-lightbox]')`, 8000, 'G lightbox close')
+  ok('G9 查看器可关闭并返回详情', true)
+  // ESC 关闭就近弹窗
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, 'G dialog esc close')
+  ok('G10 弹窗 ESC 关闭', true)
 
 } catch (e) {
   passAll = false
