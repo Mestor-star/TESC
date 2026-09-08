@@ -1,0 +1,135 @@
+/* ===== 任务简报板 ===== */
+
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filterBtn {
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--ink-mute);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 14px;
+  transition: all var(--t-fast);
+}
+.filterBtn:hover { color: var(--ink); border-color: var(--line-3); }
+.filterBtn.isOn {
+  color: #fff;
+  border-color: var(--red);
+  background: var(--red-soft);
+  box-shadow: inset 0 0 0 1px var(--red);
+}
+
+.board { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+
+.card {
+  --s: var(--steel);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 40%),
+    var(--bg-1);
+  overflow: hidden;
+  transition: border-color var(--t-mid), transform var(--t-mid) var(--ease-out), box-shadow var(--t-mid);
+}
+.card:hover { transform: translateX(4px); border-color: color-mix(in srgb, var(--s) 42%, var(--line-2)); }
+
+/* 左侧阶段竖带 */
+.cardRibbon {
+  align-self: stretch;
+  width: 8px;
+  background: var(--s);
+  box-shadow: inset -2px 0 6px rgba(0, 0, 0, 0.4);
+}
+.cardRibbon.danger { background: repeating-linear-gradient(180deg, var(--red) 0 10px, #181828 10px 16px); }
+.cardRibbon.warn { background: var(--amber); }
+.cardRibbon.ok { background: var(--steel); }
+.cardRibbon.done { background: var(--jade); }
+
+.cardMain { padding: 14px 0 14px 2px; min-width: 0; }
+.cardTop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cardNo {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.cardTitle {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+.cardSub { display: flex; align-items: center; gap: 12px; margin-top: 6px; color: var(--ink-mute); font-size: 12px; flex-wrap: wrap; }
+.cardSub .sep { color: var(--line-3); }
+.cardDesc {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cardDesc.open { -webkit-line-clamp: unset; }
+
+.crew { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.crewChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  padding: 4px 9px 4px 5px;
+  border-radius: 999px;
+}
+.crewChip i {
+  font-style: normal;
+  width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #fff;
+  background: var(--crew);
+  border-radius: 50%;
+}
+
+.cardAside {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px 14px 0;
+  min-width: 168px;
+}
+.rewards { display: flex; flex-direction: column; gap: 4px; }
+.rewardLine { display: flex; gap: 7px; font-size: 11px; color: var(--ink-mute); align-items: center; }
+.rewardLine::before { content: ""; width: 4px; height: 4px; background: var(--s); transform: rotate(45deg); }
+.asideAction { display: flex; gap: 6px; margin-top: 4px; }
+
+.deadline { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.02em; }
+
+.statusBadge { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; }
+
+.empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--ink-mute);
+  border: 1px dashed var(--line-2);
+}
+
+@media (max-width: 980px) {
+  .card { grid-template-columns: auto 1fr; }
+  .cardAside { grid-column: 2; padding: 0 16px 14px 0; flex-direction: row; align-items: center; flex-wrap: wrap; }
+}

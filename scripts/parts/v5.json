@@ -1,0 +1,32 @@
+[
+  { "id": "v5-1", "parts": [
+    { "file": "v5/011-序 章 『比如说，这样一段日常的故事。』.txt", "whole": true },
+    { "file": "v5/012-第 1 话 『命中注定的人竟然是女仆小姐_』.txt", "whole": true }
+  ] },
+  { "id": "v5-2", "parts": [
+    { "file": "v5/013-第 2 话 『School For Rock』.txt", "whole": true },
+    { "file": "v5/014-第 3 话 『噬鯱者』.txt", "whole": true }
+  ] },
+  { "id": "v5-3", "parts": [
+    { "file": "v5/015-第 4 话 『仅此一心』.txt", "whole": true },
+    { "file": "v5/016-第 5 话 『在异厅之中』.txt", "whole": true }
+  ] },
+  { "id": "v5-4", "parts": [
+    { "file": "v5/017-第 6 话 『小柴琳』.txt", "whole": true }
+  ] },
+  { "id": "v5-5", "parts": [
+    { "file": "v5/018-第 7 话 『言万心叶』.txt", "whole": true }
+  ] },
+  { "id": "v5-6", "parts": [
+    { "file": "v5/019-第 8 话 『海色。风声』.txt", "whole": true },
+    { "file": "v5/020-第 9 话 『潮声。夜晚』.txt", "whole": true }
+  ] },
+  { "id": "v5-7", "parts": [
+    { "file": "v5/021-第10话 『潜藏于黑暗中的怪物们的赞歌』.txt", "whole": true },
+    { "file": "v5/022-第11话 『英雄之路，不过常人之途』.txt", "whole": true },
+    { "file": "v5/023-第12话 『为了迎接结局，所能做的一切』.txt", "whole": true },
+    { "file": "v5/024-第13话 『Last Song』.txt", "whole": true },
+    { "file": "v5/025-尾声-ａ『愿望的残响』.txt", "whole": true },
+    { "file": "v5/026-尾声-ｂ『我回来了！』.txt", "whole": true }
+  ] }
+]

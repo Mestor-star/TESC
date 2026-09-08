@@ -1,0 +1,75 @@
+/* ===== 智库：世界观 / 势力 / 概念 ===== */
+
+.filterRow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.catBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+}
+.catBtn small { font-family: var(--font-mono); font-size: 10px; font-weight: 400; color: var(--ink-faint); margin-left: 2px; }
+.catBtn:hover { color: var(--ink); border-color: var(--line-3); }
+.catBtn.isOn {
+  color: #fff;
+  border-color: var(--c, var(--red));
+  background: color-mix(in srgb, var(--c, var(--red)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--c, var(--red));
+}
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+.card {
+  position: relative;
+  --c: var(--steel);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  border-top: 3px solid var(--c);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.016), transparent 40%),
+    var(--bg-1);
+  transition: transform var(--t-mid) var(--ease-out), border-color var(--t-mid), box-shadow var(--t-mid);
+}
+.card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--c) 45%, var(--line-2));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.card::after {
+  content: attr(data-sub);
+  position: absolute;
+  right: 12px; bottom: -6px;
+  font-family: var(--font-mono);
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--c) 9%, transparent);
+  pointer-events: none;
+  user-select: none;
+  text-transform: uppercase;
+}
+.cardHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cardTitle { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: 0.01em; }
+.cardSub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); letter-spacing: 0.14em; text-transform: uppercase; }
+.cardRef { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); padding: 2px 7px; background: color-mix(in srgb, var(--c) 8%, transparent); }
+.cardBody { margin: 12px 0 0; font-size: 13px; line-height: 1.85; color: var(--ink-dim); flex: 1; }
+.cardTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: color-mix(in srgb, var(--c) 80%, #fff);
+  border: 1px dashed color-mix(in srgb, var(--c) 42%, transparent);
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--c) 7%, transparent);
+  letter-spacing: 0.04em;
+}
+.empty { color: var(--ink-faint); font-size: 13px; padding: 30px 0; line-height: 1.8; }

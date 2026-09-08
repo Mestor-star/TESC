@@ -1,0 +1,367 @@
+/* ===== 开屏 · 终端开机流程 =====
+ * 指纹认证页(长按扫描) → 认证通过 → 黑底终端开机自检(逐行打字)
+ * → 就绪提示符 → 终端本体以「启动弹出」挂载进场(见 App.module.css .bootPop)
+ */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--ink);
+  background: #06060c;
+}
+
+/* ---- 认证页(指纹扫描) ---- */
+.bootInner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: riseIn 700ms var(--ease-out) both;
+}
+
+.bootKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 22px;
+}
+.bootKicker::before,
+.bootKicker::after {
+  content: "";
+  width: 34px;
+  height: 1px;
+  background: var(--line-3);
+}
+
+.bootTitle {
+  position: relative;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: clamp(30px, 6vw, 58px);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1.18;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+.bootTitle em {
+  font-style: normal;
+  color: var(--red);
+  text-shadow: 0 0 26px rgba(255, 46, 67, 0.5);
+}
+/* 四角斜切锐角装饰 */
+.bootTitle::before,
+.bootTitle::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 14px;
+  pointer-events: none;
+}
+.bootTitle::before {
+  left: 0;
+  border-left: 3px solid var(--red);
+  background: linear-gradient(90deg, rgba(255, 46, 67, 0.35), transparent 85%);
+  clip-path: polygon(0 0, 100% 22%, 100% 78%, 0 100%);
+}
+.bootTitle::after {
+  right: 0;
+  border-right: 3px solid var(--red);
+  background: linear-gradient(270deg, rgba(255, 46, 67, 0.35), transparent 85%);
+  clip-path: polygon(100% 0, 0 22%, 0 78%, 100% 100%);
+}
+
+.bootSub {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.bootBrand {
+  margin-top: 40px;
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--ink-mute);
+}
+.bootBrand b {
+  color: var(--red);
+  font-weight: 800;
+}
+
+/* 认证页整体的暗部 HUD:细格网 + 顶部状态行(把「终端屏」质感留在认证阶段,
+ * 开机后切纯黑终端) */
+.boot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background:
+    repeating-linear-gradient(90deg, rgba(120, 220, 255, 0.025) 0 1px, transparent 1px 46px),
+    repeating-linear-gradient(0deg, rgba(120, 220, 255, 0.025) 0 1px, transparent 1px 46px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.5) 0 1px, transparent 1px 4px);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 46%, #000 40%, transparent 100%);
+}
+
+/* ---- 指纹扫描区 ---- */
+.fp {
+  position: relative;
+  margin-top: 46px;
+  width: 172px;
+  height: 172px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), #0c0c16;
+  border: 1px solid var(--line-3);
+  user-select: none;
+  touch-action: none;
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.fp:hover {
+  transform: translateY(-2px);
+}
+.fp::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 46, 67, 0.35);
+  animation: fpSpin 26s linear infinite;
+}
+@keyframes fpSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fpRing {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: conic-gradient(var(--red) calc(var(--p, 0) * 1%), transparent 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  opacity: 0.9;
+  transition: opacity var(--t-fast);
+}
+
+.fpIcon {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  color: var(--red);
+  filter: drop-shadow(0 0 16px rgba(255, 46, 67, 0.5));
+  transition: color var(--t-fast), transform var(--t-fast);
+}
+.isScanning .fpIcon {
+  color: #fff;
+  animation: fpScan 0.9s ease-in-out infinite;
+}
+@keyframes fpScan {
+  0%, 100% {
+    transform: translateY(-6px);
+    filter: drop-shadow(0 0 10px rgba(255, 46, 67, 0.6));
+  }
+  50% {
+    transform: translateY(6px);
+    filter: drop-shadow(0 0 22px rgba(255, 46, 67, 1));
+  }
+}
+
+/* 扫描光束 */
+.fpBeam {
+  position: absolute;
+  z-index: 1;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--red), transparent);
+  box-shadow: 0 0 14px var(--red);
+  opacity: 0;
+}
+.isScanning .fpBeam {
+  opacity: 1;
+  animation: beamDrop 1.05s ease-in-out infinite;
+}
+@keyframes beamDrop {
+  0% {
+    top: 14%;
+  }
+  50% {
+    top: 84%;
+  }
+  100% {
+    top: 14%;
+  }
+}
+
+.fpHint {
+  margin-top: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  min-height: 1.4em;
+}
+.fpHint.isLive {
+  color: var(--red);
+}
+
+/* 认证通过后整页瞬时切入纯黑终端 */
+.boot.isBoot {
+  background: #000;
+}
+
+/* ---- 开机自检终端 ---- */
+.term {
+  position: relative;
+  width: min(760px, 92vw);
+  min-height: 320px;
+  font-family: var(--font-mono);
+  text-align: left;
+  color: #b9f7dc;
+  animation: termOn 420ms steps(1) both;
+}
+@keyframes termOn {
+  0% {
+    opacity: 0;
+    filter: brightness(3);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+.term::after {
+  /* CRT 扫描线纹理 */
+  content: "";
+  position: absolute;
+  inset: -60px;
+  pointer-events: none;
+  opacity: 0.5;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 3px);
+}
+
+.termHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+  padding-bottom: 12px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid rgba(63, 224, 160, 0.22);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: rgba(185, 247, 220, 0.5);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.termHeadRight {
+  color: var(--jade);
+  letter-spacing: 0.18em;
+  flex: 0 0 auto;
+}
+
+.termLines {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+}
+
+.line {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  animation: lineIn 200ms var(--ease-out) both;
+}
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.line b {
+  color: var(--jade);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.line span {
+  color: #d9f9ea;
+  white-space: pre-wrap;
+}
+.line em {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--jade);
+  align-self: center;
+}
+
+.line.ready {
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(63, 224, 160, 0.28);
+}
+.line.ready b {
+  color: var(--red);
+}
+.line.ready span {
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* 闪烁光标 */
+.caret {
+  margin-left: 10px;
+  display: inline-block;
+  width: 9px;
+  height: 1.05em;
+  background: var(--jade);
+  box-shadow: 0 0 10px rgba(63, 224, 160, 0.8);
+  animation: caretBlink 0.9s steps(1) infinite;
+  align-self: center;
+}
+@keyframes caretBlink {
+  50% {
+    opacity: 0;
+  }
+}

@@ -1,0 +1,11 @@
+[
+  { "id": "v1-1", "parts": [ { "file": "v1/011-序 章 『船与影』.txt", "from": 3, "to": 636 } ] },
+  { "id": "v1-2", "parts": [ { "file": "v1/011-序 章 『船与影』.txt", "from": 639, "to": 1176 } ] },
+  { "id": "v1-3", "parts": [ { "file": "v1/012-第 1 话 『这里是，终末停滞委员会』.txt", "whole": true } ] },
+  { "id": "v1-4", "parts": [ { "file": "v1/013-第 2 话 『欢迎来到光明会』.txt", "whole": true }, { "file": "v1/014-第 3 话 『出发，去集市！』.txt", "whole": true } ] },
+  { "id": "v1-5", "parts": [ { "file": "v1/015-第 4 话 『脏器公寓』.txt", "whole": true } ] },
+  { "id": "v1-6", "parts": [ { "file": "v1/016-第 5 话 『去研究所吧！』.txt", "whole": true }, { "file": "v1/017-第 6 话 『泥塑面具』.txt", "from": 3, "to": 393 } ] },
+  { "id": "v1-7", "parts": [ { "file": "v1/017-第 6 话 『泥塑面具』.txt", "from": 397, "to": 730 } ] },
+  { "id": "v1-8", "parts": [ { "file": "v1/018-第 7 话 『最深处，再之下的深渊』.txt", "whole": true }, { "file": "v1/019-第 8 话 『曾是，人类之物』.txt", "whole": true } ] },
+  { "id": "v1-9", "parts": [ { "file": "v1/020-第 9 话 『草原的骑手』.txt", "whole": true }, { "file": "v1/021-第10话 『褶边骑士』.txt", "whole": true }, { "file": "v1/022-第11话 『低语者』.txt", "whole": true }, { "file": "v1/023-第12话 『钢铁的新娘』.txt", "whole": true }, { "file": "v1/024-尾声-a 『笑着，前进吧』.txt", "whole": true }, { "file": "v1/025-尾声-b 『独自一人，伫立着』.txt", "whole": true } ] }
+]

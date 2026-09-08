@@ -1,0 +1,804 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRight, Check, Eraser, PaperPlaneTilt, Stop } from '@phosphor-icons/react'
+
+import { useTerminal } from '../terminal/Terminal'
+import { TIMELINE } from '../data/timeline'
+import { CHARACTERS } from '../data/chars'
+import { SCENES } from '../data/scenes'
+import type { ApiSettings, ChatTurn } from '../lib/api'
+import { isReady, loadProfile } from '../lib/api'
+import { driveReply, hostDriveState, useHostDrive } from '../st/drive'
+import { loadOfflineText } from '../lib/offtext'
+import { clock } from '../lib/format'
+import type { ChatMsg, CharId, RecordMode } from '../data/types'
+import { applyDirective, buildDirectorSystem, directiveHasFx, parseDirectorReply } from '../lib/plot'
+import type { PlotReply } from '../lib/plot'
+import { loadActiveBooks } from '../lib/lorestore'
+import { allowGateFor, buildLoreContext } from '../lib/lorescan'
+import { LorebookModal } from './lorebook/LorebookModal'
+
+import css from './Plot.module.css'
+
+const LOG_KEY = 'zts-plot:v1'
+
+/** 进入一个尚无会话的事件时，喂给导演的「开场请求」（不入历史） */
+const OPEN_PROMPT =
+  '（开场）请依据「事件大纲」与在场角色，铺陈这一事件的开端：写清此时此地、在场者的状态与正悬而未决的局面，'
+  + '然后停在一个言万心叶可以回应、可以行动的地方。先不要收束事件；本回合若无变量变化，指令块给 {} 即可。'
+
+const MODE_LABEL: Record<RecordMode, string> = {
+  online: '在线推演',
+  offline: '离线通读',
+  legacy: '旧档回填',
+}
+
+function loadLogs(): Record<string, ChatMsg[]> {
+  try {
+    const raw = localStorage.getItem(LOG_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, ChatMsg[]>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function idFor(): string {
+  return `${Date.now().toString(36)}::${Math.random().toString(36).slice(2, 6)}`
+}
+
+/** 剧情会话历史（最近 N 条）→ 模型消息 */
+function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
+  const list = (log ?? []).slice(-max)
+  return list.map((m): ChatTurn =>
+    m.from === 'user' ? { role: 'user', content: m.text } : { role: 'assistant', content: m.text },
+  )
+}
+
+export function Plot() {
+  const {
+    operatorName, navigate, push,
+    epDone, bondNow, world,
+    bumpBond, registerEnd, meetChar, setFlag, recordPick, completeEvent,
+    records,
+  } = useTerminal()
+
+  const [cfgMain, setCfgMain] = useState<ApiSettings | null | undefined>(undefined)
+  const [mode, setMode] = useState<'online' | 'offline'>('online')
+  const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadLogs)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [offState, setOffState] = useState<{ id: string | null; state: 'idle' | 'loading' | 'ok' | 'miss'; text?: string; msg?: string }>({ id: null, state: 'idle' })
+  const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const endRef = useRef<HTMLDivElement>(null)
+  /** 事件收束后自动推进到下一段时，先不自动铺开场（等操作员发话） */
+  const skipAutoOpen = useRef(false)
+  const lastOpen = useRef<string | null>(null)
+  const needDir = useRef(false)
+  const [foldOpen, setFoldOpen] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleFold = useCallback((id: string) => {
+    setFoldOpen((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }, [])
+  const [lbOpen, setLbOpen] = useState(false)
+
+  // 宿主态：在线门禁 = 酒馆宿主可驱动（选好角色/聊天）；独立态：主线直连已配置
+  const isHost = useHostDrive()
+  const hostDrv = isHost ? hostDriveState('plot') : null
+  const hostReady = isHost && !!hostDrv?.ok
+  const ready = hostReady || (!!cfgMain && isReady(cfgMain))
+  const showOnline = mode === 'online'
+
+  const total = TIMELINE.length
+  const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
+  const allDone = doneCount === total
+  const focusEv = useMemo(
+    () => (allDone ? null : TIMELINE.find((e) => !epDone[e.id]) ?? null),
+    [epDone, allDone],
+  )
+  const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
+
+  /* —— 通道配置：宿主态直连配置无用武之地（密钥在酒馆），置空走酒馆对话；独立态才读直连 —— */
+  useEffect(() => {
+    if (isHost) {
+      setCfgMain(null)
+      return
+    }
+    let on = true
+    loadProfile('main')
+      .then((c) => on && setCfgMain(c))
+      .catch(() => on && setCfgMain(null))
+    return () => { on = false }
+  }, [isHost])
+
+  // 主线通道未配置时，默认落到离线通读
+  useEffect(() => {
+    if (cfgMain && !isReady(cfgMain)) setMode('offline')
+  }, [cfgMain])
+
+  /* —— 会话持久化（不含密钥） —— */
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOG_KEY, JSON.stringify(logs))
+    } catch {
+      /* 隐私模式下降级为仅内存 */
+    }
+  }, [logs])
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [logs, busy, focusEv?.id])
+
+  const appendMsg = useCallback((evId: string, m: ChatMsg) => {
+    setLogs((prev) => ({ ...prev, [evId]: [...(prev[evId] ?? []), m] }))
+  }, [])
+
+  /** 指令落地 + 结算：写变量、toast、eventDone→收束记录并推进下一段 */
+  const applyReply = useCallback(
+    (parsed: PlotReply, evId: string) => {
+      const d = parsed.directive
+      if (!d || Object.keys(d).length === 0) return
+      const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag })
+      const ev = TIMELINE.find((e) => e.id === evId)
+      if (fx.met.length) {
+        const names = fx.met.map((id) => CHARACTERS.find((c) => c.id === id)?.name ?? id).join(' · ')
+        push('decode', '档案解锁 · 新遇见', `${names}，已录入角色档案。`, false)
+      }
+      if (fx.bonds.length) {
+        const parts = fx.bonds.map((b) => {
+          const nm = CHARACTERS.find((c) => c.id === b.char)?.name ?? b.char
+          return `${nm} ${b.delta > 0 ? '+' : ''}${b.delta}`
+        }).join(' · ')
+        push('success', '羁绊变化', parts, false)
+      }
+      if (fx.ends.length) {
+        push('info', '图鉴登记', `${fx.ends.length} 条实体已登记进终末图鉴。`, false)
+      }
+      if (fx.eventDone) {
+        const digest = (fx.digest?.trim() || ev?.summary || '').trim()
+        completeEvent(evId, digest || ev?.summary || '', 'online', fx.diverged)
+        skipAutoOpen.current = true
+        setLastEnded({ id: evId, title: ev?.title ?? evId, digest: digest || ev?.summary || '', diverged: fx.diverged, mode: 'online' })
+        push('decode', '事件收束 · 已写入记录', ev?.title ?? evId, false)
+        return
+      }
+      if (fx.diverged) {
+        push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
+      }
+    },
+    [meetChar, bumpBond, registerEnd, setFlag, completeEvent, push],
+  )
+
+  /**
+   * 对某事件发起一次在线推演请求。
+   * userMsg 可选：操作员发言（正常回合）；baseOverride 可选：重写时用截断后的历史当 base。
+   */
+  const pushTurn = useCallback(
+    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[]) => {
+      const ev = TIMELINE.find((e) => e.id === evId)
+      if (!ev || busy || !ready) return
+      setBusy(true)
+      setErr(null)
+
+      // 词条库命中注入（仅就绪在线；失败静默，主线不受影响）
+      let loreBlock = ''
+      try {
+        const books = await loadActiveBooks()
+        if (books.length) {
+          const scanLog = baseOverride ?? logs[evId]
+          const recent = toTurns(scanLog, 10).map((t) => t.content).join('\n')
+          loreBlock = buildLoreContext(books, {
+            scanText: `${recent}${userMsg ? `\n${userMsg}` : ''}`,
+            contextText: `${ev.group} · ${ev.title} · ${ev.place} ${ev.summary}`,
+            gate: allowGateFor({ epDone, ends: world.ends }, evId),
+          })
+        }
+      } catch {
+        loreBlock = ''
+      }
+
+      const system = buildDirectorSystem(ev, {
+        operatorName,
+        bondNow,
+        flags: world.flags,
+        needDirective: needDir.current,
+        loreContext: loreBlock || undefined,
+      })
+      const base = toTurns(baseOverride ?? logs[evId])
+      const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
+      if (userMsg) messages.push({ role: 'user', content: userMsg })
+
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+      try {
+        const res = await driveReply({
+          kind: 'plot',
+          userText: userMsg ?? '',
+          messages,
+          cfg: cfgMain ?? null,
+          signal: ctrl.signal,
+          maxTokens: 1500,
+          session: { eventId: evId },
+        })
+        const parsed = parseDirectorReply(res)
+        needDir.current = !parsed.found
+        if (!parsed.found) {
+          push('warn', '未解析到事件指令', '叙述已上屏；本回合无变量自动落地，下一回会附带补发提醒。', false)
+        }
+        const shown = parsed.narrative.trim()
+        if (shown) {
+          appendMsg(evId, {
+            id: idFor(),
+            from: 'them',
+            text: shown,
+            time: clock(),
+            meta: {
+              source: parsed.source,
+              options: parsed.options.length ? parsed.options : undefined,
+              thinking: parsed.thinking || undefined,
+              hasFx: directiveHasFx(parsed.directive),
+            },
+          })
+        }
+        applyReply(parsed, evId)
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+        const msg = e instanceof Error ? e.message : String(e)
+        setErr(`推演中断：${msg}`)
+        push('danger', 'AI 推演失败', msg, false)
+      } finally {
+        setBusy(false)
+        abortRef.current = null
+      }
+    },
+    [busy, ready, cfgMain, operatorName, bondNow, world.flags, world.ends, epDone, logs, appendMsg, applyReply, push],
+  )
+
+  const send = async () => {
+    const text = draft.trim()
+    if (!focusEv || busy || !text) return
+    setDraft('')
+    appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
+    await pushTurn(focusEv.id, text)
+  }
+
+  const stop = () => {
+    abortRef.current?.abort()
+    setBusy(false)
+  }
+
+  const clearThread = () => {
+    if (!focusEv) return
+    setLogs((prev) => {
+      const next = { ...prev }
+      delete next[focusEv.id]
+      return next
+    })
+    setErr(null)
+    push('info', '本段会话已清空', '重新发消息即从头推演。', false)
+  }
+
+  /** 楼层回退：截断到第 i 条之前，本段会话从该条重新起步（只动日志，不回滚已落地变量） */
+  const rollbackAt = (i: number) => {
+    if (!focusEv || busy) return
+    const cur = logs[focusEv.id] ?? []
+    if (i < 0 || i > cur.length) return
+    setLogs((prev) => ({ ...prev, [focusEv.id]: (prev[focusEv.id] ?? []).slice(0, i) }))
+    needDir.current = false
+    setErr(null)
+    push('info', '从此重来', '已截断至此，本段会话从这一条重新起步。此前已落地的羁绊/图鉴/记录不会回滚。', false)
+  }
+
+  /** 重写此回复：仅当末条为导演叙述、上一条是操作员发言、且该叙述未产生世界变化 */
+  const rewriteReply = async (i: number) => {
+    if (!focusEv || busy || !ready) return
+    const cur = logs[focusEv.id] ?? []
+    if (i !== cur.length - 1) return
+    const prev = cur[i - 1]
+    if (!prev || prev.from !== 'user') return
+    const trimmed = cur.slice(0, i)
+    setLogs((lg) => ({ ...lg, [focusEv.id]: (lg[focusEv.id] ?? []).slice(0, i) }))
+    needDir.current = false
+    setErr(null)
+    await pushTurn(focusEv.id, undefined, trimmed)
+  }
+
+  /** 点击某条「接续选项」→ 作为操作员发言发出并推进 */
+  const pickOption = async (text: string) => {
+    const t = (text ?? '').trim()
+    if (!focusEv || busy || !ready || !t) return
+    appendMsg(focusEv.id, { id: idFor(), from: 'user', text: t, time: clock() })
+    await pushTurn(focusEv.id, t)
+  }
+
+  /* —— 既定行动快捷槽（若该事件有 choices） —— */
+  const scene = focusEv ? SCENES[focusEv.id] : undefined
+  const choices = scene?.choices?.filter((ch) => ch && world.pick[focusEv!.id] !== ch.key) ?? []
+  const alreadyPicked = focusEv ? !!scene?.choices?.length && !!world.pick[focusEv.id] : false
+
+  const quickAct = async (key: string) => {
+    if (!focusEv || busy) return
+    const ch = SCENES[focusEv.id]?.choices?.find((c) => c.key === key)
+    if (!ch) return
+    // 依原著既定余波确定性落地（等价旧 choose 语义）
+    // 先落本地，再发消息让模型据「已发生事实」续写，避免重复累计
+    recordPick(focusEv.id, ch.key)
+    if (ch.bond) for (const b of ch.bond) bumpBond(b.char, b.delta)
+    if (ch.flag) setFlag(ch.flag[0], ch.flag[1])
+    push('decode', '行动已定 · 系统存档', ch.label, false)
+    const text =
+      `（言万心叶的行动已定，并已由终端自动存档：）${ch.label}。\n`
+      + `（该行动的既定余波：${ch.after}）\n`
+      + '请把上述视为已经发生的事实，从此刻的局势接续叙述；不要重复该行动本身，也不要再次累计随该行动记录过的羁绊或标记。'
+    appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
+    await pushTurn(focusEv.id, text)
+  }
+
+  /** 补发指令：仅要求模型回一个事件指令块 */
+  const resendDirective = async () => {
+    if (!focusEv || busy || !ready) return
+    setBusy(true)
+    setErr(null)
+    const ev = focusEv
+    const system = buildDirectorSystem(ev, { operatorName, bondNow, flags: world.flags, needDirective: true })
+    const messages: ChatTurn[] = [
+      { role: 'system', content: system },
+      ...toTurns(logs[ev.id]),
+      { role: 'user', content: '（终端自动请求）请补发本回合的事件指令（JSON 围栏或 <vars> 标签皆可）：仅输出指令本身，无需展开叙述；若无任何变化则输出 {}。' },
+    ]
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    try {
+      const res = await driveReply({
+        kind: 'plot',
+        userText: '（终端自动请求）请补发本回合的事件指令（JSON 围栏或 <vars> 标签皆可）：仅输出指令本身，无需展开叙述；若无任何变化则输出 {}。',
+        messages,
+        cfg: cfgMain ?? null,
+        signal: ctrl.signal,
+        maxTokens: 900,
+        session: { eventId: ev.id },
+      })
+      const parsed = parseDirectorReply(res)
+      needDir.current = !parsed.found
+      if (parsed.found) {
+        push('success', '已收到事件指令', '指令已自动落地。', false)
+      } else {
+        push('warn', '仍未解析到事件指令', '可再试一次，或继续发消息推进。', false)
+      }
+      applyReply(parsed, ev.id)
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return
+      const msg = e instanceof Error ? e.message : String(e)
+      setErr(`补发失败：${msg}`)
+      push('danger', 'AI 推演失败', msg, false)
+    } finally {
+      setBusy(false)
+      abortRef.current = null
+    }
+  }
+
+  /* —— 在线自动铺开场：某事件尚无会话且刚进入在线时 —— */
+  useEffect(() => {
+    if (!focusEv || !showOnline || !ready || busy) return
+    if (skipAutoOpen.current) return
+    const lg = logs[focusEv.id]
+    if (lg && lg.length) return
+    if (lastOpen.current === focusEv.id) return
+    lastOpen.current = focusEv.id
+    void pushTurn(focusEv.id, OPEN_PROMPT)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEv?.id, showOnline, ready, busy])
+
+  /* —— 离线原文加载 —— */
+  useEffect(() => {
+    let on = true
+    if (!focusEv || showOnline) {
+      setOffState({ id: null, state: 'idle' })
+      return
+    }
+    setOffState((s) => (s.id === focusEv.id && (s.state === 'ok' || s.state === 'miss') ? s : { id: focusEv.id, state: 'loading' }))
+    loadOfflineText(focusEv.id)
+      .then((text) => on && setOffState({ id: focusEv!.id, state: 'ok', text }))
+      .catch((e) => on && setOffState({ id: focusEv!.id, state: 'miss', msg: e instanceof Error ? e.message : String(e) }))
+    return () => { on = false }
+  }, [focusEv?.id, showOnline])
+
+  const finishOffline = () => {
+    if (!focusEv) return
+    const ev = focusEv
+    completeEvent(ev.id, ev.summary, 'offline')
+    skipAutoOpen.current = false
+    setLastEnded({ id: ev.id, title: ev.title, digest: ev.summary, diverged: false, mode: 'offline' })
+    push('decode', '事件收束 · 已写入记录', `${ev.title}（离线通读）`, false)
+  }
+
+  const modelChip = !showOnline
+    ? '离线通读'
+    : isHost
+      ? hostReady
+        ? '在线推演 · 酒馆宿主'
+        : `在线待命 · ${hostDrv?.why ?? '未就绪'}`
+      : cfgMain === undefined
+        ? '读取配置…'
+        : ready
+          ? `在线推演 · ${cfgMain?.model ?? '—'}`
+          : '主线通道未配置'
+
+  /* —— 事件卡片（侧栏）：只读大纲信息 —— */
+  const eventCard = focusEv ? (
+    <section className="panel">
+      <div className="panel__head">
+        <span className="panel__title">当前事件 <span className="slash" /></span>
+        <span className="muted tiny" style={{ marginLeft: 'auto' }}>{focusEv.group} · {focusEv.phase}</span>
+      </div>
+      <div className="panel__body" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <div className="vhead__kicker" style={{ fontSize: 9 }}>EVENT / {focusEv.id.toUpperCase()}</div>
+          <b style={{ fontSize: 17, lineHeight: 1.4 }}>{focusEv.title}</b>
+          <div className="muted tiny" style={{ marginTop: 3, color: 'var(--ink-mute)' }}>
+            {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
+          </div>
+        </div>
+        <div>
+          <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>大纲 · 唯一事实来源</div>
+          <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.85, margin: 0, color: 'var(--ink-mute)' }}>{focusEv.summary}</p>
+        </div>
+        {focusEv.entities.some((x) => x !== '——') ? (
+          <div>
+            <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>关联实体</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {focusEv.entities.filter((x) => x !== '——').map((ent) => (
+                <span key={ent} className="chip">{ent}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div>
+          <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>在场角色 · 羁绊</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {(focusEv.chars.length ? focusEv.chars : (CHARACTERS.map((c) => c.id) as CharId[])).map((id) => {
+              const c = CHARACTERS.find((x) => x.id === id)
+              if (!c) return null
+              const bond = bondNow(id)
+              return (
+                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="glyph" style={{ '--g': c.hue, width: 26, height: 26 }}>
+                    <span style={{ fontSize: 12 }}>{c.sigil}</span>
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <b style={{ fontSize: 12.5 }}>{c.name}</b>
+                    <span className="tiny muted" style={{ marginLeft: 6, color: 'var(--ink-faint)' }}>{c.epithet}</span>
+                  </span>
+                  <span className="tiny mono" style={{ color: 'var(--ink-mute)' }}>{bond}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  ) : null
+
+  /* —— 完结态（全部事件已收束） —— */
+  if (!focusEv) {
+    return (
+      <div className="vpage">
+        <div className="vhead">
+          <div>
+            <div className="vhead__kicker">STORY / DIRECTOR</div>
+            <h1>剧情推进</h1>
+            <div className="vhead__sub">全部事件已收束。记录与摘录保存在低语者日志。</div>
+          </div>
+        </div>
+        <section className="panel">
+          <div className="panel__body" style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
+            <b style={{ fontSize: 22 }}>主线与插曲全部推演完毕</b>
+            <p className="muted" style={{ maxWidth: 520, lineHeight: 1.9, margin: 0, color: 'var(--ink-mute)' }}>
+              已收束 {total} 个事件，写入 {records.length} 条记录。你可以回到低语者日志回顾整个记录流，或重置世界进度重新开始。
+            </p>
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('saga')}>
+                低语者日志 · 记录流 <ArrowRight size={13} weight="bold" />
+              </button>
+              <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('dashboard')}>
+                返回终端总览
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const quickReady = !busy && showOnline && ready
+
+  return (
+    <div className="vpage">
+      <div className="vhead">
+        <div>
+          <div className="vhead__kicker">STORY / DIRECTOR</div>
+          <h1>剧情推进</h1>
+          <div className="vhead__sub">
+            以消息推进当前事件：AI 以第三人称「导演 + 在场角色」展开，回执自动落地羁绊与图鉴。也可切到离线通读本段原文后归档。
+          </div>
+        </div>
+        <div className="vhead__right">
+          <span className={showOnline ? 'chip chip--on' : 'chip chip--warn'}>
+            <span className="chip__dot" /> {modelChip}
+          </span>
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setLbOpen(true)} title="词条库：命中即注入的背景参考">
+            词条库
+          </button>
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
+            前往设置
+          </button>
+        </div>
+      </div>
+
+      {lastEnded && lastEnded.id !== focusEv.id ? (
+        <div className={css.endedBar}>
+          <b>上一事件已收束</b>
+          <span>《{lastEnded.title}》· {MODE_LABEL[lastEnded.mode]} · 已写入低语者日志{lastEnded.diverged ? ' · 分歧路线' : ''}</span>
+          <span className="muted tiny" style={{ flex: 1 }}>{lastEnded.digest}</span>
+          <button className="linkGo" onClick={() => navigate('saga')}>查看记录 <ArrowRight size={11} /></button>
+        </div>
+      ) : null}
+
+      <div className={css.bar}>
+        <div className={css.barMain}>
+          <span className="tag">{focusEv.id.toUpperCase()}</span>
+          <b>{focusEv.title}</b>
+          <span className="muted tiny" style={{ color: 'var(--ink-mute)' }}>
+            {focusEv.group} · {focusEv.phase} · {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
+          </span>
+        </div>
+        <div className={css.barRight}>
+          <span className="chip">{doneCount}/{total} 事件</span>
+          <span className="chip">{records.length} 记录</span>
+          <div className={css.seg} role="tablist" aria-label="推进方式">
+            <button
+              className={`${css.segBtn} ${showOnline ? css.isOn : ''}`}
+              onClick={() => {
+                if (!ready) {
+                  if (isHost) push('warn', '在线待命', hostDrv?.why ?? '请先在酒馆选择一名角色并进入对话。')
+                  else push('warn', '主线通道未配置', '请先在「设置」中为主线剧情填入接口地址与模型。')
+                }
+                setMode('online')
+              }}
+            >
+              在线推演
+            </button>
+            <button
+              className={`${css.segBtn} ${!showOnline ? css.isOn : ''}`}
+              onClick={() => { stop(); setMode('offline'); setErr(null) }}
+            >
+              离线通读
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className={css.layout}>
+        <section className="panel">
+          <div className="panel__head">
+            <span className="panel__title">事件会话 <span className="slash" /></span>
+            {showOnline ? (
+              <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+                {busy ? '推演中…' : activeLog.length ? '回车或按钮发送' : '尚未开始'}
+              </span>
+            ) : (
+              <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>第三人称原文通读</span>
+            )}
+            {showOnline && activeLog.length > 0 ? (
+              <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={clearThread} title="清空本段会话">
+                <Eraser size={13} weight="bold" /> 清空
+              </button>
+            ) : null}
+          </div>
+
+          {showOnline ? (
+            <div className={css.onBody}>
+              {cfgMain !== undefined && !ready ? (
+                <div className={css.warn}>
+                  <b>主线通道未配置</b>
+                  <span>当前为离线环境。填入接口地址与模型后即可在线推演；或点下方「离线通读」读本段原文。</span>
+                  <button className="btn btn--amber" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
+                    前往设置
+                  </button>
+                </div>
+              ) : null}
+
+              {showOnline && ready && !skipAutoOpen.current && activeLog.length === 0 && !busy ? (
+                <div className={css.hintLine}>
+                  <span className={css.typingDot} /> 正在读取事件大纲并铺陈开场叙述…
+                </div>
+              ) : null}
+
+              {scene?.choices && showOnline && ready && !alreadyPicked ? (
+                <div className={css.quickRow}>
+                  <span className="tiny muted" style={{ color: 'var(--ink-faint)', letterSpacing: '0.12em' }}>既定行动</span>
+                  {choices.map((ch) => (
+                    <button
+                      key={ch.key}
+                      className={`btn btn--ghost ${css.quick}`}
+                      style={{ fontSize: 12 }}
+                      disabled={!quickReady}
+                      onClick={() => void quickAct(ch.key)}
+                    >
+                      {ch.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className={css.thread}>
+                {activeLog.length === 0 ? (
+                  <div className={css.emptyHint}>
+                    <b>{ready ? '从头推演这一事件' : '此段尚无会话'}</b>
+                    <span>
+                      {ready
+                        ? '输入任意消息，导演会依据大纲铺陈局势并由你接续行动；亦可点上方「既定行动」直接走关键抉择。'
+                        : '配置主线通道后即可在线推演；当前可切「离线通读」阅读本段原文。'}
+                    </span>
+                  </div>
+                ) : (
+                  activeLog.map((m, i) =>
+                    m.from === 'them' ? (
+                      <div key={m.id} className={css.narr}>
+                        <div className={css.narrMeta}>
+                          <b>导演叙述</b>
+                          <span className="muted tiny">{m.time}</span>
+                        </div>
+                        <div className={css.narrText}>{m.text}</div>
+
+                        {m.meta?.thinking ? (
+                          <div className={css.thinkFold}>
+                            <button type="button" className={css.thinkHead} onClick={() => toggleFold(m.id)}>
+                              <b>推演</b>
+                              <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+                                {foldOpen.has(m.id) ? '收起' : `展开 · ${m.meta.thinking.length} 字`}
+                              </span>
+                            </button>
+                            {foldOpen.has(m.id) ? (
+                              <div className={css.thinkBody}>{m.meta.thinking}</div>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {m.meta?.options && m.meta.options.length ? (
+                          <div className={css.optRow}>
+                            <span className="tiny" style={{ color: 'var(--ink-faint)', letterSpacing: '0.12em' }}>接续选项</span>
+                            {m.meta.options.map((op) => (
+                              <button
+                                key={op}
+                                type="button"
+                                className={`btn btn--ghost ${css.optChip}`}
+                                style={{ fontSize: 12 }}
+                                disabled={!quickReady}
+                                onClick={() => void pickOption(op)}
+                              >
+                                {op}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {showOnline && ready && !busy ? (
+                          <div className={css.rowActs}>
+                            <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                            {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true ? (
+                              <button type="button" className="linkGo" onClick={() => void rewriteReply(i)}>重写此回复</button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div key={m.id} className={css.user}>
+                        <div className={css.userMeta}>
+                          <b>言万心叶</b>
+                          <span className="muted tiny">{m.time}</span>
+                        </div>
+                        <div className={css.userText}>{m.text}</div>
+                        {showOnline && ready && !busy ? (
+                          <div className={css.rowActs}>
+                            <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ),
+                  )
+                )}
+                {err ? <div className={css.errLine}>{err}</div> : null}
+                {busy ? <div className={css.thinking}>导演正在编织叙事…</div> : null}
+                {needDir.current ? (
+                  <div className={css.dirNotice}>
+                    <span>上一回未解析到事件指令（叙述已保留）。</span>
+                    <button className="linkGo" disabled={busy} onClick={() => void resendDirective()}>要求补发指令</button>
+                  </div>
+                ) : null}
+                <div ref={endRef} />
+              </div>
+
+              {ready ? (
+                <div className={css.composer}>
+                  <input
+                    className="field"
+                    placeholder={`推进事件：向导演传达言万心叶的行动…（Enter 发送）`}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (busy) stop()
+                        else void send()
+                      }
+                    }}
+                    disabled={!ready}
+                  />
+                  {busy ? (
+                    <button className={`btn btn--amber ${css.composerBtn}`} onClick={stop} aria-label="中断推演">
+                      <Stop size={18} weight="bold" />
+                    </button>
+                  ) : (
+                    <button
+                      className={`btn btn--primary ${css.composerBtn}`}
+                      onClick={() => void send()}
+                      disabled={!draft.trim()}
+                      aria-label="发送"
+                    >
+                      <PaperPlaneTilt size={18} weight="bold" />
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className={css.offBody}>
+              {cfgMain !== undefined && !ready ? (
+                <div className={css.offNote}>
+                  <b>离线通读</b> 主线通道未配置，故按「原剧本逐段直读」模式呈现当前事件的真实原文；读完点下方按钮归档并推进。
+                </div>
+              ) : null}
+              <div className={css.offSummary}>
+                <span className="tiny muted" style={{ color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>本段大纲 · 简述</span>
+                <p>{focusEv.summary}</p>
+              </div>
+              {offState.id === focusEv.id && offState.state === 'loading' ? (
+                <div className={css.thinking}>正在载入离线原文…</div>
+              ) : offState.id === focusEv.id && offState.state === 'miss' ? (
+                <div className={css.warn}>
+                  <b>本段离线原文未收录</b>
+                  <span>{offState.msg ?? '缺少切片文件。'}进度不会卡死——仍可直接归档本段。</span>
+                </div>
+              ) : (
+                <div className={css.offText} data-event={focusEv.id}>
+                  {offState.text}
+                </div>
+              )}
+              <div className={css.offFoot}>
+                <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>
+                  {offState.id === focusEv.id && offState.text ? `本段原文 · 约 ${offState.text.replace(/\s/g, '').length} 字` : '读毕原文后归档'}
+                </span>
+                <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={finishOffline}>
+                  <Check size={14} weight="bold" /> 读毕本段 · 写入记录并推进
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside className={css.aside}>
+          {eventCard}
+        </aside>
+      </div>
+
+      <LorebookModal open={lbOpen} onClose={() => setLbOpen(false)} />
+    </div>
+  )
+}

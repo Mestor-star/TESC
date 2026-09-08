@@ -1,0 +1,36 @@
+[
+  { "id": "v6-1", "parts": [
+    { "file": "v6/011-序 章 『黑白的爱丽丝』.txt", "whole": true }
+  ] },
+  { "id": "v6-2", "parts": [
+    { "file": "v6/012-第 1 话『这可不是谈论决斗的时候』.txt", "whole": true }
+  ] },
+  { "id": "v6-3", "parts": [
+    { "file": "v6/013-第 2 话『美国，毁灭』.txt", "whole": true }
+  ] },
+  { "id": "v6-4", "parts": [
+    { "file": "v6/014-第 3 话『纽约·纽约』.txt", "whole": true }
+  ] },
+  { "id": "v6-5", "parts": [
+    { "file": "v6/015-第 4 话『天使的心得』.txt", "whole": true },
+    { "file": "v6/016-第 5 话『碳化的羽翼』.txt", "whole": true },
+    { "file": "v6/017-第 6 话『圣诞老人的魔法』.txt", "whole": true }
+  ] },
+  { "id": "v6-6", "parts": [
+    { "file": "v6/018-第 7 话『黑暗中蠢蠢欲动的无数光芒』.txt", "whole": true },
+    { "file": "v6/019-第 8 话『铭刻时光之歌』.txt", "whole": true }
+  ] },
+  { "id": "v6-7", "parts": [
+    { "file": "v6/020-第 9 话『战斗的开始』.txt", "whole": true },
+    { "file": "v6/021-第10话『死斗—a』.txt", "whole": true },
+    { "file": "v6/022-第11话『死斗—ｂ』.txt", "whole": true },
+    { "file": "v6/023-第12话『Dance with Myself』.txt", "whole": true }
+  ] },
+  { "id": "v6-8", "parts": [
+    { "file": "v6/024-第13话『你好，再见』.txt", "whole": true },
+    { "file": "v6/025-第14话『比如，倘若星星坠落。』.txt", "whole": true },
+    { "file": "v6/026-第15话『艾美莉亚・玛克比尔的冒险』.txt", "whole": true },
+    { "file": "v6/027-尾声-a『在失去星星的世界』.txt", "whole": true },
+    { "file": "v6/028-尾声-b『为了再下个奇迹』.txt", "whole": true }
+  ] }
+]

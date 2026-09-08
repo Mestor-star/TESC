@@ -1,0 +1,11 @@
+[
+  { "id": "v3-1", "parts": [ { "file": "v3/011-序 章『未知威胁对策会议』.txt", "whole": true } ] },
+  { "id": "v3-2", "parts": [ { "file": "v3/012-第1话『一定，会很开心的』.txt", "whole": true } ] },
+  { "id": "v3-3", "parts": [ { "file": "v3/013-第2话『锁链的侦探』.txt", "whole": true } ] },
+  { "id": "v3-4", "parts": [ { "file": "v3/014-第3话『永田町』.txt", "from": 3, "to": 685 } ] },
+  { "id": "v3-5", "parts": [ { "file": "v3/014-第3话『永田町』.txt", "from": 689, "to": 945 }, { "file": "v3/015-第4话『回到故乡』.txt", "whole": true } ] },
+  { "id": "v3-6", "parts": [ { "file": "v3/016-第5话『真鹤町』.txt", "whole": true } ] },
+  { "id": "v3-7", "parts": [ { "file": "v3/017-第6话『从死灵次元来』.txt", "from": 3, "to": 885 } ] },
+  { "id": "v3-8", "parts": [ { "file": "v3/017-第6话『从死灵次元来』.txt", "from": 889, "to": 1215 }, { "file": "v3/018-第7话『自樱次元去』.txt", "from": 3, "to": 29 } ] },
+  { "id": "v3-9", "parts": [ { "file": "v3/018-第7话『自樱次元去』.txt", "from": 31, "to": 729 }, { "file": "v3/019-第8话『来自那曾经毁灭的次元』.txt", "whole": true }, { "file": "v3/020-第9话『星鲸』.txt", "whole": true }, { "file": "v3/021-第10话『小小的祈愿之章』.txt", "whole": true }, { "file": "v3/022-尾声-ａ『于是，世界继续转动下去』.txt", "whole": true }, { "file": "v3/023-尾声-ｂ『然而，那条道路，无比艰辛』.txt", "whole": true } ] }
+]

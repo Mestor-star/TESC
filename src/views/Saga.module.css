@@ -1,0 +1,253 @@
+/* ===== 低语者日志（只读：当前事件 + 记录流）===== */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
+}
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 16px;
+}
+
+/* —— 进度条 —— */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.stripCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stripCell b { font-size: 14.5px; line-height: 1.35; }
+.pctLine {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-bottom: 4px;
+  letter-spacing: 0.05em;
+}
+
+.gate {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  background: rgba(244, 180, 63, 0.05);
+  padding: 9px 14px;
+  margin: -8px 0 16px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+/* —— 当前事件卡 —— */
+.curBox { overflow: visible; }
+.curBody {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.curTitle { font-size: 19px; line-height: 1.4; }
+.curSummary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.95;
+  color: var(--ink-mute);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  padding: 10px 13px;
+}
+.secLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+.chipRow { display: flex; flex-wrap: wrap; gap: 6px; }
+.charGrid { display: flex; flex-direction: column; gap: 8px; }
+.charRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+.charMain { flex: 1; min-width: 0; }
+.charMain b { font-size: 13px; }
+.charVal {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  margin-left: auto;
+}
+.miniOff { font-style: normal; font-size: 10px; margin-left: 3px; }
+.curAction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  border-top: 1px dashed var(--line-2);
+  padding-top: 12px;
+  margin-top: 2px;
+}
+.curAction p {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: var(--ink-mute);
+}
+.curAction b { color: var(--amber); }
+
+/* —— 记录流 —— */
+.feedHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+.feedEmpty {
+  border: 1px dashed var(--line-2);
+  background: var(--bg-1);
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+.feedEmpty b { font-size: 14px; color: var(--ink); }
+.recList { display: flex; flex-direction: column; gap: 10px; }
+.rec {
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 12px 16px;
+}
+.recHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.recNo {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  border: 1px solid var(--line-2);
+  padding: 2px 6px;
+}
+.recTitle { font-size: 15px; line-height: 1.4; }
+.md {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--line-2);
+  color: var(--ink-faint);
+}
+.mdOn { color: var(--jade); border-color: rgba(63, 224, 160, 0.5); }
+.mdOff { color: var(--steel); border-color: rgba(127, 208, 232, 0.5); }
+.mdOld { color: var(--ink-faint); }
+.diverge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--amber);
+}
+.recTime { margin-left: auto; white-space: nowrap; }
+.recDigest {
+  margin: 9px 0 0;
+  font-size: 13px;
+  line-height: 1.95;
+  color: var(--ink);
+  white-space: pre-line;
+  word-break: break-word;
+}
+.recMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.allDone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: rgba(63, 224, 160, 0.04);
+  padding: 16px 18px;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  line-height: 1.8;
+}
+.allDone b { color: var(--jade); font-size: 14px; }
+
+/* —— 侧栏 —— */
+.widget {
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.widgetHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+.grow { flex: 1; }
+.widgetBody { padding: 12px 14px; }
+.bondRow { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.nm { flex: 0 0 84px; font-size: 12.5px; font-weight: 700; }
+.val {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  min-width: 30px;
+  text-align: right;
+}
+.noteLine { font-size: 11.5px; line-height: 1.8; color: var(--ink-faint); margin-top: 8px; }
+.noteLine b { color: var(--ink-mute); }
+.varGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.varCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  padding: 9px 10px;
+}
+.varCell b { font-family: var(--font-mono); font-size: 19px; color: var(--ink); }
+.varCell small { font-size: 10px; color: var(--ink-faint); letter-spacing: 0.04em; }
+
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: 1fr; }
+  .side { position: static; }
+}

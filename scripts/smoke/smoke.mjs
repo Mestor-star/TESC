@@ -1,0 +1,696 @@
+/* ============================================================
+   headless Edge CDP 冒烟 —— 剧情离线通读 / 存档迁移 / 在线推演 / 短信羁绊
+   用法: node scripts/smoke/smoke.mjs   （需先 npm run build）
+   ============================================================ */
+import { spawn } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import http from 'node:http'
+
+const CNM = 'D:\\cnm'
+const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+const APP_URL = 'http://127.0.0.1:4319/'
+const PREVIEW_PORT = 4319
+const DBG_PORT = 9233
+const STUB_PORT = 4987
+const ESTUB_PORT = 4988
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+let failures = 0
+function ok(name, cond, extra = '') {
+  if (cond) console.log(`  PASS  ${name}`)
+  else { failures++; console.log(`  FAIL  ${name} ${extra}`) }
+  return cond
+}
+
+/* ---------- 简易 CDP 客户端 ---------- */
+class Cdp {
+  constructor(ws) {
+    this.ws = ws
+    this.id = 0
+    this.pending = new Map()
+    this.evListeners = new Map()
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data)
+      if (m.id != null) {
+        const p = this.pending.get(m.id)
+        if (!p) return
+        this.pending.delete(m.id)
+        m.error ? p.rej(new Error(m.error.message)) : p.res(m.result)
+      } else {
+        const ls = this.evListeners.get(m.method) || []
+        for (const f of ls) f(m.params)
+      }
+    }
+  }
+  send(method, params = {}) {
+    return new Promise((res, rej) => {
+      const id = ++this.id
+      this.pending.set(id, { res, rej })
+      this.ws.send(JSON.stringify({ id, method, params }))
+    })
+  }
+  on(method, fn) {
+    const ls = this.evListeners.get(method) || []
+    ls.push(fn)
+    this.evListeners.set(method, ls)
+  }
+}
+
+const connect = (url) => new Promise((res, rej) => {
+  const ws = new WebSocket(url)
+  ws.onopen = () => res(new Cdp(ws))
+  ws.onerror = (e) => rej(new Error('ws error ' + url))
+})
+
+async function getPageWsOn(port, urlPrefix) {
+  for (let i = 0; i < 80; i++) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/json/list`)
+      const list = await r.json()
+      const page = list.find((t) => t.type === 'page' && t.url.startsWith(urlPrefix))
+      if (page) return page.webSocketDebuggerUrl
+    } catch { /* retry */ }
+    await sleep(300)
+  }
+  throw new Error('Edge devtools target not found @' + urlPrefix)
+}
+async function getPageWs() {
+  return getPageWsOn(DBG_PORT, APP_URL)
+}
+
+let cdp
+async function ev(expr) {
+  const r = await cdp.send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })
+  if (r.exceptionDetails) {
+    const d = r.exceptionDetails.exception?.description || r.exceptionDetails.text || 'eval error'
+    throw new Error('EVAL FAIL: ' + d + '\n  expr: ' + expr.slice(0, 160))
+  }
+  return r.result.value
+}
+async function poll(expr, ms = 45000, label = 'poll') {
+  const t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    let v
+    try { v = await ev(expr) } catch (e) { throw e }
+    if (v) return v
+    await sleep(220)
+  }
+  throw new Error('poll timeout: ' + label + ' -> ' + expr.slice(0, 140))
+}
+/* Node 侧等待 stub 收到第 n 个剧情请求（eStub 的 eSeq 已到位） */
+async function waitSeq(target) {
+  for (let i = 0; i < 150; i++) {
+    if (eSeq >= target) return
+    await sleep(200)
+  }
+  throw new Error('eStub seq timeout: wanted >= ' + target + ' got ' + eSeq)
+}
+const pageHas = (t) => `document.body && document.body.innerText.includes(${JSON.stringify(t)})`
+const clickTxt = (t) => `(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes(${JSON.stringify(t)}));if(!b)return false;b.click();return true})()`
+
+/* 开屏：长按指纹 1.5s → 自检约 3s → 终端挂载（用 CDP 真实鼠标事件） */
+async function boot() {
+  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'boot screen')
+  const rect = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+  if (!rect) throw new Error('boot: fingerprint button not found')
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1 })
+  await sleep(2200)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1 })
+  await poll(`!!document.querySelector('.app--stage')`, 30000, 'shell mount')
+}
+async function goto(viewTxt) {
+  const c = await ev(clickTxt(viewTxt))
+  if (!c) throw new Error('click failed: ' + viewTxt)
+}
+const wState = `(()=>{try{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));if(!s)return {empty:true};const w=s.world||{};return {ep:Object.keys(s.epDone||{}).length,cur:s.cur,unlocked:s.unlocked,rec:(w.records||[]).map(r=>({id:r.eventId,mode:r.mode,ts:r.ts})),off:w.offset||{},fl:w.flags||{},name:s.operatorName}}catch(e){return {err:String(e)}}})()`
+async function state() { return ev(wState) }
+
+/* 向 React 受控输入框真实键入并回车 */
+async function typeEnter(selExpr, text) {
+  await ev(`(()=>{const el=document.querySelector(${JSON.stringify(selExpr)});if(!el)return false;el.focus();return true})()`)
+  await cdp.send('Input.insertText', { text })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
+  await sleep(120)
+}
+
+/* ---------- IndexedDB 播种（双通道密钥，仅运行时） ---------- */
+const seedApi = (channel, baseUrl, model) => ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-terminal-store',1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('kv'))r.result.createObjectStore('kv')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});await new Promise((res,rej)=>{const tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(${JSON.stringify({baseUrl,apiKey:'smoke',model,temperature:0.8})},'api:${channel}');tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true})()`)
+const clearIDB = () => ev(`(async()=>{await new Promise((res)=>{const r=indexedDB.deleteDatabase('zts-terminal-store');r.onsuccess=r.onerror=r.onblocked=()=>res()});return true})()`)
+
+/* ---------- zts-lore（Dexie）探针 ----------
+   *Src 系返回页面「表达式源串」（可内插进 poll 的表达式）；同名函数直接 ev 出值。 */
+const loreCountSrc = () => `(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const c=db.transaction('lorebooks').objectStore('lorebooks').count();c.onsuccess=()=>res(c.result);c.onerror=()=>res(-1)})})()`
+const loreCount = () => ev(loreCountSrc())
+const loreBookSrc = (id) => `(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const g=db.transaction('lorebooks').objectStore('lorebooks').get(${JSON.stringify(id)});g.onsuccess=()=>{const b=g.result;res(b?{name:b.name||'',description:b.description||'',count:(b.entries||[]).length}:null)};g.onerror=()=>res(null)})})()`
+const loreBook = (id) => ev(loreBookSrc(id))
+const loreEntrySrc = (bookId, find) => {
+  const pred = find.startsWith('#')
+    ? `x=>x.id===${JSON.stringify(find.slice(1))}`
+    : `x=>x.keys&&x.keys[0]===${JSON.stringify(find)}`
+  return `(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const g=db.transaction('lorebooks').objectStore('lorebooks').get(${JSON.stringify(bookId)});g.onsuccess=()=>{const b=g.result;if(!b){return res(null)}const e=(b.entries||[]).find(${pred});if(!e){return res(null)}res({content:String(e.content||''),key0:String((e.keys&&e.keys[0])||'')})};g.onerror=()=>res(null)})})()`
+}
+const loreEntry = (bookId, find) => ev(loreEntrySrc(bookId, find))
+const plotLogText = (evId) => ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o[${JSON.stringify(evId)}]||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
+const recDigest = (evId) => ev(`(()=>{try{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));const r=(s.world&&s.world.records||[]).find(x=>x.eventId===${JSON.stringify(evId)});return r?(r.digest||''):''}catch(e){return ''}})()`)
+
+/* ---------- 剧情 stub 服务器（plot 按序 / sms 恒定） ---------- */
+const plotReplies = []
+plotReplies.push(
+  '【DIR1】海面被一道苍蓝的「影」撕开，漆黑少女的笑声沉进浪里，货船的甲板碎成星屑。\n\n—— 事件指令 ——\n```json\n{"digest":"货船的夜色被苍蓝之影撕开。言万心叶坠海自救，救起不会游泳的拉法，并同自称魔王的少女立下「看看是你先抵达青春，还是我先抵达终焉」之约。","eventDone":true}\n```',
+  '【DIR2】女神神殿的谎言在突击队的炮火下塌成星尘，露娜拼死指向的那句「快逃」，成了言万心叶第一次读到的真心。\n\n—— 事件指令 ——\n```json\n{"digest":"神殿骗局被砸碎。露娜获救，突击队收队。言万心叶第一次尝到被同伴接住的滋味。","eventDone":true}\n```',
+  '【DIR3】骑士的刀锋停在心叶眼前。他护在露娜身前，断锁骨、夺枪、读心成底牌——会长艾莉芙笑着拍板：苍之学园，收下你们了。\n\n—— 事件指令 ——\n```json\n{"digest":"在异端审问室的刀剑下，言万心叶护住露娜并以底牌赢得裁定。两人以「苍之学园体验入学」名义被收留，正式成为终末停滞委员会的一员。","eventDone":true}\n```',
+  '【DIR4】世界观与「欢迎会」。艾莉芙说起宇宙与「终末」，小柴拉着两人逛集市，宿舍里飘起晚饭的香气。\n（本回合无指令——用于验证未解析提示与补发按钮）',
+  '【DIR5】心叶放下碗筷，屋里的灯把四个人的影子拉得很长。\n\n—— 事件指令 ——\n```json\n{"flag":{"resend_ok":true}}\n```',
+)
+let plotReq = 0
+const stub = http.createServer((req, res) => {
+  const send = (obj, status = 200) => {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    })
+    res.end(JSON.stringify(obj))
+  }
+  if (req.method === 'OPTIONS') return send({}, 204)
+  let body = ''
+  req.on('data', (c) => (body += c))
+  req.on('end', () => {
+    try {
+      const j = JSON.parse(body)
+      const model = j.model || ''
+      let content
+      if (model === 'stub-sms') {
+        content = '【SMS】你今晚还留在工房街？……布丁倒是还剩半盒，下次带给你。\n\n```json\n{"bond":[{"char":"hikari","delta":10}]}\n```'
+      } else {
+        const idx = plotReq++
+        content = plotReplies[Math.min(idx, plotReplies.length - 1)]
+      }
+      send({ choices: [{ message: { content } }] })
+    } catch (e) {
+      send({ error: { message: String(e) } }, 400)
+    }
+  })
+})
+await new Promise((r) => stub.listen(STUB_PORT, '127.0.0.1', r))
+
+/* ---------- Phase E 专用 stub：捕获剧情请求体；标签化回执 ---------- */
+let eSeq = 0
+let eLast = null
+const eReplies = [
+  '<maintext>【E1】甲板上没有别人，只有被切开的海浪与压在栏杆上的一道影子。</maintext>\n<vars>{"eventDone":true,"digest":"E自动开场·夜航将启。"}</vars>',
+  '<maintext>【E2】露娜把半盒布丁放在桌上，坐到他旁边的空位。</maintext>\n<vars>{"eventDone":true,"digest":"E布丁收束·夜风。"}</vars>',
+  '【E3】这一回合没有指令落定：他把终端亮度调低，夜风从窗缝钻进来，凉丝丝的。',
+  '【E4】重写后仍旧没有指令落定：他把终端亮度调低，夜风从窗缝钻进来。',
+]
+const eStub = http.createServer((req, res) => {
+  const send = (obj, status = 200) => {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    })
+    res.end(JSON.stringify(obj))
+  }
+  if (req.method === 'OPTIONS') return send({}, 204)
+  let body = ''
+  req.on('data', (c) => (body += c))
+  req.on('end', () => {
+    try {
+      const j = JSON.parse(body)
+      let content
+      if (String(j.model || '').includes('sms')) {
+        content = '【SMS-E】夜风凉，早点回去。\n\n```json\n{"bond":[]}\n```'
+      } else {
+        eLast = j
+        eSeq++
+        content = eReplies[Math.min(eSeq - 1, eReplies.length - 1)]
+      }
+      send({ choices: [{ message: { content } }] })
+    } catch (e) {
+      send({ error: { message: String(e) } }, 400)
+    }
+  })
+})
+await new Promise((r) => eStub.listen(ESTUB_PORT, '127.0.0.1', r))
+
+/* ---------- 启动 vite preview ---------- */
+const viteBin = path.join(CNM, 'node_modules', 'vite', 'bin', 'vite.js')
+const preview = spawn(process.execPath, [viteBin, 'preview', '--host', '127.0.0.1', '--port', String(PREVIEW_PORT), '--strictPort'], {
+  cwd: CNM, stdio: ['ignore', 'ignore', 'pipe'],
+})
+preview.stderr.on('data', (d) => { if (String(d).includes('error')) console.error('preview:', String(d).trim()) })
+for (let i = 0; i < 60; i++) {
+  try { const r = await fetch(APP_URL); if (r.ok) break } catch { /* wait */ }
+  await sleep(300)
+}
+
+/* ---------- 启动 Edge ---------- */
+const profile = mkdtempSync(path.join(tmpdir(), 'zts-smoke-'))
+const edge = spawn(EDGE, [
+  '--headless=new', '--no-first-run', '--disable-gpu', '--disable-extensions',
+  '--remote-debugging-port=' + DBG_PORT, '--remote-allow-origins=*',
+  '--user-data-dir=' + profile, '--window-size=1440,1000', APP_URL,
+], { stdio: ['ignore', 'ignore', 'pipe'] })
+
+/* ============================================================
+   Phase H：宿主桩冒烟（ST-5）—— 伪酒馆页面内动态 import 扩展产物，
+   断言 closed-shadow 壳挂载 + DOM 隔离 + 桩酒馆驱动一次在线推进 + 无密钥。
+   复用模块级 cdp/ev/poll/state（Phase H 是最后一段，独占即可）。
+   ============================================================ */
+async function runHostPhase() {
+  const REL = path.join(CNM, 'release', 'zts-terminal')
+  const INDEX = path.join(REL, 'index.js')
+  if (!existsSync(INDEX)) {
+    console.log('\n[Phase H] 宿主桩冒烟 — 跳过：未构建 release/zts-terminal（先 npm run st:dist）')
+    return
+  }
+  console.log('\n[Phase H] 宿主桩（伪酒馆）：closed-shadow 壳 / DOM 隔离 / 桩酒馆驱动在线推进')
+  const HSTUB_PORT = 4989
+  const DBG2 = 9234
+  const HOST_URL = `http://127.0.0.1:${HSTUB_PORT}/`
+  const profile2 = mkdtempSync(path.join(tmpdir(), 'zts-host-'))
+  let edge2 = null
+  let server = null
+
+  const canned = [
+    '<maintext>【H1 自动铺场】夜色漫过甲板，海面被一道苍蓝的「影」撕开。拉法伏在你肩头笑，货船的汽笛拉长成第一声问候。</maintext>\n<vars>{"eventDone":true,"digest":"宿主桩自动开场：夜海初航，言万心叶与拉法立约同行。","diverged":false}</vars>',
+    '<maintext>【H2 手动推进】神殿的残烟里，露娜拽住你的袖口。她把半盒布丁塞给你，只说了一句：别一个人扛。</maintext>\n<vars>{"eventDone":true,"digest":"宿主桩手动回合：露娜获救收队，羁绊悄然落地。","diverged":false}</vars>',
+    '<maintext>（桩酒馆）你说下去，我在听。</maintext>',
+  ]
+  const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>zts host stub</title></head>
+<body style="margin:0;background:#1c1d2a;color:#cdd2ea;font:14px system-ui,sans-serif;padding:14px">
+<p id="stub-root">TAVERN-STUB · 普通酒馆页面正文</p>
+<textarea id="send_textarea" style="display:none"></textarea>
+<script>
+  const chars = [{ name: '测试角色', avatar: '' }]
+  window.__h = { gens: 0, inject: [], chat: [], canned: ${JSON.stringify(canned)} }
+  window.__h.resetAnchor = function () { ctx.characterId = null; window.__h.chat.length = 0; return true }
+  const ctx = {
+    chat: window.__h.chat,
+    characters: chars,
+    characterId: 'rafa',
+    groupId: null,
+    chatId: 'host-stub-chat',
+    generate: async function () {
+      const ta = document.getElementById('send_textarea')
+      const usr = (ta && ta.value) || ''
+      window.__h.chat.push({ name: 'User', is_user: true, mes: usr })
+      const i = Math.min(window.__h.gens, window.__h.canned.length - 1)
+      const out = window.__h.canned[i]
+      window.__h.gens += 1
+      window.__h.chat.push({ name: '测试角色', is_user: false, mes: out })
+      return out
+    },
+    setExtensionPrompt: function (id, content) {
+      window.__h.inject.push({ id: id, content: String(content || ''), pos: arguments[2] })
+    },
+    selectCharacterById: async function (id) {
+      ctx.characterId = String(id)
+      if (window.__h.chat.length === 0) {
+        window.__h.chat.push({ name: (chars[Number(id)] || {}).name || '测试角色', is_user: false, is_system: false, mes: '（宿主桩问候）夜色初临，锚点就位。' })
+      }
+      return true
+    },
+  }
+  window.SillyTavern = { libs: {}, getContext: function () { return ctx } }
+</script>
+<script type="module" src="/zts-terminal/index.js"></script>
+</body></html>`
+
+  try {
+    server = http.createServer((req, res) => {
+      const u = decodeURIComponent((req.url || '/').split('?')[0])
+      const send = (code, type, buf) => { res.writeHead(code, { 'Content-Type': type }); res.end(buf) }
+      if (u === '/') return send(200, 'text/html; charset=utf-8', html)
+      if (u.startsWith('/zts-terminal/')) {
+        const rel = u.slice('/zts-terminal/'.length).replace(/[.]{2}/g, '')
+        const file = path.join(REL, rel)
+        if (existsSync(file)) {
+          const mt = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8' }[path.extname(file)] || 'application/octet-stream'
+          return send(200, mt, readFileSync(file))
+        }
+      }
+      send(404, 'text/plain', 'not found')
+    })
+    await new Promise((r) => server.listen(HSTUB_PORT, '127.0.0.1', r))
+
+    edge2 = spawn(EDGE, [
+      '--headless=new', '--no-first-run', '--disable-gpu', '--disable-extensions',
+      '--remote-debugging-port=' + DBG2, '--remote-allow-origins=*',
+      '--user-data-dir=' + profile2, '--window-size=1440,1000', HOST_URL,
+    ], { stdio: ['ignore', 'ignore', 'pipe'] })
+    edge2.stderr.on('data', (d) => { if (String(d).includes('error')) console.error('  host-edge:', String(d).trim()) })
+
+    const ws2 = await getPageWsOn(DBG2, HOST_URL)
+    cdp = await connect(ws2)
+    await cdp.send('Runtime.enable')
+    await cdp.send('Page.enable')
+    await cdp.send('Input.setIgnoreInputEvents', { ignore: false })
+
+    // H1 壳挂载：浮动入口钮 + 全屏宿主容器（closed-shadow）
+    await poll(`!!document.querySelector('[data-zts-shell="toggle"]') && !!document.querySelector('[data-zts-shell="host"]') && !!window.__ztsDriver`, 30000, 'H shell mounted')
+    ok('H1 扩展壳挂载（浮动钮 + 宿主容器 + 测试驱动器）', true, '')
+
+    // H2 隔离：普通酒馆页面正文不含终端内部文案（shadow 外零污染）
+    const body1 = await ev(`document.body.innerText`)
+    ok('H2 页正文保持酒馆原文、无终端内容泄漏', body1.includes('TAVERN-STUB') && !body1.includes('剧情推进') && !body1.includes('停滞观测网 接入中'), body1.slice(0, 120))
+
+    // H3 打开全屏壳：内部 Boot 开屏（closed shadow 内可驱动长按指纹）
+    await ev(`window.__ztsShell.open(); true`)
+    await poll(`window.__ztsDriver.has('长按指纹 · 完成认证') || window.__ztsDriver.has('正在读取指纹')`, 20000, 'H boot in shadow')
+    ok('H3 开屏（指纹认证）在 closed-shadow 内挂载', true, '')
+    const body2 = await ev(`document.body.innerText`)
+    ok('H4 开屏后页正文仍无终端内容', !body2.includes('认证开屏') && !body2.includes('低语者'), '')
+
+    // H5 长按指纹认证（driver 在 shadow 内派发 pointerdown/up）→ 进入终端
+    await ev(`window.__ztsDriver.finger(2200).then(()=>true)`)
+    await poll(`window.__ztsDriver.has('剧情推进')`, 30000, 'H shell after boot')
+    ok('H5 指纹长按通过 → 终端 Shell 挂载', true, '')
+
+    // H6 切到剧情推进；宿主就绪（characterId 已选）+ 在线 → 自动铺开场一次推演
+    await ev(`window.__ztsDriver.btn('剧情推进'); true`)
+    await poll(`(${wState}).rec.length===1`, 45000, 'H auto online archive')
+    let stH = await state()
+    ok('H6 桩酒馆驱动自动铺场并收束 v1-1（online，无需密钥）', stH.rec.length === 1 && stH.rec[0].id === 'v1-1' && stH.rec[0].mode === 'online', JSON.stringify(stH.rec))
+    ok('H7 桩酒馆 generate 确被驱动 1 次', (await ev(`window.__h.gens`)) === 1, 'gens=' + (await ev('window.__h.gens')))
+
+    // H8 导演上下文经 setExtensionPrompt 注入、生成后清空（不残留到酒馆后续对话）
+    const inj = await ev(`window.__h.inject`)
+    const hasDirector = inj.some((x) => x.id === 'zts-director' && x.content.length > 200)
+    const clearedLast = inj.length >= 2 && inj[inj.length - 1].id === 'zts-director' && inj[inj.length - 1].content === ''
+    ok('H8 导演上下文注入且已清空', hasDirector && clearedLast, 'calls=' + inj.length)
+
+    // H9 手动发一条 → 第二次经桩酒馆推进 → 收束 v1-2
+    // 注：placeholder 在 input 属性里、不算 textContent，故等可见的「从头推演这一事件」空态
+    await poll(`window.__ztsDriver.has('从头推演这一事件') && !window.__ztsDriver.has('导演正在编织叙事')`, 25000, 'H composer idle v1-2')
+    await sleep(600)
+    await ev(`window.__ztsDriver.setInput('[placeholder^="推进事件"]', '（言万心叶）我去找露娜，把今晚的事问清楚。'); true`)
+    await sleep(500) // 等 React flush draft 后再敲回车，避免 send 读到空 draft
+    await ev(`window.__ztsDriver.key('[placeholder^="推进事件"]', 'Enter'); true`)
+    await poll(`(${wState}).rec.length===2`, 45000, 'H manual online archive')
+    stH = await state()
+    ok('H9 手动回合经桩酒馆推进并收束 v1-2 online', stH.rec.length === 2 && stH.rec[1].id === 'v1-2' && stH.rec[1].mode === 'online', JSON.stringify(stH.rec))
+    const rec1 = await recDigest('v1-1')
+    const rec2 = await recDigest('v1-2')
+    ok('H10 收束记录 digest 来自桩回执 <vars>', rec1.includes('宿主桩自动开场') && rec2.includes('宿主桩手动回合'), '')
+    ok('H11 全程无禁用词/无原始标签残渣', !(await ev(`(window.__ztsDriver.text()+document.body.innerText)`)).match(/应答酒馆|客官|开席|点单|上菜|<vars>|<maintext>|```json/), '')
+
+    // H12 收起：回到酒馆页面正文、壳隐藏，但进程/进度保留
+    await ev(`window.__ztsShell.close(); true`)
+    await sleep(400)
+    const hostDisp = await ev(`getComputedStyle(document.querySelector('[data-zts-shell="host"]')).display`)
+    ok('H12 收起后壳隐藏、酒馆正文可交互', hostDisp === 'none', 'display=' + hostDisp)
+    ok('H13 进度保留（收起不影响已归档记录）', (await state()).rec.length === 2, '')
+
+    // H14+  ST-5b onboarding：宿主横幅里「无锚点体检 → 一键就绪选中首名角色」；降级路径不炸
+    await ev(`window.__ztsShell.open(); true`)
+    await sleep(500)
+    await ev(`window.__ztsDriver.btn('终端设置'); true`)
+    await poll(`window.__ztsDriver.has('一键就绪')`, 20000, 'H onboarding panel in settings')
+    ok('H14 宿主横幅渲染推演锚点体检（一键就绪在位）', true, '')
+
+    await ev(`window.__h.resetAnchor(); true`)
+    await ev(`window.__ztsDriver.btn('刷新体检'); true`)
+    await poll(`window.__ztsDriver.has('待就位 · 推演锚点角色')`, 15000, 'H anchor missing flagged')
+    const missOk = await ev(`window.__ztsDriver.has('待就位 · 推演锚点角色') && !window.__ztsDriver.has('锚点就绪')`)
+    ok('H15 清掉锚点后体检如实显示待就位', missOk === true, 'missOk=' + missOk)
+
+    await ev(`window.__ztsDriver.btn('一键就绪'); true`)
+    await poll(`window.__ztsDriver.has('锚点就绪：角色「测试角色」')`, 25000, 'H one-click ready')
+    const readyOk = await ev(`window.__ztsDriver.has('锚点就绪：角色「测试角色」') && window.__ztsDriver.has('已就绪 · 推演锚点角色')`)
+    const chidNow = await ev(`String(window.SillyTavern.getContext().characterId)`)
+    const chatLenH = await ev(`window.__h.chat.length`)
+    ok('H16 一键就绪选中首名角色并接通对话', readyOk === true && chidNow === '0' && chatLenH >= 1, 'readyOk=' + readyOk + ' chid=' + chidNow + ' chatLen=' + chatLenH)
+
+    await ev(`window.__ztsDriver.btn('另起一段新对话'); true`)
+    await poll(`window.__ztsDriver.has('酒馆未开放命令通道')`, 15000, 'H new-chat degrade')
+    ok('H17 另起新对话在桩无命令通道时降级为行内提示（不抛错）', true, '')
+  } catch (e) {
+    failures++
+    console.error('  HOST-PHASE ERROR: ' + e.message)
+    try {
+      const dbg = await ev(`(()=>{try{return document.body?document.body.innerText.slice(0,300):'<no body>'}catch(x){return String(x)}})()`)
+      console.error('  --- host page text ---\n' + dbg)
+    } catch { /* ignore */ }
+  } finally {
+    try { edge2?.kill() } catch { /* ignore */ }
+    try { server?.close() } catch { /* ignore */ }
+    await sleep(300)
+    try { rmSync(profile2, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+
+let passAll = true
+try {
+  const wsUrl = await getPageWs()
+  cdp = await connect(wsUrl)
+  await cdp.send('Runtime.enable')
+  await cdp.send('Page.enable')
+  await cdp.send('Input.setIgnoreInputEvents', { ignore: false })
+
+  /* ============ Phase A：离线通读 1→2→3 → 解锁 + 记录 ============ */
+  console.log('\n[Phase A] 离线通读 原文 → 归档 → 记录流 / 解锁')
+  await boot()
+  await goto('剧情推进')
+  await poll(`document.body.innerText.includes('剧情推进')`, 20000, 'A plot h1')
+  // 未配主线 → 自动离线；读到 v1-1 原文
+  await poll(`(()=>{const e=document.querySelector('[data-event]');return e&&e.getAttribute('data-event')==='v1-1'&&e.textContent.length>500})()`, 30000, 'A v1-1 text')
+  const len1 = await ev(`(()=>{const e=document.querySelector('[data-event]');return e?e.textContent.length:0})()`)
+  console.log(`    v1-1 原文长度: ${len1}`)
+  let st = await state()
+  ok('A1 初始无记录', st.rec.length === 0, JSON.stringify(st.rec))
+  // 归档 v1-1
+  await goto('读毕本段')
+  await poll(`(()=>{const e=document.querySelector('[data-event]');return e&&e.getAttribute('data-event')==='v1-2'&&e.textContent.length>500})()`, 30000, 'A v1-2 after archive')
+  st = await state()
+  ok('A2 归档 v1-1 → 记录1/offline', st.rec.length === 1 && st.rec[0].id === 'v1-1' && st.rec[0].mode === 'offline' && st.rec[0].ts > 0, JSON.stringify(st.rec))
+  ok('A3 v1-1 后仍未解锁', st.unlocked === false, 'unlocked=' + st.unlocked)
+  // 归档 v1-2, v1-3
+  await goto('读毕本段'); await poll(`(()=>{const e=document.querySelector('[data-event]');return e&&e.getAttribute('data-event')==='v1-3'&&e.textContent.length>500})()`, 30000, 'A v1-3')
+  await goto('读毕本段'); await poll(`(()=>{const e=document.querySelector('[data-event]');return e&&e.getAttribute('data-event')==='v1-4'&&e.textContent.length>500})()`, 30000, 'A v1-4')
+  st = await state()
+  ok('A4 归档三段 → 记录3', st.rec.length === 3 && st.rec.every((r) => r.mode === 'offline'), JSON.stringify(st.rec))
+  ok('A5 v1-3 完成 → 已解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
+  // 低语者日志
+  await goto('低语者日志')
+  await poll(`document.body.innerText.includes('记录流')`, 20000, 'A saga')
+  const bodyA = await ev(`document.body.innerText`)
+  ok('A6 日志显示 3 条记录计数', bodyA.includes('事件 3/57') && bodyA.includes('记录 3'), 'body has 记录 3?')
+  const offCount = bodyA.split('离线通读').length - 1
+  ok('A7 记录徽标 ×3（离线通读）', offCount >= 3, 'count=' + offCount)
+  ok('A8 当前事件卡推进到 v1-4', bodyA.includes('世界观与「欢迎会」'), '')
+  ok('A9 记录 digest 有实义内容', bodyA.includes('终末停滞委员会'), '') // v1-3 digest 文本
+
+  /* ============ Phase B：旧档（无 world）→ 回填 legacy 记录流 ============ */
+  console.log('\n[Phase B] 旧档迁移 → 无 world 回填 legacy')
+  // 等 Phase A 的 toast（5.4s 自动消退）先落完，避免 React 再用旧 world 覆盖存档
+  await sleep(6500)
+  await ev(`localStorage.setItem('zts-terminal:v3', JSON.stringify({unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true},cur:'v1-4',operatorName:'迁移测试员',focusId:'gcn'}))`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await poll(`document.body.innerText.includes('终端总览')`, 20000, 'B dash')
+  await poll(`(${wState}).rec.length===4`, 15000, 'B records backfill')
+  st = await state()
+  ok('B1 回填 4 条记录', st.rec.length === 4, JSON.stringify(st.rec))
+  ok('B2 全部为 legacy 且 ts=0', st.rec.every((r) => r.mode === 'legacy' && r.ts === 0), JSON.stringify(st.rec))
+  ok('B3 顺序按阅读序', JSON.stringify(st.rec.map((r) => r.id)) === JSON.stringify(['v1-1', 'v1-2', 'v1-3', 'v1-4']), JSON.stringify(st.rec.map((r) => r.id)))
+  ok('B4 operatorName 保留', st.name === '迁移测试员', st.name)
+  await goto('低语者日志')
+  await poll(`document.body.innerText.includes('旧档回填')`, 20000, 'B saga legacy badge')
+  const bodyB = await ev(`document.body.innerText`)
+  ok('B5 徽标显示 旧档回填', (bodyB.split('旧档回填').length - 1) >= 4, '')
+
+  /* ============ Phase C：在线推演（stub）→ eventDone 自动归档 + 指令落地 + 短信羁绊 clamp ============ */
+  console.log('\n[Phase C] 在线推演 → 自动铺开场 / eventDone / 未解析补发 / SMS clamp')
+  await ev(`localStorage.clear()`)
+  await clearIDB()
+  await seedApi('main', `http://127.0.0.1:${STUB_PORT}`, 'stub')
+  await seedApi('sms', `http://127.0.0.1:${STUB_PORT}`, 'stub-sms')
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('剧情推进')
+  // 自动铺开场 req1 → 归档 v1-1
+  await poll(`(${wState}).rec.length===1`, 40000, 'C v1-1 archived (auto open)')
+  st = await state()
+  ok('C1 自动铺开场并归档 v1-1 online', st.rec.length === 1 && st.rec[0].mode === 'online' && st.rec[0].ts > 0, JSON.stringify(st.rec))
+  await poll(`document.body.innerText.includes('上一事件已收束')`, 15000, 'C endedBar')
+  // 事件已收束并推进到下一段，叙述存进该事件会话（zts-plot:v1）——验证叙述上屏且指令已剥离
+  await poll(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');const l=o['v1-1']||[];return l.some(x=>x.text.includes('【DIR1】'))}catch(e){return false}})()`, 10000, 'C dir1 log')
+  const log1 = await ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o['v1-1']||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
+  ok('C2 叙述已写入 v1-1 会话且指令剥离', log1.includes('【DIR1】') && !log1.includes('```') && !log1.includes('eventDone'), '')
+  // v1-2 / v1-3 手动推演归档
+  for (const want of ['v1-2', 'v1-3']) {
+    await ev(`(()=>{const i=document.querySelector('input[placeholder^="推进事件"]');return !!i})()`)
+    await typeEnter('input[placeholder^="推进事件"]', '（继续推进）言万心叶跟上前去，弄清下一步该做什么。')
+    await poll(`(${wState}).rec.length===${want === 'v1-2' ? 2 : 3}`, 40000, 'C archive ' + want)
+    await sleep(900) // 等 busy 复位、线程渲染完毕再发下一条
+  }
+  st = await state()
+  ok('C3 三段全部在线归档', st.rec.length === 3 && st.rec.every((r) => r.mode === 'online'), JSON.stringify(st.rec))
+  ok('C4 v1-3 后解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
+  // v1-4：发一条 → 叙述-only（无指令）→ 未解析提示
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我先把这里的事记下来。')
+  await poll(`document.body.innerText.includes('未解析到事件指令') || document.body.innerText.includes('要求补发指令')`, 30000, 'C needDir notice')
+  const bodyC = await ev(`document.body.innerText`)
+  ok('C5 无指令回包 → 提示 + 补发按钮', bodyC.includes('未解析到事件指令') && bodyC.includes('要求补发指令'), '')
+  ok('C6 v1-4 未误归档', st.rec.length === 3, 'rec=' + st.rec.length)
+  // 补发指令 req5 → flag 落地
+  await goto('要求补发指令')
+  await poll(`(${wState}).fl.resend_ok===true`, 30000, 'C flag resend_ok')
+  st = await state()
+  ok('C7 补发后 flag 落地', st.fl.resend_ok === true, JSON.stringify(st.fl))
+  // 短信：自动选中 hikari → 发一条 → bond +10 被 clamp 到 +3
+  await goto('短信')
+  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'C sms view')
+  // 等 sms 通道设置从 IndexedDB 载入（send 依赖 settings，过早发送会被导向设置页）
+  await poll(`document.body.innerText.includes('stub-sms') && !!document.querySelector('input[placeholder*="发消息"]')`, 20000, 'C sms ready')
+  const h0 = (await state()).off.hikari || 0
+  await typeEnter('input[placeholder*="发消息"]', '今晚的布丁，我请客。')
+  await poll(`(${wState}).off.hikari===${h0 + 3}`, 30000, 'C sms clamp')
+  st = await state()
+  ok('C8 SMS bond +10 被 clamp 到 +3', st.off.hikari === h0 + 3, 'off.hikari=' + st.off.hikari + ' h0=' + h0)
+  await poll(`document.body.innerText.includes('【SMS】')`, 15000, 'C sms bubble')
+  ok('C9 SMS 叙述上屏', true)
+
+  /* ============ Phase D：旧 zts-tavern:v1 线程延续（清空后仍现旧记录） ============ */
+  console.log('\n[Phase D] 短信旧线程延续（zts-tavern:v1）')
+  await ev(`localStorage.setItem('zts-tavern:v1', JSON.stringify({luna:[{id:'old::1',from:'them',text:'旧档开场白：今晚天台的风有点大，小心着凉。',time:'01:02'},{id:'old::2',from:'user',text:'布丁给你，趁热。',time:'01:03'}]}))`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('短信')
+  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D sms view')
+  await goto('露娜')
+  await poll(`document.body.innerText.includes('旧档开场白：今晚天台的风有点大')`, 20000, 'D legacy thread visible')
+  ok('D1 旧线程仍现（未被开场种子覆盖）', true)
+  ok('D2 世界进度在重载后延续', (await state()).rec.length === 3, 'rec=' + (await state()).rec.length)
+
+  /* ============ Phase E：词条库注入 / 标签回执 / 反剧透 / 回溯重写只动日志 / 播种幂等 ============ */
+  console.log('\n[Phase E] 词条库引擎：标签回执 / 注入 / 反剧透 / 回溯重写 / 播种幂等')
+  // 换到 E 专用 stub（标签化回执），世界重置为干净在线态；zts-lore 保留。
+  // 不删 zts-terminal-store（删库+重开会与 App 活跃连接互锁），仅覆盖双通道地址。
+  await sleep(1500)
+  await ev(`localStorage.clear()`)
+  await seedApi('main', `http://127.0.0.1:${ESTUB_PORT}`, 'stub')
+  await seedApi('sms', `http://127.0.0.1:${ESTUB_PORT}`, 'stub-sms')
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await poll(`document.body.innerText.includes('终端总览')`, 20000, 'E dash')
+  // E1 播种幂等：A–D 已多次重载，canon 仍为 5 库、无重复累积
+  await poll(`${loreCountSrc()}.then(n=>n===5)`, 10000, 'E canon=5')
+  ok('E1 播种幂等：多轮重载后 canon 仍为 5 库', true)
+  const canonChar = await loreBook('book-canon-char')
+  ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
+
+  // 进入剧情推进：req0 = 标签回执（<maintext>+<vars>）驱动 v1-1 在线收束
+  await goto('剧情推进')
+  await poll(`(${wState}).rec.length===1`, 40000, 'E v1-1 auto archived (tag)')
+  st = await state()
+  ok('E3 标签回执驱动同一 completeEvent', st.rec.length === 1 && st.rec[0].id === 'v1-1' && st.rec[0].mode === 'online', JSON.stringify(st.rec))
+  ok('E4 标签路径确有且仅有一次剧情请求', eSeq === 1, 'eSeq=' + eSeq)
+  const logV11 = await plotLogText('v1-1')
+  ok('E5 正文入库且标签/围栏已剥离', logV11.includes('【E1】') && !logV11.includes('<maintext>') && !logV11.includes('<vars>') && !logV11.includes('```'), logV11.slice(0, 80))
+  ok('E6 收束记录 digest 来自 <vars>', (await recDigest('v1-1')).includes('E自动开场'), await recDigest('v1-1'))
+  // 词条库管理器浮层开合（接线验证）
+  await poll(`!!document.querySelector('button') && [...document.querySelectorAll('button')].some(b=>b.textContent.includes('词条库'))`, 15000, 'E lb btn')
+  const opened = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('词条库'));if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[aria-label="词条库管理"]')`, 10000, 'E lb modal open')
+  const lbBody = await ev(`document.body.innerText`)
+  ok('E7 词条库管理器开合正常', opened && lbBody.includes('命中规则') && lbBody.includes('词条库'), '')
+  await ev(clickTxt('完成'))
+  await poll(`!document.querySelector('[aria-label="词条库管理"]')`, 10000, 'E lb modal close')
+  ok('E8 词条库管理器可关闭', true)
+
+  // req1：推进 v1-2，叙述里带角色名 → 词条库命中注入（露娜档案）
+  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-2')
+  await sleep(700)
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）露娜把半盒布丁推到他面前，尾音压得很低。')
+  await waitSeq(2)
+  await poll(`(${wState}).rec.length===2`, 30000, 'E v1-2 archived (tag)')
+  ok('E9 v1-2 亦由标签回执在线收束', (await state()).rec[1]?.mode === 'online', '')
+  const lunaRaw = await loreEntry('book-canon-char', '露娜')
+  const lunaNeed = String((lunaRaw && lunaRaw.content) || '').replace(/\s+/g, ' ').trim().slice(0, 40)
+  const sys1 = () => { const m = (eLast && eLast.messages || []).find((x) => x.role === 'system'); return String((m && m.content) || '') }
+  ok('E10 命中注入：system 含词条库块与角色档案', sys1().includes('词条库 · 命中参考') && sys1().includes(lunaNeed), 'lunaNeed=' + lunaNeed.slice(0, 24))
+  ok('E11 req1 命中确为一次注入请求', eSeq === 2, 'eSeq=' + eSeq)
+
+  // req2：反剧透闸门。同一条消息同时带 已做(v1-2) 与 未做(v1-9) 的事件专名
+  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3')
+  await sleep(700)
+  const ev12 = await loreEntry('book-canon-events', '#ev-v1-2')
+  const ev19 = await loreEntry('book-canon-events', '#ev-v1-9')
+  const need12 = String((ev12 && ev12.content) || '').replace(/\s+/g, ' ').trim().slice(0, 150)
+  const need19 = String((ev19 && ev19.content) || '').replace(/\s+/g, ' ').trim().slice(0, 150)
+  const k2 = String((ev12 && ev12.key0) || '夜航')
+  const k9 = String((ev19 && ev19.key0) || '灯塔')
+  ok('E12 反剧透样本取到（v1-2/v1-9 词条）', !!ev12 && !!ev19 && k2.length >= 2 && k9.length >= 2, 'k2=' + k2 + ' k9=' + k9)
+  await typeEnter('input[placeholder^="推进事件"]', `（言万心叶）他在终端记下两个词：「${k2}」与「${k9}」，想知道它们各自意味着什么。`)
+  await waitSeq(3)
+  await poll(`document.body.innerText.includes('上一回未解析到事件指令')`, 30000, 'E req2 needDir')
+  const sys3 = sys1()
+  ok('E13 已做事件词条仍注入（证明扫描在工作）', sys3.includes(need12), '')
+  ok('E14 反剧透：未做事件 v1-9 摘要被闸门挡下', !sys3.includes(need19), 'leak? ' + need19.slice(0, 30))
+  ok('E15 无指令回合未误归档', (await state()).rec.length === 2, 'rec=' + (await state()).rec.length)
+  ok('E16 req2 确为第二次注入请求', eSeq === 3, 'eSeq=' + eSeq)
+
+  // 重写此回复：末条无世界变化 → 重发同文；世界记录数不变
+  const preFx = await state()
+  await poll(`[...document.querySelectorAll('button')].some(b=>b.textContent.includes('重写此回复'))`, 10000, 'E rewrite btn')
+  await ev(clickTxt('重写此回复'))
+  await waitSeq(4)
+  await sleep(1200)
+  let stNow = await state()
+  ok('E17 重写此回复只重发、不动世界', stNow.rec.length === preFx.rec.length && stNow.rec.length === 2, JSON.stringify(stNow.rec))
+  ok('E18 重写后仍无 v1-9 泄漏', !sys1().includes(need19), '')
+  // 从此重来：只截断日志，世界记录仍不变
+  await ev(clickTxt('从此重来'))
+  await sleep(800)
+  stNow = await state()
+  ok('E19 从此重来只动日志不动世界', stNow.rec.length === 2 && stNow.rec.every((r) => r.mode === 'online'), JSON.stringify(stNow.rec))
+  const bodyE = await ev(`document.body.innerText`)
+  const banned = ['酒馆', '世界书', '预设', '应答酒馆', '客官', '开席', '点单', '上菜']
+  ok('E20 页面无禁用词', !banned.some((t) => bodyE.includes(t)), '')
+  ok('E21 页面无残留标签围栏', !bodyE.includes('<maintext>') && !bodyE.includes('<vars>') && !bodyE.includes('```json'), '')
+
+  // 播种非破坏：外插用户自建库 + 强制重播 canon（删种子标记 → 重载）
+  const insUser = await ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const tx=db.transaction(['lorebooks','meta'],'readwrite');tx.objectStore('lorebooks').put({id:'user-book-test-1',name:'E测试库',description:'user-sentinel-7',entries:[],createdAt:Date.now(),updatedAt:Date.now()});tx.objectStore('meta').delete('zts-lore-seed-v1');tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)})})()`)
+  ok('E22 外插用户库并清除种子标记', insUser === true, 'ins=' + insUser)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await poll(`${loreCountSrc()}.then(n=>n===6)`, 15000, 'E user book preserved')
+  const ub = await loreBook('user-book-test-1')
+  ok('E23 重播 canon 非破坏：5+用户1（无重复）', true)
+  ok('E24 用户自建库在重播后保留', !!ub && ub.name === 'E测试库' && ub.description === 'user-sentinel-7', JSON.stringify(ub))
+  ok('E25 重播未吞并激活标记/主库', (await loreEntry('book-canon-char', '露娜')) !== null, '')
+
+  // Settings 视图挂载冒烟：防「首帧 effect 引用后置 const(TDZ)」类整页黑屏回归（曾致设置黑屏）
+  await goto('终端设置')
+  await sleep(900)
+  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('词条库数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,len:v?v.innerText.length:0}})()`)
+  ok('F1 设置视图挂载无黑屏（词条库数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
+
+  /* ============ Phase H：宿主桩（ST-5）============ */
+  await runHostPhase()
+} catch (e) {
+  passAll = false
+  console.error('\nSMOKE ERROR: ' + e.message)
+  try {
+    const dbg = await ev(`(()=>{try{return document.body?document.body.innerText.slice(0,400):'<no body>'}catch(x){return String(x)}})()`)
+    console.error('--- page text head ---\n' + dbg)
+  } catch { /* ignore */ }
+} finally {
+  console.log(`\n=== ${failures === 0 && passAll ? 'SMOKE PASS' : 'SMOKE FAIL'} · failures=${failures} ===`)
+  try { edge.kill() } catch { /* ignore */ }
+  try { preview.kill() } catch { /* ignore */ }
+  try { stub.close() } catch { /* ignore */ }
+  try { eStub.close() } catch { /* ignore */ }
+  await sleep(400)
+  try { rmSync(profile, { recursive: true, force: true }) } catch { /* ignore */ }
+  if (failures > 0 || !passAll) process.exit(1)
+}

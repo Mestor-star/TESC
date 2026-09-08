@@ -1,0 +1,105 @@
+[
+  {
+    "id": "v2-1",
+    "parts": [
+      {
+        "file": "v2/011-序 章『守护者们的声音』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-2",
+    "parts": [
+      {
+        "file": "v2/012-第 1 话『转校生，登场！』.txt",
+        "whole": true
+      },
+      {
+        "file": "v2/013-第 2 话『noapusa』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-3",
+    "parts": [
+      {
+        "file": "v2/014-第 3 话『第6区』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-4",
+    "parts": [
+      {
+        "file": "v2/015-第 4 话『天空竞技祭』.txt",
+        "whole": true
+      },
+      {
+        "file": "v2/016-第 5 话『接纳浑沌吧』.txt",
+        "from": 3,
+        "to": 465
+      }
+    ]
+  },
+  {
+    "id": "v2-5",
+    "parts": [
+      {
+        "file": "v2/016-第 5 话『接纳浑沌吧』.txt",
+        "from": 469,
+        "to": 577
+      },
+      {
+        "file": "v2/017-第 6 话『You're Gonna Go Far, Kid』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-6",
+    "parts": [
+      {
+        "file": "v2/018-第 7 话『沉默的异形们』.txt",
+        "whole": true
+      },
+      {
+        "file": "v2/019-第 8 话『午夜降临！』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-7",
+    "parts": [
+      {
+        "file": "v2/020-第 9 话『祈祷之歌』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-8",
+    "parts": [
+      {
+        "file": "v2/021-第10话『Finish Line』.txt",
+        "whole": true
+      }
+    ]
+  },
+  {
+    "id": "v2-9",
+    "parts": [
+      {
+        "file": "v2/022-尾声─ａ『祭典的开幕』.txt",
+        "whole": true
+      },
+      {
+        "file": "v2/023-尾声─ｂ『祭典的落幕』.txt",
+        "whole": true
+      }
+    ]
+  }
+]
