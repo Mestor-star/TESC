@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Gauge, Users, MapPin, ChatCircle, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play } from '@phosphor-icons/react'
+import { Gauge, Users, MapPin, ChatCircle, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -20,6 +20,7 @@ import { Codex } from './views/Codex'
 import { Tavern } from './views/Tavern'
 import { Plot } from './views/Plot'
 import { Settings } from './views/Settings'
+import { VariablePanel } from './components/VariablePanel'
 
 import css from './App.module.css'
 
@@ -86,7 +87,7 @@ function ToastHost() {
 }
 
 function NavRail() {
-  const { view, navigate, unlocked, operatorName, operatorTitle, setOperatorName, resetWorld } = useTerminal()
+  const { view, navigate, unlocked, operatorName, operatorTitle, setOperatorName, resetWorld, setVarsOpen } = useTerminal()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(operatorName)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -178,6 +179,14 @@ function NavRail() {
           </div>
         )}
         <button
+          className="btn btn--ghost"
+          style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          onClick={() => setVarsOpen(true)}
+          title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
+        >
+          <SlidersHorizontal size={13} weight="bold" /> 查看 / 编辑变量
+        </button>
+        <button
           className={confirmReset ? 'btn btn--amber' : 'btn btn--ghost'}
           style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           onClick={handleReset}
@@ -254,7 +263,7 @@ function Stage() {
 }
 
 function Shell() {
-  const { view, push } = useTerminal()
+  const { view, push, varsOpen } = useTerminal()
   const booted = useRef(false)
 
   useEffect(() => {
@@ -286,6 +295,7 @@ function Shell() {
         </main>
       </div>
       <ToastHost />
+      {varsOpen ? <VariablePanel /> : null}
     </div>
   )
 }

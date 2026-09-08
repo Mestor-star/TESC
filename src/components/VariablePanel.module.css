@@ -1,0 +1,211 @@
+/* ===== 变量系统浮层 ===== */
+
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: rgba(5, 6, 12, 0.72);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.panel {
+  width: min(820px, 96vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-3);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+.title { font-size: 17px; color: var(--ink); }
+.headActs { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.iconBtn {
+  width: 30px; height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hint {
+  border: 1px dashed var(--line-2);
+  background: var(--bg-2);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+.hint b { color: var(--amber); font-size: 12px; }
+
+.secHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+}
+.secHead b {
+  font-size: 13.5px;
+  color: var(--ink);
+  letter-spacing: 0.03em;
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.addRow .field { flex: 1; min-width: 120px; }
+.typeSel {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-1);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  padding: 8px 6px;
+}
+
+.empty {
+  border: 1px dashed var(--line-2);
+  padding: 20px 16px;
+  text-align: center;
+  color: var(--ink-mute);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.list { display: flex; flex-direction: column; gap: 6px; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 7px 11px;
+}
+.row:focus-within { border-color: var(--line-3); }
+.keyEdit { flex: 0 0 220px; }
+.key {
+  flex: 0 0 220px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--steel);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.typeTag {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  border: 1px solid var(--line-2);
+  padding: 1px 5px;
+  background: var(--bg-1);
+}
+.val {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
+}
+.valBox {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+}
+.valBox .field { flex: 1; }
+.rowActs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.danger { border-color: var(--red) !important; color: var(--red) !important; }
+
+.divider { border-top: 1px dashed var(--line-2); margin-top: 8px; }
+
+.sysList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 5px 14px;
+}
+.sysRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--line);
+}
+.sysRow code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sysVal {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+@media (max-width: 680px) {
+  .key, .keyEdit { flex-basis: 140px; }
+}

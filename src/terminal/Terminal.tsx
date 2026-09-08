@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, WorldState, OwnEndEntry, CharId, WorldRecord, RecordMode } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, WorldState, OwnEndEntry, CharId, WorldRecord, RecordMode, FlagValue } from '../data/types'
 import { CHARACTERS } from '../data/chars'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
@@ -73,8 +73,17 @@ export interface TerminalState {
   ownEnds: OwnEndEntry[]
   addOwnEnd: (e: OwnEndEntry) => void
   removeOwnEnd: (id: string) => void
-  flagOf: (k: string) => string | number | boolean | undefined
-  setFlag: (k: string, v: string | number | boolean) => void
+  flagOf: (k: string) => FlagValue | undefined
+  setFlag: (k: string, v: FlagValue) => void
+  /** 新增命名变量；键名冲突或非法时返回 false（不覆盖既有值） */
+  addVar: (k: string, v: FlagValue) => boolean
+  /** 删除命名变量；不存在时返回 false */
+  unsetVar: (k: string) => boolean
+  /** 改名（先拷后删）；目标已占用或源不存在 → false 且不动数据 */
+  renameVar: (from: string, to: string) => boolean
+  /** 变量面板开关（NavRail 底部「变量」按钮；Plot 等亦可经 ctx 打开） */
+  varsOpen: boolean
+  setVarsOpen: (open: boolean) => void
   /** 该段已做的抉择（事件 id → 选项 key） */
   pickOf: (id: string) => string | null
   recordPick: (id: string, key: string) => void
@@ -224,6 +233,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [epDone, setEpDone] = useState<Record<string, true>>(initial.epDone)
   const [cur, setCur] = useState<string | null>(initial.cur)
   const [world, setWorld] = useState<WorldState>(() => hydrateWorld(initial.epDone, initial.cur, initial.world))
+  /** 变量面板浮层开关 */
+  const [varsOpen, setVarsOpen] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
   /** 跨视图「打开档案」意图（正文关键词跳转用；档案页消费后清除） */
@@ -325,9 +336,57 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [world.flags],
   )
 
-  const setFlag = useCallback((k: string, v: string | number | boolean) => {
+  const setFlag = useCallback((k: string, v: FlagValue) => {
     setWorld((prev) => ({ ...prev, flags: { ...prev.flags, [k]: v } }))
   }, [])
+
+  const addVar = useCallback(
+    (k: string, v: FlagValue): boolean => {
+      const key = k.trim()
+      if (!key) return false
+      if (Object.prototype.hasOwnProperty.call(world.flags, key)) return false
+      setWorld((prev) => ({ ...prev, flags: { ...prev.flags, [key]: v } }))
+      return true
+    },
+    [world.flags],
+  )
+
+  const unsetVar = useCallback(
+    (k: string): boolean => {
+      const key = k.trim()
+      if (!key) return false
+      if (!Object.prototype.hasOwnProperty.call(world.flags, key)) return false
+      setWorld((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev.flags, key)) return prev
+        const flags = { ...prev.flags }
+        delete flags[key]
+        return { ...prev, flags }
+      })
+      return true
+    },
+    [world.flags],
+  )
+
+  const renameVar = useCallback(
+    (from: string, to: string): boolean => {
+      const f = from.trim()
+      const t = to.trim()
+      if (!f || !t) return false
+      if (f === t) return true
+      if (!Object.prototype.hasOwnProperty.call(world.flags, f)) return false
+      if (Object.prototype.hasOwnProperty.call(world.flags, t)) return false
+      setWorld((prev) => {
+        const v = prev.flags[f]
+        if (v === undefined && !Object.prototype.hasOwnProperty.call(prev.flags, f)) return prev
+        const flags = { ...prev.flags }
+        delete flags[f]
+        flags[t] = v
+        return { ...prev, flags }
+      })
+      return true
+    },
+    [world.flags],
+  )
 
   const pickOf = useCallback((id: string) => world.pick[id] ?? null, [world.pick])
   const recordPick = useCallback((id: string, key: string) => {
@@ -520,8 +579,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     removeOwnEnd,
     flagOf,
     setFlag,
+    addVar,
+    unsetVar,
+    renameVar,
     pickOf,
     recordPick,
+    varsOpen,
+    setVarsOpen,
     records: world.records,
     meetChar,
     completeEvent,
