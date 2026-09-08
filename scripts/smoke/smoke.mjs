@@ -414,31 +414,39 @@ try {
   const logV11 = await plotLogText('v1-1')
   ok('E5 正文入库且标签/围栏已剥离', logV11.includes('【E1】') && !logV11.includes('<maintext>') && !logV11.includes('<vars>') && !logV11.includes('```'), logV11.slice(0, 80))
   ok('E6 收束记录 digest 来自 <vars>', (await recDigest('v1-1')).includes('E自动开场'), await recDigest('v1-1'))
-  // 词条库管理器浮层开合（接线验证）
+  // P3：词条库按钮 → 智库页（管理器整页内嵌），验证编辑层可开合（不保存）
   await poll(`!!document.querySelector('button') && [...document.querySelectorAll('button')].some(b=>b.textContent.includes('词条库'))`, 15000, 'E lb btn')
   const opened = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('词条库'));if(!b)return false;b.click();return true})()`)
-  await poll(`!!document.querySelector('[aria-label="词条库管理"]')`, 10000, 'E lb modal open')
-  const lbBody = await ev(`document.body.innerText`)
-  ok('E7 词条库管理器开合正常', opened && lbBody.includes('命中规则') && lbBody.includes('词条库'), '')
-  await ev(clickTxt('完成'))
-  await poll(`!document.querySelector('[aria-label="词条库管理"]')`, 10000, 'E lb modal close')
-  ok('E8 词条库管理器可关闭', true)
+  await poll(`!!document.querySelector('[data-loremanager]') && document.body.innerText.includes('命中规则') && document.body.innerText.includes('词条库管理器')`, 15000, 'E lore manager embedded')
+  ok('E7 词条库按钮 → 智库页 · 管理器整页内嵌', opened === true, '')
+  await ev(clickTxt('浏览 / 编辑'))
+  await poll(`document.body.innerText.includes('选择或新增一个词条')`, 10000, 'E lore editor open')
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('新增词条'));if(!b)return false;b.click();return true})()`)
+  await poll(`document.body.innerText.includes('关键词（每行一个') && document.body.innerText.includes('内容')`, 8000, 'E lore entry form')
+  ok('E8 内嵌编辑器可用（新增词条表单字段齐备）', true)
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='返回列表');if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-loremanager]') && document.body.innerText.includes('命中规则') && !document.body.innerText.includes('选择或新增一个词条')`, 10000, 'E lore back list')
+  ok('E8b 编辑器可返回列表（未保存，DB 不变）', true)
 
-  // req1：推进 v1-2，叙述里带角色名 → 词条库命中注入（露娜档案）
-  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-2')
-  await sleep(700)
-  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）露娜把半盒布丁推到他面前，尾音压得很低。')
+  // 回剧情：当前事件 v1-2 尚无会话 → 自动铺开场并标签收束
+  await goto('剧情推进')
   await waitSeq(2)
-  await poll(`(${wState}).rec.length===2`, 30000, 'E v1-2 archived (tag)')
-  ok('E9 v1-2 亦由标签回执在线收束', (await state()).rec[1]?.mode === 'online', '')
+  await poll(`(${wState}).rec.length===2`, 30000, 'E v1-2 auto archived on return')
+  ok('E9 返回剧情自动开场 · v1-2 标签收束', (await state()).rec[1]?.mode === 'online' && eSeq === 2, 'eSeq=' + eSeq)
   const lunaRaw = await loreEntry('book-canon-char', '露娜')
   const lunaNeed = String((lunaRaw && lunaRaw.content) || '').replace(/\s+/g, ' ').trim().slice(0, 40)
   const sys1 = () => { const m = (eLast && eLast.messages || []).find((x) => x.role === 'system'); return String((m && m.content) || '') }
+  // req（v1-3）：叙述里带角色名 → 词条库命中注入（露娜档案）
+  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3')
+  await sleep(700)
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）露娜把半盒布丁推到他面前，尾音压得很低。')
+  await waitSeq(3)
+  await poll(`document.body.innerText.includes('上一回未解析到事件指令')`, 30000, 'E injection needDir')
   ok('E10 命中注入：system 含词条库块与角色档案', sys1().includes('词条库 · 命中参考') && sys1().includes(lunaNeed), 'lunaNeed=' + lunaNeed.slice(0, 24))
-  ok('E11 req1 命中确为一次注入请求', eSeq === 2, 'eSeq=' + eSeq)
+  ok('E11 注入请求确为一次 · 无指令不误归档', eSeq === 3 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
 
   // req2：反剧透闸门。同一条消息同时带 已做(v1-2) 与 未做(v1-9) 的事件专名
-  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3')
+  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3b')
   await sleep(700)
   const ev12 = await loreEntry('book-canon-events', '#ev-v1-2')
   const ev19 = await loreEntry('book-canon-events', '#ev-v1-9')
@@ -448,19 +456,19 @@ try {
   const k9 = String((ev19 && ev19.key0) || '灯塔')
   ok('E12 反剧透样本取到（v1-2/v1-9 词条）', !!ev12 && !!ev19 && k2.length >= 2 && k9.length >= 2, 'k2=' + k2 + ' k9=' + k9)
   await typeEnter('input[placeholder^="推进事件"]', `（言万心叶）他在终端记下两个词：「${k2}」与「${k9}」，想知道它们各自意味着什么。`)
-  await waitSeq(3)
+  await waitSeq(4)
   await poll(`document.body.innerText.includes('上一回未解析到事件指令')`, 30000, 'E req2 needDir')
   const sys3 = sys1()
   ok('E13 已做事件词条仍注入（证明扫描在工作）', sys3.includes(need12), '')
   ok('E14 反剧透：未做事件 v1-9 摘要被闸门挡下', !sys3.includes(need19), 'leak? ' + need19.slice(0, 30))
   ok('E15 无指令回合未误归档', (await state()).rec.length === 2, 'rec=' + (await state()).rec.length)
-  ok('E16 req2 确为第二次注入请求', eSeq === 3, 'eSeq=' + eSeq)
+  ok('E16 req2 确为一次注入请求', eSeq === 4, 'eSeq=' + eSeq)
 
   // 重写此回复：末条无世界变化 → 重发同文；世界记录数不变
   const preFx = await state()
   await poll(`[...document.querySelectorAll('button')].some(b=>b.textContent.includes('重写此回复'))`, 10000, 'E rewrite btn')
   await ev(clickTxt('重写此回复'))
-  await waitSeq(4)
+  await waitSeq(5)
   await sleep(1200)
   let stNow = await state()
   ok('E17 重写此回复只重发、不动世界', stNow.rec.length === preFx.rec.length && stNow.rec.length === 2, JSON.stringify(stNow.rec))
@@ -489,8 +497,9 @@ try {
   // Settings 视图挂载冒烟：防「首帧 effect 引用后置 const(TDZ)」类整页黑屏回归（曾致设置黑屏）
   await goto('终端设置')
   await sleep(900)
-  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('词条库数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,len:v?v.innerText.length:0}})()`)
+  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('词条库数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,hasFetch:v?v.innerText.includes('拉取模型'):false,hasSt:v?v.innerText.includes('导入 ST 世界书'):false,hasPreset:v?v.innerText.includes('导入 ChatPreset'):false,len:v?v.innerText.length:0}})()`)
   ok('F1 设置视图挂载无黑屏（词条库数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
+  ok('F2 P3 增强就位：拉取模型 / 导入 ST 世界书 / 导入 ChatPreset', setProbe.hasFetch === true && setProbe.hasSt === true && setProbe.hasPreset === true, JSON.stringify(setProbe))
 
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
   console.log('\n[Phase G] P2 Archive：25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')

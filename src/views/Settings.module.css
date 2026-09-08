@@ -27,6 +27,8 @@
 
 .rowInline { display: flex; gap: 10px; align-items: center; }
 .rowInline .field { flex: 1; }
+.modelRow { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.modelRow .field { width: 100%; }
 .eyeBtn {
   flex: 0 0 auto;
   width: 42px; height: 42px;

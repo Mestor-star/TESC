@@ -15,7 +15,6 @@ import { applyDirective, buildDirectorSystem, directiveHasFx, parseDirectorReply
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
-import { LorebookModal } from './lorebook/LorebookModal'
 
 import css from './Plot.module.css'
 
@@ -86,7 +85,6 @@ export function Plot() {
       return n
     })
   }, [])
-  const [lbOpen, setLbOpen] = useState(false)
 
   // 在线门禁 = 主线直连通道已配置（密钥仅运行时存于本机，不入库）
   const ready = !!cfgMain && isReady(cfgMain)
@@ -505,7 +503,7 @@ export function Plot() {
           <span className={showOnline ? 'chip chip--on' : 'chip chip--warn'}>
             <span className="chip__dot" /> {modelChip}
           </span>
-          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setLbOpen(true)} title="词条库：命中即注入的背景参考">
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('lore')} title="词条库：智库页管理命中词条与启用开关">
             词条库
           </button>
           <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
@@ -767,8 +765,6 @@ export function Plot() {
           {eventCard}
         </aside>
       </div>
-
-      <LorebookModal open={lbOpen} onClose={() => setLbOpen(false)} />
     </div>
   )
 }

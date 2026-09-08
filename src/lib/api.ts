@@ -190,3 +190,33 @@ export async function chatCompletion(
   if (!text) throw new Error('模型未返回可用内容')
   return text
 }
+
+/**
+ * 拉取网关可用模型列表（OpenAI 兼容 GET {base}/models）。
+ * 返回 data[].id 数组（空串滤除）；非 2xx 抛带响应正文的 Error，供设置页行内展示。
+ */
+export async function listModels(cfg: ApiSettings, opts?: { signal?: AbortSignal }): Promise<string[]> {
+  const base = cfg.baseUrl.trim().replace(/\/+$/, '')
+  if (!base) throw new Error('接口地址（baseUrl）为空')
+  const headers: Record<string, string> = {}
+  if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
+  const res = await fetch(`${base}/models`, { method: 'GET', headers, signal: opts?.signal })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    const detail = (() => {
+      try {
+        const j = JSON.parse(body) as { error?: { message?: string } }
+        return j.error?.message ?? ''
+      } catch {
+        return ''
+      }
+    })()
+    throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
+  }
+  const data = (await res.json().catch(() => null)) as { data?: { id?: unknown }[] } | null
+  const ids = (data?.data ?? [])
+    .map((m) => m.id)
+    .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    .map((x) => x.trim())
+  return ids
+}

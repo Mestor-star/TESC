@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
+import { ArrowClockwise, ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import type { AiChannel, ApiSettings } from '../lib/api'
-import { API_DEFAULTS, chatCompletion, isReady, readProfiles, saveProfile } from '../lib/api'
+import { API_DEFAULTS, chatCompletion, isReady, listModels, readProfiles, saveProfile } from '../lib/api'
 import * as lore from '../lib/lorestore'
 import { exportToJson } from '../lib/tavernlike/importer'
+import type { MultiImportInput } from '../lib/tavernlike/importer'
+import type { SillyTavernLorebookExport } from '../lib/tavernlike/types'
 
 import css from './Settings.module.css'
 
@@ -63,6 +65,29 @@ function readOneJson(): Promise<unknown | null> {
   })
 }
 
+/** 读取本地 .json 文件（可多选）为待导入对象；JSON 解析失败标 null */
+function pickJsons(multiple: boolean): Promise<Array<{ fileName: string; json: unknown }>> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,application/json'
+    input.multiple = multiple
+    input.onchange = async () => {
+      const files = Array.from(input.files ?? [])
+      const out: Array<{ fileName: string; json: unknown }> = []
+      for (const f of files) {
+        try {
+          out.push({ fileName: f.name, json: JSON.parse(await f.text()) as unknown })
+        } catch {
+          out.push({ fileName: f.name, json: null })
+        }
+      }
+      resolve(out)
+    }
+    input.click()
+  })
+}
+
 type Channel = AiChannel
 
 const CH_META: Record<Channel, { title: string; kicker: string; hint: string; tempNote: string }> = {
@@ -94,6 +119,9 @@ export function Settings() {
   const [schemes, setSchemes] = useState<Scheme[]>(loadSchemes)
   const [schemeSel, setSchemeSel] = useState<string | null>(null)
   const [newSchemeName, setNewSchemeName] = useState('')
+  const [modelList, setModelList] = useState<Record<Channel, string[] | null>>({ main: null, sms: null })
+  const [fetchingModels, setFetchingModels] = useState<Channel | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
 
   /* 置于任何早返回之前：下方 useEffect 需在首帧（cfgs 为空走 loading 分支）就引用它，
      若声明在组件体靠后，首帧闭包里的该 const 处于 TDZ，commit 触发 effect 即抛错 → 黑屏。 */
@@ -184,6 +212,96 @@ export function Settings() {
       setBusy(null)
       abortRef.current = null
     }
+  }
+
+  /* —— 拉取可用模型 —— */
+  const fetchModels = async (ch: Channel) => {
+    const cfg = cfgs[ch]
+    if (!cfg) {
+      push('warn', '配置未就绪', '设置尚未载入，请稍后再试。', false)
+      return
+    }
+    if (!cfg.baseUrl.trim()) {
+      push('warn', '缺少接口地址', '请先填好 BASE URL，再拉取模型列表。', false)
+      return
+    }
+    setFetchingModels(ch)
+    try {
+      const ids = await listModels(cfg)
+      if (!ids.length) {
+        setModelList((prev) => ({ ...prev, [ch]: [] }))
+        push('warn', '未返回模型', '该网关 /models 未列出任何模型。', false)
+      } else {
+        setModelList((prev) => ({ ...prev, [ch]: ids }))
+        push('success', '已拉取模型', `${CH_META[ch].title}：网关列出 ${ids.length} 个模型。`, false)
+      }
+    } catch (e) {
+      setModelList((prev) => ({ ...prev, [ch]: null }))
+      push('danger', '拉取失败', e instanceof Error ? e.message : String(e), false)
+    } finally {
+      setFetchingModels(null)
+    }
+  }
+
+  /* —— 导入 ST 世界书 JSON（多选，追加式） —— */
+  const doImportStLore = async () => {
+    if (importBusy) return
+    const picked = await pickJsons(true)
+    if (!picked.length) return
+    setImportBusy(true)
+    try {
+      const inputs: MultiImportInput[] = picked.map((p) => ({ fileName: p.fileName, json: p.json as SillyTavernLorebookExport }))
+      const results = await lore.importStLorebookMulti(inputs)
+      const ok = results.filter((r) => r.book)
+      const bad = results.filter((r) => r.error)
+      if (ok.length) push('success', '已导入世界书', ok.map((r) => r.book?.name ?? '').filter(Boolean).join(' · '), false)
+      if (bad.length) push('warn', '部分文件未识别', bad.map((r) => r.fileName).join('、'), false)
+      if (!ok.length && !bad.length) push('info', '未导入任何文件', '所选 JSON 均未被识别为世界书。', false)
+    } catch {
+      push('danger', '导入失败', '读取世界书文件时出错。', false)
+    } finally {
+      setImportBusy(false)
+      void refreshLoreInfo()
+    }
+  }
+
+  /* —— 导入 ChatPreset：openai_model/temp_openai → 新方案并套用（baseUrl/密钥沿用通道现值） —— */
+  const importChatPreset = async () => {
+    if (!cfgs) return
+    const data = await readOneJson()
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      push('warn', '无法识别', '所选文件不是 ChatPreset JSON。', false)
+      return
+    }
+    const d = data as Record<string, unknown>
+    const settings = (d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings) ? d.settings : {}) as Record<string, unknown>
+    const model = typeof settings.openai_model === 'string' ? settings.openai_model.trim() : ''
+    const temp = typeof settings.temp_openai === 'number' ? settings.temp_openai : 0.8
+    if (!model) {
+      push('warn', '预设缺模型', 'ChatPreset 未含 openai_model 字段，无法导入。', false)
+      return
+    }
+    const name = typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `ChatPreset · ${model}`
+    const actIds = await lore.getActiveLorebookIds()
+    const s: Scheme = {
+      id: crypto.randomUUID(),
+      name,
+      main: { baseUrl: cfgs.main.baseUrl, model, temperature: temp },
+      sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp },
+      activeLoreIds: actIds,
+    }
+    const next = [...schemes, s]
+    setSchemes(next)
+    persistSchemes(next)
+    setSchemeSel(s.id)
+    // 直接套用两通道（密钥留 IndexedDB，baseUrl 不变）
+    const nextMain = { ...cfgs.main, model, temperature: temp }
+    const nextSms = { ...cfgs.sms, model, temperature: temp }
+    setCfgs({ main: nextMain, sms: nextSms })
+    try {
+      await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
+    } catch { /* 写入失败时本次会话内仍生效 */ }
+    push('success', '已导入并应用 ChatPreset', `${name} · ${model}`, false)
   }
 
   /* ============ 词条库数据管理 + 方案 ============ */
@@ -350,13 +468,45 @@ export function Settings() {
 
           <label className={css.fieldRow}>
             <span>模型名称 MODEL</span>
-            <input
-              className="field"
-              value={cfg.model}
-              onChange={(e) => set(ch, 'model', e.target.value)}
-              placeholder="如 gpt-4o-mini / deepseek-chat / qwen2.5 …"
-              spellCheck={false}
-            />
+            <span className={css.rowInline}>
+              <input
+                className="field"
+                value={cfg.model}
+                onChange={(e) => set(ch, 'model', e.target.value)}
+                placeholder="如 gpt-4o-mini / deepseek-chat / qwen2.5 …"
+                spellCheck={false}
+              />
+              <button
+                className="btn btn--ghost"
+                style={{ fontSize: 11, flex: '0 0 auto' }}
+                onClick={() => void fetchModels(ch)}
+                disabled={fetchingModels !== null || !cfg.baseUrl.trim()}
+                title="向该接口地址拉取可用模型列表"
+              >
+                <ArrowClockwise size={13} weight="bold" /> {fetchingModels === ch ? '拉取中…' : '拉取模型'}
+              </button>
+            </span>
+            {Array.isArray(modelList[ch]) ? (
+              <span className={css.modelRow}>
+                <select
+                  className="field"
+                  value={cfg.model}
+                  onChange={(e) => set(ch, 'model', e.target.value)}
+                  aria-label="可用模型列表"
+                >
+                  {!cfg.model ? <option value="">选择模型…</option> : null}
+                  {cfg.model && !(modelList[ch] as string[]).includes(cfg.model) ? (
+                    <option value={cfg.model}>{cfg.model}（当前，不在列表）</option>
+                  ) : null}
+                  {(modelList[ch] as string[]).map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <span style={SUB_FIELD}>
+                  共 {(modelList[ch] as string[]).length} 个模型 · 选中即写回上方模型名称
+                </span>
+              </span>
+            ) : null}
           </label>
 
           <label className={css.fieldRow}>
@@ -437,6 +587,9 @@ export function Settings() {
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => void doExportLore()}>
               <DownloadSimple size={14} weight="bold" /> 导出备份
             </button>
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => void doImportStLore()} disabled={importBusy}>
+              <UploadSimple size={14} weight="bold" /> {importBusy ? '导入中…' : '导入 ST 世界书'}
+            </button>
             <button
               className={`btn ${confirmAct === 'restore' ? `${css.danger} btn--ghost` : 'btn--ghost'}`}
               style={{ fontSize: 12 }}
@@ -465,6 +618,9 @@ export function Settings() {
             <div className={css.schemeHead}>
               <b className="muted tiny" style={{ letterSpacing: '0.12em' }}>方案（不含密钥 · 通道参数 + 激活词条库）</b>
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 10px' }} onClick={() => void importChatPreset()} title="导入 ST ChatPreset（data.settings.openai_model/temp_openai 映射为方案并套用）">
+                  <UploadSimple size={13} weight="bold" /> 导入 ChatPreset
+                </button>
                 <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 10px' }} onClick={() => void importScheme()}>
                   <UploadSimple size={13} weight="bold" /> 导入方案
                 </button>

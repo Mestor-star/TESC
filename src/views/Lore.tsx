@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { LORE } from '../data/lore'
 import type { LoreCat } from '../data/types'
+import { LoreManager } from './lorebook/LoreManager'
 
 import css from './Lore.module.css'
 
@@ -10,6 +11,18 @@ const CATS: { key: LoreCat; label: string; color: string }[] = [
   { key: '势力', label: '势力 · 组织与机构', color: 'var(--amber)' },
   { key: '概念', label: '概念 · 术语与法理', color: 'var(--violet)' },
 ]
+
+const secHead: CSSProperties = {
+  display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap',
+  margin: '6px 0 10px',
+}
+const secTitle: CSSProperties = {
+  margin: 0, fontSize: 17, fontWeight: 900, letterSpacing: '0.03em', color: 'var(--ink)',
+}
+const secKicker: CSSProperties = {
+  fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em', color: 'var(--ink-faint)',
+  textTransform: 'uppercase', marginRight: 'auto',
+}
 
 export function Lore() {
   const [cat, setCat] = useState<LoreCat>('世界观')
@@ -29,15 +42,33 @@ export function Lore() {
           <div className="vhead__kicker">DATA / THINK TANK</div>
           <h1>智库</h1>
           <div className="vhead__sub">
-            理解「终末」，才能理解委员会为什么要让世界停滞。世界观、势力与概念——按原作设定逐条考据整理。
+            本页即词条库管理器：上方管理与编辑你的词条库（启用命中 / 浏览编辑 / 新建 / 删除 / 导入 / 导出）；
+            下方为内置 canon 词条的只读速览，共 {LORE.length} 条，亦已并入可编辑的内置词条库。
           </div>
         </div>
         <div className="vhead__right">
-          <span className="chip">词条 {LORE.length}</span>
-          <span className="chip chip--warn" style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>
-            密级 · 委员会内部
-          </span>
+          <span className="chip">canon 词条 {LORE.length}</span>
+          <span className="chip">管理器 · 词条库启停</span>
         </div>
+      </div>
+
+      {/* 词条库管理器（整页内嵌） */}
+      <div style={{ ...secHead, marginTop: 0 }}>
+        <span style={secKicker}>LOREFILE / MANAGER</span>
+        <h2 style={secTitle}>词条库管理器</h2>
+        <span className="chip chip--warn" style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>
+          密级 · 委员会内部
+        </span>
+      </div>
+      <LoreManager embedded />
+
+      {/* 内置 canon 速览 */}
+      <div style={{ ...secHead, marginTop: 26, paddingTop: 18, borderTop: '1px dashed var(--line-2)' }}>
+        <span style={secKicker}>CANON / OVERVIEW</span>
+        <h2 style={secTitle}>内置 canon 词条 · 速览</h2>
+        <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+          只读陈列 · 内容编辑请在上方词条库管理器
+        </span>
       </div>
 
       <div className={css.filterRow}>
