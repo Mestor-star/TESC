@@ -1,0 +1,137 @@
+/* ===== 存档槽位网格（标题菜单 / 游戏内存读档共用） ===== */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 132px;
+  padding: 12px 13px 11px;
+  border: 1px solid var(--line-2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 55%),
+    var(--bg-2);
+  overflow: hidden;
+  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.card:hover { border-color: var(--line-3); }
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.no {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+.card.filled .no { color: var(--red); }
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--jade);
+}
+
+/* 已占用：名称 / 时间 / 记录数 */
+.name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.time {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+.recLine {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.recLine b { color: var(--ink-dim); font-weight: 700; }
+
+/* 空位 */
+.emptyTxt {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-faint);
+  line-height: 1.6;
+}
+
+/* 卡片操作 */
+.acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 9px;
+}
+.acts .btn {
+  flex: 1;
+  font-size: 11px;
+  padding: 6px 8px 6px 10px;
+  white-space: nowrap;
+}
+
+/* 内联命名编辑器 */
+.editBox {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--line-3);
+  background: var(--bg-1);
+  padding: 8px;
+  animation: editIn 180ms var(--ease-out) both;
+}
+@keyframes editIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.editRow {
+  display: flex;
+  gap: 6px;
+}
+.editRow .btn { flex: 0 0 auto; padding: 6px 9px; font-size: 11px; }
+.editRow input.field { flex: 1; padding: 7px 9px; font-size: 12px; }
+.editWarn {
+  font-size: 10.5px;
+  color: var(--amber);
+  line-height: 1.5;
+}
+.overwrite {
+  font-size: 10.5px;
+  color: var(--red);
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .grid { grid-template-columns: 1fr; }
+}

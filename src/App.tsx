@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Gauge, Users, MapPin, ChatCircle, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal } from '@phosphor-icons/react'
+import { Gauge, Users, MapPin, ChatCircle, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
 import type { Toast, ToastKind } from './data/types'
 import { AMBIENT_TEXTS } from './data/comms'
 import { clock, rSeverity } from './lib/format'
+import { clearRemount, registerRemount } from './lib/remount'
 
 import { Boot } from './Boot'
+import { TitleMenu } from './views/Title'
 import { Dashboard } from './views/Dashboard'
 import { Saga } from './views/Saga'
 import { Lore } from './views/Lore'
@@ -21,6 +23,7 @@ import { Tavern } from './views/Tavern'
 import { Plot } from './views/Plot'
 import { Settings } from './views/Settings'
 import { VariablePanel } from './components/VariablePanel'
+import { SaveDialog } from './components/SaveDialog'
 
 import css from './App.module.css'
 
@@ -87,7 +90,7 @@ function ToastHost() {
 }
 
 function NavRail() {
-  const { view, navigate, unlocked, operatorName, operatorTitle, setOperatorName, resetWorld, setVarsOpen } = useTerminal()
+  const { view, navigate, unlocked, operatorName, operatorTitle, setOperatorName, resetWorld, setVarsOpen, setSlotsOpen } = useTerminal()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(operatorName)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -181,6 +184,14 @@ function NavRail() {
         <button
           className="btn btn--ghost"
           style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          onClick={() => setSlotsOpen(true)}
+          title="手动存档 / 读档（独立于当前进度，重置不影响）"
+        >
+          <FloppyDisk size={13} weight="bold" /> 存读档
+        </button>
+        <button
+          className="btn btn--ghost"
+          style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           onClick={() => setVarsOpen(true)}
           title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
         >
@@ -263,7 +274,7 @@ function Stage() {
 }
 
 function Shell() {
-  const { view, push, varsOpen } = useTerminal()
+  const { view, push, varsOpen, slotsOpen } = useTerminal()
   const booted = useRef(false)
 
   useEffect(() => {
@@ -296,21 +307,35 @@ function Shell() {
       </div>
       <ToastHost />
       {varsOpen ? <VariablePanel /> : null}
+      {slotsOpen ? <SaveDialog /> : null}
     </div>
   )
 }
 
 function Gate() {
-  const { authed, enter } = useTerminal()
-  // 认证开屏播完后,终端以「启动弹出」方式挂载进场
+  const { authed, stage, enter } = useTerminal()
+  // 认证开屏 → 标题菜单 → 终端本体（读档/重置经 key 重挂载后按阶段直达）
   if (!authed) return <Boot onDone={enter} />
+  if (stage !== 'game') return <TitleMenu />
   return <Shell />
 }
 
-export default function App() {
+/** 外层持有 nonce：读档 / 重置世界时经 requestRemount 全量重挂载 TerminalProvider */
+function Root() {
+  const [nonce, setNonce] = useState(0)
+
+  useEffect(() => {
+    registerRemount(() => setNonce((n) => n + 1))
+    return clearRemount
+  }, [])
+
   return (
-    <TerminalProvider>
+    <TerminalProvider key={nonce}>
       <Gate />
     </TerminalProvider>
   )
+}
+
+export default function App() {
+  return <Root />
 }

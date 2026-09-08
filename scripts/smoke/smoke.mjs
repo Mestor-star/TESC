@@ -111,7 +111,8 @@ async function waitSeq(target) {
 const pageHas = (t) => `document.body && document.body.innerText.includes(${JSON.stringify(t)})`
 const clickTxt = (t) => `(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes(${JSON.stringify(t)}));if(!b)return false;b.click();return true})()`
 
-/* 开屏：长按指纹 1.5s → 自检约 3s → 终端挂载（用 CDP 真实鼠标事件） */
+/* 开屏：长按指纹 1.5s → 自检约 3s → 标题菜单/终端挂载（用 CDP 真实鼠标事件）
+   P7：认证通过后先进「标题菜单」；有进度走「行动继续」沿用，无进度走「行动开始」开新档。 */
 async function boot() {
   await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'boot screen')
   const rect = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
@@ -119,7 +120,13 @@ async function boot() {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1 })
   await sleep(2200)
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1 })
-  await poll(`!!document.querySelector('.app--stage')`, 30000, 'shell mount')
+  await poll(`!!document.querySelector('.app--stage') || !!document.querySelector('[data-title="1"]')`, 30000, 'post-boot title/shell')
+  const inTitle = await ev(`!!document.querySelector('[data-title="1"]')`)
+  if (inTitle) {
+    const action = await ev(`(()=>{const cont=[...document.querySelectorAll('button')].find(b=>b.textContent&&b.textContent.includes('行动继续'));if(cont&&!cont.disabled){cont.click();return 'continue'}const start=[...document.querySelectorAll('button')].find(b=>b.textContent&&b.textContent.includes('行动开始'));if(start){start.click();return 'start'}return 'none'})()`)
+    if (action === 'none') throw new Error('boot: title screen has no usable action')
+    await poll(`!!document.querySelector('.app--stage')`, 30000, 'shell mount after ' + action)
+  }
 }
 async function goto(viewTxt) {
   const c = await ev(clickTxt(viewTxt))
@@ -671,6 +678,107 @@ try {
   await poll(`document.body.innerText.includes('CODEX / ENDINGS') && document.body.innerText.includes('应对要点')`, 12000, 'I codex open')
   const cxProbe = await ev(`(()=>{const t=document.body.innerText;return {codex:t.includes('CODEX / ENDINGS'), hasName:t.includes('灵魂蓄积器TM'), expanded:t.includes('应对要点')}})()`)
   ok('I4 点词 → 终末图鉴自动滚动并展开对应条目', cxProbe.codex === true && cxProbe.hasName === true && cxProbe.expanded === true, JSON.stringify(cxProbe))
+
+  /* ============ Phase J：P7 标题菜单 + 8 槽存档读档 ============ */
+  console.log('\n[Phase J] P7 标题菜单：无档禁用行动继续 / 存读档 / 覆盖二次确认 / 读取恢复含会话')
+  // 全新态：清 storage（含可能残留的 zts-slots:v1）→ 重载 → 长按指纹 → 标题菜单
+  await ev(`localStorage.clear()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'J boot screen')
+  const jr = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: jr.x, y: jr.y, button: 'left', clickCount: 1 })
+  await sleep(2200)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: jr.x, y: jr.y, button: 'left', clickCount: 1 })
+  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'J title menu')
+  const contDisabled = await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('行动继续'));return b?b.disabled:null})()`)
+  ok('J0 全新无档 → 标题「行动继续」禁用', contDisabled === true, 'disabled=' + contDisabled)
+
+  // 直接在标题态预置 run A（先不进 Plot：全新档 Plot 自动开场会消费陈旧 stub 回包、覆写 v1-1 会话）
+  const seedA = await ev(`(()=>{localStorage.setItem('zts-terminal:v3',JSON.stringify({unlocked:false,epDone:{'v1-1':true},cur:'v1-1',operatorName:'存A',focusId:'gcn'}));localStorage.setItem('zts-plot:v1',JSON.stringify({'v1-1':[{id:'pa::1',from:'them',text:'【存A标记】夜风穿过甲板，她按下发送。',time:'20:01'}]}));localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
+  ok('J1 预置 存A 档（运行 + plot 会话）', seedA === true, '')
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()   // 有进度 → 行动继续 → 直达终端总览（dashboard，Plot 不挂载）
+  await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='存A'}catch(e){return false}})()`, 12000, 'J continue keeps 存A')
+  ok('J2 有进度重载 → 行动继续沿用当前 run（存A）', true)
+
+  // 旧档迁移断言：无槽文件 + 运行已有进度 → 首启自动留档 slots[0]「旧档留档」+ 自动档
+  const mig0 = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1')||'null');const s=f&&f.slots&&f.slots[0];return s?{name:s.name,records:s.records,op:s.snapshot.operatorName}:null}catch(e){return {err:String(e)}}})()`)
+  ok('J2b 旧档迁移：无槽文件+有进度 → slots[0] 自动留档「旧档留档」(存A)', !!mig0 && mig0.name === '旧档留档' && mig0.records === 1 && mig0.op === '存A', JSON.stringify(mig0))
+
+  // 存读档 → 空槽 SLOT 02(index1)「保存到此槽」→ 命名 → 存档（index0 已被迁移占用）
+  const openDialog = `(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('存读档'));if(!b)return false;b.click();return true})()`
+  const closeDialog = `(()=>{const b=[...document.querySelectorAll('[data-savedialog] button')].find(x=>x.getAttribute('aria-label')==='关闭存读档');if(!b)return false;b.click();return true})()`
+  const clickEmptySave = (slotLabel) => `(()=>{const a=[...document.querySelectorAll('[data-savedialog] article')].find(x=>x.innerText.includes('SLOT ${slotLabel}')&&!x.innerText.includes('记录'));if(!a)return false;const b=[...a.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.trim().startsWith('保存'));if(!b)return false;b.click();return true})()`
+  const clickBtnInArticle = (needle, label) => `(()=>{const a=[...document.querySelectorAll('[data-savedialog] article')].find(x=>x.innerText.includes(${JSON.stringify(needle)}));if(!a)return false;const b=[...a.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.trim()===${JSON.stringify(label)});if(!b)return false;b.click();return true})()`
+  const clickBtnInArticleStarts = (needle, starts) => `(()=>{const a=[...document.querySelectorAll('[data-savedialog] article')].find(x=>x.innerText.includes(${JSON.stringify(needle)}));if(!a)return false;const b=[...a.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.trim().startsWith(${JSON.stringify(starts)}));if(!b)return false;b.click();return true})()`
+  const fillInput = (ph, text) => `(()=>{const i=document.querySelector(${JSON.stringify('[data-savedialog] input[placeholder="' + ph + '"]')});if(!i)return false;const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;set.call(i,${JSON.stringify(text)});i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`
+  const fillGlobal = (ph, text) => `(()=>{const i=document.querySelector(${JSON.stringify('input[placeholder="' + ph + '"]')});if(!i)return false;const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;set.call(i,${JSON.stringify(text)});i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`
+  const clickExact = (label) => `(()=>{const b=[...document.querySelectorAll('[data-savedialog] button')].find(x=>x.textContent&&x.textContent.trim()===${JSON.stringify(label)});if(!b)return false;b.click();return true})()`
+
+  await ev(openDialog)
+  await poll(`!!document.querySelector('[data-savedialog]')`, 10000, 'J dialog open')
+  await ev(clickEmptySave('02'))
+  await poll(`!!document.querySelector('[data-savedialog] input[placeholder="存档名称"]')`, 8000, 'J slot editor open')
+  await ev(fillInput('存档名称', '存档员A'))
+  await ev(clickExact('保存'))
+  await poll(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1')||'null');return !!(f&&f.slots&&f.slots[1]&&f.slots[1].name==='存档员A')}catch(e){return false}})()`, 8000, 'J slot1 saved')
+  const sf1 = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));const s=f.slots[1];return {name:s.name,records:s.records,op:s.snapshot.operatorName,plot:(s.snapshot.plot&&s.snapshot.plot['v1-1']||[]).map(x=>x.text).join('\\n')}}catch(e){return {err:String(e)}}})()`)
+  ok('J3 空槽保存成功（SLOT 02 · 存档员A · 1 记录 · 含 plot 会话）', sf1.name === '存档员A' && sf1.records === 1 && sf1.op === '存A' && (sf1.plot || '').includes('【存A标记】'), JSON.stringify(sf1))
+  await ev(closeDialog)
+  await poll(`!document.querySelector('[data-savedialog]')`, 8000, 'J dialog close 1')
+
+  // 改动当前 run（改名 存B）→ 再读 SLOT 02 → 应恢复为 存A + 会话
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='修改代号');if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('input[placeholder="输入你的代号"]')`, 8000, 'J rename editor')
+  await ev(fillGlobal('输入你的代号', '存B'))
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.trim()==='保存');if(!b)return false;b.click();return true})()`)
+  await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='存B'}catch(e){return false}})()`, 8000, 'J renamed 存B')
+  ok('J4 当前 run 已改为 存B', true)
+  await ev(openDialog)
+  await poll(`!!document.querySelector('[data-savedialog]')`, 10000, 'J dialog open2')
+  await ev(clickBtnInArticle('存档员A', '读取'))
+  await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='存A'}catch(e){return false}})()`, 15000, 'J slot load restores 存A')
+  await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).cur==='v1-1'}catch(e){return false}})()`, 8000, 'J slot load cur v1-1')
+  const afterLoad = await ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o['v1-1']||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
+  ok('J5 读 SLOT 02 → 运行档恢复 存A / v1-1 / plot 会话仍带标记', (afterLoad || '').includes('【存A标记】'), 'plot=' + afterLoad.slice(0, 40))
+  await ev(closeDialog)
+  await poll(`!document.querySelector('[data-savedialog]')`, 8000, 'J dialog close 2')
+  await poll(`document.body.innerText.includes('存档已读取') && document.body.innerText.includes('存档员A')`, 10000, 'J load toast')
+  ok('J6 读档 toast 反馈（存档已读取 · 存档员A）', true)
+
+  // 覆盖 SLOT 02：点「覆盖保存」→ 先现「再次确认覆盖」→ 再命名覆盖
+  await ev(openDialog)
+  await poll(`!!document.querySelector('[data-savedialog]')`, 10000, 'J dialog open3')
+  await ev(clickBtnInArticleStarts('存档员A', '覆盖保存'))
+  await poll(`(()=>[...document.querySelectorAll('[data-savedialog] article button')].some(x=>x.textContent&&x.textContent.includes('再次确认覆盖')))()`, 8000, 'J overwrite armed')
+  ok('J7 覆盖占用槽先出「再次确认覆盖」（行内二次确认）', true)
+  await ev(`(()=>{const b=[...document.querySelectorAll('[data-savedialog] article button')].find(x=>x.textContent&&x.textContent.includes('再次确认覆盖'));if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-savedialog] input[placeholder="存档名称"]')`, 8000, 'J overwrite editor')
+  await ev(fillInput('存档名称', '存档员A·改'))
+  await ev(clickExact('保存'))
+  await poll(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));return f.slots[1].name==='存档员A·改'}catch(e){return false}})()`, 8000, 'J slot1 overwritten')
+  const sf1b = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));const s=f.slots[1];return {name:s.name,records:s.records,op:s.snapshot.operatorName}}catch(e){return {err:String(e)}}})()`)
+  ok('J8 覆盖保存生效（存档员A·改 · 仍 1 记录 · op 存A）', sf1b.name === '存档员A·改' && sf1b.records === 1 && sf1b.op === '存A', JSON.stringify(sf1b))
+
+  // 自动档应已随当前 run 生成（迁移/读档后均为 run A：存A · 1 记录）
+  await poll(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));return !!(f.autosave&&f.autosave.records===1&&f.autosave.snapshot.operatorName==='存A')}catch(e){return false}})()`, 12000, 'J autosave present')
+  ok('J9 自动档随运行生成（records=1 · op 存A）', true)
+
+  // 行动开始 → 全新档：手动档保留、运行归零（重载冷启 → 指纹 → 标题 → 行动开始）
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'J10 boot screen')
+  const jr10 = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: jr10.x, y: jr10.y, button: 'left', clickCount: 1 })
+  await sleep(2200)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: jr10.x, y: jr10.y, button: 'left', clickCount: 1 })
+  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'J10 title menu')
+  await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('行动开始'));if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('.app--stage')`, 30000, 'J10 shell after 行动开始')
+  ok('J10 标题「行动开始」→ 进入全新档', true)
+  const keepSlots = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));return {s0:f.slots[0]?f.slots[0].name:null,s1:f.slots[1]?f.slots[1].name:null}}catch(e){return {err:String(e)}}})()`)
+  ok('J11 行动开始不清手动档（slots[0]=旧档留档 · slots[1]=存档员A·改）', keepSlots.s0 === '旧档留档' && keepSlots.s1 === '存档员A·改', JSON.stringify(keepSlots))
+  await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='言万心叶'}catch(e){return false}})()`, 12000, 'J10 fresh run default operator')
+  ok('J12 行动开始 → 运行归零（操作员代号回到默认）', true)
 
 } catch (e) {
   passAll = false

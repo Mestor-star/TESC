@@ -8,6 +8,19 @@ import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { clamp } from '../lib/format'
 import { ensureSeeded } from '../lib/lorestore'
+import { requestRemount } from '../lib/remount'
+import {
+  applySnapshot,
+  captureSnapshot,
+  clearRunStorage,
+  ensureMigration,
+  hasRunProgress,
+  readAutosave,
+  readSlot,
+  RUN_KEY,
+  writeAutosave,
+  writeSlot,
+} from '../lib/slots'
 
 export type ViewId = 'dashboard' | 'plot' | 'saga' | 'lore' | 'arms' | 'archive' | 'missions' | 'comms' | 'codex' | 'tavern' | 'settings'
 
@@ -44,6 +57,24 @@ export interface TerminalState {
   /** 开屏认证 */
   authed: boolean
   enter: () => void
+
+  /** 流程阶段：title=标题菜单 · game=终端本体 */
+  stage: 'title' | 'game'
+  /** 行动继续：沿用当前进度进入终端（无运行进度但自动档有档时先读自动档） */
+  resume: () => void
+  /** 行动开始 / 重置：清当前 run（手动槽保留），进入全新记录 */
+  startNew: () => void
+  /** 终端连接：进入终端并直达终端设置（密钥仅运行时录入） */
+  enterSettings: () => void
+  /** 退出终端：回到指纹认证开屏 */
+  exitToBoot: () => void
+  /** 读档：写入第 i 槽快照后全量重挂载 */
+  loadSlot: (i: number) => void
+  /** 存档：把当前 run 存进第 i 槽，返回是否成功 */
+  saveSlot: (i: number, name: string) => boolean
+  /** 游戏内「存读档」浮层开关 */
+  slotsOpen: boolean
+  setSlotsOpen: (open: boolean) => void
 
   /** 事件门禁 */
   unlocked: boolean
@@ -112,7 +143,24 @@ export interface TerminalState {
 }
 
 const Ctx = createContext<TerminalState | null>(null)
-const KEY = 'zts-terminal:v3'
+const KEY = RUN_KEY
+
+/**
+ * 会话级流程旗标（模块变量，跨全量重挂载保留）。
+ * 冷启动默认全 false/title → 仍先走 Boot → 标题菜单（语义不变）；
+ * 读档 / 行动开始会先置位再 requestRemount，重挂载后直达对应界面。
+ */
+let sessionAuthed = false
+let sessionStage: 'title' | 'game' = 'title'
+let pendingView: ViewId | null = null
+/** 重挂载后由 provider 首个 effect 弹一次的通知（重置/读档的落地反馈） */
+let pendingToast: { kind: ToastKind; title: string; body: string } | null = null
+
+function takePendingView(): ViewId | null {
+  const v = pendingView
+  pendingView = null
+  return v
+}
 
 function emptyWorld(): WorldState {
   return { offset: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [] }
@@ -230,16 +278,21 @@ function loadSaved(): Saved {
 export function TerminalProvider({ children }: { children: ReactNode }) {
   const initial = useRef(loadSaved()).current
 
-  const [view, setViewRaw] = useState<ViewId>('dashboard')
+  // 初始视图：重挂载若带 pendingView（重置/读档想落脚的页面）则优先
+  const [view, setViewRaw] = useState<ViewId>(() => takePendingView() ?? 'dashboard')
   const [operatorName, setOperatorNameState] = useState<string>(initial.operatorName)
   const [focusId, setFocusId] = useState<string>(initial.focusId)
-  const [authed, setAuthed] = useState<boolean>(initial.authed)
+  // authed：同会话读档重挂载时经 sessionAuthed 跳过 Boot；冷启动仍回 false
+  const [authed, setAuthed] = useState<boolean>(initial.authed || sessionAuthed)
+  const [stage, setStageState] = useState<'title' | 'game'>(sessionStage)
   const [unlocked, setUnlocked] = useState<boolean>(initial.unlocked)
   const [epDone, setEpDone] = useState<Record<string, true>>(initial.epDone)
   const [cur, setCur] = useState<string | null>(initial.cur)
   const [world, setWorld] = useState<WorldState>(() => hydrateWorld(initial.epDone, initial.cur, initial.world))
   /** 变量面板浮层开关 */
   const [varsOpen, setVarsOpen] = useState(false)
+  /** 「存读档」浮层开关 */
+  const [slotsOpen, setSlotsOpen] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
   /** 跨视图「打开档案」意图（正文关键词跳转用；档案页消费后清除） */
@@ -260,6 +313,34 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       /* 隐私模式等场景下静默降级 */
     }
   }, [saved])
+
+  /* 自动存档 = 现有运行档的 1.5s 防抖镜像（日志限量；配额/隐私模式静默降级） */
+  useEffect(() => {
+    if (!authed || stage !== 'game') return
+    const t = window.setTimeout(() => {
+      try {
+        writeAutosave(captureSnapshot({ operatorName, unlocked, epDone, cur, focusId, world }))
+      } catch {
+        /* noop */
+      }
+    }, 1500)
+    return () => window.clearTimeout(t)
+  }, [saved, authed, stage])
+
+  /* 首启迁移：无槽文件但有旧进度 → 留 slots[0]「旧档留档」+ 自动档（幂等） */
+  useEffect(() => {
+    ensureMigration()
+  }, [])
+
+  /* 重挂载后落地一条重置/读档的反馈通知（冷启动为 null 则跳过） */
+  useEffect(() => {
+    if (!pendingToast) return
+    const t = pendingToast
+    pendingToast = null
+    const id = window.setTimeout(() => push(t.kind, t.title, t.body, false), 420)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /* 词条库：挂载时幂等播种 canon 库（惰性、失败静默、不阻塞渲染） */
   useEffect(() => {
@@ -295,7 +376,83 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [unlocked, push],
   )
 
-  const enter = useCallback(() => setAuthed(true), [])
+  const enter = useCallback(() => {
+    sessionAuthed = true
+    setAuthed(true)
+  }, [])
+
+  /** 行动继续：沿用当前进度进终端；无运行进度但有自动档 → 先读自动档 */
+  const resume = useCallback(() => {
+    const a = readAutosave()
+    if (!hasRunProgress() && a) {
+      applySnapshot(a.snapshot)
+      sessionAuthed = true
+      sessionStage = 'game'
+      requestRemount()
+      return
+    }
+    sessionStage = 'game'
+    setStageState('game')
+  }, [])
+
+  /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录直接落到剧情推进 */
+  const hardReset = useCallback((title: string, body: string) => {
+    clearRunStorage()
+    sessionAuthed = true
+    sessionStage = 'game'
+    pendingView = 'plot'
+    pendingToast = { kind: 'warn', title, body }
+    requestRemount()
+  }, [])
+
+  const startNew = useCallback(() => {
+    hardReset('行动开始', '新的观测记录已建立。手动存档（存读档）不受影响。')
+  }, [hardReset])
+
+  const enterSettings = useCallback(() => {
+    sessionStage = 'game'
+    setStageState('game')
+    setViewRaw('settings')
+  }, [])
+
+  const exitToBoot = useCallback(() => {
+    sessionAuthed = false
+    sessionStage = 'title'
+    pendingView = null
+    setAuthed(false)
+    setStageState('title')
+    setViewRaw('dashboard')
+  }, [])
+
+  /** 读档：写回快照后置位旗标 → 全量重挂载（新 provider 从存储重建） */
+  const loadSlot = useCallback(
+    (i: number) => {
+      const slot = readSlot(i)
+      if (!slot) {
+        push('warn', '空存档位', `第 ${i + 1} 槽还没有存档。`)
+        return
+      }
+      applySnapshot(slot.snapshot)
+      sessionAuthed = true
+      sessionStage = 'game'
+      pendingToast = { kind: 'success', title: '存档已读取', body: `载入「${slot.name}」。` }
+      requestRemount()
+    },
+    [push],
+  )
+
+  /** 存档：把当前 run 存进手动槽并弹通知（不重挂载） */
+  const saveSlot = useCallback(
+    (i: number, name: string): boolean => {
+      if (i < 0 || i > 7) return false
+      const slot = writeSlot(i, name, captureSnapshot({ operatorName, unlocked, epDone, cur, focusId, world }))
+      if (!slot) return false
+      push('success', '已存入存档槽', `第 ${i + 1} 槽 ·「${slot.name}」 · 记录 ${slot.records} 条。`, false)
+      return true
+    },
+    [saved, push],
+  )
+
 
   /* —— 好感：取当前所在「段」的快照 —— */
   const bondSnapAt = useCallback(
@@ -543,22 +700,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** 世界重置（NavRail 底部）：只清当前 run；手动存档（zts-slots:v1）保留 */
   const resetWorld = useCallback(() => {
-    setAuthed(true)
-    setUnlocked(false)
-    setEpDone({})
-    setCur(null)
-    setOperatorNameState('言万心叶')
-    setFocusId('gcn')
-    setWorld(emptyWorld())
-    setViewRaw('plot')
-    try {
-      localStorage.removeItem(KEY)
-    } catch {
-      /* noop */
-    }
-    push('warn', '世界已重置', '进度归零。角色档案、终末图鉴与羁绊变量均已初始化。')
-  }, [push])
+    hardReset('世界已重置', '进度归零。角色档案、终末图鉴与羁绊变量均已初始化，手动存档仍在「存读档」。')
+  }, [hardReset])
 
   // 未解锁却停留在锁定视图（如重置后）时自动送回剧情推进
   useEffect(() => {
@@ -578,6 +723,15 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setFocusId,
     authed,
     enter,
+    stage,
+    resume,
+    startNew,
+    enterSettings,
+    exitToBoot,
+    loadSlot,
+    saveSlot,
+    slotsOpen,
+    setSlotsOpen,
     unlocked,
     unlockReady,
     epDone,
