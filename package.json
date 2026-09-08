@@ -7,11 +7,7 @@
     "dev": "vite --port 5174 --strictPort",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview --port 5174 --strictPort",
-    "st:build": "tsc -b && vite build --config vite.st.config.ts",
-    "st:dist": "npm run st:build && node scripts/st-manifest.mjs",
-    "st:install": "npm run st:dist && node scripts/install-st.mjs",
-    "st:package": "npm run st:dist && node scripts/zip-st.mjs"
+    "preview": "vite preview --port 5174 --strictPort"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

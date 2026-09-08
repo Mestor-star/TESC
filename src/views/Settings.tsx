@@ -6,9 +6,6 @@ import type { AiChannel, ApiSettings } from '../lib/api'
 import { API_DEFAULTS, chatCompletion, isReady, readProfiles, saveProfile } from '../lib/api'
 import * as lore from '../lib/lorestore'
 import { exportToJson } from '../lib/tavernlike/importer'
-import { isST } from '../st/host'
-import { hostDriveState } from '../st/drive'
-import { anchorState, freshChat, makeAnchor, pickAnchor, type OnboardState } from '../st/onboard'
 
 import css from './Settings.module.css'
 
@@ -97,41 +94,6 @@ export function Settings() {
   const [schemes, setSchemes] = useState<Scheme[]>(loadSchemes)
   const [schemeSel, setSchemeSel] = useState<string | null>(null)
   const [newSchemeName, setNewSchemeName] = useState('')
-
-  // 宿主态（运行在酒馆网页扩展内）：在线剧情走酒馆当前对话，直连字段可留空
-  const hostMode = isST()
-  const hostDrv = hostMode ? hostDriveState('plot') : null
-  const [anchorBusy, setAnchorBusy] = useState(false)
-  const [anchorErr, setAnchorErr] = useState<string | null>(null)
-  const [pickId, setPickId] = useState('')
-  // 锚点体检快照：外部状态（酒馆当前角色/对话）只有本页动作或点「刷新体检」时才重读
-  const [anchor, setAnchor] = useState<OnboardState | null>(() => (hostMode ? anchorState() : null))
-  const refreshAnchor = () => setAnchor(hostMode ? anchorState() : null)
-
-  const runAnchor = async (act: 'make' | 'fresh' | 'pick', id?: string) => {
-    if (!hostMode || anchorBusy) return
-    setAnchorBusy(true)
-    setAnchorErr(null)
-    try {
-      const r =
-        act === 'make' ? await makeAnchor() : act === 'fresh' ? await freshChat() : id ? await pickAnchor(id) : { ok: false as const, why: '未选择角色' }
-      refreshAnchor()
-      if (r.ok) {
-        push(
-          'success',
-          act === 'fresh' ? '已另起新对话' : '推演锚点已就绪',
-          r.name ? `角色「${r.name}」可驱动在线推演。` : '当前酒馆对话可用于在线推演。',
-          false,
-        )
-      } else {
-        setAnchorErr(r.why ?? '操作失败，请重试。')
-      }
-    } catch {
-      setAnchorErr('与酒馆协调出错，请重试，或收起终端手动选角。')
-    } finally {
-      setAnchorBusy(false)
-    }
-  }
 
   /* 置于任何早返回之前：下方 useEffect 需在首帧（cfgs 为空走 loading 分支）就引用它，
      若声明在组件体靠后，首帧闭包里的该 const 处于 TDZ，commit 触发 effect 即抛错 → 黑屏。 */
@@ -449,110 +411,6 @@ export function Settings() {
           </button>
         </div>
       </div>
-
-      {hostMode ? (
-        <section className="panel" style={{ marginBottom: 16, borderColor: 'var(--line-3)' }}>
-          <div className="panel__head">
-            <span className="panel__title"><Wrench size={15} weight="bold" /> 酒馆宿主模式</span>
-            <span className="chip" style={{ marginLeft: 'auto' }}>{hostDrv?.ok ? '在线剧情 · 酒馆就绪' : `在线待命 · ${hostDrv?.why ?? '未就绪'}`}</span>
-          </div>
-          <div className="panel__body" style={{ padding: 16 }}>
-            <div className={css.note}>
-              <b>本终端正作为 SillyTavern 网页扩展运行。</b>「剧情推进 · 在线推演」会驱动你酒馆里<b>推演锚点角色</b>的对话来生成——
-              你的预设、世界书、角色卡全部照常生效。本页下方两通道的直连字段与密钥<b>无需填写</b>，也不存进这张卡。
-              短信通道宿主态暂不接入（独立版可用）；词条库数据管理与方案照常可用。
-            </div>
-
-            {anchor ? (
-              <>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '12px 0 10px' }}>
-                  <span className="muted tiny" style={{ letterSpacing: '0.14em', marginRight: 2 }}>推演锚点</span>
-                  {anchor.steps.map((st) => (
-                    <span key={st.key} className={`chip ${st.done ? 'chip--on' : 'chip--warn'}`}>
-                      {st.done ? '已就绪' : '待就位'} · {st.label}
-                    </span>
-                  ))}
-                </div>
-
-                {anchor.ok ? (
-                  <div className={css.okLine} style={{ marginBottom: 10 }}>
-                    {anchor.cur
-                      ? `锚点就绪：角色「${anchor.cur.name}」· 对话 ${anchor.chatLen} 条。去「剧情推进 → 在线推演」即可开始。`
-                      : '锚点就绪：当前酒馆对话可用于在线推演。'}
-                  </div>
-                ) : (
-                  <div className={css.errLine} style={{ marginBottom: 10 }}>{anchor.why}</div>
-                )}
-
-                {anchorBusy ? <div className="muted tiny" style={{ marginBottom: 10 }}>正在与酒馆协调…</div> : null}
-                {anchorErr ? (
-                  <div className={css.errLine} style={{ marginBottom: 10 }}>{anchorErr}</div>
-                ) : null}
-
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button
-                    className="btn btn--primary"
-                    style={{ fontSize: 12 }}
-                    onClick={() => void runAnchor('make')}
-                    disabled={anchorBusy}
-                    title="无锚点时自动取角色表第一位接好；已就绪则只做体检"
-                  >
-                    <Wrench size={14} weight="bold" /> 一键就绪
-                  </button>
-                  <button
-                    className="btn btn--ghost"
-                    style={{ fontSize: 12 }}
-                    onClick={() => void runAnchor('fresh')}
-                    disabled={anchorBusy || !anchor.hasActive}
-                  >
-                    <Sparkle size={14} weight="bold" /> 另起一段新对话
-                  </button>
-                  <button
-                    className="btn btn--ghost"
-                    style={{ fontSize: 12 }}
-                    onClick={refreshAnchor}
-                    disabled={anchorBusy}
-                  >
-                    <Eye size={14} weight="bold" /> 刷新体检
-                  </button>
-                </div>
-
-                {anchor.chars.length === 0 ? (
-                  <div className="muted tiny" style={{ marginTop: 10 }}>
-                    酒馆里还没有角色。本终端不能替你造角：先在酒馆导入/新建一张角色卡，再回来一键就绪。
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span className="muted tiny">指定角色</span>
-                    <select
-                      className="field"
-                      style={{ maxWidth: 280, flex: 1, padding: '7px 10px' }}
-                      value={pickId}
-                      onChange={(e) => setPickId(e.target.value)}
-                    >
-                      <option value="">任选一名现有角色…</option>
-                      {anchor.chars.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                          {anchor.cur?.id === c.id ? '（当前锚点）' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="btn btn--ghost"
-                      style={{ fontSize: 12 }}
-                      disabled={!pickId || anchorBusy}
-                      onClick={() => void runAnchor('pick', pickId)}
-                    >
-                      设为锚点
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
 
       <div className={css.cfgGrid}>
         {card('main')}

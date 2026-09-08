@@ -4,8 +4,7 @@ import { Lock, PaperPlaneTilt, Stop, Eraser } from '@phosphor-icons/react'
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import type { ApiSettings, ChatTurn } from '../lib/api'
-import { isReady, loadProfile } from '../lib/api'
-import { driveReply } from '../st/drive'
+import { chatCompletion, isReady, loadProfile } from '../lib/api'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import { parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
@@ -202,14 +201,7 @@ export function Tavern() {
       const ctrl = new AbortController()
       abortRef.current = ctrl
       try {
-        const reply = await driveReply({
-          kind: 'sms',
-          userText: log.length ? String(log[log.length - 1]?.text ?? '') : '',
-          messages,
-          cfg,
-          signal: ctrl.signal,
-          session: { charId },
-        })
+        const reply = await chatCompletion(cfg, messages, { signal: ctrl.signal })
         // 回执正文照常上屏；JSON 或 <vars> 轻量指令经短信过滤后自动落地羁绊/标记
         const parsed = parseDirectorReply(reply)
         const shown = parsed.narrative || reply.trim()

@@ -6,8 +6,7 @@ import { TIMELINE } from '../data/timeline'
 import { CHARACTERS } from '../data/chars'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
-import { isReady, loadProfile } from '../lib/api'
-import { driveReply, hostDriveState, useHostDrive } from '../st/drive'
+import { chatCompletion, isReady, loadProfile } from '../lib/api'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, CharId, RecordMode } from '../data/types'
@@ -88,11 +87,8 @@ export function Plot() {
   }, [])
   const [lbOpen, setLbOpen] = useState(false)
 
-  // 宿主态：在线门禁 = 酒馆宿主可驱动（选好角色/聊天）；独立态：主线直连已配置
-  const isHost = useHostDrive()
-  const hostDrv = isHost ? hostDriveState('plot') : null
-  const hostReady = isHost && !!hostDrv?.ok
-  const ready = hostReady || (!!cfgMain && isReady(cfgMain))
+  // 在线门禁 = 主线直连通道已配置（密钥仅运行时存于本机，不入库）
+  const ready = !!cfgMain && isReady(cfgMain)
   const showOnline = mode === 'online'
 
   const total = TIMELINE.length
@@ -104,18 +100,14 @@ export function Plot() {
   )
   const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
 
-  /* —— 通道配置：宿主态直连配置无用武之地（密钥在酒馆），置空走酒馆对话；独立态才读直连 —— */
+  /* —— 通道配置：读取主线直连配置 —— */
   useEffect(() => {
-    if (isHost) {
-      setCfgMain(null)
-      return
-    }
     let on = true
     loadProfile('main')
       .then((c) => on && setCfgMain(c))
       .catch(() => on && setCfgMain(null))
     return () => { on = false }
-  }, [isHost])
+  }, [])
 
   // 主线通道未配置时，默认落到离线通读
   useEffect(() => {
@@ -217,15 +209,7 @@ export function Plot() {
       const ctrl = new AbortController()
       abortRef.current = ctrl
       try {
-        const res = await driveReply({
-          kind: 'plot',
-          userText: userMsg ?? '',
-          messages,
-          cfg: cfgMain ?? null,
-          signal: ctrl.signal,
-          maxTokens: 1500,
-          session: { eventId: evId },
-        })
+        const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: 1500 })
         const parsed = parseDirectorReply(res)
         needDir.current = !parsed.found
         if (!parsed.found) {
@@ -355,15 +339,7 @@ export function Plot() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
-      const res = await driveReply({
-        kind: 'plot',
-        userText: '（终端自动请求）请补发本回合的事件指令（JSON 围栏或 <vars> 标签皆可）：仅输出指令本身，无需展开叙述；若无任何变化则输出 {}。',
-        messages,
-        cfg: cfgMain ?? null,
-        signal: ctrl.signal,
-        maxTokens: 900,
-        session: { eventId: ev.id },
-      })
+      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: 900 })
       const parsed = parseDirectorReply(res)
       needDir.current = !parsed.found
       if (parsed.found) {
@@ -420,15 +396,11 @@ export function Plot() {
 
   const modelChip = !showOnline
     ? '离线通读'
-    : isHost
-      ? hostReady
-        ? '在线推演 · 酒馆宿主'
-        : `在线待命 · ${hostDrv?.why ?? '未就绪'}`
-      : cfgMain === undefined
-        ? '读取配置…'
-        : ready
-          ? `在线推演 · ${cfgMain?.model ?? '—'}`
-          : '主线通道未配置'
+    : cfgMain === undefined
+      ? '读取配置…'
+      : ready
+        ? `在线推演 · ${cfgMain?.model ?? '—'}`
+        : '主线通道未配置'
 
   /* —— 事件卡片（侧栏）：只读大纲信息 —— */
   const eventCard = focusEv ? (
@@ -565,10 +537,7 @@ export function Plot() {
             <button
               className={`${css.segBtn} ${showOnline ? css.isOn : ''}`}
               onClick={() => {
-                if (!ready) {
-                  if (isHost) push('warn', '在线待命', hostDrv?.why ?? '请先在酒馆选择一名角色并进入对话。')
-                  else push('warn', '主线通道未配置', '请先在「设置」中为主线剧情填入接口地址与模型。')
-                }
+                if (!ready) push('warn', '主线通道未配置', '请先在「设置」中为主线剧情填入接口地址与模型。')
                 setMode('online')
               }}
             >

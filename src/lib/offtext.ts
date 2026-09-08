@@ -18,7 +18,7 @@ export async function loadOfflineText(eventId: string): Promise<string> {
   if (!ID_RE.test(eventId)) throw new Error(`非法的段位 id：${eventId}`)
   const hit = cache.get(eventId)
   if (hit !== undefined) return hit
-  // 独立态=站根；宿主态=扩展目录（assetBase 按运行形态给出）
+  // 原文切片位于站点根下的 offtext/（见 assetBase）
   const base = assetBase()
   const res = await fetch(`${base}${DIR}/${eventId}.txt`)
   if (!res.ok) throw new Error(`本段离线原文未收录（${eventId}）`)
