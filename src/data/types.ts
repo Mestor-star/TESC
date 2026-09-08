@@ -66,6 +66,12 @@ export interface Mission {
   reward: string[];      // 可能回报（用于氛围）
 }
 
+/** 图鉴「处置状态」。基础四态来自委员会口径；后三态为考据后新增：
+ *  「运转中」＝残响一类仍在运作、未消亡亦非威胁的持续存在；
+ *  「去向不明」＝正文未见歼灭/收束、当前下落未定的实体（如死灵舰队）；
+ *  「存疑」＝档案旧标与正文不符、暂无法在基础口径内安放（如仅存在于模拟装置者）。 */
+export type EndState = '活跃' | '抑制' | '收容' | '已清除' | '运转中' | '去向不明' | '存疑'
+
 /** 终末图鉴条目（反现实实体 / 终端档案） */
 export interface EndEntry {
   id: string;
@@ -75,7 +81,7 @@ export interface EndEntry {
   stage: number;         // Stage 0-10 分级（-1 = 未解明）
   stageKw: string;       // Stage 关键词，如 『活性化』 / 未解明
   classes: string[];     // 原法分类（贴合原著：异法/死灵操法/仪式灾害/反现实机械工学/梵我合一/世界的色彩/天使之律/旧神/共同幻想…）
-  state: '活跃' | '抑制' | '收容' | '已清除';
+  state: EndState;
   seen: boolean;         // 是否已遭遇（true=遭遇/高亮；false=仅已知情报）
   origin: string;        // ○来历
   detail: string;        // ○详细
@@ -218,7 +224,7 @@ export interface OwnEndEntry {
   stage: number
   stageKw: string
   classes: string[]
-  state: '活跃' | '抑制' | '收容' | '已清除'
+  state: EndState
   origin: string
   detail: string
   counter: string

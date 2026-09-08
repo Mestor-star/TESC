@@ -25,6 +25,9 @@ const STATE_META: Record<string, { cls: string; color: string; label: string }> 
   抑制: { cls: 'chip chip--warn', color: 'var(--amber)', label: '抑制' },
   收容: { cls: 'chip chip--on', color: 'var(--jade)', label: '收容' },
   已清除: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '已清除' },
+  运转中: { cls: 'chip chip--warn', color: 'var(--amber)', label: '运转中' },
+  去向不明: { cls: 'chip chip--off', color: 'var(--ink-dim)', label: '去向不明' },
+  存疑: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '存疑' },
 }
 
 /** 图鉴浏览档位：全部 / 仅已遭遇 / 仅封存未解 */

@@ -90,7 +90,7 @@ export const MINDS: MindVoice[] = [
   ...one(0, '外传·S1', [
     { id: 'mga-1', who: 'other', speaker: '格蕾', scene: '走廊 · 初见', text: '呜哇，偏偏被最不想碰上的人搭话了。' },
     { id: 'mga-2', who: 'other', speaker: '格蕾', scene: '带路 · 提防', text: '太自来熟了吧这人。该不会有什么企图吧。我可是很可爱的。' },
-    { id: 'mga-3', who: 'other', speaker: '恋兔光（回忆）', scene: '六年前 · 沙漠', text: '……啊。有小吴的味道。能被人放在心上……有多让人安心。' },
+    { id: 'mga-3', who: 'other', speaker: '恋兔光', scene: '现框 · 宿舍同床', text: '……啊。有小吴的味道。能被人放在心上……有多让人安心。' },
     { id: 'mga-4', who: 'other', speaker: '泰尔', scene: '送别格蕾', text: '这俩该怎么办好呢。算了，看起来挺幸福的，就让他们随心所欲地过完这一生吧。' },
     { id: 'mga-5', who: 'nyau', speaker: '小柴喵呜', scene: '打游戏 · 心动', text: '（胸口轻轻一紧）……大概是肚子饿了吧。' },
     { id: 'mga-6', who: 'luna', speaker: '露娜', scene: '年末 · 空教室', text: '只有在战场上，才不觉得冷……总觉得，会变得很寂寞。' },
