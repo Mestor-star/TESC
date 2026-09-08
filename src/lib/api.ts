@@ -191,6 +191,114 @@ export async function chatCompletion(
   return text
 }
 
+/* ============================================================
+   SSE 流式（stream:true）
+   ------------------------------------------------------------
+   自写 reader 逐行解析 `data:` 事件：累积 delta.content → text；
+   遇 finish_reason 记录（stop / length 等）；遇 [DONE] 收尾。
+   refusal / model 一并透出供诊断。中止（signal）时 reader.read()
+   抛 AbortError 向上传播，由调用方决定是否保留已生成的部分。
+   ============================================================ */
+
+export interface StreamResult {
+  /** 累积拼接后的完整正文（与流中 onDelta 片段之和一致） */
+  text: string
+  /** 终止原因：stop / length …（网关给到才有） */
+  finishReason?: string
+  /** 模型侧拒答理由（OpenAI 兼容 refusal 字段） */
+  refusal?: string
+  /** 回包里的模型名（部分网关回显） */
+  model?: string
+}
+
+export interface StreamOpts extends ChatOpts {
+  /** 每收到一段 delta.content 时回调（追加显示用，仅做无副作用投影） */
+  onDelta?: (delta: string) => void
+}
+
+/** OpenAI 兼容 chat/completions 的流式版 */
+export async function chatCompletionStream(
+  cfg: ApiSettings,
+  messages: ChatTurn[],
+  opts?: StreamOpts,
+): Promise<StreamResult> {
+  const base = cfg.baseUrl.trim().replace(/\/+$/, '')
+  if (!base) throw new Error('接口地址（baseUrl）为空')
+  if (!cfg.model.trim()) throw new Error('模型名称为空')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
+  const res = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers,
+    signal: opts?.signal,
+    body: JSON.stringify({
+      model: cfg.model.trim(),
+      messages,
+      temperature: opts?.temperature ?? cfg.temperature,
+      max_tokens: opts?.maxTokens ?? 640,
+      stream: true,
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    const detail = (() => {
+      try {
+        const j = JSON.parse(body) as { error?: { message?: string } }
+        return j.error?.message ?? ''
+      } catch {
+        return ''
+      }
+    })()
+    throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
+  }
+  if (!res.body) throw new Error('当前环境不支持流式读取')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  const out: StreamResult = { text: '' }
+  let buf = ''
+
+  const handleLine = (rawLine: string) => {
+    const line = rawLine.trim()
+    if (!line.startsWith('data:')) return
+    const payload = line.slice(5).trim()
+    if (payload === '[DONE]') return true
+    let j: { model?: unknown; choices?: Array<{ delta?: { content?: unknown; refusal?: unknown }; finish_reason?: unknown; refusal?: unknown }> }
+    try {
+      j = JSON.parse(payload) as typeof j
+    } catch {
+      return false
+    }
+    if (typeof j.model === 'string') out.model = j.model
+    const choice = j.choices?.[0]
+    if (!choice) return false
+    if (typeof choice.finish_reason === 'string') out.finishReason = choice.finish_reason
+    if (typeof choice.refusal === 'string') out.refusal = choice.refusal
+    const d = choice.delta
+    if (d) {
+      if (typeof d.refusal === 'string') out.refusal = d.refusal
+      if (typeof d.content === 'string' && d.content) {
+        out.text += d.content
+        opts?.onDelta?.(d.content)
+      }
+    }
+    return false
+  }
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl: number
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl)
+      buf = buf.slice(nl + 1)
+      if (handleLine(line)) return out
+    }
+  }
+  if (buf.trim()) handleLine(buf)
+  return out
+}
+
 /**
  * 拉取网关可用模型列表（OpenAI 兼容 GET {base}/models）。
  * 返回 data[].id 数组（空串滤除）；非 2xx 抛带响应正文的 Error，供设置页行内展示。

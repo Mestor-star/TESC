@@ -320,6 +320,48 @@ export function parseDirectorReply(raw: string): DirectorReply {
 }
 
 /* ============================================================
+   流式「活气泡」投影
+   ------------------------------------------------------------
+   导演回执在生成途中是未闭合的原文：<vars>/<thinking> 等结构块
+   只写到一半、JSON 围栏只开了头。extractLiveDisplay 只做「显示」
+   用的无副作用投影——把已生成部分剥成可看的正文，绝不参与落地
+   （落地永远只跑一次 parseDirectorReply(full) 权威收口）。
+   - 完整或半截的隐藏块（thinking/think/vars/option）整块剔除；
+   - 完整或悬空的 JSON 围栏剔除；文末孤立的「事件指令」标签行剔除；
+   - <maintext> 区只剥开合标记、区内内容（含进行中）保留；
+   - 其余裸文原样保留。
+   ============================================================ */
+
+export function extractLiveDisplay(raw: string): string {
+  let s = typeof raw === 'string' ? raw : ''
+  if (!s) return ''
+
+  // 1) JSON 围栏：完整 ```…``` 或从第一个 ``` 到文末的悬空围栏，整体摘除
+  s = s.replace(/```[\s\S]*?(?:```|$)/g, '')
+
+  // 2) 完整闭合的隐藏标签块整块剔除
+  s = s.replace(/<\s*(?:thinking|think|vars|option)\b[^>]*>[\s\S]*?<\s*\/\s*(?:thinking|think|vars|option)\s*>/gi, '')
+
+  // 3) 悬空半截的隐藏块（有开头没结尾）→ 自开头剔到文末
+  s = s.replace(/<\s*(?:thinking|think|vars|option)\b[\s\S]*$/gi, '')
+
+  // 4) <maintext> 只剥开合标记，区内正文保留（含未闭合的进行中内容）
+  s = s.replace(/<\s*\/?\s*maintext\b[^>]*>/gi, '')
+
+  // 5) 剥掉围栏/标签后仍露出的文末「—— 事件指令 ——」等孤立行
+  const lines = s.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i].trim()
+    if (LABEL_RE.test(t)) { lines.pop(); continue }
+    if (t === '') { lines.pop(); continue }
+    break
+  }
+  s = lines.join('\n')
+
+  return s.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/* ============================================================
    指令落地（由视图把 Terminal 的写操作注入进来）
    ============================================================ */
 

@@ -157,6 +157,55 @@ const loreEntry = (bookId, find) => ev(loreEntrySrc(bookId, find))
 const plotLogText = (evId) => ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o[${JSON.stringify(evId)}]||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
 const recDigest = (evId) => ev(`(()=>{try{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));const r=(s.world&&s.world.records||[]).find(x=>x.eventId===${JSON.stringify(evId)});return r?(r.digest||''):''}catch(e){return ''}})()`)
 
+/* ---------- SSE 流式回包（P5：stream:true 请求按 SSE 分块发，语义与整包一致） ---------- */
+function splitChunks(s, n) {
+  if (!s) return ['']
+  const size = Math.max(1, Math.ceil(s.length / n))
+  const out = []
+  for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size))
+  return out
+}
+function writeSSE(res, content) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  })
+  for (const c of splitChunks(content, 4)) {
+    res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: c } }] })}\n\n`)
+  }
+  res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`)
+  res.write('data: [DONE]\n\n')
+  res.end()
+}
+/* P5 中止保留冒烟：先发正文并挂起（不达 [DONE]），供测试点「中断」后断言
+   已生成部分保留、半截 <vars> 指令不落地。客户端中止 → 'close' 即停发尾巴。 */
+function slowStream(res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  })
+  res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: '【E-SLOW】夜风停了，他把终端搁在膝上，等一个回应。' } }] })}\n\n`)
+  let closed = false
+  res.on('close', () => { closed = true })
+  const timer = setTimeout(() => {
+    if (closed) return
+    // 若从未被中断：8s 后补发一段半截 <vars> 尾巴并正常收尾（兜底，不悬空）
+    res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: '\n<vars>{"eventDone":true,"digest":"不应落定"' } }] })}\n\n`)
+    res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`)
+    res.write('data: [DONE]\n\n')
+    res.end()
+  }, 8000)
+  res.on('close', () => clearTimeout(timer))
+}
+
 /* ---------- 剧情 stub 服务器（plot 按序 / sms 恒定） ---------- */
 const plotReplies = []
 plotReplies.push(
@@ -184,6 +233,7 @@ const stub = http.createServer((req, res) => {
     try {
       const j = JSON.parse(body)
       const model = j.model || ''
+      const stream = j.stream === true
       let content
       if (model === 'stub-sms') {
         content = '【SMS】你今晚还留在工房街？……布丁倒是还剩半盒，下次带给你。\n\n```json\n{"bond":[{"char":"hikari","delta":10}]}\n```'
@@ -191,7 +241,8 @@ const stub = http.createServer((req, res) => {
         const idx = plotReq++
         content = plotReplies[Math.min(idx, plotReplies.length - 1)]
       }
-      send({ choices: [{ message: { content } }] })
+      if (stream) writeSSE(res, content)
+      else send({ choices: [{ message: { content } }] })
     } catch (e) {
       send({ error: { message: String(e) } }, 400)
     }
@@ -224,15 +275,21 @@ const eStub = http.createServer((req, res) => {
   req.on('end', () => {
     try {
       const j = JSON.parse(body)
+      const stream = j.stream === true
       let content
       if (String(j.model || '').includes('sms')) {
         content = '【SMS-E】夜风凉，早点回去。\n\n```json\n{"bond":[]}\n```'
       } else {
         eLast = j
         eSeq++
+        if (stream && JSON.stringify(j.messages || []).includes('E-SLOW-ABORT')) {
+          slowStream(res)
+          return
+        }
         content = eReplies[Math.min(eSeq - 1, eReplies.length - 1)]
       }
-      send({ choices: [{ message: { content } }] })
+      if (stream) writeSSE(res, content)
+      else send({ choices: [{ message: { content } }] })
     } catch (e) {
       send({ error: { message: String(e) } }, 400)
     }
@@ -482,6 +539,23 @@ try {
   const banned = ['酒馆', '世界书', '预设', '应答酒馆', '客官', '开席', '点单', '上菜']
   ok('E20 页面无禁用词', !banned.some((t) => bodyE.includes(t)), '')
   ok('E21 页面无残留标签围栏', !bodyE.includes('<maintext>') && !bodyE.includes('<vars>') && !bodyE.includes('```json'), '')
+
+  // P5 流式中止：慢流挂起（正文已上屏、[DONE] 未到）→ 点「中断推演」
+  // 断言已生成部分保留为正式消息、半截 <vars> 指令不落地、无标签/围栏泄漏
+  const recPre = (await state()).rec.length
+  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E abt composer idle')
+  await sleep(400)
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）E-SLOW-ABORT 先把终端放到一边，听听夜风。')
+  await poll(`!!document.querySelector('[data-stream-live]') && document.body.innerText.includes('【E-SLOW】')`, 20000, 'E abt live bubble')
+  const sawLive = await ev(`(()=>{const el=document.querySelector('[data-stream-live]');return el?el.innerText.includes('【E-SLOW】'):false})()`)
+  ok('EA1 流式活气泡上屏（data-stream-live 含正文）', sawLive === true, 'saw=' + sawLive)
+  await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='中断推演');if(!b)return false;b.click();return true})()`)
+  await poll(`!document.querySelector('[data-stream-live]')`, 10000, 'E abt live cleared')
+  await sleep(600)
+  const bodyAb = await ev(`document.body.innerText`)
+  ok('EA2 中止后保留已生成部分（正文仍在屏）', bodyAb.includes('【E-SLOW】'), '')
+  ok('EA3 中止未落地半截指令（rec 不变）', (await state()).rec.length === recPre, 'rec=' + (await state()).rec.length)
+  ok('EA4 中止后无标签/围栏泄漏', !bodyAb.includes('<vars>') && !bodyAb.includes('<maintext>') && !bodyAb.includes('```'), '')
 
   // 播种非破坏：外插用户自建库 + 强制重播 canon（删种子标记 → 重载）
   const insUser = await ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const tx=db.transaction(['lorebooks','meta'],'readwrite');tx.objectStore('lorebooks').put({id:'user-book-test-1',name:'E测试库',description:'user-sentinel-7',entries:[],createdAt:Date.now(),updatedAt:Date.now()});tx.objectStore('meta').delete('zts-lore-seed-v1');tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)})})()`)

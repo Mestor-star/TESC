@@ -7,11 +7,11 @@ import { CHARACTERS } from '../data/chars'
 import { personOf } from '../data/castmeta'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
-import { chatCompletion, isReady, loadProfile } from '../lib/api'
+import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, CharId, RecordMode } from '../data/types'
-import { applyDirective, buildDirectorSystem, directiveHasFx, parseDirectorReply } from '../lib/plot'
+import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply } from '../lib/plot'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
@@ -68,6 +68,8 @@ export function Plot() {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /** 流式生成中的未持久化活气泡（无副作用投影，终态落地后清空） */
+  const [live, setLive] = useState<{ evId: string; text: string } | null>(null)
   const [offState, setOffState] = useState<{ id: string | null; state: 'idle' | 'loading' | 'ok' | 'miss'; text?: string; msg?: string }>({ id: null, state: 'idle' })
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -207,14 +209,55 @@ export function Plot() {
 
       const ctrl = new AbortController()
       abortRef.current = ctrl
+      // 流式：途中只累积原文并以无副作用投影上屏活气泡；
+      // 收尾（或长度上限/中断）才落正式消息，指令只在完整收口时落地一次。
+      let acc = ''
+      let settled = false
       try {
-        const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: 1500 })
-        const parsed = parseDirectorReply(res)
+        const res = await chatCompletionStream(cfgMain!, messages, {
+          signal: ctrl.signal,
+          maxTokens: 1500,
+          onDelta: (chunk) => {
+            if (settled || !chunk) return
+            acc += chunk
+            setLive({ evId, text: acc })
+          },
+        })
+        settled = true
+        setLive(null)
+
+        const full = (res.text ?? '').trim()
+
+        // 空答 / 拒答诊断
+        if (!full) {
+          const why = res.refusal
+            ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
+            : res.finishReason === 'length'
+              ? '回复已达长度上限，且未产出任何正文。'
+              : '模型未返回任何内容。'
+          needDir.current = true
+          setErr(why)
+          push('danger', 'AI 推演失败', why, false)
+          return
+        }
+
+        // 到达长度上限：指令块可能被截断在半途 → 只保留叙述、绝不落地半截指令
+        if (res.finishReason === 'length') {
+          const shown = extractLiveDisplay(acc)
+          if (shown) {
+            appendMsg(evId, { id: idFor(), from: 'them', text: shown, time: clock() })
+            needDir.current = true
+          }
+          push('warn', '回复已达长度上限', '正文可能被截断；本回合未自动落地指令，可点「要求补发指令」补收。', false)
+          return
+        }
+
+        const parsed = parseDirectorReply(full)
         needDir.current = !parsed.found
         if (!parsed.found) {
           push('warn', '未解析到事件指令', '叙述已上屏；本回合无变量自动落地，下一回会附带补发提醒。', false)
         }
-        const shown = parsed.narrative.trim()
+        const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim()
         if (shown) {
           appendMsg(evId, {
             id: idFor(),
@@ -231,13 +274,25 @@ export function Plot() {
         }
         applyReply(parsed, evId)
       } catch (e) {
-        if ((e as Error).name === 'AbortError') return
+        if ((e as Error).name === 'AbortError') {
+          settled = true
+          // 主动中断：保留已生成的部分叙述上屏，但不落地任何（可能是半截的）指令
+          const partial = extractLiveDisplay(acc).trim()
+          setLive(null)
+          if (partial) {
+            appendMsg(evId, { id: idFor(), from: 'them', text: partial, time: clock() })
+            push('info', '生成已中断', '已保留到当前生成的部分，未落地任何指令。', false)
+          }
+          return
+        }
+        settled = true
+        setLive(null)
         const msg = e instanceof Error ? e.message : String(e)
         setErr(`推演中断：${msg}`)
         push('danger', 'AI 推演失败', msg, false)
       } finally {
-        setBusy(false)
         abortRef.current = null
+        setBusy(false)
       }
     },
     [busy, ready, cfgMain, operatorName, bondNow, world.flags, world.ends, epDone, logs, appendMsg, applyReply, push],
@@ -252,8 +307,8 @@ export function Plot() {
   }
 
   const stop = () => {
+    // 只中断：busy 交给 pushTurn 的 finally 统一收口，避免中断未落定时并发新一轮
     abortRef.current?.abort()
-    setBusy(false)
   }
 
   const clearThread = () => {
@@ -682,8 +737,17 @@ export function Plot() {
                     ),
                   )
                 )}
+                {live && live.evId === focusEv.id && live.text ? (
+                  <div className={css.narr} data-stream-live="1">
+                    <div className={css.narrMeta}>
+                      <b>导演叙述</b>
+                      <span className="muted tiny">生成中…</span>
+                    </div>
+                    <div className={css.narrText}>{extractLiveDisplay(live.text)}</div>
+                  </div>
+                ) : null}
                 {err ? <div className={css.errLine}>{err}</div> : null}
-                {busy ? <div className={css.thinking}>导演正在编织叙事…</div> : null}
+                {busy && (!live || !live.text) ? <div className={css.thinking}>导演正在编织叙事…</div> : null}
                 {needDir.current ? (
                   <div className={css.dirNotice}>
                     <span>上一回未解析到事件指令（叙述已保留）。</span>

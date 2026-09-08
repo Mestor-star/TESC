@@ -5,10 +5,10 @@ import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { genderOf } from '../data/castmeta'
 import type { ApiSettings, ChatTurn } from '../lib/api'
-import { chatCompletion, isReady, loadProfile } from '../lib/api'
+import { chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
-import { parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
+import { extractLiveDisplay, parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
 
@@ -82,6 +82,8 @@ export function Tavern() {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /** 流式生成中的未持久化活气泡（按联系人区分，切人即隐藏） */
+  const [live, setLive] = useState<{ charId: string; text: string } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const [foldOpen, setFoldOpen] = useState<ReadonlySet<string>>(() => new Set())
@@ -201,11 +203,47 @@ export function Tavern() {
 
       const ctrl = new AbortController()
       abortRef.current = ctrl
+      // 流式：途中只累积并以无副作用投影上屏活气泡；收尾才跑一次解析落地短信效果
+      let acc = ''
+      let settled = false
       try {
-        const reply = await chatCompletion(cfg, messages, { signal: ctrl.signal })
+        const res = await chatCompletionStream(cfg, messages, {
+          signal: ctrl.signal,
+          onDelta: (chunk) => {
+            if (settled || !chunk) return
+            acc += chunk
+            setLive({ charId, text: acc })
+          },
+        })
+        settled = true
+        setLive(null)
+
+        const reply = (res.text ?? '').trim()
+        if (!reply) {
+          const why = res.refusal
+            ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
+            : res.finishReason === 'length'
+              ? '回复已达长度上限，且未产出任何正文。'
+              : '模型未返回任何内容。'
+          setErr(`收发中断：${why}`)
+          push('danger', '短信收发失败', why, false)
+          return
+        }
+        if (res.finishReason === 'length') {
+          const shown = extractLiveDisplay(acc).trim()
+          if (shown) {
+            setLogs((prev) => ({
+              ...prev,
+              [charId]: [...(prev[charId] ?? []), { id: idFor(charId), from: 'them', text: shown, time: clock() }],
+            }))
+          }
+          push('warn', '回复已达长度上限', '短信正文可能被截断，本回合未落地任何短信效果。', false)
+          return
+        }
+
         // 回执正文照常上屏；JSON 或 <vars> 轻量指令经短信过滤后自动落地羁绊/标记
         const parsed = parseDirectorReply(reply)
-        const shown = parsed.narrative || reply.trim()
+        const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim() || reply
         const sd = smsDirective(parsed.directive, charId)
         let sum = 0
         for (const b of sd.bond ?? []) {
@@ -235,7 +273,21 @@ export function Tavern() {
           push('info', '短信效果', `${c.name} · 留下了一枚对话标记`, false)
         }
       } catch (e) {
-        if ((e as Error).name === 'AbortError') return
+        if ((e as Error).name === 'AbortError') {
+          settled = true
+          // 主动中断：保留已生成的部分上屏，但不落地任何（可能是半截的）短信效果
+          const partial = extractLiveDisplay(acc).trim()
+          setLive(null)
+          if (partial) {
+            setLogs((prev) => ({
+              ...prev,
+              [charId]: [...(prev[charId] ?? []), { id: idFor(charId), from: 'them', text: partial, time: clock() }],
+            }))
+          }
+          return
+        }
+        settled = true
+        setLive(null)
         const msg = e instanceof Error ? e.message : String(e)
         setErr(`收发中断：${msg}`)
         push('danger', '短信收发失败', msg, false)
@@ -279,8 +331,8 @@ export function Tavern() {
   }
 
   const stop = () => {
+    // 只中断：busy 交给 fire 的 finally 统一收口
     abortRef.current?.abort()
-    setBusy(false)
   }
 
   const clearThread = () => {
@@ -442,8 +494,15 @@ export function Tavern() {
                     ) : null}
                   </Fragment>
                 ))}
+                {live && live.charId === activeId && live.text ? (
+                  <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
+                    <span className={comm.msgAuthor}>{activeChar.name}</span>
+                    <span className={comm.bubble}>{extractLiveDisplay(live.text)}</span>
+                    <span className={comm.msgTime}>生成中…</span>
+                  </div>
+                ) : null}
                 {err ? <div className={css.errLine}>{err}</div> : null}
-                {busy ? (
+                {busy && (!live || live.charId !== activeId || !live.text) ? (
                   <div className={comm.typing} aria-label="对方正在输入">
                     <i /><i /><i />
                   </div>
