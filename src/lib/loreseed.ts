@@ -231,8 +231,8 @@ export const CANON_BOOK_ACTIVE_IDS = [
 /** 旧版种子里的废弃库 id（迁移时删除：v1 的独立「登场者登记」） */
 export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
 
-/** 种子内容版本：v1 → v2 = 登场者登记并入角色档案（触发一次性重播升级） */
-export const CANON_SEED_VERSION = 2
+/** 种子内容版本：v2 → v3 = 智库势力条目去剧情化整改＋新增各学园附属机构（树木骑士团/抹消小组/放逐部队/黑锤部队/企业警备队），触发一次性重播升级 */
+export const CANON_SEED_VERSION = 3
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'
