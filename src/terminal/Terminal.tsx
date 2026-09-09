@@ -7,6 +7,7 @@ import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } fr
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { clamp } from '../lib/format'
+import { opFull } from '../lib/operator'
 import { ensureSeeded } from '../lib/lorestore'
 import { requestRemount } from '../lib/remount'
 import {
@@ -763,7 +764,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     view,
     navigate,
     operatorName,
-    operatorTitle: '苍之学园 体验入学 · Stage4『活性化』 · 低语者',
+    operatorTitle: opFull(epDone),
     setOperatorName: setOperatorNameState,
     focusId,
     focusRegion,

@@ -31,7 +31,7 @@ export function TitleMenu() {
           </h1>
           <span className={css.sub}>停滞观测终端 v4.2 · 委员制式配备</span>
           <span className={css.op}>
-            欢迎回来，<b>{displayOp}</b> · 苍之学园 体验入学 · Stage4『活性化』低语者
+            欢迎回来，<b>{displayOp}</b> · 停滞观测操作员
           </span>
         </header>
 

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Fingerprint } from '@phosphor-icons/react'
 
+import { opFull } from './lib/operator'
+import { readAutosave } from './lib/slots'
 import css from './Boot.module.css'
 
 /**
@@ -17,7 +19,7 @@ const BOOT_READY_MS = 340 // 就绪行之后停留
 const SELF_CHECK = [
   '停滞观测网 接入中 ……',
   '弗尔克图斯 · 第12区 观测分区 坐标标定 ……',
-  '委员认证 ···· 言万心叶 · 苍之学园（体验入学）',
+  '接入认证 ···· 言万心叶',
   '秘钥载入 · 终端解锁',
 ]
 const READY_LINE = '停滞观测终端已启动 · 欢迎回来，言万心叶。'
@@ -32,6 +34,12 @@ export function Boot({ onDone }: { onDone: () => void }) {
   const startAt = useRef(0)
   const doneRef = useRef(false)
   const timers = useRef<number[]>([])
+
+  /* 接入身份随存档进度变化：全新开始无存档 → 临时访问；有存档 → 该进度对应的学籍身份 */
+  const identity = useMemo(() => {
+    const auto = readAutosave()
+    return opFull((auto?.snapshot?.epDone ?? {}) as Record<string, true>)
+  }, [])
 
   const later = (fn: () => void, ms: number) => {
     timers.current.push(window.setTimeout(fn, ms))
@@ -129,7 +137,7 @@ export function Boot({ onDone }: { onDone: () => void }) {
         </h1>
         <div className={css.bootSub}>—— 请认证信息 ——</div>
         <div className={css.bootBrand}>
-          苍之学园 体验入学 · <b>Stage4『活性化』</b> · 低语者（Susurrador）
+          <b>{identity}</b> · 言万心叶
         </div>
 
         <button

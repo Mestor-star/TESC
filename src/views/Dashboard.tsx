@@ -7,6 +7,7 @@ import { CHARACTERS } from '../data/chars'
 import { REGIONS } from '../data/regions'
 import { TIMELINE } from '../data/timeline'
 import { clamp, rSeverity } from '../lib/format'
+import { opSituation } from '../lib/operator'
 import type { Character } from '../data/types'
 
 import css from './Dashboard.module.css'
@@ -15,7 +16,8 @@ const CIRC = 2 * Math.PI * 90
 
 export function Dashboard() {
   const { operatorName, navigate, requestSms, focusRegion, setFocusId, epDone, bondNow, unlocked } = useTerminal()
-  const name = operatorName.trim() ? operatorName : '低语者'
+  const name = operatorName.trim() ? operatorName : '言万心叶'
+  const sit = opSituation(epDone)
   const sev = rSeverity(focusRegion.r)
   const doneEvents = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).slice(-4).reverse(), [epDone])
   const f = clamp((focusRegion.r - 0.8) / 0.3, 0, 1)
@@ -30,12 +32,16 @@ export function Dashboard() {
             欢迎回来，<em>{name}</em>
           </h2>
           <p className={css.heroText}>
-            你是被收留在苍之学园的体验入学低语者——终末潜力登记为 Stage4『活性化』。
+            {sit.stage === 0
+              ? '你以「临时访问」身份接入这台终端——一个曾被旧黑手党利用、能窥探人心的少年，无学园所属，尚未被委员会收编。'
+              : sit.stage === 1
+                ? '你是被收留在苍之学园的体验入学低语者——终末潜力登记为 Stage4『活性化』。'
+                : '你已是苍之学园的正式生（转校生）——终末潜力登记为 Stage4『活性化』。'}
             以消息推进剧情，或切到离线通读原文；时间线正从第 1 卷等待你的落笔。
           </p>
           <div className={css.heroChips}>
-            <span className="chip chip--on">低语者 Susurrador</span>
-            <span className="chip">苍之学园 · 体验入学</span>
+            {sit.adopted ? <span className="chip chip--on">低语者 Susurrador</span> : null}
+            <span className="chip">{sit.standing}</span>
             {unlocked ? (
               <span className="chip chip--on">作战子系统已解锁</span>
             ) : (

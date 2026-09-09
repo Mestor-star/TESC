@@ -98,7 +98,7 @@ function NavRail() {
     setEditing(false)
   }
 
-  const name = operatorName.trim() ? operatorName : '低语者'
+  const name = operatorName.trim() ? operatorName : '言万心叶'
   const avatarText = name.slice(0, 1).toUpperCase()
 
   const handleReset = () => {

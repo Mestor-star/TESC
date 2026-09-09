@@ -33,7 +33,7 @@ export function Saga() {
   const focusIdx = useMemo(() => TIMELINE.findIndex((e) => !epDone[e.id]), [epDone])
   const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
   const focusEv = focusIdx >= 0 ? TIMELINE[focusIdx] : null
-  const displayOp = operatorName.trim() ? operatorName : '低语者'
+  const displayOp = operatorName.trim() ? operatorName : '言万心叶'
   const pct = TIMELINE.length ? Math.round((doneCount / TIMELINE.length) * 100) : 0
 
   // 分歧记录数：diverged 记录 ∪ 旧抉择中的非原著路线

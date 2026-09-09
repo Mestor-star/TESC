@@ -10,6 +10,7 @@ import { ROSTER_GROUPS, SIDE_AXIS, SIDE_TRAIT, committeeRankOf } from '../data/r
 import { personOf } from '../data/castmeta'
 import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
+import { opSituation } from '../lib/operator'
 import { AXIS_MAX } from '../data/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { Portrait } from '../components/Portrait'
@@ -198,7 +199,7 @@ function placeDialog(
 }
 
 export function Archive() {
-  const { operatorName, bondNow, push, profileRequest, clearProfileRequest } = useTerminal()
+  const { operatorName, epDone, bondNow, push, profileRequest, clearProfileRequest } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
@@ -208,7 +209,8 @@ export function Archive() {
 
   const rows = useMemo(buildRows, [])
   const focus = rows.find((r) => r.id === openId) ?? null
-  const name = operatorName.trim() ? operatorName : '低语者'
+  const name = operatorName.trim() ? operatorName : '言万心叶'
+  const sit = opSituation(epDone)
 
   /* 展开某档案（卡片就近） */
   const openFromId = useCallback((id: string) => {
@@ -302,7 +304,7 @@ export function Archive() {
           <div className={css.opBannerMain}>
             <h2>言万心叶 <em>（你 · 操作员本人）</em></h2>
             <p>
-              苍之学园 体验入学 · 低语者（Susurrador）。以读心为名登记在册的终末潜力 Stage4『活性化』——
+              {sit.standing} · 低语者（Susurrador）。以读心为名登记在册的终末潜力 Stage4『活性化』——
               读取半径约 500 米内他人心声的读心者，也正因为听得见，才比谁都更怕「不被喜欢」。
             </p>
             <div className={css.opChips}>

@@ -80,7 +80,7 @@ export function VariablePanel() {
   const sysRows = useMemo(() => {
     const bondRows = PERSON_IDS.map((id) => [`bond:${id}`, String(bondNow(id))])
     return [
-      ['operatorName', operatorName.trim() || '低语者'],
+      ['operatorName', operatorName.trim() || '言万心叶'],
       ...bondRows,
       ['met', `${PERSON_IDS.filter((id) => isMet(id)).length}/${PERSON_IDS.length}`],
       ['ends', String(Object.keys(world.ends).length)],
