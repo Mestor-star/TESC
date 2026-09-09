@@ -110,6 +110,8 @@ async function waitSeq(target) {
 }
 const pageHas = (t) => `document.body && document.body.innerText.includes(${JSON.stringify(t)})`
 const clickTxt = (t) => `(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes(${JSON.stringify(t)}));if(!b)return false;b.click();return true})()`
+/* P2（改动A）：收束栏出现 → 点「进入下一事件」才写记录并推进 */
+const concludedGo = () => ev(`(()=>{const b=[...document.querySelectorAll('[data-concluded] button')].find(x=>x.textContent&&x.textContent.includes('进入下一事件'));if(!b)return false;b.click();return true})()`)
 
 /* 开屏：长按指纹 1.5s → 自检约 3s → 标题菜单/终端挂载（用 CDP 真实鼠标事件）
    P7：认证通过后先进「标题菜单」；有进度走「行动继续」沿用，无进度走「行动开始」开新档。 */
@@ -388,8 +390,8 @@ try {
   const bodyB = await ev(`document.body.innerText`)
   ok('B5 徽标显示 旧档回填', (bodyB.split('旧档回填').length - 1) >= 4, '')
 
-  /* ============ Phase C：在线推演（stub）→ eventDone 自动归档 + 指令落地 + 短信羁绊 clamp ============ */
-  console.log('\n[Phase C] 在线推演 → 自动铺开场 / eventDone / 未解析补发 / SMS clamp')
+  /* ============ Phase C：在线推演（stub）→ 收束停留(不自动归档) → 点「进入下一事件」手动推进 + 短信羁绊 clamp ============ */
+  console.log('\n[Phase C] 在线推演 → 收束停留 / 手动进入下一事件 / 自动衔接开场 / 未解析补发 / SMS clamp')
   await ev(`localStorage.clear()`)
   await clearIDB()
   await seedApi('main', `http://127.0.0.1:${STUB_PORT}`, 'stub')
@@ -401,33 +403,42 @@ try {
   await poll(`document.body.innerText.includes('开场白 · 原文')`, 30000, 'C v1-1 opening injected')
   await sleep(800)
   ok('C0 v1-1 standby：开场已注入且无自动导演请求（rec=0 · plotReq=0）', (await state()).rec.length === 0 && plotReq === 0, 'plotReq=' + plotReq)
-  // 操作员手动回话 → req1 触发导演回执收束 → 在线归档 v1-1
+  // 操作员手动回话 → req1 导演回执 eventDone：正文完整停留当前事件，不自动归档、不自动跳走
   await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我抓住浮木的残片，朝拉法挣扎的方向划去。')
-  await poll(`(${wState}).rec.length===1`, 40000, 'C v1-1 archived (manual turn)')
+  await poll(`!!document.querySelector('[data-concluded]')`, 40000, 'C v1-1 concluded bar')
   st = await state()
-  ok('C1 手动回话后导演收束并在线归档 v1-1', st.rec.length === 1 && st.rec[0].mode === 'online' && st.rec[0].ts > 0, JSON.stringify(st.rec))
-  await poll(`document.body.innerText.includes('上一事件已收束')`, 15000, 'C endedBar')
-  // 事件已收束并推进到下一段，叙述存进该事件会话（zts-plot:v1）——验证叙述上屏且指令已剥离
+  ok('C1 收束回复完整停留：不自动归档/不跳走（rec=0 · 收束栏在 · 正文上屏）', st.rec.length === 0 && (await ev(`document.body.innerText.includes('【DIR1】') && document.body.innerText.includes('本事件已收束')`)), 'rec=' + st.rec.length + ' plotReq=' + plotReq)
+  // 叙述已存进该事件会话（zts-plot:v1）——指令已剥离
   await poll(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');const l=o['v1-1']||[];return l.some(x=>x.text.includes('【DIR1】'))}catch(e){return false}})()`, 10000, 'C dir1 log')
   const log1 = await ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o['v1-1']||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
   ok('C2 叙述已写入 v1-1 会话且指令剥离', log1.includes('【DIR1】') && !log1.includes('```') && !log1.includes('eventDone'), '')
-  // v1-2 / v1-3 手动推演归档
+  // 点「进入下一事件」→ 此刻才写记录；同时自动为 v1-2 生成衔接开场（req2 eventDone → v1-2 收束栏现）
+  await concludedGo()
+  await poll(`(${wState}).rec.length===1`, 40000, 'C v1-1 archived (进入下一事件)')
+  st = await state()
+  ok('C2b 点按后归档 v1-1（online · ts>0）', st.rec.length === 1 && st.rec[0].mode === 'online' && st.rec[0].ts > 0, JSON.stringify(st.rec))
+  // v1-2 / v1-3：同样收束栏 → 点「进入下一事件」推进（各自衔接开场已自动发往下一事件）
+  // 注：v1-1/v1-2 的「上一事件已收束」横幅只在各自推进到衔接回执(下一段 eventDone)落定前闪现，
+  //     是瞬时态；等到 v1-4 的 DIR4（叙述-only·无指令）后横幅才会稳定 —— 故横幅断言放在 C5b。
   for (const want of ['v1-2', 'v1-3']) {
-    await ev(`(()=>{const i=document.querySelector('input[placeholder^="推进事件"]');return !!i})()`)
-    await typeEnter('input[placeholder^="推进事件"]', '（继续推进）言万心叶跟上前去，弄清下一步该做什么。')
+    await poll(`!!document.querySelector('[data-concluded]')`, 30000, 'C bar ' + want)
+    await concludedGo()
     await poll(`(${wState}).rec.length===${want === 'v1-2' ? 2 : 3}`, 40000, 'C archive ' + want)
-    await sleep(900) // 等 busy 复位、线程渲染完毕再发下一条
+    await sleep(600) // 等衔接回执收尾
   }
   st = await state()
   ok('C3 三段全部在线归档', st.rec.length === 3 && st.rec.every((r) => r.mode === 'online'), JSON.stringify(st.rec))
   ok('C4 v1-3 后解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
-  // v1-4：发一条 → 叙述-only（无指令）→ 未解析提示
-  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我先把这里的事记下来。')
+  // v1-3 点按后自动衔接 v1-4 → 叙述-only（无指令）→ 未解析提示 + 补发按钮（v1-4 未被归档）
   await poll(`document.body.innerText.includes('未解析到事件指令') || document.body.innerText.includes('要求补发指令')`, 30000, 'C needDir notice')
   const bodyC = await ev(`document.body.innerText`)
   ok('C5 无指令回包 → 提示 + 补发按钮', bodyC.includes('未解析到事件指令') && bodyC.includes('要求补发指令'), '')
+  // DIR4 叙述-only 不触碰 lastEnded → 「上一事件已收束(v1-3)」横幅此刻是稳定态（焦点已落到 v1-4，无收束栏）
+  const stEnded = await ev(`(()=>{const t=document.body.innerText;return {bar:t.includes('上一事件已收束'), digest:t.includes('苍之学园'), noBar:!document.querySelector('[data-concluded]')}})()`)
+  ok('C5b 收束横幅稳定呈现（上一事件已收束 · 含收束解读 · 无收束栏）', stEnded.bar === true && stEnded.digest === true && stEnded.noBar === true, JSON.stringify(stEnded))
+  st = await state()
   ok('C6 v1-4 未误归档', st.rec.length === 3, 'rec=' + st.rec.length)
-  // 补发指令 req5 → flag 落地
+  // 补发指令 → flag 落地
   await goto('要求补发指令')
   await poll(`(${wState}).fl.resend_ok===true`, 30000, 'C flag resend_ok')
   st = await state()
@@ -480,19 +491,28 @@ try {
   ok('E2c 旧「登场者登记」世界书已迁移移除', (await loreBook('book-canon-sidecast')) === null, '')
 
   // 进入剧情推进：v1-1 开场自足完整（standby）→ 注入原文后原地待命；
-  // 操作员手动回话 → 唯一一次剧情请求，由标签回执（<maintext>+<vars>）驱动 v1-1 在线收束
+  // 操作员手动回话 → 标签回执（<maintext>+<vars>）驱动 v1-1 收束：正文停留、不自动归档
   await goto('剧情推进')
   await poll(`document.body.innerText.includes('开场白 · 原文')`, 30000, 'E v1-1 opening injected (standby)')
   await sleep(800)
   ok('E2b v1-1 standby：注入后无自动请求（rec=0 · eSeq=0）', (await state()).rec.length === 0 && eSeq === 0, 'eSeq=' + eSeq)
   await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我抱住浮木，回头去找拉法的手。')
-  await poll(`(${wState}).rec.length===1`, 40000, 'E v1-1 archived (manual tag turn)')
-  st = await state()
-  ok('E3 标签回执驱动同一 completeEvent', st.rec.length === 1 && st.rec[0].id === 'v1-1' && st.rec[0].mode === 'online', JSON.stringify(st.rec))
+  await poll(`!!document.querySelector('[data-concluded]')`, 40000, 'E v1-1 concluded (tag turn)')
+  ok('E3 标签回执驱动收束：正文停留 · 未自动归档（rec=0 · eSeq=1）', (await state()).rec.length === 0 && eSeq === 1, 'eSeq=' + eSeq)
   ok('E4 标签路径确有且仅有一次剧情请求', eSeq === 1, 'eSeq=' + eSeq)
   const logV11 = await plotLogText('v1-1')
   ok('E5 正文入库且标签/围栏已剥离', logV11.includes('【E1】') && !logV11.includes('<maintext>') && !logV11.includes('<vars>') && !logV11.includes('```'), logV11.slice(0, 80))
-  ok('E6 收束记录 digest 来自 <vars>', (await recDigest('v1-1')).includes('E自动开场'), await recDigest('v1-1'))
+  // 点「进入下一事件」→ v1-1 此刻才归档；随后自动为 v1-2 生成衔接开场并收束（标签 digest 落记录）
+  await concludedGo()
+  await poll(`(${wState}).rec.length===1`, 40000, 'E v1-1 archived (进入下一事件)')
+  ok('E6 收束记录 digest 来自 <vars>（点按时刻才写）', ((await state()).rec[0] && (await state()).rec[0].mode === 'online') && (await recDigest('v1-1')).includes('E自动开场'), await recDigest('v1-1'))
+  // 自动衔接开场到 v1-2（E2 eventDone → v1-2 收束栏现）→ 再点按归档 v1-2
+  await poll(`!!document.querySelector('[data-concluded]')`, 30000, 'E v1-2 concluded (bridge)')
+  await concludedGo()
+  await poll(`(${wState}).rec.length===2`, 40000, 'E v1-2 archived (进入下一事件)')
+  // 自动衔接 v1-3：E3 为叙述-only（无指令）→ v1-3 就位未归档、提示可补发（rec=2 · eSeq=3）
+  await poll(`document.body.innerText.includes('上一回未解析到事件指令') || document.body.innerText.includes('要求补发指令')`, 30000, 'E v1-3 no-directive notice')
+  ok('E6b v1-2 归档后自动衔接 v1-3（未归档 · eSeq=3 · rec=2）', eSeq === 3 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
   // P3：世界书按钮 → 智库页（管理器整页内嵌），验证编辑层可开合（不保存）
   await poll(`!!document.querySelector('button') && [...document.querySelectorAll('button')].some(b=>b.textContent.includes('世界书'))`, 15000, 'E lb btn')
   const opened = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('世界书'));if(!b)return false;b.click();return true})()`)
@@ -507,11 +527,11 @@ try {
   await poll(`!!document.querySelector('[data-loremanager]') && document.body.innerText.includes('命中规则') && !document.body.innerText.includes('选择或新增一个词条')`, 10000, 'E lore back list')
   ok('E8b 编辑器可返回列表（未保存，DB 不变）', true)
 
-  // 回剧情：当前事件 v1-2 尚无会话 → 自动铺开场并标签收束
+  // 回剧情：当前事件 v1-3 已有衔接叙述 → 不再自动开场/无额外请求（世界进度延续）
   await goto('剧情推进')
-  await waitSeq(2)
-  await poll(`(${wState}).rec.length===2`, 30000, 'E v1-2 auto archived on return')
-  ok('E9 返回剧情自动开场 · v1-2 标签收束', (await state()).rec[1]?.mode === 'online' && eSeq === 2, 'eSeq=' + eSeq)
+  await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer idle v1-3')
+  await sleep(600)
+  ok('E9 返回剧情不重复开场（v1-3 已就位 · eSeq 仍 3 · rec 仍 2）', eSeq === 3 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
   const lunaRaw = await loreEntry('book-canon-char', '露娜')
   const lunaNeed = String((lunaRaw && lunaRaw.content) || '').replace(/\s+/g, ' ').trim().slice(0, 40)
   const sys1 = () => { const m = (eLast && eLast.messages || []).find((x) => x.role === 'system'); return String((m && m.content) || '') }
@@ -519,12 +539,12 @@ try {
   await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3')
   await sleep(700)
   await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）露娜把半盒布丁推到他面前，尾音压得很低。')
-  await waitSeq(3)
+  await waitSeq(4)
   await poll(`document.body.innerText.includes('上一回未解析到事件指令')`, 30000, 'E injection needDir')
   ok('E10 命中注入：system 含世界书块与角色档案', sys1().includes('世界书 · 命中参考') && sys1().includes(lunaNeed), 'lunaNeed=' + lunaNeed.slice(0, 24))
-  ok('E11 注入请求确为一次 · 无指令不误归档', eSeq === 3 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
+  ok('E11 注入请求确为一次 · 无指令不误归档', eSeq === 4 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
 
-  // req2：反剧透闸门。同一条消息同时带 已做(v1-2) 与 未做(v1-9) 的事件专名
+  // req：反剧透闸门。同一条消息同时带 已做(v1-2) 与 未做(v1-9) 的事件专名
   await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3b')
   await sleep(700)
   const ev12 = await loreEntry('book-canon-events', '#ev-v1-2')
@@ -535,19 +555,19 @@ try {
   const k9 = String((ev19 && ev19.key0) || '灯塔')
   ok('E12 反剧透样本取到（v1-2/v1-9 词条）', !!ev12 && !!ev19 && k2.length >= 2 && k9.length >= 2, 'k2=' + k2 + ' k9=' + k9)
   await typeEnter('input[placeholder^="推进事件"]', `（言万心叶）他在终端记下两个词：「${k2}」与「${k9}」，想知道它们各自意味着什么。`)
-  await waitSeq(4)
+  await waitSeq(5)
   await poll(`document.body.innerText.includes('上一回未解析到事件指令')`, 30000, 'E req2 needDir')
   const sys3 = sys1()
   ok('E13 已做事件词条仍注入（证明扫描在工作）', sys3.includes(need12), '')
   ok('E14 反剧透：未做事件 v1-9 摘要被闸门挡下', !sys3.includes(need19), 'leak? ' + need19.slice(0, 30))
   ok('E15 无指令回合未误归档', (await state()).rec.length === 2, 'rec=' + (await state()).rec.length)
-  ok('E16 req2 确为一次注入请求', eSeq === 4, 'eSeq=' + eSeq)
+  ok('E16 反剧透回合确为一次注入请求', eSeq === 5, 'eSeq=' + eSeq)
 
   // 重写此回复：末条无世界变化 → 重发同文；世界记录数不变
   const preFx = await state()
   await poll(`[...document.querySelectorAll('button')].some(b=>b.textContent.includes('重写此回复'))`, 10000, 'E rewrite btn')
   await ev(clickTxt('重写此回复'))
-  await waitSeq(5)
+  await waitSeq(6)
   await sleep(1200)
   let stNow = await state()
   ok('E17 重写此回复只重发、不动世界', stNow.rec.length === preFx.rec.length && stNow.rec.length === 2, JSON.stringify(stNow.rec))

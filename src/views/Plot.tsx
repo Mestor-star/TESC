@@ -37,6 +37,14 @@ const CONTINUE_PROMPT =
   + '在场者的状态与正悬而未决的局面，然后停在言万心叶可以回应、可以行动的地方。不要重复或改写过开场白本身；'
   + '先不要收束事件；本回合若无变量变化，指令块给 {} 即可。'
 
+/** 事件衔接请求：上一事件已收束，用其解读式收束 + 言万心叶最后发言，让导演为下一事件生成自然开场（同一段故事的余波延续） */
+function bridgePrompt(prevTitle: string, prevGroup: string, digest: string, diverged: boolean, lastUser?: string): string {
+  return `（衔接）《${prevTitle}》已经收束（${prevGroup}），下面进入它之后的事件——这是同一条故事线的自然延续，不是新开一段，更不是又冒出新的麻烦（不要写成「一波刚平一波又起」那种另起炉灶、事件里再生事件的割裂转场）。
+上一段如何了结（解读口径）：${digest.trim() || '（导演未给出收束概述）'}${diverged ? '\n（该段已偏离原著路线。）' : ''}${lastUser ? `\n言万心叶在上一段末尾的话语／行动：${lastUser}` : ''}
+请把上面这些全部当作已经发生的既定事实。依下方「当前事件」的大纲，把它作为承接上一段结果的延续来铺陈开场：若场景、在场者或处境随上一段的收束而发生了变化，就把这变化写成从上一段的结果中自然到来；承接言万心叶此刻的处境、在场者的状态与仍然悬而未决的局面，写清此时此地。
+这段衔接可以写得较长、有画面与氛围，但不要复述或重复上一段的收束过程，不要照抄世界书／原文／开场白，所有角色保持在设定之内（不要 OOC）。写完后停在言万心叶可以回应、可以行动的地方；先不要收束当前事件；若本回合无变量变化，事件指令块给 {} 即可。`
+}
+
 /** 「AI 起草」的请求：站在言万心叶视角草拟下一步可说的话/行动（仅供操作员择一填入，不落导演状态） */
 const DRAFT_PROMPT =
   '（起草助手）请暂时站在言万心叶的视角，依据当前事件与最近的对话，为言万心叶草拟 2~3 个下一步可以说出口的话或可以做的行动。\n'
@@ -119,6 +127,8 @@ export function Plot() {
   const [live, setLive] = useState<{ evId: string; text: string } | null>(null)
   const [offState, setOffState] = useState<{ id: string | null; state: 'idle' | 'loading' | 'ok' | 'miss'; text?: string; msg?: string }>({ id: null, state: 'idle' })
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
+  /** 「事件已收束、待手动推进」：收束正文留在原地不消失；点「进入下一事件」才写记录并推进（期间不锁输入，继续回话即留在本事件） */
+  const [concluded, setConcluded] = useState<{ evId: string; title: string; digest: string; diverged: boolean } | null>(null)
   /** 「AI 起草」：起草中 / 候选行动 / 失败提示（纯呈现，不落导演状态） */
   const [drafting, setDrafting] = useState(false)
   const [draftSugg, setDraftSugg] = useState<string[] | null>(null)
@@ -187,7 +197,7 @@ export function Plot() {
     setLogs((prev) => ({ ...prev, [evId]: [...(prev[evId] ?? []), m] }))
   }, [])
 
-  /** 指令落地 + 结算：写变量、toast、eventDone→收束记录并推进下一段 */
+  /** 指令落地 + 结算：写变量、toast；eventDone→标记「已收束待手动推进」（正文停留，点按钮才写记录） */
   const applyReply = useCallback(
     (parsed: PlotReply, evId: string) => {
       const d = parsed.directive
@@ -217,17 +227,18 @@ export function Plot() {
       }
       if (fx.eventDone) {
         const digest = (fx.digest?.trim() || ev?.summary || '').trim()
-        completeEvent(evId, digest || ev?.summary || '', 'online', fx.diverged)
-        skipAutoOpen.current = true
+        // 收束不再立即归档推进：正文留在当前事件不消失，等操作员点「进入下一事件」才写记录；
+        // 期间不锁输入——直接继续回话即视为留在本事件，取消收束标记（未归档故无副作用）。
+        setConcluded({ evId, title: ev?.title ?? evId, digest: digest || ev?.summary || '', diverged: fx.diverged })
         setLastEnded({ id: evId, title: ev?.title ?? evId, digest: digest || ev?.summary || '', diverged: fx.diverged, mode: 'online' })
-        push('decode', '事件收束 · 已写入记录', ev?.title ?? evId, false)
+        push('decode', '事件收束', '结尾叙述已完整上屏：点「进入下一事件」写入记录并衔接下一段；亦可继续回话留在本事件。', false)
         return
       }
       if (fx.diverged) {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, completeEvent, push],
+    [meetChar, bumpBond, registerEnd, setFlag, push],
   )
 
   /**
@@ -235,7 +246,7 @@ export function Plot() {
    * userMsg 可选：操作员发言（正常回合）；baseOverride 可选：重写时用截断后的历史当 base。
    */
   const pushTurn = useCallback(
-    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[]) => {
+    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean }) => {
       const ev = TIMELINE.find((e) => e.id === evId)
       if (!ev || busy || !ready) return
       setBusy(true)
@@ -273,8 +284,10 @@ export function Plot() {
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
       if (userMsg) messages.push({ role: 'user', content: userMsg })
 
-      // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）
+      // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）。
+      // 事件衔接回合（opts.long）放宽预算——衔接文本「可以长」。
       const budget = Math.max(800, cfgMain!.maxTokens || 1500)
+      const turnBudget = opts?.long ? Math.max(2600, Math.round(budget * 1.6)) : budget
       // 正文为空且疑似思考耗尽预算 → 自动加大预算补发一次，避免动辄卡在手动「要求补发」
       try {
         for (let attempt = 1; attempt <= 2; attempt++) {
@@ -287,7 +300,7 @@ export function Plot() {
           try {
             const res = await chatCompletionStream(cfgMain!, messages, {
               signal: ctrl.signal,
-              maxTokens: attempt === 1 ? budget : Math.max(4000, Math.round(budget * 1.8)),
+              maxTokens: attempt === 1 ? turnBudget : Math.max(5000, Math.round(turnBudget * 1.8)),
               onDelta: (chunk) => {
                 if (settled || !chunk) return
                 acc += chunk
@@ -385,6 +398,8 @@ export function Plot() {
   const send = async () => {
     const text = draft.trim()
     if (!focusEv || busy || !text) return
+    // 收束态下继续发话 = 留在本事件继续推演 → 取消收束标记
+    setConcluded(null)
     // 若「AI 起草」仍在跑，先中断它，让位给操作员的实际发言
     if (drafting) { draftAbortRef.current?.abort(); setDrafting(false) }
     setDraft('')
@@ -438,6 +453,7 @@ export function Plot() {
 
   const clearThread = () => {
     if (!focusEv) return
+    setConcluded(null)
     setLogs((prev) => {
       const next = { ...prev }
       delete next[focusEv.id]
@@ -450,6 +466,7 @@ export function Plot() {
   /** 楼层回退：截断到第 i 条之前，本段会话从该条重新起步（只动日志，不回滚已落地变量） */
   const rollbackAt = (i: number) => {
     if (!focusEv || busy) return
+    setConcluded(null)
     const cur = logs[focusEv.id] ?? []
     if (i < 0 || i > cur.length) return
     setLogs((prev) => ({ ...prev, [focusEv.id]: (prev[focusEv.id] ?? []).slice(0, i) }))
@@ -461,6 +478,7 @@ export function Plot() {
   /** 重写此回复：仅当末条为导演叙述、上一条是操作员发言、且该叙述未产生世界变化 */
   const rewriteReply = async (i: number) => {
     if (!focusEv || busy || !ready) return
+    setConcluded(null)
     const cur = logs[focusEv.id] ?? []
     if (i !== cur.length - 1) return
     const prev = cur[i - 1]
@@ -476,6 +494,7 @@ export function Plot() {
   const pickOption = async (text: string) => {
     const t = (text ?? '').trim()
     if (!focusEv || busy || !ready || !t) return
+    setConcluded(null)
     appendMsg(focusEv.id, { id: idFor(), from: 'user', text: t, time: clock() })
     await pushTurn(focusEv.id, t)
   }
@@ -487,6 +506,7 @@ export function Plot() {
 
   const quickAct = async (key: string) => {
     if (!focusEv || busy) return
+    setConcluded(null)
     const ch = SCENES[focusEv.id]?.choices?.find((c) => c.key === key)
     if (!ch) return
     // 依原著既定余波确定性落地（等价旧 choose 语义）
@@ -501,6 +521,27 @@ export function Plot() {
       + '请把上述视为已经发生的事实，从此刻的局势接续叙述；不要重复该行动本身，也不要再次累计随该行动记录过的羁绊或标记。'
     appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
     await pushTurn(focusEv.id, text)
+  }
+
+  /** 「进入下一事件」（收束栏主按钮）：此刻才写记录并推进到下一事件，随后让导演生成自然衔接开场 */
+  const advanceFromConcluded = async () => {
+    const ev = focusEv
+    if (!ev || busy || !ready || !concluded || concluded.evId !== ev.id) return
+    const digest = concluded.digest || ev.summary
+    completeEvent(ev.id, digest, 'online', concluded.diverged) // 此刻才写记录 + epDone → focus 落到下一事件
+    setConcluded(null)
+    push('decode', '事件收束 · 已写入记录', `${ev.title}（已写入低语者日志）`, false)
+    const evIdx = TIMELINE.findIndex((t) => t.id === ev.id)
+    const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id] && t.id !== ev.id) ?? null) : null
+    if (nextEv && showOnline && ready) {
+      const lastUser = [...(logs[ev.id] ?? [])].reverse().find((m) => m.from === 'user')?.text
+      skipAutoOpen.current = true // 先按住自动开场，避免抢跑
+      try {
+        await pushTurn(nextEv.id, bridgePrompt(ev.title, ev.group, digest, concluded.diverged, lastUser), undefined, { long: true })
+      } finally {
+        skipAutoOpen.current = false // 失败时放行 → 自动开场兜底
+      }
+    }
   }
 
   /** 补发指令：仅要求模型回一个事件指令块 */
@@ -589,6 +630,7 @@ export function Plot() {
   const finishOffline = () => {
     if (!focusEv) return
     const ev = focusEv
+    setConcluded(null)
     completeEvent(ev.id, ev.summary, 'offline')
     skipAutoOpen.current = false
     setLastEnded({ id: ev.id, title: ev.title, digest: ev.summary, diverged: false, mode: 'offline' })
@@ -747,9 +789,11 @@ export function Plot() {
 
   const quickReady = !busy && showOnline && ready
 
-  /* —— P6 气泡渲染辅助 —— */
+  /* —— 台词框渲染辅助 —— */
   const opName = operatorName.trim() ? operatorName : '言万心叶'
-  /** 把一段正文按「旁白 / 台词气泡」逐段渲染（narr→纯文本行；say→左头像；you→右头像操作员） */
+  /** 把一段正文按「旁白 / 台词框」逐段渲染：
+      narr → 通栏叙述行（不分侧）；say(其它角色) → 整框靠左、立绘嵌左缘、名字嵌左上顶边；
+      you(操作员) → 整框镜像、立绘嵌右缘、名字嵌右上顶边。 */
   const segNode = (seg: ReturnType<typeof splitSpeech>[number], key: Key) => {
     if (seg.kind === 'narr') {
       return (
@@ -759,16 +803,15 @@ export function Plot() {
       )
     }
     if (seg.kind === 'you') {
-      // 言万心叶（操作员）：黑块 + 名字在上 + 立绘在块右侧、与块等高（整组靠右）
       return (
         <div key={key} className={css.youRow} data-you="1">
-          <div className={css.youMain}>
-            <span className={css.opName}>{opName}</span>
-            <div className={css.youBlockRow}>
-              <span className={css.youBubble}>
+          <div className={`${css.frame} ${css.youFrame}`}>
+            <span className={css.dlgName}>{opName}</span>
+            <div className={css.frameRow}>
+              <span className={css.bubble}>
                 <Linkified text={seg.text} />
               </span>
-              <Portrait avatarId="operator" width={56} style={{ width: 56, height: '100%', borderRadius: 0 }} className={css.rowPortrait} />
+              <Portrait avatarId="operator" width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
             </div>
           </div>
         </div>
@@ -776,14 +819,13 @@ export function Plot() {
     }
     const c = personOf(seg.id)
     const hue = c?.hue ?? '#7fb4ff'
-    // 其他角色台词：黑块 + 名字在上 + 立绘在块左侧、与块等高（整组靠左）
     return (
       <div key={key} className={css.sayRow} data-say="1" data-say-for={seg.id}>
-        <div className={css.sayMain}>
-          <span className={css.sayName} style={{ color: hue }}>{c?.name ?? seg.id}</span>
-          <div className={css.sayBlockRow}>
-            <Portrait avatarId={seg.id} width={56} style={{ width: 56, height: '100%', borderRadius: 0 }} className={css.rowPortrait} />
-            <span className={css.sayBubble}>
+        <div className={`${css.frame} ${css.sayFrame}`}>
+          <span className={css.dlgName} style={{ color: hue }}>{c?.name ?? seg.id}</span>
+          <div className={css.frameRow}>
+            <Portrait avatarId={seg.id} width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
+            <span className={css.bubble}>
               <Linkified text={seg.text} />
             </span>
           </div>
@@ -1021,19 +1063,21 @@ export function Plot() {
                       </div>
                     ) : (
                       <div key={m.id} className={css.youRow} data-you="1">
-                        <Portrait avatarId="operator" size={30} round />
-                        <div className={css.youMain}>
-                          <span className={css.opName}>{opName}</span>
-                          <span className={css.youBubble}>
-                            <Linkified text={m.text} />
-                          </span>
-                          <span className={`muted tiny ${css.youFoot}`}>
-                            {m.time}
-                            {showOnline && ready && !busy ? (
-                              <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
-                            ) : null}
-                          </span>
+                        <div className={`${css.frame} ${css.youFrame}`}>
+                          <span className={css.dlgName}>{opName}</span>
+                          <div className={css.frameRow}>
+                            <span className={css.bubble}>
+                              <Linkified text={m.text} />
+                            </span>
+                            <Portrait avatarId="operator" width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
+                          </div>
                         </div>
+                        <span className={`muted tiny ${css.youFoot}`}>
+                          {m.time}
+                          {showOnline && ready && !busy ? (
+                            <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                          ) : null}
+                        </span>
                       </div>
                     ),
                   )
@@ -1059,6 +1103,31 @@ export function Plot() {
                 ) : null}
                 <div ref={endRef} />
               </div>
+
+              {concluded && concluded.evId === focusEv.id && ready && !busy ? (
+                <div className={css.concludedBar} data-concluded="1">
+                  <div className={css.concludedHead}>
+                    <b>本事件已收束 · 《{concluded.title}》</b>
+                    <div className={css.concludedActs}>
+                      <button
+                        className="btn btn--primary"
+                        style={{ fontSize: 12 }}
+                        onClick={() => void advanceFromConcluded()}
+                        title="写入记录并推进到下一事件，自动生成衔接开场"
+                      >
+                        进入下一事件 <ArrowRight size={13} weight="bold" />
+                      </button>
+                      <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('saga')}>
+                        查看记录
+                      </button>
+                    </div>
+                  </div>
+                  <div className={css.concludedDigest} title={concluded.digest}>{concluded.digest}</div>
+                  <span className={css.concludedNote}>
+                    {concluded.diverged ? '分歧路线 · ' : ''}结尾叙述已完整上屏。点「进入下一事件」即写入记录并衔接下一段；正文不会消失，也可继续发话留在此事件。
+                  </span>
+                </div>
+              ) : null}
 
               {ready ? (
                 <>

@@ -221,83 +221,91 @@
   word-break: break-word;
 }
 
-/* —— P6 AVG 台词：名字在上；文本与立绘头部特写融于同一深色方框，无边框 ——
-   立绘贴合本组靠外的一侧边缘（say 组靠左、you 组靠右），与文本同框同高，
-   内缘以淡化渐变融入文本区，不加描边。 */
+/* —— 台词框（P6 AVG 通用）：直角 · 通栏宽 · 名字嵌顶边 · 立绘方块嵌外缘 ——
+   其它角色（say）整框靠左，立绘嵌左缘、名字嵌在左上顶边；
+   操作员·言万心叶（you）整框镜像，立绘嵌右缘、名字嵌在右上顶边；
+   旁白/开场白不分侧，仍是通栏叙述块。 */
 .sayRow,
 .youRow {
-  display: flex;
-  align-items: flex-start;
+  width: 100%;
   margin-top: 12px;
 }
-.sayRow { justify-content: flex-start; }
-.youRow { justify-content: flex-end; }
-.sayMain,
-.youMain {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  max-width: min(88%, 680px);
-}
-.sayMain { align-items: flex-start; }
-.youMain { align-items: flex-end; }
-.sayName,
-.opName {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  margin: 0 3px 7px;
-}
-.sayName { color: var(--ink-mute); }
-.opName { color: var(--steel); }
-.sayBlockRow,
-.youBlockRow {
+
+/* 台词框：一块通栏宽的直角框；名字铭牌跨骑在顶边上、遮断其下边框段，形成 ┌─名字─…┐ */
+.frame {
   position: relative;
+  width: 100%;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  background: linear-gradient(180deg, #14141c 0%, #0a0a11 100%);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+}
+.frameRow {
   display: flex;
   align-items: stretch;
-  gap: 0;
-  min-width: 0;
-  max-width: 100%;
-  border-radius: 6px;
-  overflow: hidden;
-  background: linear-gradient(180deg, #14141c 0%, #0a0a11 100%);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+  min-height: 52px;
 }
-/* 文本区：透明承接框体背景，无边框 */
-.sayBubble,
-.youBubble {
+
+/* 名字铭牌：跨骑顶边、贴近靠外一侧（角色左 / 操作员右），以所在底色遮断其下边框段 */
+.dlgName {
+  position: absolute;
+  top: -8px;
+  z-index: 2;
+  padding: 0 8px;
+  font-size: 10.5px;
+  line-height: 15px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  color: var(--ink-mute);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+}
+.sayFrame .dlgName { left: 16px; }
+.youFrame .dlgName { right: 16px; color: var(--steel); }
+
+/* 正文区：立绘对面一侧，垂直居中 */
+.bubble {
   flex: 1 1 auto;
   min-width: 0;
   color: var(--ink);
-  padding: 12px 17px;
+  padding: 13px 18px;
   font-size: 13.5px;
   line-height: 1.85;
   white-space: pre-line;
   word-break: break-word;
-  min-height: 52px;
   display: flex;
   align-items: center;
 }
-/* 立绘头部特写：贴对应边缘、与框同高、无自身边框，内缘淡化「融入」文本区 */
-.rowPortrait {
+
+/* 立绘方块：贴靠外缘、顶/外/底三边与框边贴合，内缘以淡化渐变「融入」文本区 */
+.framePortrait {
   flex: none;
+  width: 64px;
   align-self: stretch;
+  position: relative;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to right, #000 62%, transparent 100%);
-  mask-image: linear-gradient(to right, #000 62%, transparent 100%);
 }
-.rowPortrait img {
+.framePortrait img {
   object-position: 50% 8%;
 }
-/* 操作员框：立绘贴右缘 → 自右向左淡化 */
-.youBlockRow .rowPortrait {
-  -webkit-mask-image: linear-gradient(to left, #000 62%, transparent 100%);
-  mask-image: linear-gradient(to left, #000 62%, transparent 100%);
+.sayFrame .framePortrait {
+  -webkit-mask-image: linear-gradient(to right, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 58%, transparent 100%);
 }
+.youFrame .framePortrait {
+  -webkit-mask-image: linear-gradient(to left, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to left, #000 58%, transparent 100%);
+}
+
+/* 操作员行：时间与操作置于框下、靠右 */
 .youFoot {
-  margin-top: 4px;
-  display: inline-flex;
+  margin-top: 6px;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--ink-faint);
 }
 .youFoot .linkGo {
   font-size: 10px;
@@ -478,6 +486,46 @@
 }
 .endedBar b { color: var(--amber); }
 .endedBar > span:not(.muted) { color: var(--ink); }
+
+/* —— 事件收束 · 待手动进入下一事件（正文保留在栏上方的线程里不消失） —— */
+.concludedBar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  background: rgba(244, 180, 63, 0.06);
+  padding: 11px 14px;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+.concludedHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.concludedHead b { color: var(--amber); }
+.concludedActs {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.concludedDigest {
+  color: var(--ink);
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.concludedNote {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
 
 @media (max-width: 1120px) {
   .layout { grid-template-columns: 1fr; }

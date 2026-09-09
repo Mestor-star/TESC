@@ -11,7 +11,6 @@
 import type { Lorebook, LorebookEntry } from './tavernlike/types'
 import { CHARACTERS } from '../data/chars'
 import { CODEX } from '../data/codex'
-import { eventNotesOf } from '../data/eventnotes'
 import { LORE } from '../data/lore'
 import { personaCardLines } from '../data/persona'
 import { SIDECAST, type SideCastEntry } from '../data/sidecast'
@@ -175,13 +174,13 @@ function evEntry(e: TimelineEvent, reading: number): LorebookEntry {
     ...splitKeywords(e.place),
     ...e.entities.filter((x) => x !== '——'),
   ]
+  // 事件回顾 = 解读式摘要（大纲概述），不再往世界书里拼逐字【原文摘录】——
+  // 智库词条属「收束记录落解读口径」，原文细节走导演提示词的 EVENT_NOTES 通道，不进词条。
   const digestable = e.summary.trim()
-  const notes = eventNotesOf(e.id)
-  const notesBody = notes.length ? `\n\n【原文摘录】\n${notes.map((n) => `· ${n}`).join('\n')}` : ''
   return entry(
     `ev-${e.id}`,
     keys,
-    digestable + notesBody,
+    digestable,
     reading,
     `${e.group} · ${e.title}`,
     { eventId: e.id },
