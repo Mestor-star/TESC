@@ -39,7 +39,7 @@ export interface Character {
   epithet: string;       // 一句称号/印象
   division: string;      // 所属（终末停滞委员会 · 恋兔队 等）
   role: string;          // 定位
-  scar: string;          // 弹痕 / 终末 / 特性
+  scar: string;          // 弹痕 / 终末
   potential: string;     // 终末潜力（Stage N『…』；未分级填 —）
   station: StationStatus;
   stationNote: string;   // 状态备注

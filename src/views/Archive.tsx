@@ -269,10 +269,10 @@ export function Archive() {
             <div className="vhead__kicker">DATA / ARCHIVE</div>
             <h1>角色档案</h1>
             <div className="vhead__sub">
-              委员会全量角色档案自始开放，无需解锁。主役与其余 20 名登场者并置同一名册，按学院／所属归组，格式一致。
-              能力参数按委员会五轴评定，强弱排序以「学生排行榜 RANK」与正文战绩、称号为参照——10 ≈ 普通成年人的该轴水准，
-              观测上限 200，『∞』为无法测量；凡原文载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
-              （陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的原著基准推进，
+              委员会全量角色档案，主役与登场者并置同一名册，按学院／所属归组，格式一致。
+              能力参数按委员会五轴评定，以「学生排行榜 RANK」与已观测的战绩、称号为参照——10 ≈ 普通成年人的该轴水准，
+              观测上限 200，『∞』为无法测量；凡观测记录载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
+              （陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的走向推进，
               好感随主角行为——推演中的抉择、短信往来——实时增减。
             </div>
           </div>
@@ -368,7 +368,7 @@ export function Archive() {
                       <div className={css.cardBody}>
                         <div className={css.kvBlock}>
                           <div className={css.kvCell}><small>所属</small><b>{r.division}</b></div>
-                          <div className={css.kvCell}><small>弹痕 / 特性</small><b>{r.trait}</b></div>
+                          <div className={css.kvCell}><small>弹痕 / 终末</small><b>{r.trait}</b></div>
                           <div className={css.kvCell}><small>终末潜力</small><b>{r.potential}</b></div>
                           <div className={css.kvCell}><small>状态 · 出场</small><b>{r.state}</b></div>
                         </div>
@@ -416,7 +416,6 @@ export function Archive() {
               <div className={css.dialogTitle}>
                 <small>
                   {focus.kicker} · {focus.groupLabel}
-                  {focus.kind === 'side' ? ' · 逐字摘录' : ''}
                 </small>
                 <h3>{focus.name}</h3>
                 <div style={{ color: focus.hue, fontSize: 13, marginTop: 2 }}>{focus.epithet}</div>
@@ -447,7 +446,7 @@ export function Archive() {
                 <div className={css.kvBlock}>
                   <div className={css.kvCell}><small>所属</small><b>{focus.division}</b></div>
                   <div className={css.kvCell}><small>定位 / 呼号</small><b>{focus.alias}</b></div>
-                  <div className={css.kvCell}><small>弹痕 / 特性</small><b>{focus.trait}</b></div>
+                  <div className={css.kvCell}><small>弹痕 / 终末</small><b>{focus.trait}</b></div>
                   <div className={css.kvCell}><small>终末潜力</small><b>{focus.potential}</b></div>
                   <div className={css.kvCell}><small>状态 · 出场</small><b>{focus.state}</b></div>
                   <div className={css.kvCell}><small>委员会排行</small><b>{focus.rank ?? '—'}</b></div>
@@ -466,9 +465,7 @@ export function Archive() {
                   <Meters row={focus} />
                 </div>
                 {focus.axis.includes('∞') ? (
-                  <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的一轴读数『∞』为无法测量——已超出委员会可评定量级。</div>
-                ) : focus.kind === 'side' ? (
-                  <div className="tiny muted" style={{ marginTop: 8 }}>数值为以委员会排行 RANK 与正文战绩为参照的终端综合评定（非原文直给）；台词与介绍逐字摘录自各卷卷首人物页 / 正文初登场，不作杜撰。</div>
+                  <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的『∞』读数无法测量——已超出委员会可评定上限。</div>
                 ) : null}
               </div>
 

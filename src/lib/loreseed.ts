@@ -97,7 +97,7 @@ function charEntry(c: Character): LorebookEntry {
   const content = [
     `${c.name}（${c.callsign} · ${c.role} · ${c.epithet}）`,
     `所属：${c.division}`,
-    c.scar ? `特性：${c.scar}` : '',
+    c.scar ? `终末：${c.scar}` : '',
     c.potential && c.potential !== '—' ? `终末潜力：${c.potential}` : '',
     ...(persona ?? [c.bio]),
     ...(!persona && c.quote ? [`标志性台词：「${c.quote}」`] : []),
