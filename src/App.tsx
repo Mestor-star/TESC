@@ -313,7 +313,7 @@ function SetupShell() {
   const { exitSetup } = useTerminal()
   return (
     <div className={`${css.root} app--stage ${css.bootPop}`}>
-      <div className={css.main}>
+      <div className={`${css.main} ${css.mainWide}`}>
         <header className={css.topbar}>
           <span className={css.tbTitleSlash} />
           <span className={css.tbTitleEn}>SETUP / CHANNEL</span>

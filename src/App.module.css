@@ -233,6 +233,12 @@
   height: 100vh;
 }
 
+/* 设置专用界面（终端连接）无左侧导航轨道：
+   让主区横跨整行，避免被自动排入第一列(轨道宽 236px)而挤压成窄竖列。 */
+.mainWide {
+  grid-column: 1 / -1;
+}
+
 .topbar {
   flex: 0 0 auto;
   height: var(--topbar-h);
