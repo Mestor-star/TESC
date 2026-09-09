@@ -124,7 +124,7 @@ export function Dashboard() {
         <section className="panel">
           <div className="panel__head">
             <span className="panel__title">出击小队 <span className="slash" /></span>
-            <span className="muted tiny" style={{ marginLeft: 'auto' }}>光明会 · 突击队</span>
+            <span className="muted tiny" style={{ marginLeft: 'auto' }}>委员会 · 恋兔队</span>
           </div>
           <div className="panel__body">
             <div className={css.stack}>

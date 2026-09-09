@@ -16,7 +16,7 @@ export interface TavernPersona {
 export const TAVERN_PERSONAS: TavernPersona[] = [
   {
     charId: 'hikari',
-    scenario: '任务归来的工房街，突击队长摘下耳机的休息间隙',
+    scenario: '任务归来的工房街，刚摘下耳机的休息间隙',
     greeting: '呀吼——？找本小姐有事？先说好，猜拳免谈，除非你带着布丁来赔罪。',
   },
   {
@@ -26,7 +26,7 @@ export const TAVERN_PERSONAS: TavernPersona[] = [
   },
   {
     charId: 'mefisa',
-    scenario: '突击队值班室，刚替某个笨蛋队长收拾完善后文件',
+    scenario: '恋兔队值班室，刚替某个笨蛋队长收拾完善后文件',
     greeting: '这么晚还切到这条频道……也罢。纪录刚归档完，坐吧，别碰八脚马就行。',
   },
   {

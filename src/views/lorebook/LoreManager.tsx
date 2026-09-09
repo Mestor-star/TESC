@@ -279,7 +279,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
 
         <div className={css.body}>
           <div className={css.listHint}>
-            <span className="muted tiny">命中规则：某条词条的关键词出现在操作员/剧情叙述或短信里即注入。内置 5 本世界书由 canon 数据生成，内容只读建议；可按需停用或删除。</span>
+            <span className="muted tiny">命中规则：某条词条的关键词出现在操作员/剧情叙述或短信里即注入。内置 4 本世界书由 canon 数据生成，内容只读建议；可按需停用或删除。</span>
           </div>
           {books.length === 0 ? (
             <div className={css.empty}>

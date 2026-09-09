@@ -11,7 +11,9 @@
 import type { Lorebook, LorebookEntry } from './tavernlike/types'
 import { CHARACTERS } from '../data/chars'
 import { CODEX } from '../data/codex'
+import { eventNotesOf } from '../data/eventnotes'
 import { LORE } from '../data/lore'
+import { personaCardLines } from '../data/persona'
 import { SIDECAST, type SideCastEntry } from '../data/sidecast'
 import { TIMELINE } from '../data/timeline'
 import type { Character, EndEntry, LoreEntry, TimelineEvent } from '../data/types'
@@ -91,10 +93,15 @@ function splitKeywords(...parts: Array<string | undefined>): string[] {
 /* ---------- 世界书：角色档案 ---------- */
 
 function charEntry(c: Character): LorebookEntry {
+  // 有人物卡（分层卡）则以卡代 bio／台词；无卡回退既有 flat 档案
+  const persona = personaCardLines(c.id)
   const content = [
     `${c.name}（${c.callsign} · ${c.role} · ${c.epithet}）`,
-    c.bio,
-    c.quote ? `标志性台词：「${c.quote}」` : '',
+    `所属：${c.division}`,
+    c.scar ? `特性：${c.scar}` : '',
+    c.potential && c.potential !== '—' ? `终末潜力：${c.potential}` : '',
+    ...(persona ?? [c.bio]),
+    ...(!persona && c.quote ? [`标志性台词：「${c.quote}」`] : []),
   ].filter(Boolean).join('\n')
   return entry(
     `ch-${c.id}`,
@@ -106,7 +113,13 @@ function charEntry(c: Character): LorebookEntry {
 }
 
 function buildCharBook(): Lorebook {
-  return book('book-canon-char', '角色档案', '四名核心角色：按原文档案生成。命中角色名/称号时提供其设定参考。', CHARACTERS.map(charEntry))
+  // 主役（ch-<id>）+ 登场者（sc-<id>）同册：全员合一，登场者默认随本库激活。
+  return book(
+    'book-canon-char',
+    '角色档案',
+    '档案全员（主役 + 登场者）：按原文档案/人物卡生成，命中人名/称号/别名即注入其设定参考。',
+    [...CHARACTERS.map(charEntry), ...SIDECAST.map(sidecastEntry)],
+  )
 }
 
 /* ---------- 世界书：实体图鉴（登记过的才会放行，见 lorescan） ---------- */
@@ -163,10 +176,12 @@ function evEntry(e: TimelineEvent, reading: number): LorebookEntry {
     ...e.entities.filter((x) => x !== '——'),
   ]
   const digestable = e.summary.trim()
+  const notes = eventNotesOf(e.id)
+  const notesBody = notes.length ? `\n\n【原文摘录】\n${notes.map((n) => `· ${n}`).join('\n')}` : ''
   return entry(
     `ev-${e.id}`,
     keys,
-    digestable,
+    digestable + notesBody,
     reading,
     `${e.group} · ${e.title}`,
     { eventId: e.id },
@@ -182,13 +197,14 @@ function buildEventBook(): Lorebook {
   )
 }
 
-/* ---------- 世界书：登场者登记 ---------- */
+/* ---------- 登场者条目（并入「角色档案」同一册；无 meta → 门控恒放行） ---------- */
 
 function sidecastEntry(s: SideCastEntry): LorebookEntry {
+  // 有人物卡（分层卡）则以卡代 desc／quote；无卡回退既有 flat 档案
+  const persona = personaCardLines(s.id)
   const content = [
     `${s.name}（${s.alias} · ${s.role}）`,
-    s.desc,
-    s.quote ? `台词：「${s.quote}」` : '',
+    ...(persona ?? [s.desc, s.quote ? `台词：「${s.quote}」` : '']),
     `登场：${s.volLabel} · ${s.page}`,
   ].filter(Boolean).join('\n')
   return entry(
@@ -200,22 +216,24 @@ function sidecastEntry(s: SideCastEntry): LorebookEntry {
   )
 }
 
-function buildSidecastBook(): Lorebook {
-  return book('book-canon-sidecast', '登场者登记', '协力者/敌对者/重要他人（默认不激活）。', SIDECAST.map(sidecastEntry))
-}
-
-/** 全部 canon 种子世界书 */
+/** 全部 canon 种子世界书（4 本；「登场者登记」已并入「角色档案」） */
 export function buildCanonLorebooks(): Lorebook[] {
-  return [buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook(), buildSidecastBook()]
+  return [buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook()]
 }
 
-/** 默认激活的 canon 库 id（登场者登记默认关，可按需打开） */
+/** 默认激活的 canon 库 id（全 4 本默认激活） */
 export const CANON_BOOK_ACTIVE_IDS = [
   'book-canon-char',
   'book-canon-codex',
   'book-canon-lore',
   'book-canon-events',
 ]
+
+/** 旧版种子里的废弃库 id（迁移时删除：v1 的独立「登场者登记」） */
+export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
+
+/** 种子内容版本：v1 → v2 = 登场者登记并入角色档案（触发一次性重播升级） */
+export const CANON_SEED_VERSION = 2
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'

@@ -44,7 +44,7 @@ export const REGIONS: RegionReading[] = [
     delta: -0.012,
     threatStage: 3,
     threatName: null,
-    note: '铁皮屋顶的废屋与零星路灯。夜间偶有「不该存在的脚步声」折返，正由突击队加派夜间巡哨。',
+    note: '铁皮屋顶的废屋与零星路灯。夜间偶有「不该存在的脚步声」折返，正由恋兔队加派夜间巡哨。',
   },
   {
     id: 'wsh',

@@ -503,14 +503,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /**
    * 好感变量：基准 + 主角行为累积偏移。
    * 基准 = 四位主役：当前段原著快照（读到哪段就跟到哪段的原著推进）；
-   *        其余 21 名登场者及未读段的主役：castmeta 起步值（初见≈20±性格）。
+   *        其余 20 名在册登场者及未读段的主役：castmeta 起步值（初见≈20±性格）。
    * 主角行为（在线推演抉择/导演回执、短信往来）→ world.offset 增减 → 可增可减的动态变量。
    */
   const bondNow = useCallback(
     (charId: string) => {
       const ep = cur ? TIMELINE.find((e) => e.id === cur) : undefined
       const v = ep?.bond[charId as keyof BondSnap]
-      // 主役锚点 = 当前段原著快照；其余 21 名登场者 = 起步值（初见）；均叠加主角行为偏移
+      // 主役锚点 = 当前段原著快照；其余 20 名在册登场者 = 起步值（初见）；均叠加主角行为偏移
       const base = typeof v === 'number' ? v : defaultBondOf(charId)
       const off = world.offset[charId] ?? 0
       return clamp(base + off, 0, 100)
@@ -626,7 +626,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
   const clearSmsRequest = useCallback(() => setSmsRequest(null), [])
 
-  /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 21 名登场者） */
+  /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 20 名在册登场者） */
   const meetChar = useCallback((charId: string) => {
     if (!PERSON_IDS.includes(charId)) return
     setWorld((prev) => (prev.met[charId] ? prev : { ...prev, met: { ...prev.met, [charId]: true } }))

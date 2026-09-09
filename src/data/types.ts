@@ -37,7 +37,7 @@ export interface Character {
   callsign: string;      // 终端呼号（拉丁代号）
   name: string;
   epithet: string;       // 一句称号/印象
-  division: string;      // 所属（光明会 · 突击队 等）
+  division: string;      // 所属（终末停滞委员会 · 恋兔队 等）
   role: string;          // 定位
   scar: string;          // 弹痕 / 终末 / 特性
   potential: string;     // 终末潜力（Stage N『…』；未分级填 —）
@@ -51,7 +51,7 @@ export interface Character {
   stats: CharacterStat[];
 }
 
-/** 任务简报（光明会 · 突击队 的反现实实体处置） */
+/** 任务简报（终末停滞委员会 · 恋兔队 的反现实实体处置） */
 export interface Mission {
   id: string;
   no: string;            // 任务编号，如 MST-114

@@ -56,7 +56,7 @@ export const ARMS: ArmEntry[] = [
   /* ———————— 弹痕 · 苍之学园 ———————— */
   {
     id: 'hikari-zankei', kind: '弹痕', name: '樱之残影', sub: 'SAKURA AFTERIMAGE',
-    holder: '恋兔光', holderNote: '苍之学园学生会・突击队队长 · 光明会之翼',
+    holder: '恋兔光', holderNote: '苍之学园学生会两翼之一・恋兔队队长',
     holderId: 'hikari',
     phrase: '纯白的吉他 · 「要上咯，我的吉他——」',
     power: '由「弹痕的天使」所赐、恋兔光从掌心召唤出的纯白吉他。它在弗尔克图斯拥有超群的威力，成因却无人知晓——'

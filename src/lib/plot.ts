@@ -8,10 +8,13 @@
    本模块只做纯函数与拼装，不碰 React / IndexedDB，便于单测与复用。
    canon 约束：buildDirectorSystem 只用事件「大纲」（summary / entities /
    chars / bond / place / day）拼装，绝不喂 SCENES 的开场白正文。
+   唯一例外：用户显式录入的 EVENT_NOTES 原文摘录（见 data/eventnotes.ts），
+   按事件逐字注入——那是项目「原文细节通道」，非自动喂正文。
    ============================================================ */
 
 import type { CharId, FlagValue, TimelineEvent } from '../data/types'
 import { CHARACTERS } from '../data/chars'
+import { eventNotesOf } from '../data/eventnotes'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { genderOf, PERSON_IDS } from '../data/castmeta'
 import { bondName, clamp } from './format'
@@ -39,7 +42,7 @@ export interface PlotDirective {
   digest?: string
 }
 
-/** 档案角色 id 白名单（角色档案全员 25 人，不含操作员） */
+/** 档案角色 id 白名单（角色档案全员 24 人，不含操作员） */
 const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
@@ -458,6 +461,8 @@ export interface DirectorCtx {
   needDirective?: boolean
   /** 世界书命中参考段（由 lorescan 生成；置顶在指令说明之前，仅作延续性背景） */
   loreContext?: string
+  /** 后接事件锚（软门禁）：在线整回合推演时给出；让导演判断收束能否自然引向后接事件，才允许 eventDone */
+  nextEvent?: TimelineEvent | null
 }
 
 function outlineRules(opName: string): string {
@@ -467,7 +472,7 @@ function outlineRules(opName: string): string {
 - 只依据下方「事件大纲」的既有事实展开；不得新增大纲之外的人名、实体或终末设定，也不得替模型自行了结大纲尚未交代的悬念。
 - 每回合末尾固定附上一块 JSON「事件指令」（标签行 + \`\`\`json 围栏，见下）；若本回合没有任何变量要改，则给出空对象 {}。
 - 台词行格式：需要让在场某角色「开口」时，请让该句台词另起一行，以「角色名：」开头单独成段（名字用其本名或常用称呼，冒号后用中文全角「」或直接接台词）；只有确实要作为某角色口中说出的话才用此格式，神态动作与叙述行一律不要加名字前缀。如此终端才能把台词正确渲染成对应角色的气泡。
-- 只有该事件大纲的关键收束已被达成时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。
+- 只有该事件大纲的关键收束已被达成、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。
 - 叙述收束（digest）请用第三人称、两三句话概括该事件如何了结；若偏离原著路线，diverged 置 true。`
 }
 
@@ -477,6 +482,25 @@ function relationLine(charId: string, ev: TimelineEvent, ctx: DirectorCtx): stri
   const cur = ctx.bondNow ? ctx.bondNow(charId) : ev.bond[charId as keyof typeof ev.bond]
   const stage = typeof cur === 'number' ? bondName(cur, { gender: genderOf(charId) }) : '初见'
   return `${c.name}｜${c.epithet}（${c.role}）｜关系：${stage}｜台词「${c.quote}」`
+}
+
+/** 后接事件锚（软门禁）：给标题/地点与开场引子，提示导演收束需自然引向后接事件；不含后接正文，防剧透 */
+function nextAnchorBlock(next: TimelineEvent): string {
+  const where = `${next.group} · ${next.phase}｜${next.place}${next.day ? `｜${next.day}` : ''}`
+  const raw = (next.summary || '').trim().replace(/\s+/g, ' ')
+  const prem = raw.slice(0, 200)
+  const ellipsis = raw.length > 200 ? '…' : ''
+  return `【收束衔接 · 后接事件（软门禁）】
+本事件按阅读序之后将进入：《${next.title}》（${where}）
+开场引子：${prem || '（无）'}${ellipsis}
+软门禁：仅当本事件大纲的关键收束已达成、且你能把当下局面自然引向这后接事件的入口时，才把 eventDone 置 true 并给 digest；收束叙述应呈现顺承／悬念／转场，暗示「下一幕将至」，不要生硬宣告完结，也不要抢跑叙述后接事件的正文。若还接不上，就不要置 eventDone，继续推进本事件。`
+}
+
+/** 当前事件的原文摘录段（EVENT_NOTES 通道；逐字、不经关键词扫描，每回合必达） */
+function notesSectionFor(ev: TimelineEvent): string {
+  const notes = eventNotesOf(ev.id)
+  if (!notes.length) return ''
+  return `\n\n【本事件补充设定 · 原文摘录】\n${notes.map((n) => `· ${n}`).join('\n')}`
 }
 
 /** 拼装导演系统提示词（单事件） */
@@ -514,13 +538,16 @@ ${varList}
     ? `\n\n${ctx.loreContext}`
     : ''
 
+  const notesSection = notesSectionFor(ev)
+  const anchor = ctx.nextEvent ? `\n\n${nextAnchorBlock(ctx.nextEvent)}` : ''
+
   return `${outlineRules(ctx.operatorName || '言万心叶')}
 
 【当前事件】${ev.group} · ${ev.phase}｜${ev.place}${ev.day ? `｜${ev.day}` : ''}
 标题：${ev.title}
 
 【事件大纲 · 唯一事实来源】
-${ev.summary}
+${ev.summary}${notesSection}
 
 【本事件相关实体】
 ${entList}
@@ -530,7 +557,7 @@ ${entList}
   }
 
 【羁绊基准（数值仅参考，勿过度解读）】
-${baseline.trim() || '（无）'}${reask}${loreSection}${varBlock}
+${baseline.trim() || '（无）'}${reask}${loreSection}${varBlock}${anchor}
 
 【事件指令 · 每回合末尾必须输出】
 标签行（单独一行）：

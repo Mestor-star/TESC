@@ -240,6 +240,9 @@ export function Plot() {
       if (!ev || busy || !ready) return
       setBusy(true)
       setErr(null)
+      // 后接事件锚（软门禁）：当前事件之后第一个尚未完成的事件；无则 null
+      const evIdx = TIMELINE.findIndex((t) => t.id === ev.id)
+      const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id]) ?? null) : null
 
       // 世界书命中注入（仅就绪在线；失败静默，主线不受影响）
       let loreBlock = ''
@@ -264,6 +267,7 @@ export function Plot() {
         flags: world.flags,
         needDirective: needDir.current,
         loreContext: loreBlock || undefined,
+        nextEvent: nextEv,
       })
       const base = toTurns(baseOverride ?? logs[evId])
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]

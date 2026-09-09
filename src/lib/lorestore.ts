@@ -11,7 +11,13 @@ import type { Lorebook, SillyTavernLorebookExport } from './tavernlike/types'
 import * as db from './tavernlike/database'
 import { importLorebook, importMultipleLorebooks, exportLorebook } from './tavernlike/importer'
 import type { MultiImportInput } from './tavernlike/importer'
-import { buildCanonLorebooks, CANON_BOOK_ACTIVE_IDS, CANON_SEED_KEY } from './loreseed'
+import {
+  buildCanonLorebooks,
+  CANON_BOOK_ACTIVE_IDS,
+  CANON_SEED_KEY,
+  CANON_SEED_VERSION,
+  OBSOLETE_CANON_IDS,
+} from './loreseed'
 
 export const ACTIVE_META_KEY = 'activeLorebookIds'
 
@@ -19,16 +25,29 @@ let activeCache: string[] | null = null
 
 /* ---------- 播种 ---------- */
 
-/** 幂等播种 canon 世界书（首次写库 + 记录种子版本；绝不覆盖既有 meta/用户库） */
+/**
+ * 幂等播种 canon 世界书：
+ *  1) 每次挂载清理已废弃的旧版 canon 库（v1 独立「登场者登记」并入「角色档案」后的残留）；
+ *  2) 仅当种子标记缺失或版本落后（v < CANON_SEED_VERSION）才重播 canon——
+ *     bulkPut 按 id 逐库 upsert，绝不触碰用户自建库与既有激活集；版本一致后不再重复覆盖。
+ */
 export async function ensureSeeded(): Promise<void> {
+  const existingBooks = await db.listLorebooks()
+  const obsolete = new Set(OBSOLETE_CANON_IDS)
+  for (const b of existingBooks) {
+    if (obsolete.has(b.id)) await deleteBook(b.id)
+  }
   const seeded = await db.metaGet(CANON_SEED_KEY)
-  if (seeded) return
+  const ver = seeded && typeof seeded === 'object'
+    ? Number((seeded as { v?: unknown }).v ?? 0) || 0
+    : 0
+  if (ver >= CANON_SEED_VERSION) return
   await db.bulkPutLorebooks(buildCanonLorebooks())
   const existing = await db.metaGet(ACTIVE_META_KEY)
   if (!Array.isArray(existing) || !(existing as unknown[]).length) {
     await db.metaSet(ACTIVE_META_KEY, CANON_BOOK_ACTIVE_IDS)
   }
-  await db.metaSet(CANON_SEED_KEY, { v: 1, at: Date.now() })
+  await db.metaSet(CANON_SEED_KEY, { v: CANON_SEED_VERSION, at: Date.now() })
   activeCache = null
 }
 
@@ -147,7 +166,7 @@ export async function restoreAll(data: LoreBackupFile): Promise<void> {
   await db.bulkPutLorebooks(data.books)
   const ids = Array.isArray(data.activeIds) ? data.activeIds : []
   await db.metaSet(ACTIVE_META_KEY, ids)
-  await db.metaSet(CANON_SEED_KEY, { v: 1, at: Date.now(), restored: true })
+  await db.metaSet(CANON_SEED_KEY, { v: CANON_SEED_VERSION, at: Date.now(), restored: true })
   activeCache = null
 }
 

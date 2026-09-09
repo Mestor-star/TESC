@@ -336,9 +336,9 @@ try {
   await boot()
   // A0：P2 角色档案自始开放——此时仍是全新世界、unlocked=false，档案即已可查
   await goto('角色档案')
-  await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 15000, 'A0 archive pre-unlock')
+  await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 15000, 'A0 archive pre-unlock')
   const preUnlock = await ev(`(${wState}).unlocked`)
-  ok('A0 未解锁时角色档案已开放（25 卡）', preUnlock === false && (await ev(`document.querySelectorAll('[data-archive-card]').length`)) === 25, 'unlocked=' + preUnlock)
+  ok('A0 未解锁时角色档案已开放（24 卡）', preUnlock === false && (await ev(`document.querySelectorAll('[data-archive-card]').length`)) === 24, 'unlocked=' + preUnlock)
   await goto('剧情推进')
   await poll(`document.body.innerText.includes('剧情推进')`, 20000, 'A plot h1')
   // 未配主线 → 自动离线；读到 v1-1 原文
@@ -471,11 +471,13 @@ try {
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'E dash')
-  // E1 播种幂等：A–D 已多次重载，canon 仍为 5 库、无重复累积
-  await poll(`${loreCountSrc()}.then(n=>n===5)`, 10000, 'E canon=5')
-  ok('E1 播种幂等：多轮重载后 canon 仍为 5 库', true)
+  // E1 播种幂等：A–D 已多次重载，canon 仍为 4 库、无重复累积（「登场者登记」已并入「角色档案」）
+  await poll(`${loreCountSrc()}.then(n=>n===4)`, 10000, 'E canon=4')
+  ok('E1 播种幂等：多轮重载后 canon 仍为 4 库', true)
   const canonChar = await loreBook('book-canon-char')
   ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
+  ok('E2b 角色档案世界书已并入全员 25 词条', !!canonChar && canonChar.count === 25, 'count=' + (canonChar && canonChar.count))
+  ok('E2c 旧「登场者登记」世界书已迁移移除', (await loreBook('book-canon-sidecast')) === null, '')
 
   // 进入剧情推进：v1-1 开场自足完整（standby）→ 注入原文后原地待命；
   // 操作员手动回话 → 唯一一次剧情请求，由标签回执（<maintext>+<vars>）驱动 v1-1 在线收束
@@ -591,9 +593,9 @@ try {
   ok('E22 外插用户库并清除种子标记', insUser === true, 'ins=' + insUser)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
-  await poll(`${loreCountSrc()}.then(n=>n===6)`, 15000, 'E user book preserved')
+  await poll(`${loreCountSrc()}.then(n=>n===5)`, 15000, 'E user book preserved')
   const ub = await loreBook('user-book-test-1')
-  ok('E23 重播 canon 非破坏：5+用户1（无重复）', true)
+  ok('E23 重播 canon 非破坏：4+用户1（无重复）', true)
   ok('E24 用户自建库在重播后保留', !!ub && ub.name === 'E测试库' && ub.description === 'user-sentinel-7', JSON.stringify(ub))
   ok('E25 重播未吞并激活标记/主库', (await loreEntry('book-canon-char', '露娜')) !== null, '')
 
@@ -612,14 +614,14 @@ try {
   ok('F2c 输出预算改动随通道配置持久（api:main.maxTokens=2000）', saved === true, 'saved=' + saved)
 
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
-  console.log('\n[Phase G] P2 Archive：25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
+  console.log('\n[Phase G] P2 Archive：24卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
   await goto('角色档案')
-  await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'G archive 25 cards')
-  ok('G1 全员 25 张档案卡（自始开放 · 无需解锁）', true)
+  await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'G archive 24 cards')
+  ok('G1 全员 24 张档案卡（自始开放 · 无需解锁）', true)
   const infCount = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?(c.innerText.split('∞').length-1):-1})()`)
   ok('G2 恋兔光破坏力读数为唯一 ∞（满格 · 无法测量）', infCount === 1, 'inf=' + infCount)
   const bondChips = await ev(`(()=>[...document.querySelectorAll('[data-archive-card]')].filter(c=>c.innerText.includes('当前羁绊')).length)()`)
-  ok('G3 25 张卡均带「当前羁绊」chip', bondChips === 25, 'n=' + bondChips)
+  ok('G3 24 张卡均带「当前羁绊」chip', bondChips === 24, 'n=' + bondChips)
   // 名称/数值都有实义：chip 文本形如「当前羁绊 <称谓> · <0-100>」，且数值在界内
   const lunaChip = await ev(`(()=>{const c=document.querySelector('[data-archive-card="luna"]');const m=c?c.innerText.match(/当前羁绊\\s*([^·\\n]+?)\\s*·\\s*(\\d+)/):null;return m?{label:m[1].trim(),val:Number(m[2])}:null})()`)
   ok('G4 档案羁绊 chip 有实义称谓与界内数值', !!lunaChip && lunaChip.val >= 0 && lunaChip.val <= 100 && lunaChip.label.length > 0, JSON.stringify(lunaChip))
@@ -652,7 +654,7 @@ try {
   const hp = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');const t=p?p.innerText:'';return {hasA:t.includes('用户变量'),hasB:t.includes('系统派生')}})()`)
   ok('H1 变量面板开启（用户变量 + 系统派生两分区）', hp.hasA === true && hp.hasB === true, JSON.stringify(hp))
   const sysProbe = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');return {op:!!p.querySelector('[data-var-sys="operatorName"]'),bond:p.querySelectorAll('[data-var-sys^="bond:"]').length,met:!!p.querySelector('[data-var-sys="met"]'),cur:!!p.querySelector('[data-var-sys="cur"]')}})()`)
-  ok('H2 系统派生列示 operatorName/25×bond/met/cur', sysProbe.op === true && sysProbe.bond === 25 && sysProbe.met === true && sysProbe.cur === true, JSON.stringify(sysProbe))
+  ok('H2 系统派生列示 operatorName/24×bond/met/cur', sysProbe.op === true && sysProbe.bond === 24 && sysProbe.met === true && sysProbe.cur === true, JSON.stringify(sysProbe))
   await ev(`(()=>{const b=[...document.querySelectorAll('[data-vars-panel] button')].find(x=>x.textContent&&x.textContent.includes('新增变量'));if(!b)return false;b.click();return true})()`)
   await poll(`!!document.querySelector('[data-vars-panel] input[aria-label="新变量名"]')`, 8000, 'H add row')
   const fillAdd = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;const k=p.querySelector('input[aria-label="新变量名"]');const v=p.querySelector('input[aria-label="变量值"]');if(!k||!v)return false;set.call(k,'smoke_var');k.dispatchEvent(new Event('input',{bubbles:true}));set.call(v,'七');v.dispatchEvent(new Event('input',{bubbles:true}));return true})()`)

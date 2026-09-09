@@ -6,7 +6,7 @@ import { X } from '@phosphor-icons/react'
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
 import { SIDECAST } from '../data/sidecast'
-import { ROSTER_GROUPS, SIDE_AXIS, SIDE_TRAIT } from '../data/roster'
+import { ROSTER_GROUPS, SIDE_AXIS, SIDE_TRAIT, committeeRankOf } from '../data/roster'
 import { personOf } from '../data/castmeta'
 import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
@@ -38,7 +38,7 @@ function axisW(v: AxisVal): number {
 
 /** 每组所属的原貌介绍（仅复述三学园系谱与原文定位，不新造设定） */
 const GROUP_NOTE: Record<string, string> = {
-  ao: '「弹痕」的摇篮。以石像「弹痕的天使」授予的反现实武装闻名；主角所属的光明会 · 突击队与学生中枢皆在此园。',
+  ao: '「弹痕」的摇篮。以石像「弹痕的天使」授予的反现实武装闻名；主角所属的恋兔队、秘密结社光明会与学生中枢皆在此园。',
   kaus: '持「斩击」的武斗学院。由学生会组织评议会[The Council] 统领，精锐「黑锤部队[Écraseurs]」名震弗尔克图斯。',
   corp: '持「片羽」的资本都市学园。以商业与学生自治著称，学生会长麾下统率学园内部警察——企业警备队。',
   out: '弗尔克图斯之外的来客与无名者——黑手党干部、异次元的访客、心叶故乡的人们。',
@@ -64,6 +64,7 @@ interface Row {
   division: string    // 所属
   trait: string       // 弹痕 / 片羽 / 斩击 / 特性
   potential: string   // 终末潜力
+  rank?: string       // 委员会学生排行 RANK（原文/人物页有明确者；无则不标）
   state: string       // 状态 / 出场
   quote: string
   bio: string
@@ -97,6 +98,7 @@ function buildRows(): Row[] {
           division: c.division,
           trait: c.scar,
           potential: c.potential,
+          rank: committeeRankOf(c.id),
           state: c.station,
           quote: c.quote,
           bio: c.bio,
@@ -124,6 +126,7 @@ function buildRows(): Row[] {
           division: g.label,
           trait: SIDE_TRAIT[id] ?? '—',
           potential: '—',
+          rank: committeeRankOf(e.id),
           state: `第 ${e.vol} 卷 · 登场`,
           quote: e.quote,
           bio: e.desc,
@@ -266,15 +269,16 @@ export function Archive() {
             <div className="vhead__kicker">DATA / ARCHIVE</div>
             <h1>角色档案</h1>
             <div className="vhead__sub">
-              委员会全量角色档案自始开放，无需解锁。主役与其余 21 名登场者并置同一名册，按学院／所属归组，格式一致。
-              能力参数以委员会状态模拟五轴评定——10 ≈ 普通成年人的该轴水准，观测上限 200，『∞』为无法测量；
-              登场者数值为终端近似评定。羁绊起步皆为「初见」（陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的原著基准推进，
+              委员会全量角色档案自始开放，无需解锁。主役与其余 20 名登场者并置同一名册，按学院／所属归组，格式一致。
+              能力参数按委员会五轴评定，强弱排序以「学生排行榜 RANK」与正文战绩、称号为参照——10 ≈ 普通成年人的该轴水准，
+              观测上限 200，『∞』为无法测量；凡原文载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
+              （陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的原著基准推进，
               好感随主角行为——推演中的抉择、短信往来——实时增减。
             </div>
           </div>
           <div className="vhead__right">
-            <span className="chip chip--warn">登场者五轴为近似评定</span>
-            <span className="chip">全员 25 · 含羁绊</span>
+            <span className="chip chip--warn">五轴以 RANK 与正文为参照</span>
+            <span className="chip">全员 24 · 含羁绊</span>
             <span className="chip">自始开放 · 无需解锁</span>
           </div>
         </div>
@@ -350,7 +354,7 @@ export function Archive() {
                       <div className={css.cardHead}>
                         <Portrait avatarId={r.id} name={r.name} hue={r.hue} sigil={r.sigil} size={46} />
                         <div style={{ minWidth: 0 }}>
-                          <div className={css.cardNo}>{r.kicker}</div>
+                          <div className={css.cardNo}>{r.kicker}{r.rank ? ` · 委员会 ${r.rank}` : ''}</div>
                           <div className={css.cardName}>
                             <h3>{r.name}</h3>
                             {r.alias && r.alias !== r.name ? <span>{r.alias}</span> : null}
@@ -446,6 +450,7 @@ export function Archive() {
                   <div className={css.kvCell}><small>弹痕 / 特性</small><b>{focus.trait}</b></div>
                   <div className={css.kvCell}><small>终末潜力</small><b>{focus.potential}</b></div>
                   <div className={css.kvCell}><small>状态 · 出场</small><b>{focus.state}</b></div>
+                  <div className={css.kvCell}><small>委员会排行</small><b>{focus.rank ?? '—'}</b></div>
                   {focus.page ? (
                     <div className={css.kvCell}><small>原文出处</small><b>{focus.page}</b></div>
                   ) : focus.stationNote ? (
@@ -463,7 +468,7 @@ export function Archive() {
                 {focus.axis.includes('∞') ? (
                   <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的一轴读数『∞』为无法测量——已超出委员会可评定量级。</div>
                 ) : focus.kind === 'side' ? (
-                  <div className="tiny muted" style={{ marginTop: 8 }}>本条目数值为终端近似评定；台词与介绍逐字摘录自各卷卷首人物页 / 正文初登场，不作杜撰。</div>
+                  <div className="tiny muted" style={{ marginTop: 8 }}>数值为以委员会排行 RANK 与正文战绩为参照的终端综合评定（非原文直给）；台词与介绍逐字摘录自各卷卷首人物页 / 正文初登场，不作杜撰。</div>
                 ) : null}
               </div>
 
