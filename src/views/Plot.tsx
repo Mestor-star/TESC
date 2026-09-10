@@ -4,7 +4,7 @@ import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, Slide
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
-import { personOf } from '../data/castmeta'
+import { PERSON_IDS, personOf } from '../data/castmeta'
 import { rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
@@ -14,7 +14,14 @@ import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply } from '../lib/plot'
-import { listRecords } from '../lib/battle/store'
+import { listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth, readStamina } from '../lib/battle/store'
+import { settleExit, settleWin } from '../lib/battle/settle'
+import { battleMissionOf } from '../lib/battle/from-directive'
+import { periodProgress } from '../lib/battle/derive'
+import { TUNING } from '../lib/battle/tuning'
+import type { BattleRecord, StaminaState } from '../lib/battle/types'
+import type { Mission } from '../data/types'
+import { Battle } from './Battle'
 import { recentBattleContext } from '../lib/battle/narrate'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
@@ -136,6 +143,29 @@ export function Plot() {
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
   /** 「事件已收束、待手动推进」：收束正文留在原地不消失；点「进入下一事件」才写记录并推进（期间不锁输入，继续回话即留在本事件） */
   const [concluded, setConcluded] = useState<{ evId: string; title: string; digest: string; diverged: boolean } | null>(null)
+  /* —— 剧情交战：指令里带 battle 时，按现场角色与敌人开打 —— */
+  const [plotBattle, setPlotBattle] = useState<{ mission: Mission; squad: string[] } | null>(null)
+  const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
+  const [growth, setGrowth] = useState<Record<string, number>>({})
+  const [coin, setCoin] = useState(0)
+  const [gearBag, setGearBag] = useState<Record<string, number>>({})
+  const [equip, setEquip] = useState<Record<string, string>>({})
+  const [bag, setBag] = useState<Record<string, number>>({ ...TUNING.bagDefault })
+  const eventsDone = Object.keys(epDone).length
+
+  const loadKit = useCallback(async () => {
+    const [sp, g, c, gb, eq, bg] = await Promise.all([
+      readStamina(eventsDone), readGrowth(), readCoin(), readGearBag(), readEquip(), readBag(),
+    ])
+    setStamina(sp)
+    setGrowth(g)
+    setCoin(c)
+    setGearBag(gb)
+    setEquip(eq)
+    setBag(bg)
+  }, [eventsDone])
+  useEffect(() => { void loadKit() }, [loadKit])
+
   /** 「AI 起草」：起草中 / 候选行动 / 失败提示（纯呈现，不落导演状态） */
   const [drafting, setDrafting] = useState(false)
   const [draftSugg, setDraftSugg] = useState<string[] | null>(null)
@@ -248,6 +278,17 @@ export function Plot() {
           .slice(0, 3)
           .join(' · ')
         push('info', '变量已自动更新', fx.flags.length > 3 ? `${shown} 等 ${fx.flags.length} 项` : shown, false)
+      }
+      // 交战先于收束结算：本段打完，再由操作员点「进入下一事件」推进
+      if (d.battle?.name) {
+        const want = (d.battle.squad ?? []).filter((id) => isMet(id))
+        const squad = want.length ? want.slice(0, 4) : PERSON_IDS.filter((id) => isMet(id)).slice(0, 4)
+        if (squad.length) {
+          setPlotBattle({ mission: battleMissionOf(d.battle, evId), squad })
+          push('danger', '交战', `${d.battle.name} 出现在现场 —— 由在场的 ${squad.length} 名成员应敌。`, false)
+        } else {
+          push('warn', '无可应敌者', `${d.battle.name} 出现在现场，但此刻没有可派遣的成员。`, false)
+        }
       }
       if (fx.eventDone) {
         const digest = (fx.digest?.trim() || ev?.summary || '').trim()
@@ -1322,6 +1363,34 @@ export function Plot() {
           {eventCard}
         </aside>
       </div>
+
+      {/* 剧情交战：指令输出 battle 时按现场的角色与敌人开打；打完回到正文 */}
+      {plotBattle ? (
+        <Battle
+          key={plotBattle.mission.id}
+          mission={plotBattle.mission}
+          squad={plotBattle.squad}
+          progress={periodProgress(epDone)}
+          growth={growth}
+          stamina={stamina}
+          equip={equip}
+          owned={gearBag}
+          bag={bag}
+          coin={coin}
+          onExit={async (spLeft, eq) => {
+            await settleExit(spLeft, eq, stamina)
+            setEquip(eq)
+            setPlotBattle(null)
+            await loadKit()
+          }}
+          onSettled={async (rec: BattleRecord, spLeft, eq, bagLeft) => {
+            const line = await settleWin({ rec, spLeft, equip: eq, bag: bagLeft, stamina, bumpBond })
+            push('success', '交战归档', line, false)
+            setPlotBattle(null)
+            await loadKit()
+          }}
+        />
+      ) : null}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { personOf } from '../data/castmeta'
 import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
 import { opSituation } from '../lib/operator'
+import { AXIS_KEYS, OP_PERIODS, opPeriodAt } from '../lib/operator-arc'
 import { AXIS_MAX } from '../data/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { Portrait } from '../components/Portrait'
@@ -234,6 +235,9 @@ export function Archive() {
   const focus = rows.find((r) => r.id === openId) ?? null
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const sit = opSituation(epDone)
+  /** 主角档案：随已收束的事件换页（原文里他每一段时期都不同） */
+  const opArc = opPeriodAt(epDone)
+  const [opOpen, setOpOpen] = useState(false)
 
   /* 展开某档案（卡片就近） */
   const openFromId = useCallback((id: string) => {
@@ -336,14 +340,16 @@ export function Archive() {
           <div className={css.opGlyph}>{name.slice(0, 1).toUpperCase()}</div>
           <div className={css.opBannerMain}>
             <h2>言万心叶 <em>（你 · 操作员本人）</em></h2>
-            <p>
-              {sit.standing} · 低语者（Susurrador）。以读心为名登记在册的终末潜力 Stage4『活性化』——
-              读取半径约 500 米内他人心声的读心者，也正因为听得见，才比谁都更怕「不被喜欢」。
-            </p>
+            <div className={css.opArcLine} data-op-arc={opArc.at}>
+              <span className={css.opArcVol}>{opArc.vol}</span>
+              <b>{opArc.title}</b>
+            </div>
+            <p>{opArc.note}</p>
             <div className={css.opChips}>
-              <span className="chip chip--on">低语者 Susurrador</span>
-              <span className="chip">Stage4『活性化』</span>
-              <span className="chip">读心半径 ≈ 500m</span>
+              <span className="chip chip--on">{sit.standing}</span>
+              <span className="chip">战斗定位 · {opArc.cls}</span>
+              <span className="chip">武装 · {opArc.arm}</span>
+              {sit.nature ? <span className="chip">{sit.nature}</span> : null}
               <span className="chip">担保人 · 学生会长 艾莉芙・安纳托利亚</span>
             </div>
           </div>
@@ -351,12 +357,79 @@ export function Archive() {
             <button
               className="btn btn--ghost"
               style={{ fontSize: 12 }}
-              onClick={() => push('info', '操作员档案', `${name} · 言万心叶。角色档案只记录他人——你的故事，写在时间线里。`, false)}
+              data-op-arc-toggle
+              onClick={() => setOpOpen((v) => !v)}
             >
-              我是谁？
+              {opOpen ? '收起档案' : '我是谁？'}
             </button>
           </div>
         </div>
+
+        {/* 主角档案：五轴 · 武装 · 所能做的事 · 已经历的时期 */}
+        {opOpen ? (
+          <section className={css.opArc} data-op-arc-panel data-op-card={opArc.at}>
+            <div className={css.opCardHead}>
+              <div className={css.opCardGlyph}>心</div>
+              <div className={css.opCardTitle}>
+                <h3>{name.trim() || '言万心叶'}</h3>
+                <span className="tiny muted">OP-000 · 委员会观测科 · 本终端操作员</span>
+              </div>
+              <span className="chip chip--on">{opArc.cls}</span>
+            </div>
+            <div className={css.kvBlock} data-op-kv>
+              <div className={css.kvCell}><small>所属</small><b>{sit.standing}</b></div>
+              <div className={css.kvCell}><small>定位 / 呼号</small><b>{opArc.cls}{sit.alias ? ` / ${sit.alias}` : ''}</b></div>
+              <div className={css.kvCell}><small>武装 / 终末</small><b>{opArc.arm}{opArc.armSub && opArc.armSub !== '—' ? `（${opArc.armSub}）` : ''}</b></div>
+              <div className={css.kvCell}><small>终末潜力</small><b>{sit.nature ?? '未测定'}</b></div>
+              <div className={css.kvCell}><small>担保人</small><b>学生会长 艾莉芙・安纳托利亚</b></div>
+              <div className={css.kvCell}><small>时期</small><b>{opArc.vol}</b></div>
+            </div>
+            <div className={css.opArcAxes}>
+              {AXIS_KEYS.map((k) => (
+                <div key={k} className={css.opAxis}>
+                  <span className="tiny muted">{k}</span>
+                  <div className={css.opAxisBar}>
+                    <i style={{ width: `${Math.min(100, (opArc.axes[k] / 200) * 100)}%` }} />
+                  </div>
+                  <b className="mono">{opArc.axes[k]}</b>
+                </div>
+              ))}
+            </div>
+            <div className={css.opArm}>
+              <b>{opArc.arm}</b>
+              <i className="mono">{opArc.armSub}</i>
+              <p>{opArc.armNote}</p>
+            </div>
+            <div className={css.opAbil}>
+              {opArc.abilities.map((a) => (
+                <div key={a.name} className={css.opAbilRow} data-op-abil={a.name}>
+                  <span className={css.opAbilKind} data-kind={a.kind}>{a.kind}</span>
+                  <b>{a.name}</b>
+                  <span className="tiny muted">{a.desc}</span>
+                </div>
+              ))}
+            </div>
+            <ol className={css.opLine} data-op-periods>
+              {OP_PERIODS.map((p) => {
+                const cur = p.at === opArc.at
+                const idx = OP_PERIODS.indexOf(p)
+                const nowIdx = OP_PERIODS.indexOf(opArc)
+                const seen = idx <= nowIdx
+                return (
+                  <li key={p.at} className={cur ? css.opLineOn : ''} data-op-period={p.at} data-seen={seen ? '1' : undefined}>
+                    <span className="mono tiny">{p.at}</span>
+                    <b>{seen ? p.title : '？？？'}</b>
+                    <span className="tiny muted">{seen ? p.vol : '尚未观测到的时期'}</span>
+                  </li>
+                )
+              })}
+            </ol>
+            <div className="tiny muted" style={{ lineHeight: 1.7 }}>
+              他也是战斗人员：上面的五轴、武装与技能就是他在该时期的面板，
+              编队时可以直接把他放进小队（作战位置仍兼指挥与观测）。观测每推进一步，这一页就换一次。
+            </div>
+          </section>
+        ) : null}
 
         {/* 全量档案 · 按所属归组 */}
         {ROSTER_GROUPS.map((g) => {

@@ -366,3 +366,98 @@
   .dialogHead { flex-wrap: wrap; }
   .dialogTitle h3 { font-size: 20px; }
 }
+
+/* ============================================================
+   主角档案 · 言万心叶（随剧情换页）
+   ============================================================ */
+
+.opArcLine { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin: 2px 0 4px; }
+.opArcLine b { font-size: 14px; letter-spacing: 0.04em; color: var(--amber); }
+.opArcVol { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.06em; }
+
+.opArc {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 0 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+.opArcAxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 9px; }
+.opAxis { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.opAxis > span { min-width: 62px; }
+.opAxisBar { height: 5px; border-radius: 999px; background: var(--bg-2); overflow: hidden; }
+.opAxisBar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--violet), color-mix(in srgb, var(--violet) 45%, #fff));
+  transition: width 0.35s ease;
+}
+.opAxis b { font-size: 11.5px; color: var(--ink); }
+
+.opArm { display: flex; flex-direction: column; gap: 4px; }
+.opArm b { font-size: 13px; letter-spacing: 0.04em; }
+.opArm i { font-style: normal; font-size: 10px; color: var(--ink-faint); letter-spacing: 0.1em; }
+.opArm p { margin: 3px 0 0; font-size: 11.5px; line-height: 1.75; color: var(--ink-mute); }
+
+.opAbil { display: flex; flex-direction: column; gap: 6px; }
+.opAbilRow {
+  display: grid;
+  grid-template-columns: auto minmax(120px, auto) 1fr;
+  align-items: baseline;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.opAbilRow b { font-size: 12.5px; }
+.opAbilKind {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--steel);
+  border: 1px solid color-mix(in srgb, var(--steel) 45%, transparent);
+}
+.opAbilKind[data-kind='技能'] { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.opAbilKind[data-kind='启动'] { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 50%, transparent); }
+
+.opLine { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.opLine li {
+  display: grid;
+  grid-template-columns: auto minmax(140px, auto) 1fr;
+  align-items: baseline;
+  gap: 9px;
+  padding: 5px 8px;
+  border-left: 2px solid var(--line-2);
+  opacity: 0.55;
+}
+.opLine li[data-seen='1'] { opacity: 1; }
+.opLineOn { border-left-color: var(--amber) !important; background: color-mix(in srgb, var(--amber) 7%, transparent); }
+.opLine li b { font-size: 12.5px; }
+
+@media (max-width: 700px) {
+  .opAbilRow, .opLine li { grid-template-columns: auto 1fr; }
+}
+
+/* —— 主角专档 · 档案头 —— */
+.opCardHead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 10px;
+  border: 1px solid var(--line-2); border-radius: var(--radius);
+  background: linear-gradient(90deg, rgba(88, 198, 255, .10), transparent 70%);
+}
+.opCardGlyph {
+  width: 32px; height: 32px; flex: 0 0 32px;
+  display: grid; place-items: center;
+  border-radius: 50%; font-size: 13px; font-weight: 700;
+  color: #0b1418; background: #58c6ff; letter-spacing: 0;
+}
+.opCardTitle { flex: 1 1 auto; min-width: 0; }
+.opCardTitle h3 { margin: 0; font-size: 14px; letter-spacing: .04em; }

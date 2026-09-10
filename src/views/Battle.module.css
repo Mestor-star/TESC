@@ -9,8 +9,8 @@
   z-index: 90;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 10px;
-  padding: 14px 18px 16px;
+  gap: 7px;
+  padding: 9px 13px 10px;
   background:
     radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--amber) 7%, transparent), transparent 70%),
     linear-gradient(180deg, var(--bg-1), #06070b 70%);
@@ -174,7 +174,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding-bottom: 8px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--line);
   position: relative;
   z-index: 6;
@@ -189,8 +189,8 @@
   padding: 2px 8px;
   white-space: nowrap;
 }
-.title { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hudR { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hudR { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .round {
   font-size: 11px;
   letter-spacing: 0.14em;
@@ -218,153 +218,270 @@
 
 /* ---------- 阵型 ---------- */
 
-.ranks { display: flex; flex-direction: column; justify-content: center; gap: 6px; position: relative; z-index: 6; }
-.rankLabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-}
-.rank {
+
+/* ============================================================
+   敌阵 —— 屏幕正中，放大；名字在头上，数值与状态在脚下
+   ============================================================ */
+
+.arena {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  position: relative;
+  z-index: 6;
+}
+.enemyRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(14px, 3.4vw, 44px);
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: stretch;
 }
 
-/* ---------- 单位卡 ---------- */
+.foe {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 118px;
+  animation: foeIn 0.34s ease-out;
+}
+@keyframes foeIn { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+.foeName {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.foeName b { font-size: 16px; letter-spacing: 0.06em; }
+.foeName i { font-style: normal; font-size: 11px; color: var(--ink-mute); }
+.foeName em { font-style: normal; }
+
+.foeBody {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(92px, 10.5vw, 128px);
+  height: clamp(92px, 10.5vw, 128px);
+  border: 1px solid color-mix(in srgb, var(--u) 55%, transparent);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--u) 22%, transparent), transparent 68%),
+    color-mix(in srgb, var(--bg-1) 82%, #000);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--u) 14%, transparent), 0 18px 44px -24px var(--u);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.foeBody[role='button'] { cursor: crosshair; }
+.foeBody.unitAim { border-color: var(--red); animation: aimPulse 1s ease-in-out infinite; }
+.foeBody.unitActive {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--amber) 40%, transparent), 0 0 44px -12px var(--amber);
+}
+
+.foeFoot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+}
+.foeMeta { display: flex; align-items: center; gap: 8px; font-size: 10px; }
+.foeMeta span:first-child { color: var(--ink); letter-spacing: 0.04em; }
+
+.hpBarBig {
+  width: 100%;
+  height: 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--line-2) 70%, transparent);
+  overflow: hidden;
+}
+.hpBarBig i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jade) 80%, #fff), var(--jade));
+  transition: width 0.28s ease;
+}
+.hpBarBig i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
+
+/* ---------- 行动条（每个单位一条；满 100% 才能出手） ---------- */
+
+.atb {
+  width: 100%;
+  height: 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--line) 60%, transparent);
+  overflow: hidden;
+}
+.atb i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--steel) 70%, transparent), var(--steel));
+  transition: width 0.22s linear;
+}
+.atb[data-ready='1'] { box-shadow: 0 0 10px -2px var(--amber); }
+.atb[data-ready='1'] i { background: linear-gradient(90deg, var(--amber), #fff2cf); }
+
+/* ---------- 增益标签 ---------- */
+
+.buffs { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.buff {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--violet) 42%, transparent);
+  color: color-mix(in srgb, var(--violet) 82%, var(--ink));
+}
+.buff[data-buff='mark'] { border-color: color-mix(in srgb, var(--red) 48%, transparent); color: var(--red); }
+.buff[data-buff='slow'] { border-color: color-mix(in srgb, var(--steel) 48%, transparent); color: var(--steel); }
+.buff[data-buff='shield'] { border-color: color-mix(in srgb, var(--jade) 48%, transparent); color: var(--jade); }
+
+/* ============================================================
+   我方小队
+   ============================================================ */
+
+.party { position: relative; z-index: 6; }
+.partyRow { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; }
 
 .unit {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 208px;
-  padding: 10px 12px;
+  flex-direction: column;
+  gap: 4px;
+  width: clamp(124px, 12.5vw, 158px);
+  padding: 6px 8px;
   border: 1px solid var(--line);
+  border-left: 3px solid color-mix(in srgb, var(--u) 62%, transparent);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--u) 8%, var(--bg-1)), var(--bg-2));
-  transition: border-color 0.2s, transform 0.14s, box-shadow 0.2s;
+  background: color-mix(in srgb, var(--bg-2) 82%, transparent);
+  transition: border-color 0.16s ease, transform 0.16s ease;
 }
-.unit[data-side='enemy'] { border-left: 3px solid color-mix(in srgb, var(--u) 70%, transparent); }
+.unit[role='button'] { cursor: crosshair; }
 .unitActive {
-  border-color: color-mix(in srgb, var(--amber) 70%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--amber) 30%, transparent), 0 6px 22px -12px var(--amber);
+  border-color: var(--amber);
+  border-left-color: var(--amber);
   transform: translateY(-2px);
+  box-shadow: 0 0 26px -12px var(--amber);
 }
-.unitAim {
-  cursor: crosshair;
-  border-color: color-mix(in srgb, var(--red) 65%, transparent);
-  animation: aimPulse 1s ease-in-out infinite;
-}
+.unitAim { animation: aimPulse 1s ease-in-out infinite; }
 @keyframes aimPulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 45%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 55%, transparent); }
   50% { box-shadow: 0 0 0 5px transparent; }
 }
 .unitDown { filter: saturate(0.1) brightness(0.6); }
 
-.unitFace { position: relative; flex-shrink: 0; }
+.unitTop { display: flex; align-items: center; gap: 7px; }
+.unitName { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.unitName b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unitCls { font-style: normal; font-size: 10px; color: var(--ink-mute); letter-spacing: 0.06em; }
+
 .unitGate {
-  position: absolute;
-  right: -6px;
-  bottom: -6px;
+  flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--bg-1);
-  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
-  color: var(--amber);
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--violet) 55%, transparent);
+  color: var(--violet);
 }
-.unitBody { min-width: 0; flex: 1; }
-.unitName { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.unitName b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unitUnrated {
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  border: 1px solid var(--line-2);
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
+
 .hpBar {
-  margin-top: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
+  height: 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--line-2) 70%, transparent);
   overflow: hidden;
 }
 .hpBar i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--jade), color-mix(in srgb, var(--jade) 55%, #fff));
-  transition: width 0.3s ease;
+  border-radius: 4px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jade) 80%, #fff), var(--jade));
+  transition: width 0.28s ease;
 }
 .hpBar i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
+
 .unitMeta {
-  margin-top: 4px;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   font-size: 10px;
   color: var(--ink-mute);
 }
+.gearTag {
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--amber) 38%, transparent);
+  color: var(--amber);
+}
 
-.dmgNum {
+/* ---------- 飘伤害 ---------- */
+
+.dmgNum, .dmgNumBig {
   position: absolute;
-  right: 10px;
-  top: 2px;
   font-family: var(--font-mono);
-  font-size: 22px;
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 0 12px color-mix(in srgb, var(--red) 85%, transparent), 0 2px 0 #000;
-  animation: dmgFloat 0.62s ease-out forwards;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
   pointer-events: none;
+  animation: dmgFloatSide 0.72s ease-out forwards;
 }
+.dmgNum { top: 4px; right: 8px; font-size: 18px; }
+.dmgNumBig { left: 50%; top: 46%; font-size: 34px; animation-name: dmgFloat; }
 @keyframes dmgFloat {
-  0% { opacity: 0; transform: translateY(10px) scale(0.7); }
-  25% { opacity: 1; transform: translateY(0) scale(1.15); }
-  100% { opacity: 0; transform: translateY(-26px) scale(1); }
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(0.85); }
+  25% { opacity: 1; transform: translate(-50%, -6px) scale(1.12); }
+  100% { opacity: 0; transform: translate(-50%, -38px) scale(1); }
 }
-.downMark {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.3em;
-  color: var(--red);
-  background: color-mix(in srgb, #000 45%, transparent);
-  border-radius: var(--radius);
+@keyframes dmgFloatSide {
+  0% { opacity: 0; transform: translateY(6px); }
+  25% { opacity: 1; transform: translateY(-4px); }
+  100% { opacity: 0; transform: translateY(-24px); }
 }
 
-/* ---------- 控制台 ---------- */
+.downMark {
+  position: absolute;
+  inset: auto 0 6px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--red);
+}
+
+/* ============================================================
+   控制台：左日志 / 右指令
+   ============================================================ */
 
 .console {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 480px);
-  gap: 12px;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1.25fr) minmax(258px, 1fr);
+  gap: 9px;
   position: relative;
   z-index: 6;
+  min-height: 0;
+  max-height: min(232px, 30vh);
 }
+
 .logBox {
-  min-height: 108px;
-  max-height: 168px;
-  overflow-y: auto;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-1) 80%, #000);
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 3px;
+  padding: 7px 9px;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-1) 78%, #000);
 }
-.logLine { font-size: 12px; line-height: 1.55; animation: logIn 0.25s ease-out; }
+.logLine { font-size: 11px; line-height: 1.45; animation: logIn 0.25s ease-out; }
 @keyframes logIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
 .logLine[data-log-side='enemy'] { color: color-mix(in srgb, var(--red) 62%, var(--ink, #e8e6e3)); }
 .line { display: block; color: var(--amber); font-style: italic; }
@@ -375,52 +492,136 @@
 .cmd {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-2);
+  gap: 6px;
+  padding: 7px 9px;
+  min-height: 0;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 80%, #000));
-  min-height: 148px;
+  background: color-mix(in srgb, var(--bg-2) 82%, transparent);
 }
-.wait { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; flex: 1; }
 
+.wait { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; flex: 1; }
 .who { display: flex; align-items: center; gap: 9px; }
-.skillList { display: flex; flex-direction: column; gap: 6px; }
-.skill {
+
+/* ---------- 六道指令（顺序固定） ---------- */
+
+.seq {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.seqBtn {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 6px;
+  font-size: 11.5px;
+  color: var(--ink);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-1) 70%, transparent);
-  color: inherit;
-  font: inherit;
-  font-size: 12.5px;
-  text-align: left;
   cursor: pointer;
-  transition: border-color 0.16s, background 0.16s, transform 0.1s;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
 }
-.skill:hover { border-color: color-mix(in srgb, var(--amber) 60%, transparent); transform: translateX(2px); }
-.skillStart { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
-.skillPoor { opacity: 0.42; cursor: not-allowed; transform: none; }
-.skillIc {
-  display: grid;
-  place-items: center;
+.seqBtn:hover {
+  border-color: color-mix(in srgb, var(--amber) 62%, transparent);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  transform: translateY(-1px);
+}
+.seqBtn[data-cmd='flee']:hover { border-color: color-mix(in srgb, var(--red) 62%, transparent); }
+.seqSub {
+  position: absolute;
+  right: 5px;
+  bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--ink-mute);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- 子面板 ---------- */
+
+.sub { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.subHead { display: flex; align-items: center; gap: 8px; }
+.x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--amber) 16%, transparent);
-  color: var(--amber);
-  flex-shrink: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
 }
-.skillIc[data-kind='防御'] { background: color-mix(in srgb, var(--steel) 20%, transparent); color: var(--steel); }
-.skillIc[data-kind='启动'] { background: color-mix(in srgb, var(--violet) 22%, transparent); color: var(--violet); }
-.skillName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skillCost { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); flex-shrink: 0; }
+.x:hover { color: var(--ink); border-color: var(--amber); }
+
+.list { display: flex; flex-direction: column; gap: 4px; max-height: 132px; overflow-y: auto; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.row:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--amber) 58%, transparent);
+  transform: translateX(2px);
+}
+.rowStart { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
+.rowPoor { opacity: 0.42; cursor: not-allowed; }
+.rowOn {
+  border-color: color-mix(in srgb, var(--amber) 70%, transparent);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+}
+.rowName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowSub {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-mute);
+  letter-spacing: 0.08em;
+}
+.rowCost { flex-shrink: 0; font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); }
+
+/* ---------- 撤退 ---------- */
+
+.fleeBox { display: flex; flex-direction: column; gap: 9px; }
+.risk {
+  padding: 10px;
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  cursor: pointer;
+}
+.risk:hover { background: color-mix(in srgb, var(--red) 16%, transparent); }
 
 .aimBox { display: flex; flex-direction: column; gap: 8px; }
 .aimHead { display: flex; align-items: center; gap: 8px; color: var(--red); }
+.aimHead b { flex: 1; min-width: 0; }
 
 /* ---------- 收场 ---------- */
 
@@ -428,7 +629,14 @@
 .resultHead { display: flex; flex-direction: column; gap: 3px; }
 .resultHead b { font-size: 15px; letter-spacing: 0.08em; }
 .resultHead b[data-outcome='胜'] { color: var(--jade); }
-.resultHead b[data-outcome='败'] { color: var(--red); }
+.resultGain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 11.5px;
+  color: var(--ink-mute);
+}
+.resultGain b { color: var(--amber); }
 .resultBody {
   flex: 1;
   min-height: 90px;
@@ -445,6 +653,62 @@
 }
 
 @media (max-width: 900px) {
-  .console { grid-template-columns: minmax(0, 1fr); }
-  .logBox { max-height: 110px; }
+  .console { grid-template-columns: minmax(0, 1fr); max-height: min(360px, 46vh); }
+  .logBox { min-height: 0; max-height: none; }
+  .cmd { min-height: 0; }
+  .foeBody { width: 84px; height: 84px; }
+  .foe { min-width: 92px; }
+  .unit { width: 116px; }
+  .seq { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ---------- 角色自身的体力（与小队体力分开：出手扣这一条） ---------- */
+
+.chSpBar {
+  height: 3px;
+  border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-1) 80%, #000);
+  overflow: hidden;
+}
+.chSpBar > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jade) 72%, transparent), var(--jade));
+  transition: width 0.24s ease;
+}
+.chSpBar > i[data-low='1'] { background: linear-gradient(90deg, #8a5a2a, var(--amber)); }
+.spNum { color: var(--jade); }
+
+/* ---------- 招招不同的演出：色相 / 变奏 / 斜向由技能 id 决定 ---------- */
+
+.fx {
+  /* 由 JS 写入：--fx-hue 色相、--fx-rot 斜向增量 */
+  filter: hue-rotate(calc(var(--fx-hue, 0) * 1deg)) saturate(calc(1 + (var(--fx-hue, 0) - 180) / 720));
+}
+.fx[data-fx-var='1'] { transform: scale(1.05); }
+.fx[data-fx-var='2'] { transform: scale(0.95) rotate(var(--fx-rot, 0deg)); }
+.fx[data-fx-var='3'] { transform: scale(1.12); }
+.fx[data-fx-dir='l']::before { animation-direction: reverse; }
+
+.fxTag {
+  position: absolute;
+  left: 50%;
+  bottom: 16%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-1) 76%, transparent);
+  animation: fxTagIn 0.7s ease-out forwards;
+}
+@keyframes fxTagIn {
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  18% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -6px); }
 }

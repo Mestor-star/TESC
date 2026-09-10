@@ -33,7 +33,10 @@ function userPrompt(rec: BattleRecord): string {
     rec.digest,
     '',
     `【成文要求】`,
-    `任务 ${rec.no}「${rec.title}」，地点 ${rec.place}，结果 ${rec.outcome}，历时 ${rec.rounds} 回合。`,
+    `任务 ${rec.no}「${rec.title}」，地点 ${rec.place}，结果 ${rec.outcome}，`
+      + `历时 ${rec.rounds} 手（行动条共推进 ${rec.ticks} 拍）。`
+      + (rec.loot.length ? `战后搜刮到：${rec.loot.join('、')}；` : '战后未搜刮到可用装具；')
+      + `缴获军需点 ${rec.coin}。`,
     `请据此成文。`,
   ].join('\n')
 }
@@ -48,7 +51,7 @@ export function templateNarrative(rec: BattleRecord): string {
       if (t.target) tail.push(t.target)
       if (t.dmg) tail.push(`${t.dmg} 伤害`)
       if (t.down) tail.push('失能')
-      return `R${t.round} ${t.actor} 以「${t.skill}」作用于 ${tail.join(' · ') || '自身'}。`
+      return `T${t.round} ${t.actor} 以「${t.skill}」作用于 ${tail.join(' · ') || '自身'}。`
     })
   const mvp = mvpId(rec)
   return [
@@ -57,15 +60,16 @@ export function templateNarrative(rec: BattleRecord): string {
       `按危险度 S${rec.stage} 评估，采取正面压制、逐次消耗的方式收束；${rec.outcome === '胜' ? '以清除目标告终' : '未能清除，按撤出处理'}。`,
     ``,
     `**达成手段**`,
-    `按敏捷度排定出手序，逐一削减敌方反现实反应。期间以「架势」稳住阵形，` +
-      `弹痕持有者逐重解开封印后转入正式输出。`,
+    `行动条按敏捷度充能，满条者方能出手 —— 快的人在这段时间里多打了好几手。` +
+      `期间以「架势」稳住阵形，弹痕持有者逐重解开封印后转入正式输出。`,
     ``,
     `**动作经过**`,
     rows.length ? rows.join('\n') : '（本场未留下有效交手记录。）',
     ``,
     `**现场**`,
-    `${rec.place} ——反现实反应已归零。全场历时 ${rec.rounds} 回合，出力最重者为 ${mvp}。` +
-      `作战记录归档完毕，善后移交观测科。`,
+    `${rec.place} ——反现实反应已归零。全场历时 ${rec.rounds} 手 / ${rec.ticks} 拍，出力最重者为 ${mvp}。` +
+      (rec.loot.length ? `从残骸中搜刮到 ${rec.loot.join('、')}，` : '') +
+      `缴获军需点 ${rec.coin}。作战记录归档完毕，善后移交观测科。`,
   ].join('\n')
 }
 
@@ -90,8 +94,9 @@ export function recordOf(s: BattleState, digest: string): BattleRecord {
     title: s.title,
     place: s.place,
     stage: s.stage,
-    outcome: s.phase === 'won' ? '胜' : '败',
-    rounds: s.round,
+    outcome: s.phase === 'won' ? '胜' : s.phase === 'fled' ? '撤' : '败',
+    rounds: s.hand,
+    ticks: s.tick,
     at: Date.now(),
     squad: s.allies.map((a) => a.id),
     mvp: mvpOf(s),
@@ -99,6 +104,8 @@ export function recordOf(s: BattleState, digest: string): BattleRecord {
     turns: s.log,
     narrative: '',
     narrativeBy: '模板',
+    loot: [...s.loot],
+    coin: s.coin,
   }
 }
 
@@ -131,7 +138,8 @@ export function recentBattleContext(records: BattleRecord[], n = 3): string {
   if (rows.length === 0) return ''
   return ['【近期作战记录 · 已归档的既成事实（可作延续性背景，勿逐条复述）】',
     ...rows.map(
-      (r) => `· ${r.no}「${r.title}」已 ${r.outcome}（${r.rounds} 回合，出力最重 ${mvpId(r)}）：${firstLine(r.narrative)}`,
+      (r) => `· ${r.no}「${r.title}」已 ${r.outcome}（${r.rounds} 手 / ${r.ticks} 拍，`
+        + `出力最重 ${mvpId(r)}${r.loot.length ? `，缴获 ${r.loot.join('、')}` : ''}）：${firstLine(r.narrative)}`,
     )].join('\n')
 }
 

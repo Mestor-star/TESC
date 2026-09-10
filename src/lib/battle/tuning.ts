@@ -21,6 +21,16 @@ export const TUNING = {
   affinityWeight: 0.55,  // 反现实亲和每满 200 提供的加成
   downWillSave: true,    // 意志力高者被打倒时有一次「不倒」
 
+  /* —— 行动条（ATB） —— */
+  barMax: 100,           // 满 100% 才能行动；出手后扣除一整条，余量保留
+  spdBase: 4.2,          // 每节拍的基础充能量
+  spdPerAgi: 0.155,      // 每点敏捷度追加的充能量 → 快的人一回合能多打好几手
+  spdFloor: 2.5,         // 充能下限（再慢也不会卡死）
+  evadeBase: 0.05,       // 基础闪避
+  evadeMax: 0.75,        // 闪避上限（再高也留一成命中）
+  shieldCap: 0.8,        // 减伤上限
+  buffTurnsCap: 5,       // 增益最长持续（以自身行动次数计）
+
   /* —— 技能 —— */
   atkPower: 1.0,
   atkCost: 1,
@@ -31,10 +41,30 @@ export const TUNING = {
   burstStack: 3,         // 发动到达点所需的印记层数
   startPower: 0,         // 启动技（解封）——不造成伤害，纯粹是解封的代价
   startCost: 2,
-  guardCost: 0,
-  guardRegain: 0,        // 防御不直接回体力（体力是跨任务的池子）
+  guardCost: 0,          // 防御指令不额外耗体力
 
-  /* —— 体力（小队共用，只在执行任务时消耗） —— */
+  /* —— 战略撤退 —— */
+  fleeBase: 0.45,        // 基础成功率
+  fleeMin: 0.12,
+  fleeMax: 0.92,
+  fleeSpeedWeight: 0.012, // 双方平均速度差每 1 点的权重
+
+  /* —— 军需 —— */
+  coinPerStage: 14,      // 每胜一场的军需点 = 阶段 × 此值
+  coinDropBonus: 0.5,    // 掉落装具时附带的军需点比例
+  lootBase: 0.28,        // 战后搜刮到装具的基础概率
+  lootPerStage: 0.045,   // 阶段每高一级的追加概率
+  lootCap: 0.85,         // 再高也不会必出
+  reviveHp: 0.35,        // 复活类道具拉回时的生命比例
+  bagDefault: { ration: 3, sedative: 2, stabilizer: 2, soulcell: 1 } as Record<string, number>,
+
+  /* —— 角色体力（各人自带，出手从这里扣；防御回一点，但不多） —— */
+  chSpBase: 22,          // 底子
+  chSpPerWill: 0.55,     // 每点意志力的追加
+  guardRecover: 3,       // 防御每手回复
+  guardRecoverPerWill: 0.06,
+
+  /* —— 体力（小队共用，只在出击时消耗；出手另算各人自己的） —— */
   spMax: 100,
   spPerSortie: 5,        // 每次出击的固定消耗
   spRegenPerEvent: 2.5,  // 每收束一段剧情补回
@@ -53,6 +83,7 @@ export const TUNING = {
   enemyWillPerStage: 2.0,
 
   /* —— 结算 —— */
+  growthHpWeight: 0.8,   // 成长点数对生命的追加权重
   growthPerWin: 0.6,     // 胜利给参战者的成长点数（百分比，写隐藏存档）
   growthPerLoss: 0.2,
   bondPerWin: 2,         // 胜利给参战者的羁绊

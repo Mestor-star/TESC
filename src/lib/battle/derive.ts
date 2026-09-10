@@ -2,9 +2,9 @@
    作战数值导出层
    ------------------------------------------------------------
    「档案 → 战斗面板」的唯一翻译处：
-     · 五轴（常态评定）× 时期系数 × 成长加成     → 战斗用轴值
-     · 武装（arms.ts，含弹痕）                    → 技能表与演出效果
-     · 任务（missions.ts 的 stage / nature）      → 敌阵
+     · 五轴（常态评定 × 时期系数 × 成长 + 装具修正） → 战斗用轴值
+     · 武装（arms.ts）+ 战斗定位（roster.ts）+ 装具（gear.ts） → 技能表与演出
+     · 任务（missions.ts 的 stage / nature）        → 敌阵
    不改原文考据，不改数据口径；这里只做读数。
    ============================================================ */
 
@@ -12,9 +12,13 @@ import { CHARACTERS } from '../../data/chars'
 import { ARMS } from '../../data/arms'
 import { AXIS_MAX } from '../../data/types'
 import type { Character, Mission } from '../../data/types'
-import { CAST, avatarIdOf, personOf } from '../../data/castmeta'
+import { CAST, OPERATOR_ID, avatarIdOf, personOf } from '../../data/castmeta'
+import { opPeriodAtProgress } from '../operator-arc'
+import type { OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
+import { ROSTER } from './roster'
+import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
 import type { AxisKey, AxisSheet, Combatant, FxKind, SkillSpec } from './types'
 
@@ -39,6 +43,11 @@ export function squadIdsFrom(names: string[]): string[] {
     if (id && !out.includes(id)) out.push(id)
   }
   return out
+}
+
+/** 本人的体力上限：意志力越高越耐打（防御时按同一根轴回复，回得不多） */
+export function chSpMax(will: number): number {
+  return Math.round(TUNING.chSpBase + will * TUNING.chSpPerWill)
 }
 
 /** '∞' → 观测上限（数学上代入 AXIS_MAX；UI 另标「不可测」） */
@@ -71,8 +80,16 @@ const CURVE: Record<string, [number, number]> = {
 }
 const DEFAULT_CURVE: [number, number] = [0.8, 1]
 
-/** 某人此刻的五轴（常态评定 × 时期系数 × 任务成长） */
+/** 某人此刻的五轴（常态评定 × 时期系数 × 任务成长；不含装具） */
 export function axisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
+  // 言万心叶：他不走「档案 × 时期系数」那一套——原文里每个时期的面板本身就不一样
+  if (id === OPERATOR_ID) {
+    const per = opPeriodAtProgress(progress)
+    const k = 1 + growthPct / 100
+    const out = {} as AxisSheet
+    for (const a of AXES) out[a] = Math.round(per.axes[a] * k)
+    return out
+  }
   const c = CORE[id]
   const [a, b] = CURVE[id] ?? DEFAULT_CURVE
   const f = (a + (b - a) * clamp01(progress)) * (1 + growthPct / 100)
@@ -83,6 +100,19 @@ export function axisSheetOf(id: string, progress: number, growthPct = 0): AxisSh
   }
   for (const k of AXES) {
     out[k] = Math.round(numOf(c.stats.find((s) => s.key === k)?.value) * f)
+  }
+  return out
+}
+
+/** 装具的数值修正（累加到轴上；另有 spd/evade/shield/atk 走别处） */
+function gearAxes(gearId: string | undefined, axes: AxisSheet): AxisSheet {
+  if (!gearId) return axes
+  const g = GEAR_OF[gearId]
+  if (!g) return axes
+  const out = { ...axes }
+  for (const k of AXES) {
+    const add = g.mods[k]
+    if (typeof add === 'number') out[k] = out[k] + add
   }
   return out
 }
@@ -98,7 +128,7 @@ const FX_OF_KIND: Record<string, FxKind> = {
 }
 
 /** 该角色持有的武装（arms.ts 以 holderId 关联） */
-function armOf(id: string) {
+export function armOf(id: string) {
   return ARMS.find((a) => a.holderId === id)
 }
 
@@ -107,102 +137,138 @@ function isScar(id: string): boolean {
   return ARMS.some((a) => a.holderId === id && a.kind === '弹痕')
 }
 
+/** 无名册者的退路：一手通用普攻 + 一手协同压制（不冒充原作技能） */
+function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
+  const base = armName ? `${armName} · ` : ''
+  return [
+    {
+      id: `${id}-atk`, name: `${base}横扫`, kind: '普攻', desc: '不耗心神的常规一击。',
+      cost: TUNING.atkCost, power: TUNING.atkPower, axis: '破坏力', fx, line: '——上了。', target: 'one',
+    },
+    {
+      id: `${id}-skill`, name: armName ? `${base}解放` : '协同压制', kind: '技能',
+      desc: '把观测到的弱点一次打穿。',
+      cost: TUNING.skillCost, power: TUNING.skillPower, axis: '破坏力', fx,
+      line: '「让开——」', target: 'one',
+    },
+  ]
+}
+
 /**
- * 技能表（每人固定三到四格）：
- *   普攻（无门 · 低耗） / 技能（耗体力） / 到达点（须蓄印记） / 防御
- * 弹痕持有者另有一格「启动技」—— 门上写着要打几次才解禁普攻与技能。
+ * 技能表 = 该角色的专属技能（roster.ts）+ 装具附带的一手。
+ * 慢启动门（START_GATE）由引擎按 kind === '启动' 的次数把关，此处只负责出表。
  */
-export function skillsOf(id: string, name: string): SkillSpec[] {
+/** 言万心叶的技能表 = 该时期的「所能做的事」（原文原名） */
+function opSkillsOf(per: OpPeriod): SkillSpec[] {
+  return per.abilities.map((a, i) => ({
+    id: `op-${per.at}-${i}`,
+    name: a.name,
+    kind: a.kind,
+    desc: a.desc,
+    cost: a.cost ?? (a.kind === '普攻' ? 1 : a.kind === '启动' ? 2 : 4),
+    power: a.pow,
+    axis: a.axis,
+    fx: a.fx,
+    line: '',
+    target: a.target ?? (a.kind === '启动' ? 'self' : 'one'),
+    effect: a.effect,
+    turns: a.turns,
+    needsStack: a.needsStack,
+    // 冷却与名册同一口径：普攻 / 启动无冷却，到达点 4 拍，其余 2 拍
+    cd: a.cd ?? (a.kind === '普攻' || a.kind === '启动' ? 0 : a.needsStack ? 4 : 2),
+  }))
+}
+
+export function skillsOf(id: string, gearId?: string): SkillSpec[] {
+  if (id === OPERATOR_ID) {
+    const list = opSkillsOf(opPeriodAtProgress(0))
+    return list
+  }
   const arm = armOf(id)
   const fx = (arm && FX_OF_KIND[arm.kind]) || 'slash'
-  const armName = arm?.name ?? ''
-  const base = armName ? `${armName} · ` : ''
-  const list: SkillSpec[] = []
+  const role = ROSTER[id]
+  const list: SkillSpec[] = role ? role.skills.map((s) => ({ ...s })) : fallbackSkills(id, arm?.name ?? '', fx)
 
-  list.push({
-    id: `${id}-atk`,
-    name: `${base}横扫`,
-    kind: '普攻',
-    desc: '不耗心神的常规一击。',
-    cost: TUNING.atkCost,
-    power: TUNING.atkPower,
-    axis: '破坏力',
-    fx,
-    line: '——上了。',
-    target: 'one',
-  })
-
-  list.push({
-    id: `${id}-skill`,
-    name: armName ? `${base}解放` : '协同压制',
-    kind: '技能',
-    desc: arm?.power ? arm.power.slice(0, 60) + '…' : '把观测到的弱点一次打穿。',
-    cost: TUNING.skillCost,
-    power: TUNING.skillPower,
-    axis: '破坏力',
-    fx,
-    line: arm?.phrase ? `「${arm.phrase}」` : '「让开——」',
-    target: 'one',
-  })
-
-  if (arm?.awakened) {
-    list.push({
-      id: `${id}-burst`,
-      name: `${base}到达点`,
-      kind: '技能',
-      desc: `到达点：${arm.awakened.slice(0, 54)}…`,
-      cost: TUNING.burstCost,
-      power: TUNING.burstPower,
-      axis: '意志力',
-      fx: 'noise',
-      line: '「——这是我非做到不可的事。」',
-      target: 'one',
-      needsStack: TUNING.burstStack,
-    })
-  }
-
-  list.push({
-    id: `${id}-guard`,
-    name: '架势',
-    kind: '防御',
-    desc: '稳住呼吸，本回合大幅减伤。',
-    cost: TUNING.guardCost,
-    power: 0,
-    axis: '物理抗性',
-    fx: 'guard',
-    line: '……先站住。',
-    target: 'self',
-    guard: TUNING.guardCut,
-  })
-
+  // 名册里没写启动技却设了门 → 补一手通用启动（防呆）
   const gate = START_GATE[id] ?? 0
-  if (gate > 0) {
+  if (gate > 0 && !list.some((s) => s.kind === '启动')) {
     list.push({
-      id: `${id}-start`,
-      name: name === '恋兔光' ? '解封试音' : '镇封起手',
-      kind: '启动',
+      id: `${id}-start`, name: '镇封起手', kind: '启动',
       desc: `解开武装上的一重封印。需先后打出 ${gate} 次，普攻与技能才会解禁。`,
-      cost: TUNING.startCost,
-      power: TUNING.startPower,
-      axis: '破坏力',
-      fx,
-      line: '「先调准音。——一之弦。」',
-      target: 'one',
+      cost: TUNING.startCost, power: 0, axis: '破坏力', fx, line: '「先按住它。」', target: 'one',
     })
   }
 
+  const gs = gearId ? gearSkillOf(gearId, id) : null
+  if (gs) list.push(gs as SkillSpec)
   return list
 }
 
 /* ---------- 角色 → 战斗单位 ---------- */
 
-export function combatantOf(id: string, progress: number, growthPct = 0): Combatant {
+/** 行动条充能：由敏捷度导出（每节拍能攒多少） */
+export function speedOf(axes: AxisSheet): number {
+  return Math.max(TUNING.spdFloor, TUNING.spdBase + axes.敏捷度 * TUNING.spdPerAgi)
+}
+
+export function combatantOf(id: string, progress: number, growthPct = 0, gearId?: string): Combatant {
   const p = personOf(id)
-  const axes = axisSheetOf(id, progress, growthPct)
+  // 主角：面板整块按时期换页，其余照旧走档案
+  if (id === OPERATOR_ID) {
+    const per = opPeriodAtProgress(progress)
+    const axes = gearAxes(gearId, axisSheetOf(id, progress, growthPct))
+    const gear = gearId ? GEAR_OF[gearId] : undefined
+    const hpMax = Math.round(
+      (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
+      * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
+    )
+    const skills = opSkillsOf(per)
+    const gs = gearId ? gearSkillOf(gearId, id) : null
+    if (gs) skills.push({ ...(gs as SkillSpec), id: `${id}-gear-${gearId}` })
+    return {
+      id,
+      side: 'ally',
+      name: p?.name ?? '言万心叶',
+      sigil: p?.sigil ?? '心',
+      hue: p?.hue ?? '#c8a24e',
+      avatarId: avatarIdOf(id),
+      cls: per.cls,
+      trait: per.title,
+      hp: hpMax,
+      hpMax,
+      axes,
+      skills,
+      fx: per.abilities[0]?.fx ?? 'slash',
+      rated: true,
+      bar: 0,
+      spd: speedOf(axes),
+      evade: TUNING.evadeBase + (gear?.mods.evade ?? 0),
+      buffs: [],
+      shield: gear?.mods.shield ?? 0,
+      taunt: 0,
+      down: false,
+      sp: chSpMax(axes.意志力),
+      spMax: chSpMax(axes.意志力),
+      startUsed: 0,
+      startNeed: START_GATE[id] ?? 0,
+      stack: 0,
+      cds: {},
+      scar: false,
+      gear: gearId,
+      gearAtk: gear?.mods.atk ?? 0,
+      gearSpd: gear?.mods.spd ?? 0,
+      tags: ['委员会'],
+      note: `${per.vol.split(' · ')[0]} · ${per.arm}`,
+    }
+  }
+  const axes = gearAxes(gearId, axisSheetOf(id, progress, growthPct))
+  const gear = gearId ? GEAR_OF[gearId] : undefined
   const hpMax = Math.round(
-    TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill,
+    (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
+    * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
   )
   const name = p?.name ?? id
+  const role = ROSTER[id]
   const arm = armOf(id)
   return {
     id,
@@ -211,33 +277,46 @@ export function combatantOf(id: string, progress: number, growthPct = 0): Combat
     sigil: p?.sigil ?? '？',
     hue: p?.hue ?? '#8d8d99',
     avatarId: avatarIdOf(id),
+    cls: role?.cls ?? '见习',
+    trait: role?.trait,
     hp: hpMax,
     hpMax,
     axes,
-    skills: skillsOf(id, name),
-    fx: (arm && FX_OF_KIND[arm.kind]) || 'slash',
+    skills: skillsOf(id, gearId),
+    fx: role?.skills[0]?.fx ?? ((arm && FX_OF_KIND[arm.kind]) || 'slash'),
     rated: !!CORE[id],
-    guard: 0,
+    bar: 0,
+    spd: speedOf(axes),
+    evade: TUNING.evadeBase + (gear?.mods.evade ?? 0),
+    buffs: [],
+    shield: gear?.mods.shield ?? 0,
+    taunt: 0,
     down: false,
+    sp: chSpMax(axes.意志力),
+    spMax: chSpMax(axes.意志力),
     startUsed: 0,
     startNeed: START_GATE[id] ?? 0,
     stack: 0,
+    cds: {},
     scar: isScar(id),
+    gear: gearId,
+    gearAtk: gear?.mods.atk ?? 0,
+    gearSpd: gear?.mods.spd ?? 0,
     tags: ['委员会'],
-    note: arm ? `${arm.kind} ${arm.name}` : p ? '未评定面板' : undefined,
+    note: arm ? `${arm.kind} ${arm.name}` : role ? role.cls : undefined,
   }
 }
 
 /* ---------- 任务 → 敌阵 ---------- */
 
-const ENEMY_PROFILE: { match: RegExp; name: string; fx: FxKind; tags: string[] }[] = [
-  { match: /魔王/, name: '漆黑的影', fx: 'noise', tags: ['反现实', '异端', '魔王'] },
-  { match: /异端/, name: '异端显形', fx: 'noise', tags: ['反现实', '异端'] },
-  { match: /机械|工学|制品/, name: '反现实制成品', fx: 'drone', tags: ['反现实', '机械'] },
-  { match: /残渣|残留|清点|清缴|旧物/, name: '反现实残渣', fx: 'seal', tags: ['反现实', '残渣'] },
-  { match: /低语/, name: '低语聚合体', fx: 'seal', tags: ['反现实', '残渣'] },
+const ENEMY_PROFILE: { match: RegExp; name: string; cls: string; fx: FxKind; tags: string[] }[] = [
+  { match: /魔王/, name: '漆黑的影', cls: '魔王之影', fx: 'noise', tags: ['反现实', '异端', '魔王'] },
+  { match: /异端/, name: '异端显形', cls: '异端', fx: 'noise', tags: ['反现实', '异端'] },
+  { match: /机械|工学|制品/, name: '反现实制成品', cls: '造物', fx: 'drone', tags: ['反现实', '机械'] },
+  { match: /残渣|残留|清点|清缴|旧物/, name: '反现实残渣', cls: '残渣', fx: 'seal', tags: ['反现实', '残渣'] },
+  { match: /低语/, name: '低语聚合体', cls: '低语', fx: 'seal', tags: ['反现实', '残渣'] },
 ]
-const FALLBACK_PROFILE = { name: '反现实实体', fx: 'noise' as FxKind, tags: ['反现实'] }
+const FALLBACK_PROFILE = { name: '反现实实体', cls: '实体', fx: 'noise' as FxKind, tags: ['反现实'] }
 
 const SUFFIX = ['甲', '乙', '丙', '丁']
 
@@ -262,31 +341,39 @@ export function enemiesOf(m: Mission): Combatant[] {
       name: ename,
       sigil: prof.tags.includes('魔王') ? '王' : prof.tags.includes('机械') ? '械' : '末',
       hue: prof.tags.includes('魔王') ? '#7a4de0' : prof.tags.includes('机械') ? '#4ea6c8' : '#c8554e',
+      cls: prof.cls,
+      trait: m.nature,
       hp: hpMax,
       hpMax,
       axes,
       skills: [
         {
-          id: 'foe-atk',
-          name: '侵袭',
-          kind: '普攻',
-          desc: '反现实的一击。',
-          cost: 0,
-          power: 1,
-          axis: '破坏力',
-          fx: prof.fx,
-          line: '',
-          target: 'one',
+          id: 'foe-atk', name: '侵袭', kind: '普攻', desc: '反现实的一击。',
+          cost: 0, power: 1, axis: '破坏力', fx: prof.fx, line: '', target: 'one',
+        },
+        {
+          id: 'foe-heavy', name: '反现实的重量', kind: '技能', desc: '把这一带的现实密度压下来。',
+          cost: 3, power: 1.5, axis: '反现实亲和', fx: prof.fx, line: '', target: 'all',
         },
       ],
       fx: prof.fx,
       rated: true,
-      guard: 0,
+      bar: 0,
+      spd: speedOf(axes),
+      evade: 0,
+      buffs: [],
+      shield: 0,
+      taunt: 0,
       down: false,
       startUsed: 0,
+      sp: chSpMax(60),
+      spMax: chSpMax(60),
       startNeed: 0,
       stack: 0,
+      cds: {},
       scar: false,
+      gearAtk: 0,
+      gearSpd: 0,
       tags: prof.tags,
       note: m.nature,
     })

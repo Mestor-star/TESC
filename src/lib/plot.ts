@@ -40,13 +40,30 @@ export interface PlotDirective {
   eventDone?: boolean
   /** 收官的第三人称记录（缺省回退原著 summary，不虚构） */
   digest?: string
+  /** 本段触发交战：按现场的角色与敌人开战（缺省 = 无战事） */
+  battle?: PlotBattle
+}
+
+/** 剧情触发的交战规格 —— 由模型在事件指令里输出 */
+export interface PlotBattle {
+  /** 敌方名称（也是这场作战的标题） */
+  name: string
+  /** 性质标签，决定敌阵档案（异端 / 残渣 / 机械 / 低语 / 魔王 …） */
+  nature?: string
+  /** 危险度 1..10 */
+  stage?: number
+  place?: string
+  /** 在场参战者（角色 id；缺省 = 已遇见的成员） */
+  squad?: string[]
+  /** true = 本段必然开打（收束正文之后立刻进入交战） */
+  force?: boolean
 }
 
 /** 档案角色 id 白名单（角色档案全员 24 人，不含操作员） */
 const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
-  'met', 'bond', 'ends', 'flag', 'diverged', 'eventDone', 'digest',
+  'met', 'bond', 'ends', 'flag', 'diverged', 'eventDone', 'digest', 'battle',
 ])
 
 /** 把「图鉴 id 或原文实体标注」归一化为图鉴条目 id；无法识别返回 null */
@@ -104,6 +121,29 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       .map((x) => x.trim())
       .filter(Boolean)
     if (ends.length) out.ends = [...new Set(ends)]
+  }
+
+  if (src.battle && typeof src.battle === 'object' && !Array.isArray(src.battle)) {
+    const b = src.battle as Record<string, unknown>
+    const name = typeof b.name === 'string' ? b.name.trim().slice(0, 40) : ''
+    if (name) {
+      const out2: PlotBattle = { name }
+      if (b.force === true) out2.force = true
+      const nature = typeof b.nature === 'string' ? b.nature.trim().slice(0, 40) : ''
+      if (nature) out2.nature = nature
+      const place = typeof b.place === 'string' ? b.place.trim().slice(0, 40) : ''
+      if (place) out2.place = place
+      const st = finiteNum(b.stage)
+      if (st !== null) out2.stage = clamp(Math.round(st), 1, 10)
+      if (Array.isArray(b.squad)) {
+        const sq = b.squad
+          .filter((x): x is string => typeof x === 'string')
+          .map((x) => x.trim())
+          .filter((x) => CHAR_IDS.has(x))
+        if (sq.length) out2.squad = [...new Set(sq)]
+      }
+      out.battle = out2
+    }
   }
 
   if (src.flag && typeof src.flag === 'object' && !Array.isArray(src.flag)) {
@@ -425,7 +465,8 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       (d.ends && d.ends.length) ||
       (d.flag && Object.keys(d.flag).length) ||
       d.diverged === true ||
-      d.eventDone === true,
+      d.eventDone === true ||
+      Boolean(d.battle?.name),
   )
 }
 
@@ -582,7 +623,15 @@ ${baseline.trim() || '（无）'}${reask}${loreSection}${opsSection}${varBlock}$
   "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
   "diverged": true,                           // 已与原著相异（否则省略）
   "eventDone": true,                          // 本事件大纲关键收束达成才置 true
-  "digest": "第三人称收官记录两三句"
+  "digest": "第三人称收官记录两三句",
+  "battle": {                                 // 本回合触发交战（否则省略整个字段，勿写空对象）
+    "name": "敌方名称",                        // 也是这场作战的标题；用原文指称
+    "nature": "异端 / 残渣 / 机械 / 低语 / 魔王",// 决定敌阵档案与演出，从这五类里选最贴的一个
+    "stage": 1,                                // 危险度 1~10；照本段原文的规模给，别一律给高
+    "place": "交战地点",
+    "squad": ["在场的参战角色id"],              // 只列此刻确实在场的人；空 = 由已遇见者里挑
+    "force": true                              // true = 本段必然开打
+  }
 }
 无任何变化时输出 { }。不要把本说明当作文本念出来。
 
@@ -593,7 +642,7 @@ ${baseline.trim() || '（无）'}${reask}${loreSection}${opsSection}${varBlock}$
 <option>给操作员的下一个接续选项</option>
 <option>……（可多行，不需要则不写）</option>
 <vars>{"eventDone": true, "digest": "第三人称收官两三句"}</vars>
-其中 <vars> 的字段与上面 JSON 完全一致；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。`
+其中 <vars> 的字段与上面 JSON 完全一致（battle 亦可写在 <vars> 里）；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。`
 }
 
 /** 短信场景的基础提示补充（轻量羁绊许可），由 Tavern 拼到其 system 末尾 */

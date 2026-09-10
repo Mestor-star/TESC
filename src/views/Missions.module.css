@@ -310,3 +310,58 @@
   white-space: pre-wrap;
   color: var(--ink-mute);
 }
+
+/* ============================================================
+   军需处
+   ============================================================ */
+
+.shop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.shopHead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.shopHead b { font-size: 13px; letter-spacing: 0.06em; }
+.coin { font-size: 11.5px; color: var(--ink-mute); }
+.coin b { color: var(--amber); font-family: var(--font-mono); font-size: 13px; }
+
+.shopTabs { display: flex; gap: 4px; }
+.shopTab {
+  padding: 4px 9px;
+  font-size: 11.5px;
+  color: var(--ink-mute);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+.shopTab.isOn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+
+.shopGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.shopItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.shopItem[data-rank='2'] { border-left-color: var(--violet); }
+.shopItem[data-rank='3'] { border-left-color: var(--amber); }
+
+.shopName { display: flex; align-items: baseline; gap: 7px; }
+.shopName b { font-size: 13px; }
+.shopName i { font-style: normal; font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
+.shopDesc { margin: 0; font-size: 11.5px; line-height: 1.65; color: var(--ink-mute); }
+.shopFoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }

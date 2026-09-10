@@ -128,6 +128,99 @@ export async function addGrowth(patch: Record<string, number>): Promise<Record<s
   return cur
 }
 
+/* ---------- 军需：军需点 / 道具补给池 / 反现实辅助装备 ---------- */
+
+const COIN_KEY = 'coin'
+const BAG_KEY = 'bag'
+const GEAR_KEY = 'gear'
+const EQUIP_KEY = 'equip'
+
+/** 军需点（胜利结算累积；商店消费） */
+export async function readCoin(): Promise<number> {
+  return safe(async () => {
+    const row = await db().meta.get(COIN_KEY)
+    return typeof row?.value === 'number' ? row.value : 0
+  }, 0)
+}
+
+export async function addCoin(delta: number): Promise<number> {
+  const cur = await readCoin()
+  const next = Math.max(0, cur + delta)
+  await safe(async () => {
+    await db().meta.put({ key: COIN_KEY, value: next })
+  }, undefined)
+  return next
+}
+
+/** 已有的装具库存（id → 件数）；击败敌人可搜刮到重复件 */
+export async function readGearBag(): Promise<Record<string, number>> {
+  return safe(async () => {
+    const row = await db().meta.get(GEAR_KEY)
+    return (row?.value as Record<string, number> | undefined) ?? {}
+  }, {})
+}
+
+export async function addGear(id: string, n = 1): Promise<Record<string, number>> {
+  const bag = await readGearBag()
+  bag[id] = (bag[id] ?? 0) + n
+  await safe(async () => {
+    await db().meta.put({ key: GEAR_KEY, value: bag })
+  }, undefined)
+  return bag
+}
+
+/** 每人当前装配的装具（角色 id → 装具 id） */
+export async function readEquip(): Promise<Record<string, string>> {
+  return safe(async () => {
+    const row = await db().meta.get(EQUIP_KEY)
+    return (row?.value as Record<string, string> | undefined) ?? {}
+  }, {})
+}
+
+export async function writeEquip(map: Record<string, string>): Promise<void> {
+  await safe(async () => {
+    await db().meta.put({ key: EQUIP_KEY, value: map })
+  }, undefined)
+}
+
+/** 道具补给池（id → 个数） */
+export async function readBag(): Promise<Record<string, number>> {
+  return safe(async () => {
+    const row = await db().meta.get(BAG_KEY)
+    return (row?.value as Record<string, number> | undefined) ?? { ...TUNING.bagDefault }
+  }, { ...TUNING.bagDefault })
+}
+
+export async function writeBag(bag: Record<string, number>): Promise<void> {
+  await safe(async () => {
+    await db().meta.put({ key: BAG_KEY, value: bag })
+  }, undefined)
+}
+
+/** 补给采购（剩点数与库存一并返回） */
+export async function buyItem(id: string, price: number): Promise<{ coin: number; bag: Record<string, number> }> {
+  const coin = await readCoin()
+  if (coin < price) return { coin, bag: await readBag() }
+  const bag = await readBag()
+  bag[id] = (bag[id] ?? 0) + 1
+  await addCoin(-price)
+  await writeBag(bag)
+  return { coin: coin - price, bag }
+}
+
+/** 装具采购 */
+export async function buyGear(id: string, price: number): Promise<{ coin: number; bag: Record<string, number> }> {
+  const coin = await readCoin()
+  const bag = await readGearBag()
+  if (coin < price) return { coin, bag }
+  bag[id] = (bag[id] ?? 0) + 1
+  await addCoin(-price)
+  await safe(async () => {
+    await db().meta.put({ key: GEAR_KEY, value: bag })
+  }, undefined)
+  return { coin: coin - price, bag }
+}
+
 export async function resetBattleStore(): Promise<void> {
   await safe(async () => {
     await db().records.clear()

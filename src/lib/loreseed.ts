@@ -14,6 +14,7 @@ import { CODEX } from '../data/codex'
 import { LORE } from '../data/lore'
 import { personaCardLines } from '../data/persona'
 import { SIDECAST, type SideCastEntry } from '../data/sidecast'
+import { OP_PERIODS } from './operator-arc'
 import { TIMELINE } from '../data/timeline'
 import type { Character, EndEntry, LoreEntry, TimelineEvent } from '../data/types'
 
@@ -233,9 +234,12 @@ function buildOpsBook(): Lorebook {
   const e2 = entry(
     'ops-stamina',
     ['体力', '观测间隔', '出击', '撤出', '驻扎', '过载'],
-    '小队体力只在执行任务时消耗：一次出击先扣固定份额，出手另计。'
-      + '它不会因休整而立刻回满——只有操作员继续推进观测、收束新的剧情段，它才随观测间隔缓慢回补。'
-      + '体力偏低时仍可强行出击，代价是全场出力打折；撤出并不退档，任务只回到「压制中」，另留一条伤情记录。',
+    '有两本体力账，别混。小队体力是终端上那一池：只在出击时扣一次固定份额，'
+      + '不会因休整而立刻回满——只有操作员继续推进观测、收束新的剧情段，它才随观测间隔缓慢回补；'
+      + '它偏低时仍可强行出击，代价是全场出力打折。'
+      + '而战斗里每一次出手消耗的不是那一池，是各人自己的体力：意志力越厚，本人这一场能出的手越多，'
+      + '普攻、技能、到达点各按自己的份额扣。本人的体力见底时便只剩防御可出——'
+      + '防御会回一口气，但不多，回不回得来要看意志力。',
     20,
     '体力与观测间隔',
     { ops: true },
@@ -244,8 +248,8 @@ function buildOpsBook(): Lorebook {
     'ops-operator',
     ['操作员', '指挥', '言万心叶', '低语者', '观测员', '下令'],
     '言万心叶是这台终端的操作员，也是登记在册的 Stage4『活性化』、低语者（Susurrador）的持有者。'
-      + '他不在战斗序列里直接出手：作战时他是下令的一方——决定由谁出击、以何等手数应敌、目标指向何处，'
-      + '并在每一次收束之后撰写作战记录。他的位置是指挥与观测，不是刀锋。'
+      + '他兼指挥与观测——决定由谁出击、以何等手数应敌、目标指向何处，并在每一次收束之后撰写作战记录；'
+      + '但他本人同样是战斗人员：五轴、武装与技能随观测进度换页，编队时可以直接把他放进小队下场出手。'
       + '（注：低语者之名在体验入学、登记成立之后才对外示出。）',
     30,
     '操作员的作战位置',
@@ -259,24 +263,67 @@ function buildOpsBook(): Lorebook {
   )
 }
 
-export function buildCanonLorebooks(): Lorebook[] {
-  return [buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook(), buildOpsBook()]
+/* ---------- 世界书：主角专档（言万心叶本人 —— 时期分页，逐段放行） ---------- */
+
+function buildOperatorBook(): Lorebook {
+  const head = entry(
+    'op-self',
+    ['言万心叶', '心叶', '操作员', '观测员', '主角', '低语者', 'Susurrador', '读心者'],
+    '言万心叶 —— 本终端的操作员，也是战斗人员。'
+      + '落海的留学生出身：墨西哥黑手党「卡特尔」曾把他当作读心工具役使三年，'
+      + '那段过去是他日后被登记为「低语者（Susurrador）」的由来。'
+      + '他不会游泳，却在落海时先救了别人；他想做的始终是一个普通的、善良的人。'
+      + '与露娜相遇、被艾莉芙担保入学苍之学园之后，他的终末潜力经测定为 Stage4『活性化』并登记在册。'
+      + '他的面板不固定：随观测推进的每一段时期，武装、五轴与技能都换一页 —— 详见分期词条。',
+    5,
+    '言万心叶 · 总档',
+    { ops: true },
+  )
+  const pages = OP_PERIODS.map((p, i) => entry(
+    `op-p-${p.at}`,
+    ['言万心叶', '心叶', p.title, p.arm, p.cls].filter((k) => k && k !== '无'),
+    [
+      `${p.vol} · ${p.title}`,
+      `战斗定位：${p.cls}`,
+      `处境：${p.note}`,
+      `武装：${p.arm}${p.armSub && p.armSub !== '—' ? `（${p.armSub}）` : ''} —— ${p.armNote}`,
+      `此刻所能做的事：${p.abilities.map((a) => `${a.name}（${a.kind}）`).join('、')}`,
+    ].join('\n'),
+    6 + i,
+    `言万心叶 · ${p.title}`,
+    { ops: true, eventId: p.at },
+  ))
+  return book(
+    'book-canon-operator',
+    '主角专档 · 言万心叶',
+    '言万心叶本人的档案：总档 + 按观测进度分页的时期面板（定位／武装／技能）。'
+      + '未观测到的时期词条不放行，绝不剧透后文。',
+    [head, ...pages],
+  )
 }
 
-/** 默认激活的 canon 库 id（全 5 本默认激活） */
+export function buildCanonLorebooks(): Lorebook[] {
+  return [
+    buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook(),
+    buildOpsBook(), buildOperatorBook(),
+  ]
+}
+
+/** 默认激活的 canon 库 id（全 6 本默认激活） */
 export const CANON_BOOK_ACTIVE_IDS = [
   'book-canon-char',
   'book-canon-codex',
   'book-canon-lore',
   'book-canon-events',
   'book-canon-ops',
+  'book-canon-operator',
 ]
 
 /** 旧版种子里的废弃库 id（迁移时删除：v1 的独立「登场者登记」） */
 export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
 
-/** 种子内容版本：v3 → v4 = 新增「任务作战」canon 库（交战准则 / 体力与观测间隔 / 操作员的作战位置），触发一次性重播升级 */
-export const CANON_SEED_VERSION = 4
+/** 种子内容版本：v4 → v5 = 新增「主角专档 · 言万心叶」canon 库（总档 + 时期分页），并改正操作员条目口径（他也是战斗人员） */
+export const CANON_SEED_VERSION = 5
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'

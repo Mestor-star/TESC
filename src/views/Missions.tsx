@@ -2,17 +2,21 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Check, Crosshair, PaperPlaneTilt, Trash, Users } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
-import { MISSIONS } from '../data/missions'
 import { CHARACTERS } from '../data/chars'
-import { OPERATOR_PERSON, PERSON_IDS, personOf } from '../data/castmeta'
+import { OPERATOR_ID, OPERATOR_PERSON, PERSON_IDS, personOf } from '../data/castmeta'
+import { opPeriodAt } from '../lib/operator-arc'
 import type { Mission } from '../data/types'
 import { stageSeverity } from '../lib/format'
 import { Battle } from './Battle'
 import { periodProgress, squadIdsFrom } from '../lib/battle/derive'
 import { TUNING } from '../lib/battle/tuning'
 import {
-  addGrowth, deleteRecord, listRecords, putRecord, readGrowth, readStamina, writeStamina,
+  buyGear, buyItem, deleteRecord, listRecords, readBag, readCoin, readEquip, readGearBag,
+  readGrowth, readStamina,
 } from '../lib/battle/store'
+import { settleExit, settleWin } from '../lib/battle/settle'
+import { genBoard } from '../lib/battle/missiongen'
+import { GEARS, ITEMS, GEAR_OF } from '../lib/battle/gear'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
 
 import css from './Missions.module.css'
@@ -49,13 +53,33 @@ export function Missions() {
   /** 正在打的那一场 */
   const [live, setLive] = useState<{ mission: Mission; squad: string[] } | null>(null)
 
+  /* —— 军需 —— */
+  const [coin, setCoin] = useState(0)
+  const [gearBag, setGearBag] = useState<Record<string, number>>({})
+  const [equip, setEquip] = useState<Record<string, string>>({})
+  const [bag, setBag] = useState<Record<string, number>>({ ...TUNING.bagDefault })
+  const [shopTab, setShopTab] = useState<'装具' | '补给'>('装具')
+
+  /* —— 看板：随观测进度自动重掷，也可手动刷新 —— */
+  const [reroll, setReroll] = useState(0)
+
   const eventsDone = Object.keys(epDone).length
+  /** 看板种子 = 观测进度 + 手动重掷计数（同一 seed 必得同一批任务） */
+  const seed = eventsDone * 101 + reroll * 17 + 1
+  const board = useMemo(() => genBoard(seed), [seed])
 
   const reload = useCallback(async () => {
-    const [sp, g, rs] = await Promise.all([readStamina(eventsDone), readGrowth(), listRecords()])
+    const [sp, g, rs, c, gb, eq, bg] = await Promise.all([
+      readStamina(eventsDone), readGrowth(), listRecords(),
+      readCoin(), readGearBag(), readEquip(), readBag(),
+    ])
     setStamina(sp)
     setGrowth(g)
     setRecords(rs)
+    setCoin(c)
+    setGearBag(gb)
+    setEquip(eq)
+    setBag(bg)
   }, [eventsDone])
 
   useEffect(() => { void reload() }, [reload])
@@ -63,21 +87,21 @@ export function Missions() {
   const set = (id: string, s: LocalStatus) => setStatus((prev) => ({ ...prev, [id]: s }))
 
   const list = useMemo(() => {
-    const rows = MISSIONS.map((m) => ({ ...m, status: status[m.id] ?? m.status }))
+    const rows = board.map((m) => ({ ...m, status: status[m.id] ?? m.status }))
     const sorted = [...rows].sort((a, b) => (filter === '高威胁' ? a.stage - b.stage : b.stage - a.stage))
     if (filter === '全部') return sorted
     if (filter === '高威胁') return sorted.filter((m) => m.stage >= 6)
     return sorted.filter((m) => m.status === filter)
-  }, [filter, status])
+  }, [board, filter, status])
 
   const counts = useMemo(() => {
     const s: Record<string, number> = {}
-    for (const m of MISSIONS) {
+    for (const m of board) {
       const st = status[m.id] ?? m.status
       s[st] = (s[st] ?? 0) + 1
     }
     return s
-  }, [status])
+  }, [board, status])
 
   const act = (m: Mission) => {
     const cur = status[m.id] ?? m.status
@@ -96,9 +120,12 @@ export function Missions() {
   }
 
   /* —— 编队 —— */
+  const opArc = opPeriodAt(epDone)
+
   const openBriefing = (m: Mission) => {
     const rec = squadIdsFrom(m.recommend)
-    setPicked(rec.length ? rec : PERSON_IDS.filter((id) => isMet(id)).slice(0, 3))
+    const auto = rec.length ? rec : PERSON_IDS.filter((id) => isMet(id)).slice(0, 3)
+    setPicked(auto.length < 4 ? [...auto, OPERATOR_ID] : auto)
     setBriefing(m)
   }
 
@@ -119,25 +146,13 @@ export function Missions() {
     setBriefing(null)
   }
 
-  /* —— 结算：写隐藏存档 + 加数值 —— */
-  const settle = async (rec: BattleRecord, spLeft: number) => {
-    const win = rec.outcome === '胜'
-    await putRecord(rec)
-    const patch: Record<string, number> = {}
-    for (const id of rec.squad) patch[id] = win ? TUNING.growthPerWin : TUNING.growthPerLoss
-    await addGrowth(patch)
-    const mvpId = squadIdsFrom([rec.mvp])[0]
-    if (win) {
-      for (const id of rec.squad) bumpBond(id, TUNING.bondPerWin + (id === mvpId ? TUNING.bondMvp : 0))
-    }
-    await writeStamina({ ...stamina, cur: Math.max(0, spLeft) })
-    set(rec.missionId, win ? '完成' : '压制中')
-    push(
-      win ? 'success' : 'warn',
-      win ? '作战归档' : '撤出归档',
-      `${rec.no}「${rec.title}」· ${rec.rounds} 回合 · 出力最重 ${rec.mvp}${win ? ' · 已写入作战记录' : ''}`,
-      false,
-    )
+  /* —— 结算：只有胜仗落库；装备按概率搜刮，军需点必得 —— */
+  const settle = async (
+    rec: BattleRecord, spLeft: number, eq: Record<string, string>, bagLeft: Record<string, number>,
+  ) => {
+    const line = await settleWin({ rec, spLeft, equip: eq, bag: bagLeft, stamina, bumpBond })
+    set(rec.missionId, '完成')
+    push('success', '作战归档', line, false)
     setLive(null)
     await reload()
   }
@@ -163,6 +178,9 @@ export function Missions() {
               {f !== '全部' && f !== '高威胁' ? <span className="muted" style={{ marginLeft: 5 }}>{counts[f] ?? 0}</span> : null}
             </button>
           ))}
+          <button className={css.filterBtn} data-board-refresh onClick={() => setReroll((n) => n + 1)} title="按当前观测进度重掷整块看板">
+            ⟳ 刷新看板
+          </button>
         </div>
       </div>
 
@@ -178,6 +196,74 @@ export function Missions() {
         <span className="tiny mono">{Math.round(stamina.cur)}/{stamina.max}</span>
         <span className="tiny muted">出击扣除，观测推进时回补</span>
       </div>
+
+      {/* 军需处：军需点购买补给与反现实辅助装备（装具不涉弹痕，每人至多一件） */}
+      <section className={css.shop} data-gear-shop>
+        <div className={css.shopHead}>
+          <b>军需处</b>
+          <span className={css.coin} data-coin title="作战结算累积">军需点 <b>{coin}</b></span>
+          <div className={css.shopTabs}>
+            <button className={`${css.shopTab} ${shopTab === '装具' ? css.isOn : ''}`} onClick={() => setShopTab('装具')}>反现实辅助装备</button>
+            <button className={`${css.shopTab} ${shopTab === '补给' ? css.isOn : ''}`} onClick={() => setShopTab('补给')}>道具补给</button>
+          </div>
+          <span className="tiny muted">装具每人至多装配一件 · 战斗中更换不消耗回合</span>
+        </div>
+        <div className={css.shopGrid}>
+          {shopTab === '装具'
+            ? GEARS.map((g) => (
+              <div key={g.id} className={css.shopItem} data-shop={g.id} data-rank={g.rank}>
+                <div className={css.shopName}>
+                  <b>{g.name}</b>
+                  <i className="mono">{g.sub}</i>
+                </div>
+                <p className={css.shopDesc}>{g.desc}</p>
+                <div className={css.shopFoot}>
+                  <span className="tiny muted">持有 {gearBag[g.id] ?? 0}</span>
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 11 }}
+                    data-buy={g.id}
+                    disabled={coin < g.price}
+                    onClick={async () => {
+                      const r = await buyGear(g.id, g.price)
+                      setCoin(r.coin)
+                      setGearBag(r.bag)
+                      push('success', '军需处', `${g.name} 已入库（余 ${r.coin} 军需点）`, false)
+                    }}
+                  >
+                    {g.price} 军需点
+                  </button>
+                </div>
+              </div>
+            ))
+            : ITEMS.map((it) => (
+              <div key={it.id} className={css.shopItem} data-shop={it.id} data-rank={1}>
+                <div className={css.shopName}>
+                  <b>{it.name}</b>
+                  <i className="mono">补给</i>
+                </div>
+                <p className={css.shopDesc}>{it.desc}</p>
+                <div className={css.shopFoot}>
+                  <span className="tiny muted">携带 {bag[it.id] ?? 0}</span>
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 11 }}
+                    data-buy={it.id}
+                    disabled={coin < it.price}
+                    onClick={async () => {
+                      const r = await buyItem(it.id, it.price)
+                      setCoin(r.coin)
+                      setBag(r.bag)
+                      push('success', '军需处', `${it.name} 已入库（余 ${r.coin} 军需点）`, false)
+                    }}
+                  >
+                    {it.price} 军需点
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      </section>
 
       {list.length === 0 ? (
         <div className={css.empty}>
@@ -266,7 +352,7 @@ export function Missions() {
       <section className={css.records} data-battle-records>
         <div className={css.recordsHead}>
           <b>作战记录</b>
-          <span className="tiny muted">{records.length} 场已归档 · 逐回合底稿与成文一并留档</span>
+          <span className="tiny muted">{records.length} 场已归档 · 逐手底稿、成文与缴获一并留档（只留胜仗）</span>
         </div>
         {records.length === 0 ? (
           <div className="tiny muted" style={{ padding: '10px 2px' }}>尚无作战记录。出击一次，回来就有了。</div>
@@ -277,14 +363,17 @@ export function Missions() {
                 <button className={css.recTop} onClick={() => setOpenRec(openRec === r.id ? null : r.id)}>
                   <span className={css.recOut} data-outcome={r.outcome}>{r.outcome}</span>
                   <b className={css.recTitle}>{r.no}「{r.title}」</b>
-                  <span className="tiny muted">{r.rounds} 回合 · MVP {r.mvp} · {r.narrativeBy}</span>
+                  <span className="tiny muted">
+                    {r.rounds} 手 / {r.ticks} 拍 · MVP {r.mvp} · 军需点 +{r.coin}
+                    {r.loot.length ? ` · ${r.loot.map((g) => GEAR_OF[g]?.name ?? g).join('、')}` : ''} · {r.narrativeBy}
+                  </span>
                   <span className={css.recChev} data-open={openRec === r.id ? '1' : undefined}>›</span>
                 </button>
                 {openRec === r.id ? (
                   <div className={css.recBody}>
                     <div className={css.recNarr} data-battle-narrative>{r.narrative || '（未成文）'}</div>
                     <details className={css.recRaw}>
-                      <summary className="tiny mono">逐回合底稿</summary>
+                      <summary className="tiny mono">逐手底稿</summary>
                       <pre className={css.recPre}>{r.digest}</pre>
                     </details>
                     <button className="btn btn--ghost" style={{ fontSize: 11 }} onClick={() => deleteRec(r.id)}>
@@ -307,18 +396,27 @@ export function Missions() {
               <b>编队 · {briefing.no}「{briefing.title}」</b>
               <span className="tiny muted">危险度 S{briefing.stage} · 最多 4 人</span>
             </div>
-            {/* 主角在作战子系统里的位置：指挥与观测，不下场出手 */}
+            {/* 主角也是战斗人员：面板随观测进度换页，编队时可一并带上 */}
             <div className={css.opCard} data-operator-card>
               <span className="glyph" style={{ '--g': OPERATOR_PERSON.hue, width: 30, height: 30 }}>
                 <span style={{ fontSize: 13 }}>{OPERATOR_PERSON.sigil}</span>
               </span>
               <div className={css.opMain}>
-                <b>{operatorName.trim() || '言万心叶'} · 操作员</b>
+                <b>{operatorName.trim() || '言万心叶'} · {opArc.cls}</b>
                 <span className="tiny muted">
-                  作战位置 · 指挥与观测：不下场出手，只决定由谁出击、以何等手数应敌、目标指向何处，收束后撰写作战记录。
+                  兼指挥与观测，但他本人同样下场——五轴、武装、技能随观测进度换页，可编入小队一同出击。
                 </span>
-                <span className="tiny muted">低语者（Susurrador）持有者 / Stage4『活性化』 · 体验入学后登记在册</span>
+                <span className="tiny muted">{opArc.vol} · {opArc.title} · 武装 {opArc.arm}</span>
               </div>
+              <button
+                type="button"
+                className={`${css.pick} ${picked.includes(OPERATOR_ID) ? css.pickOn : ''}`}
+                data-pick={OPERATOR_ID}
+                data-on={picked.includes(OPERATOR_ID) ? '1' : undefined}
+                onClick={() => togglePick(OPERATOR_ID)}
+              >
+                {picked.includes(OPERATOR_ID) ? '已编入' : '编入'}
+              </button>
             </div>
             <div className={css.pickGrid}>
               {PERSON_IDS.map((id) => {
@@ -367,12 +465,17 @@ export function Missions() {
           progress={periodProgress(epDone)}
           growth={growth}
           stamina={stamina}
-          onExit={async (spLeft) => {
-            await writeStamina({ ...stamina, cur: Math.max(0, spLeft) })
+          equip={equip}
+          owned={gearBag}
+          bag={bag}
+          coin={coin}
+          onExit={async (spLeft, eq) => {
+            await settleExit(spLeft, eq, stamina)
+            setEquip(eq)
             setLive(null)
             await reload()
           }}
-          onSettled={(rec, spLeft) => { void settle(rec, spLeft) }}
+          onSettled={(rec, spLeft, eq, bagLeft) => { void settle(rec, spLeft, eq, bagLeft) }}
         />
       ) : null}
     </div>
