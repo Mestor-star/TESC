@@ -166,6 +166,8 @@ export function recordOf(s: BattleState, digest: string): BattleRecord {
     loot: [...s.loot],
     coin: s.coin,
     mainline: s.mainline,
+    // 对手的档位随记录一起留档：回填推演的那段正文要照它定分寸（首领级要写出那一记杀着）
+    tier: s.enemies.find((e) => e.tier)?.tier,
   }
 }
 

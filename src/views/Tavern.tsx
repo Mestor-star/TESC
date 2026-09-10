@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Lock, PaperPlaneTilt, Stop, Eraser } from '@phosphor-icons/react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Lock, PaperPlaneTilt, Stop, Eraser, Plus, Check, Trash, UsersThree, ListChecks, X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
@@ -14,59 +14,20 @@ import { extractLiveDisplay, parseDirectorReply, smsBondRule, smsDirective } fro
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
 import { buildPresetContext, readActivePreset } from '../lib/preset'
+import type { GroupThread } from '../lib/smsthreads'
+import { listGroups, makeGroup, nameOf, storeGroups } from '../lib/smsthreads'
+import {
+  greetingOf, groupSystemPrompt, isGroupThread, loadSmsLogs, markRead, newMsgId,
+  parseGroupReply, smsLogVersion, smsTurns, subscribeSmsLog, subscribeUnread, systemPrompt,
+  totalUnread, unreadOf, writeSmsLogs,
+} from '../lib/sms'
+import { addTask, listTasks, removeTask, subscribeTasks, tasksVersion, toggleTask } from '../lib/smstasks'
 
 import comm from './Comms.module.css'
 import css from './Tavern.module.css'
 
-const LOG_KEY = 'zts-tavern:v1'
-
-function loadLogs(): Record<string, ChatMsg[]> {
-  try {
-    const raw = localStorage.getItem(LOG_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, ChatMsg[]>
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function idFor(charId: string): string {
-  return `${charId}::${Date.now().toString(36)}::${Math.random().toString(36).slice(2, 6)}`
-}
-
-/** 由现有档案（bio/quote/epithet）拼装人格系统提示，不虚构设定 */
-function systemPrompt(
-  charId: string,
-  opName: string,
-  bond: number,
-  scenario: string,
-): string {
-  const c = charOf(charId)
-  const you = opName === '言万心叶' ? '言万心叶' : `操作员「${opName}」`
-  const core = c
-    ? `你是《这里是，终末停滞委员会。》中的角色「${c.name}」（${c.role} · ${c.epithet}）。`
-      + `\n档案设定：${c.bio}`
-      + `\n标志性台词参考：${c.quote}`
-    : '你是该作品中的一位角色。'
-  return `${core}
-\n此刻情境：${scenario}
-\n当前与${you}的羁绊约 ${bond}/100（仅作语气参考，别把数字说出口）。
-\n规则：
-1. 始终以第一人称扮演，绝不脱离角色、绝不替${you}说话。
-2. 使用简体中文，每次回复一到三句，口语自然，贴合上述档案的口癖与个性。
-3. 不用 Markdown、不加星号动作、不发编号，像在聊天软件里直接打字。
-4. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
-5. 可以沿用原作台词与关系，但不要长篇复述设定。`
-}
-
-/** 聊天历史（剔除开场种子后的最近 N 条）转交给模型 */
-function toTurns(log: ChatMsg[] | undefined, max = 12): ChatTurn[] {
-  const list = (log ?? []).slice(-max)
-  return list.map((m): ChatTurn =>
-    m.from === 'user' ? { role: 'user', content: m.text } : { role: 'assistant', content: m.text },
-  )
-}
+/** 线程 id：单聊就是角色 id，群聊是 g:<uuid>（名册见 lib/smsthreads.ts） */
+const idFor = newMsgId
 
 /** 羁绊增量的口语化注记 */
 function bondNote(delta: number): string {
@@ -80,7 +41,13 @@ function bondNote(delta: number): string {
 export function Tavern() {
   const { operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world, smsRequest, clearSmsRequest } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
-  const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadLogs)
+  const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadSmsLogs)
+  /* 群聊名册与电话页的两个页签（会话 / 任务） */
+  const [groups, setGroups] = useState<GroupThread[]>(listGroups)
+  const [tab, setTab] = useState<'chat' | 'tasks'>('chat')
+  const [groupPick, setGroupPick] = useState<string[] | null>(null)
+  const [groupName, setGroupName] = useState('')
+  const [taskDraft, setTaskDraft] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -103,14 +70,28 @@ export function Tavern() {
     loadProfile('sms').then(setSettings).catch(() => setSettings(null))
   }, [])
 
-  // 会话持久化（仅聊天记录，不含任何密钥）
-  useEffect(() => {
-    try {
-      localStorage.setItem(LOG_KEY, JSON.stringify(logs))
-    } catch {
-      /* 隐私模式下降级为仅内存 */
-    }
-  }, [logs])
+  /* 会话落盘一律经 lib/sms.ts（写入即落盘，不再靠 state 副作用回写）——
+     这样观测者切走本页时，后台主动来信与这里的读写走的是同一条路，不会互相覆盖。 */
+  const persist = useCallback(
+    (mut: (all: Record<string, ChatMsg[]>) => Record<string, ChatMsg[]>) => {
+      setLogs(writeSmsLogs(mut(loadSmsLogs())))
+    },
+    [],
+  )
+  const setThread = useCallback(
+    (id: string, up: (prev: ChatMsg[]) => ChatMsg[]) => {
+      persist((all) => ({ ...all, [id]: up(all[id] ?? []) }))
+    },
+    [persist],
+  )
+
+  /* 盘上的会话被别处改过（后台来信）→ 重新读回 */
+  const logVer = useSyncExternalStore(subscribeSmsLog, smsLogVersion)
+  useEffect(() => { setLogs(loadSmsLogs()) }, [logVer])
+
+  /* 任务列表：与「电话」同页的另一个页签 */
+  const taskVer = useSyncExternalStore(subscribeTasks, tasksVersion)
+  const tasks = useMemo(() => listTasks(), [taskVer])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -118,28 +99,22 @@ export function Tavern() {
 
   const metIds = useMemo(() => TAVERN_PERSONAS.map((p) => p.charId).filter((id) => isMet(id)), [isMet])
 
-  /** 选中某个联系人；若其暂无会话则落一句开场白 */
+  /** 选中某个线程（单聊 = 角色 id，群聊 = g:uuid）；单聊没有会话时落一句开场白 */
   const enter = useCallback(
-    (charId: string) => {
-      if (!isMet(charId)) {
+    (threadId: string) => {
+      if (!isGroupThread(threadId) && !isMet(threadId)) {
         push('warn', '尚未解锁', '需先在剧情中「遇见」该角色，方可发来第一条短信。')
         return
       }
-      setActiveId(charId)
+      setActiveId(threadId)
       setErr(null)
-      setLogs((prev) => {
-        if (prev[charId]) return prev
-        const meta = TAVERN_PERSONAS.find((p) => p.charId === charId)
-        const seed: ChatMsg = {
-          id: idFor(charId),
-          from: 'them',
-          text: meta?.greeting ?? '……你来了。',
-          time: clock(),
-        }
-        return { ...prev, [charId]: [seed] }
-      })
+      markRead(threadId)
+      if (isGroupThread(threadId)) return
+      setThread(threadId, (prev) => (prev.length ? prev : [{
+        id: idFor(threadId), from: 'them', text: greetingOf(threadId), time: clock(),
+      }]))
     },
-    [isMet, push],
+    [isMet, push, setThread],
   )
 
   // 初次渲染：若已有可聊角色，自动选第一位
@@ -147,16 +122,8 @@ export function Tavern() {
   useEffect(() => {
     if (inited.current) return
     inited.current = true
-    if (metIds.length > 0) {
-      setActiveId(metIds[0])
-      setLogs((prev) => {
-        const id = metIds[0]
-        if (prev[id]) return prev
-        const meta = TAVERN_PERSONAS.find((p) => p.charId === id)
-        const seed: ChatMsg = { id: idFor(id), from: 'them', text: meta?.greeting ?? '……你来了。', time: clock() }
-        return { ...prev, [id]: [seed] }
-      })
-    }
+    if (metIds.length > 0) enter(metIds[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metIds])
 
   /* 跨视图意图：由档案卡 / 出击小队等请求打开某联系人（未遇见则由 enter 提示解锁） */
@@ -170,9 +137,19 @@ export function Tavern() {
     if (TAVERN_PERSONAS.some((p) => p.charId === id)) enter(id)
   }, [smsRequest, clearSmsRequest, enter])
 
-  const activeChar = activeId ? charOf(activeId) : undefined
-  const activeMeta = activeId ? TAVERN_PERSONAS.find((p) => p.charId === activeId) : undefined
+  const activeGroup = activeId && isGroupThread(activeId)
+    ? groups.find((g) => g.id === activeId)
+    : undefined
+  const activeChar = activeId && !activeGroup ? charOf(activeId) : undefined
+  const activeMeta = activeId && !activeGroup
+    ? TAVERN_PERSONAS.find((p) => p.charId === activeId)
+    : undefined
   const activeLog = activeId ? logs[activeId] ?? [] : []
+  /** 群里某条发言的作者名（单聊直接取角色名） */
+  const whoOf = useCallback(
+    (m: ChatMsg): string => m.meta?.who ?? activeChar?.name ?? '群聊',
+    [activeChar],
+  )
 
   /**
    * 发送核心：对某联系人用给定历史跑一次回复（历史末端需为操作员发言）。
@@ -193,7 +170,7 @@ export function Tavern() {
       setBusy(true)
 
       // 世界书命中注入（仅放行已登记实体 / 已完成事件；失败静默）
-      const scanText = toTurns(log, 10).map((t) => t.content).join('\n')
+      const scanText = smsTurns(log, 10).map((x) => x.content).join('\n')
       let loreBlock = ''
       try {
         const books = await loadActiveBooks()
@@ -218,7 +195,7 @@ export function Tavern() {
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
         + smsBondRule(charId)
-      const messages: ChatTurn[] = [{ role: 'system', content: system }, ...toTurns(log)]
+      const messages: ChatTurn[] = [{ role: 'system', content: system }, ...smsTurns(log)]
 
       const ctrl = new AbortController()
       abortRef.current = ctrl
@@ -258,10 +235,7 @@ export function Tavern() {
         if (res.finishReason === 'length') {
           const shown = extractLiveDisplay(acc).trim()
           if (shown) {
-            setLogs((prev) => ({
-              ...prev,
-              [charId]: [...(prev[charId] ?? []), { id: idFor(charId), from: 'them', text: shown, time: clock() }],
-            }))
+            setThread(charId, (prev) => [...prev, { id: idFor(charId), from: 'them', text: shown, time: clock() }])
           }
           push('warn', '回复已达长度上限', '短信正文可能被截断，本回合未落地任何短信效果。', false)
           return
@@ -291,7 +265,7 @@ export function Tavern() {
             hasFx,
           },
         }
-        setLogs((prev) => ({ ...prev, [charId]: [...(prev[charId] ?? []), ai] }))
+        setThread(charId, (prev) => [...prev, ai])
 
         if (sum !== 0) {
           push('success', '短信效果', `${c.name} · 羁绊 ${sum > 0 ? '+' : ''}${sum}${bondNote(sum) ? ` · ${bondNote(sum)}` : ''}`, false)
@@ -305,10 +279,7 @@ export function Tavern() {
           const partial = extractLiveDisplay(acc).trim()
           setLive(null)
           if (partial) {
-            setLogs((prev) => ({
-              ...prev,
-              [charId]: [...(prev[charId] ?? []), { id: idFor(charId), from: 'them', text: partial, time: clock() }],
-            }))
+            setThread(charId, (prev) => [...prev, { id: idFor(charId), from: 'them', text: partial, time: clock() }])
           }
           return
         }
@@ -322,7 +293,162 @@ export function Tavern() {
         abortRef.current = null
       }
     },
-    [settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends],
+    [settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread],
+  )
+
+  /**
+   * 群聊发一轮：一次生成里让一到三位成员开口（提示词已交代格式）。
+   * 回复按「【角色名】」拆成一条条发言分别落库、各自带作者名；
+   * 轻量指令与单聊同一套过滤 —— flag 与托付照常落地，羁绊只认群成员、逐个按 ±3 收。
+   */
+  const fireGroup = useCallback(
+    async (groupId: string, log: ChatMsg[]) => {
+      const g = groups.find((x) => x.id === groupId)
+      if (!g || busy) return
+      const cfg = settings
+      if (!cfg || !isReady(cfg)) {
+        push('warn', '推演通道未配置', '请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来发消息。')
+        navigate('settings')
+        return
+      }
+      setErr(null)
+      setBusy(true)
+
+      const scanText = smsTurns(log, 10, (m) => m.meta?.who).map((x) => x.content).join('\n')
+      let loreBlock = ''
+      try {
+        const books = await loadActiveBooks()
+        if (books.length) {
+          loreBlock = buildLoreContext(books, {
+            scanText,
+            contextText: nameOf(g.charIds),
+            gate: allowGateForTavern({ epDone, ends: world.ends }),
+          })
+        }
+      } catch {
+        loreBlock = ''
+      }
+
+      const preset = buildPresetContext(readActivePreset(), scanText)
+      const bonds = g.charIds.map((id) => `${charOf(id)?.name ?? id} ${bondNow(id)}`).join(' · ')
+      const system =
+        groupSystemPrompt(g.charIds, g.name, operatorName, bonds, '各自所在的日常，此刻同时看着这一屏')
+        + (preset.pre ? `
+
+${preset.pre}` : '')
+        + (loreBlock ? `
+
+${loreBlock}` : '')
+        + (preset.post ? `
+
+${preset.post}` : '')
+        + smsBondRule(g.charIds[0])
+      const messages: ChatTurn[] = [{ role: 'system', content: system }, ...smsTurns(log, 12, (m) => m.meta?.who)]
+
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+      let acc = ''
+      let settled = false
+      try {
+        const res: StreamResult = cfg.stream === false
+          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500 }) }
+          : await chatCompletionStream(cfg, messages, {
+            signal: ctrl.signal,
+            maxTokens: cfg.maxTokens || 1500,
+            onDelta: (chunk) => {
+              if (settled || !chunk) return
+              acc += chunk
+              setLive({ charId: groupId, text: acc })
+            },
+          })
+        settled = true
+        setLive(null)
+
+        const reply = (res.text ?? '').trim()
+        if (!reply) {
+          setErr('收发中断：通道未返回任何内容。')
+          push('danger', '短信收发失败', '通道未返回任何内容。', false)
+          return
+        }
+        const parsed = parseDirectorReply(reply)
+        const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim() || reply
+        const lines = parseGroupReply(shown, g.charIds)
+
+        // 轻量指令：flag 与托付照常；羁绊只认群成员，逐个按 ±3 收
+        const sd = smsDirective(parsed.directive, '')
+        const bondFx: { name: string; delta: number }[] = []
+        for (const b of parsed.directive?.bond ?? []) {
+          if (!g.charIds.includes(b.char as CharId)) continue
+          const delta = Math.max(-3, Math.min(3, Math.round(b.delta)))
+          if (!delta) continue
+          bumpBond(b.char as CharId, delta)
+          bondFx.push({ name: charOf(b.char)?.name ?? b.char, delta })
+        }
+        const flags = Object.entries(sd.flag ?? {})
+        for (const [k, v] of flags) setFlag(k, v)
+        const newTasks = parsed.directive?.task ?? []
+        const speakerId = lines.find((l) => l.who)?.who
+        const from = (speakerId && g.charIds.find((id) => charOf(id)?.name === speakerId)) || g.charIds[0]
+        for (const task of newTasks) addTask(task.title, { detail: task.detail, from })
+
+        const hasFx = bondFx.length > 0 || flags.length > 0 || newTasks.length > 0
+        for (const line of lines) {
+          setThread(groupId, (prev) => [...prev, {
+            id: idFor(groupId),
+            from: 'them',
+            text: line.text,
+            time: clock(),
+            ...(line.who ? { meta: { who: line.who } } : {}),
+          }])
+        }
+        // 世界效果记在最后一条上：决定这条回复能不能被「重写」
+        if (hasFx) {
+          setThread(groupId, (prev) => {
+            const next = prev.slice()
+            const last = next[next.length - 1]
+            if (last && last.from === 'them') {
+              next[next.length - 1] = { ...last, meta: { ...(last.meta ?? {}), hasFx: true } }
+            }
+            return next
+          })
+        }
+
+        const fxParts: string[] = []
+        if (bondFx.length) fxParts.push(bondFx.map((b) => `${b.name} ${b.delta > 0 ? '+' : ''}${b.delta}`).join(' · '))
+        if (flags.length) fxParts.push(`变量更新：${flags.map(([k]) => k).join('、')}`)
+        if (newTasks.length) fxParts.push(`托付 ${newTasks.length} 件`)
+        if (fxParts.length) push('info', `群聊 · ${g.name}`, fxParts.join(' · '), false)
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') {
+          settled = true
+          const partial = extractLiveDisplay(acc).trim()
+          setLive(null)
+          for (const line of parseGroupReply(partial, g.charIds)) {
+            setThread(groupId, (prev) => [...prev, {
+              id: idFor(groupId), from: 'them', text: line.text, time: clock(),
+              ...(line.who ? { meta: { who: line.who } } : {}),
+            }])
+          }
+          return
+        }
+        settled = true
+        setLive(null)
+        const msg = e instanceof Error ? e.message : String(e)
+        setErr(`收发中断：${msg}`)
+        push('danger', '短信收发失败', msg, false)
+      } finally {
+        setBusy(false)
+        abortRef.current = null
+      }
+    },
+    [settings, busy, groups, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread],
+  )
+
+  /** 发一轮：单聊与群聊各走各的生成路径，界面只认这一个入口 */
+  const runTurn = useCallback(
+    (threadId: string, log: ChatMsg[]) =>
+      isGroupThread(threadId) ? fireGroup(threadId, log) : fire(threadId, log),
+    [fire, fireGroup],
   )
 
   const send = async () => {
@@ -332,7 +458,7 @@ export function Tavern() {
     const mine: ChatMsg = { id: idFor(activeId), from: 'user', text, time: clock() }
     const nextLog = [...activeLog, mine]
     setLogs((prev) => ({ ...prev, [activeId]: nextLog }))
-    await fire(activeId, nextLog)
+    await runTurn(activeId, nextLog)
   }
 
   /** 重写末条回复（仅当末条为角色回复、上一条是操作员发言、且该回复无世界效果） */
@@ -343,7 +469,7 @@ export function Tavern() {
     const trimmed = activeLog.slice(0, i)
     setLogs((lg) => ({ ...lg, [activeId]: (lg[activeId] ?? []).slice(0, i) }))
     setErr(null)
-    await fire(activeId, trimmed)
+    await runTurn(activeId, trimmed)
   }
 
   /** 点击「接续选项」→ 当作操作员发言发出 */
@@ -353,7 +479,7 @@ export function Tavern() {
     const mine: ChatMsg = { id: idFor(activeId), from: 'user', text: t, time: clock() }
     const nextLog = [...activeLog, mine]
     setLogs((prev) => ({ ...prev, [activeId]: nextLog }))
-    await fire(activeId, nextLog)
+    await runTurn(activeId, nextLog)
   }
 
   const stop = () => {
@@ -363,14 +489,25 @@ export function Tavern() {
 
   const clearThread = () => {
     if (!activeId) return
-    setLogs((prev) => {
-      const next = { ...prev }
-      delete next[activeId]
+    const id = activeId
+    if (isGroupThread(id)) {
+      const next = groups.filter((g) => g.id !== id)
+      setGroups(next)
+      storeGroups(next)
+      setActiveId(null)
+    }
+    persist((all) => {
+      const next = { ...all }
+      delete next[id]
       return next
     })
     setErr(null)
-    push('info', '本线程已清空', '下次点入会重新落一句开场白。', false)
+    push('info', isGroupThread(id) ? '本群已解散' : '本线程已清空', isGroupThread(id) ? '群聊记录一并清除。' : '下次点入会重新落一句开场白。', false)
   }
+
+  /** 会话页签上的未读数：后台来信也会让它立刻变 */
+  const unreadTotal = useSyncExternalStore(subscribeUnread, totalUnread)
+  const pending = tasks.filter((t) => !t.done).length
 
   const linkState = !settings
     ? '读取本地设置…'
@@ -399,55 +536,160 @@ export function Tavern() {
 
       <div className={comm.wrap} style={{ gridTemplateColumns: '300px 1fr' }}>
         {/* 联系人 */}
+                {/* 电话左栏：会话 / 任务 两个页签 */}
         <aside className={`panel ${comm.contactList}`}>
-          <div className="panel__head">
-            <span className="panel__title">联系人 <span className="slash" /></span>
-            <span className="muted tiny" style={{ marginLeft: 'auto' }}>{metIds.length}/{TAVERN_PERSONAS.length}</span>
+          <div className={css.tabs}>
+            <button
+              className={`${css.tab} ${tab === 'chat' ? css.tabOn : ''}`}
+              onClick={() => setTab('chat')}
+              data-sms-tab="chat"
+            >
+              会话{unreadTotal > 0 ? <i className={css.tabDot}>{unreadTotal}</i> : null}
+            </button>
+            <button
+              className={`${css.tab} ${tab === 'tasks' ? css.tabOn : ''}`}
+              onClick={() => setTab('tasks')}
+              data-sms-tab="tasks"
+            >
+              <ListChecks size={13} weight="bold" /> 任务{pending > 0 ? <i className={css.tabDot}>{pending}</i> : null}
+            </button>
           </div>
-          <div className={comm.listBody}>
-            {TAVN_ALL.map((pid) => {
-              const c = charOf(pid)
-              const meta = TAVERN_PERSONAS.find((p) => p.charId === pid)
-              if (!c || !meta) return null
-              const met = metIds.includes(pid)
-              const bond = bondNow(pid)
-              const isActive = activeId === pid
-              return (
-                <button
-                  key={pid}
-                  className={`${comm.contact} ${isActive ? comm.isActive : ''}`}
-                  onClick={() => enter(pid)}
-                  style={{ opacity: met ? 1 : 0.55 }}
-                >
-                  <span className="glyph" style={{ '--g': c.hue, width: 40, height: 40 }}>
-                    <span>{c.sigil}</span>
-                  </span>
-                  <span className={comm.contactMain}>
-                    <span className={css.castName}>
-                      {c.name}
-                      {!met ? <Lock size={12} weight="bold" /> : null}
-                    </span>
-                    {met ? (
-                      <>
-                        <span className={css.castSub}>{c.epithet}</span>
-                        <span className={css.castSub} style={{ color: 'var(--ink-faint)' }}>
-                          {bondName(bond, { gender: genderOf(pid) })} {bond}/100
+
+          {tab === 'chat' ? (
+            <>
+              <div className={comm.listBody}>
+                {TAVN_ALL.map((pid) => {
+                  const c = charOf(pid)
+                  const meta = TAVERN_PERSONAS.find((p) => p.charId === pid)
+                  if (!c || !meta) return null
+                  const met = metIds.includes(pid)
+                  const bond = bondNow(pid)
+                  const isActive = activeId === pid
+                  const un = unreadOf(pid)
+                  return (
+                    <button
+                      key={pid}
+                      className={`${comm.contact} ${isActive ? comm.isActive : ''}`}
+                      onClick={() => enter(pid)}
+                      style={{ opacity: met ? 1 : 0.55 }}
+                    >
+                      <span className="glyph" style={{ '--g': c.hue, width: 40, height: 40 }}>
+                        <span>{c.sigil}</span>
+                      </span>
+                      <span className={comm.contactMain}>
+                        <span className={css.castName}>
+                          {c.name}
+                          {!met ? <Lock size={12} weight="bold" /> : null}
+                          {un > 0 ? <i className={css.unreadDot}>{un > 99 ? '99+' : un}</i> : null}
                         </span>
-                      </>
-                    ) : (
-                      <span className={css.castLock}>未遇见 · 待剧情解锁</span>
-                    )}
+                        {met ? (
+                          <>
+                            <span className={css.castSub}>{c.epithet}</span>
+                            <span className={css.castSub} style={{ color: 'var(--ink-faint)' }}>
+                              {bondName(bond, { gender: genderOf(pid) })} {bond}/100
+                            </span>
+                          </>
+                        ) : (
+                          <span className={css.castLock}>未遇见 · 待剧情解锁</span>
+                        )}
+                      </span>
+                    </button>
+                  )
+                })}
+
+                <div className={css.sectHead}>
+                  <span><UsersThree size={13} weight="bold" /> 群聊</span>
+                  <button className={css.sectBtn} onClick={() => { setGroupPick([]); setGroupName('') }} data-sms-newgroup>
+                    <Plus size={12} weight="bold" /> 新建
+                  </button>
+                </div>
+                {groups.length === 0 ? (
+                  <span className="muted tiny" style={{ padding: '2px 8px 8px', lineHeight: 1.7, color: 'var(--ink-faint)' }}>
+                    把两三位已遇见的角色拉进一个群，回执会按「谁在说话」分行落成各自的发言。
                   </span>
-                </button>
-              )
-            })}
-            <span className="muted tiny" style={{ padding: '6px 8px', lineHeight: 1.7, color: 'var(--ink-faint)' }}>
-              回复由外部推演通道生成，非内置脚本。请勿在其中输入真实敏感信息。
-            </span>
-          </div>
-          <div className="panel__body" style={{ padding: '10px 12px', borderTop: '1px solid var(--line)' }}>
-            <span className="tiny muted">联系人按「遇见解锁」变量点亮，随剧情推进增加。</span>
-          </div>
+                ) : null}
+                {groups.map((g) => {
+                  const un = unreadOf(g.id)
+                  return (
+                    <button
+                      key={g.id}
+                      className={`${comm.contact} ${activeId === g.id ? comm.isActive : ''}`}
+                      onClick={() => enter(g.id)}
+                    >
+                      <span className="glyph" style={{ '--g': 205, width: 40, height: 40 }}>
+                        <span>群</span>
+                      </span>
+                      <span className={comm.contactMain}>
+                        <span className={css.castName}>
+                          {g.name}
+                          {un > 0 ? <i className={css.unreadDot}>{un > 99 ? '99+' : un}</i> : null}
+                        </span>
+                        <span className={css.castSub}>
+                          {g.charIds.map((id) => charOf(id)?.name ?? id).join('、')}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+
+                <span className="muted tiny" style={{ padding: '6px 8px', lineHeight: 1.7, color: 'var(--ink-faint)' }}>
+                  回复由外部推演通道生成，非内置脚本。请勿在其中输入真实敏感信息。
+                </span>
+              </div>
+              <div className="panel__body" style={{ padding: '10px 12px', borderTop: '1px solid var(--line)' }}>
+                <span className="tiny muted">联系人按「遇见解锁」变量点亮；没在眼前这段事件里的角色，也会自己发消息过来。</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="panel__head">
+                <span className="panel__title">托付 <span className="slash" /></span>
+                <span className="muted tiny" style={{ marginLeft: 'auto' }}>{pending} 件未完成</span>
+              </div>
+              <div className={comm.listBody} data-sms-tasks>
+                <input
+                  className="field"
+                  style={{ margin: '2px 8px 6px', width: 'auto' }}
+                  placeholder="添一件要办的事…（Enter 记下）"
+                  value={taskDraft}
+                  onChange={(e) => setTaskDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    if (taskDraft.trim()) addTask(taskDraft)
+                    setTaskDraft('')
+                  }}
+                />
+                {tasks.length === 0 ? (
+                  <span className="muted tiny" style={{ padding: '2px 8px', lineHeight: 1.7, color: 'var(--ink-faint)' }}>
+                    还没有人托付你什么。角色在短信里正经交代要办的事，会落在这里 —— 闲聊与问候不会。
+                  </span>
+                ) : null}
+                {tasks.map((t) => (
+                  <div key={t.id} className={`${css.taskRow} ${t.done ? css.taskDone : ''}`} data-sms-task>
+                    <button
+                      className={css.taskBox}
+                      onClick={() => toggleTask(t.id)}
+                      aria-label={t.done ? '标为未完成' : '标为已完成'}
+                    >
+                      {t.done ? <Check size={12} weight="bold" /> : null}
+                    </button>
+                    <span className={css.taskMain}>
+                      <b>{t.title}</b>
+                      {t.detail ? <span className={css.taskDetail}>{t.detail}</span> : null}
+                      {t.from ? <span className={css.taskFrom}>{charOf(t.from)?.name ?? t.from} 交代</span> : null}
+                    </span>
+                    <button className={css.taskDel} onClick={() => removeTask(t.id)} aria-label="删除这条">
+                      <Trash size={13} weight="bold" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="panel__body" style={{ padding: '10px 12px', borderTop: '1px solid var(--line)' }}>
+                <span className="tiny muted">这一页只管手边的小事，不进世界状态；主线仍看「任务简报」。</span>
+              </div>
+            </>
+          )}
         </aside>
 
         {/* 对谈区 */}
@@ -455,14 +697,23 @@ export function Tavern() {
           {activeId && activeChar && activeMeta ? (
             <>
               <div className={comm.chatHead}>
-                <span className="glyph" style={{ '--g': activeChar.hue, width: 44, height: 44 }}>
-                  <span>{activeChar.sigil}</span>
+                <span className="glyph" style={{ '--g': activeGroup ? 205 : activeChar.hue, width: 44, height: 44 }}>
+                  <span>{activeGroup ? '群' : activeChar.sigil}</span>
                 </span>
                 <div className={comm.chatHeadMeta}>
-                  <b>{activeChar.name} <span className={css.scenarioTag}>· 在线</span></b>
-                  <small>{activeMeta.scenario}</small>
+                  <b>
+                    {activeGroup ? activeGroup.name : activeChar.name}{' '}
+                    <span className={css.scenarioTag}>· 在线</span>
+                  </b>
+                  <small>
+                    {activeGroup
+                      ? activeGroup.charIds.map((id) => charOf(id)?.name ?? id).join('、')
+                      : activeMeta.scenario}
+                  </small>
                 </div>
-                <span className={comm.channelTag}>SMS · {activeChar.id.toUpperCase()}</span>
+                <span className={comm.channelTag}>
+                  {activeGroup ? 'GROUP' : 'SMS'} · {activeGroup ? activeGroup.charIds.length : activeChar.id.toUpperCase()}
+                </span>
                 <button className="btn btn--ghost" style={{ fontSize: 11, padding: '6px 10px' }} onClick={clearThread} title="清空本线程">
                   <Eraser size={13} weight="bold" /> 清空
                 </button>
@@ -473,7 +724,7 @@ export function Tavern() {
                 {activeLog.map((m, i) => (
                   <Fragment key={m.id}>
                     <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`}>
-                      <span className={comm.msgAuthor}>{m.from === 'them' ? activeChar.name : operatorName}</span>
+                      <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
                       <span className={comm.bubble}><Linkified text={m.text} /></span>
                       <span className={comm.msgTime}>{m.time}</span>
                     </div>
@@ -522,7 +773,7 @@ export function Tavern() {
                 ))}
                 {live && live.charId === activeId && live.text ? (
                   <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
-                    <span className={comm.msgAuthor}>{activeChar.name}</span>
+                    <span className={comm.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
                     <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
                     <span className={comm.msgTime}>生成中…</span>
                   </div>
@@ -539,7 +790,7 @@ export function Tavern() {
               <div className={comm.composer}>
                 <input
                   className="field"
-                  placeholder={`给 ${activeChar.name} 发消息…（Enter 发送）`}
+                  placeholder={`${activeGroup ? `在「${activeGroup.name}」里说…` : `给 ${activeChar.name} 发消息…`}（Enter 发送）`}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
@@ -577,6 +828,79 @@ export function Tavern() {
           )}
         </section>
       </div>
+
+      {groupPick !== null ? (
+        <div className={css.modal} data-sms-groupmodal>
+          <div className={css.modalCard}>
+            <div className={css.modalHead}>
+              <b>新建群聊</b>
+              <button className={css.modalX} onClick={() => setGroupPick(null)} aria-label="关闭">
+                <X size={14} weight="bold" />
+              </button>
+            </div>
+            <div className={css.modalNote}>
+              只列已「遇见」的角色。群里至少两位，回执会让其中一到三位开口。
+            </div>
+            <input
+              className="field"
+              placeholder="群名（留空就按成员名拼）"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+            />
+            <div className={css.pickList}>
+              {metIds.length === 0 ? (
+                <span className="muted tiny" style={{ lineHeight: 1.7 }}>
+                  还没有可拉进群的角色 —— 先去剧情里遇见几位。
+                </span>
+              ) : null}
+              {metIds.map((id) => {
+                const c = charOf(id)
+                if (!c) return null
+                const on = groupPick.includes(id)
+                return (
+                  <button
+                    key={id}
+                    className={`${css.pickRow} ${on ? css.pickOn : ''}`}
+                    onClick={() =>
+                      setGroupPick((prev) =>
+                        (prev ?? []).includes(id) ? (prev ?? []).filter((x) => x !== id) : [...(prev ?? []), id],
+                      )
+                    }
+                  >
+                    <span className="glyph" style={{ '--g': c.hue, width: 26, height: 26 }}>
+                      <span>{c.sigil}</span>
+                    </span>
+                    <span>{c.name}</span>
+                    {on ? <Check size={13} weight="bold" /> : null}
+                  </button>
+                )
+              })}
+            </div>
+            <div className={css.modalFoot}>
+              <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setGroupPick(null)}>
+                取消
+              </button>
+              <button
+                className="btn btn--primary"
+                style={{ fontSize: 12 }}
+                disabled={groupPick.length < 2}
+                onClick={() => {
+                  const g = makeGroup(groupPick as CharId[], groupName)
+                  const next = [...groups, g]
+                  setGroups(next)
+                  storeGroups(next)
+                  setGroupPick(null)
+                  setGroupName('')
+                  enter(g.id)
+                  push('info', '群聊已建立', `${g.name} · ${g.charIds.length} 人。第一句由你起头。`, false)
+                }}
+              >
+                建群（{groupPick.length}）
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

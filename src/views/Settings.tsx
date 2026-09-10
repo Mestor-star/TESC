@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, SlidersHorizontal, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
+import { ArrowClockwise, ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, SlidersHorizontal, SpeakerHigh, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
 import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
 
@@ -12,8 +12,86 @@ import type { Scheme, SchemePart } from '../lib/schemes'
 import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
 import type { SillyTavernLorebookExport } from '../lib/tavernlike/types'
+import { AUDIO_DEFAULTS, setAudio, setBeds, sfx, useAudioSettings } from '../lib/audio'
 
 import css from './Settings.module.css'
+
+/**
+ * 声音。
+ * 三个滑块管的是总音量 / 背景音 / 音效；底噪与音效全部现场合成，不占存储。
+ * 设置只落在本终端，不随存档走。
+ */
+function AudioPanel() {
+  const a = useAudioSettings()
+  const rows: Array<{ k: 'master' | 'music' | 'sfx'; cn: string; en: string; note: string }> = [
+    { k: 'master', cn: '主音量', en: 'MASTER', note: '总开关 · 静音时归零但下方两个值原样保留' },
+    { k: 'music', cn: '背景音', en: 'MUSIC', note: '各模块各有自己的一段底噪，换页即换' },
+    { k: 'sfx', cn: '音效', en: 'SFX', note: '按钮、讯息推送与作战演出' },
+  ]
+  return (
+    <section className="panel" style={{ marginBottom: 16 }} data-audio-panel>
+      <div className="panel__head">
+        <span className="panel__title"><SpeakerHigh size={15} weight="bold" /> 声音</span>
+        <span className="muted tiny" style={{ marginLeft: 'auto' }}>AUDIO / LOCAL</span>
+      </div>
+      <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className={css.note}>
+          <b>底噪与音效都是现场合成的，不占存储。</b><br />
+          设置只落在本终端（键名 zts-audio:v1）。切到别的标签页时总音量会自动压下去，回来再抬起来。
+          浏览器不许没有操作就出声 —— 所以按下第一个按钮之后才会有动静。
+        </div>
+        {/* 底噪是「要不要」的一档，不是音量的一档：默认关着，想听才开 */}
+        <label className={css.bedSw} data-audio-bed>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={a.beds}
+            className={`btn ${a.beds ? '' : 'btn--ghost'}`}
+            style={{ fontSize: 12 }}
+            onClick={() => setBeds(!a.beds)}
+          >
+            {a.beds ? '底噪：开' : '底噪：关'}
+          </button>
+          <span className="tiny muted">
+            各模块那段会自己走的垫乐。默认是关的 —— 不替你做主要不要听音乐。
+            关掉它，音效（按钮、作战演出）不受影响。
+          </span>
+        </label>
+        <div className={css.volGrid}>
+          {rows.map((r) => (
+            <label key={r.k} className={css.vol} data-audio-slider={r.k}>
+              <span className={css.volTop}>
+                <b>{r.cn}</b>
+                <i className="tiny muted">{r.en}</i>
+                <span className="num">{Math.round(a[r.k] * 100)}</span>
+              </span>
+              <input
+                type="range" min={0} max={100} step={1}
+                value={Math.round(a[r.k] * 100)}
+                onChange={(e) => setAudio({ [r.k]: Number(e.target.value) / 100 })}
+              />
+              <span className={css.volNote}>{r.note}</span>
+            </label>
+          ))}
+        </div>
+        <div className={css.actions}>
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} data-audio-mute onClick={() => setAudio({ muted: !a.muted })}>
+            {a.muted ? '取消静音' : '静音'}
+          </button>
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} data-audio-test onClick={() => sfx('hit')}>
+            试听一声
+          </button>
+          <button
+            className="btn btn--ghost" style={{ fontSize: 12 }}
+            onClick={() => { setAudio({ ...AUDIO_DEFAULTS }); setBeds(false) }}
+          >
+            恢复默认
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 /** 读取本地 .json 文件（可多选）为待导入对象；JSON 解析失败标 null */
 function pickJsons(multiple: boolean): Promise<Array<{ fileName: string; json: unknown }>> {
@@ -224,28 +302,37 @@ export function Settings() {
   /* —— 导入 ChatPreset：映射为方案并套用两通道（baseUrl/密钥沿用现值） —— */
   const importChatPreset = async () => {
     if (!cfgs) return
-    const data = await readJsonFile()
-    const r = parseChatPreset(data, cfgs)
-    if (!r.ok) {
-      push('warn', '无法识别为 ChatPreset', r.warn, false)
-      return
+    try {
+      const picked = await readJsonFile()
+      if (picked === null) {
+        push('warn', '未能读取文件', '所选文件不是可解析的 JSON。', false)
+        return
+      }
+      const r = parseChatPreset(picked.json, cfgs, picked.name)
+      if (!r.ok) {
+        push('warn', '无法识别为 ChatPreset', r.warn, false)
+        return
+      }
+      const { scheme, model, note } = r
+      scheme.activeLoreIds = await lore.getActiveLorebookIds()
+      scheme.loreEntryOff = await lore.snapshotEntryOff(scheme.activeLoreIds)
+      const next = [...schemes, scheme]
+      setSchemes(next)
+      storeSchemes(next)
+      setSchemeSel(scheme.id)
+      let cfg = await applySchemeTo(cfgs, scheme)
+      // 预设里的流式开关（酒馆 stream_openai）一并落到两通道
+      if (typeof r.stream === 'boolean') {
+        cfg = { main: { ...cfg.main, stream: r.stream }, sms: { ...cfg.sms, stream: r.stream } }
+        await Promise.all([saveProfile('main', cfg.main), saveProfile('sms', cfg.sms)])
+      }
+      setCfgs(cfg)
+      const streamNote = typeof r.stream === 'boolean' ? ` · 流式${r.stream ? '开' : '关'}` : ''
+      push('success', '已导入并应用 ChatPreset', `${scheme.name}${model ? ` · ${model}` : ''}${note ? `（${note}）` : ''}${streamNote}`, false)
+    } catch (e) {
+      // 兜底：任何一步抛错都要有回执 —— 静默失败在这里等于「点了没反应」
+      push('danger', '导入失败', e instanceof Error ? e.message : String(e), false)
     }
-    const { scheme, model, note } = r
-    scheme.activeLoreIds = await lore.getActiveLorebookIds()
-    scheme.loreEntryOff = await lore.snapshotEntryOff(scheme.activeLoreIds)
-    const next = [...schemes, scheme]
-    setSchemes(next)
-    storeSchemes(next)
-    setSchemeSel(scheme.id)
-    let cfg = await applySchemeTo(cfgs, scheme)
-    // 预设里的流式开关（酒馆 stream_openai）一并落到两通道
-    if (typeof r.stream === 'boolean') {
-      cfg = { main: { ...cfg.main, stream: r.stream }, sms: { ...cfg.sms, stream: r.stream } }
-      await Promise.all([saveProfile('main', cfg.main), saveProfile('sms', cfg.sms)])
-    }
-    setCfgs(cfg)
-    const streamNote = typeof r.stream === 'boolean' ? ` · 流式${r.stream ? '开' : '关'}` : ''
-    push('success', '已导入并应用 ChatPreset', `${scheme.name} · ${model}${note ? `（${note}）` : ''}${streamNote}`, false)
   }
 
   /* ============ 世界书数据管理 + 方案 ============ */
@@ -263,7 +350,8 @@ export function Settings() {
   const doRestoreLore = async () => {
     if (confirmAct !== 'restore') { setConfirmAct('restore'); return }
     setConfirmAct(null)
-    const data = await readJsonFile()
+    const picked = await readJsonFile()
+    const data = picked === null ? null : picked.json
     if (!data || (data as { kind?: unknown }).kind !== 'zts-lore-backup') {
       push('warn', '无法识别', '请选择此前导出的「世界书整库备份」。', false)
       return
@@ -338,8 +426,8 @@ export function Settings() {
   }
 
   const importScheme = async () => {
-    const data = await readJsonFile()
-    const s = parseSchemeFile(data)
+    const picked = await readJsonFile()
+    const s = parseSchemeFile(picked === null ? null : picked.json)
     if (!s) {
       push('warn', '无法识别', '所选文件不是方案 JSON（需含名称与 main/sms 参数）。', false)
       return
@@ -533,6 +621,8 @@ export function Settings() {
         {card('main')}
         {card('sms')}
       </div>
+
+      <AudioPanel />
 
       {/* 世界书数据管理与方案 */}
       <section className="panel" style={{ marginBottom: 16 }}>

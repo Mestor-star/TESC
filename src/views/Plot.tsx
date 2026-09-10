@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, Key } from 'react'
-import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, UploadSimple } from '@phosphor-icons/react'
+import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
@@ -23,6 +23,7 @@ import type { BattleRecord, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { Battle } from './Battle'
 import { recentBattleContext } from '../lib/battle/narrate'
+import { narrateStorylog } from '../lib/battle/storylog'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
@@ -31,7 +32,7 @@ import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
 import { activePresetId } from '../lib/preset'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
-import { buildPresetContext, readActivePreset } from '../lib/preset'
+import { buildPresetContext, prefillTurns, readActivePrefill, readActivePreset } from '../lib/preset'
 import { splitSpeech } from '../lib/dialogue'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -97,7 +98,19 @@ function loadLogs(): Record<string, ChatMsg[]> {
     const raw = localStorage.getItem(LOG_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw) as Record<string, ChatMsg[]>
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    if (!parsed || typeof parsed !== 'object') return {}
+    /* 读的时候顺手过一遍展示清洗：清洗规则是后加的，旧记录里还留着那时漏出来的
+       <dream_*> 一类标签与代码围栏。只动模型写的那些（from==='them'），
+       开场白是原文、观测者自己的话更不该被改写。 */
+    for (const list of Object.values(parsed)) {
+      if (!Array.isArray(list)) continue
+      for (const m of list) {
+        if (!m || m.from !== 'them' || m.meta?.opening || m.meta?.battle) continue
+        const clean = extractLiveDisplay(m.text)
+        if (clean && clean !== m.text) m.text = clean
+      }
+    }
+    return parsed
   } catch {
     return {}
   }
@@ -106,6 +119,26 @@ function loadLogs(): Record<string, ChatMsg[]> {
 function idFor(): string {
   return `${Date.now().toString(36)}::${Math.random().toString(36).slice(2, 6)}`
 }
+
+/**
+ * 后台推演：正文一律经这里落盘。
+ * 观测者切去别的模块时本视图已卸载，setLogs 变成空操作 —— 但这一句仍把模型返回的
+ * 正文写进本地会话，回到剧情推进时 loadLogs() 自然读得回来，这一回合不会白跑。
+ * 先落盘再回写状态（以存储为准），免得「卸载期间写进去的消息」被手上的旧 state 盖掉。
+ */
+function persistMsg(evId: string, m: ChatMsg): Record<string, ChatMsg[]> {
+  const next = { ...loadLogs() }
+  next[evId] = [...(next[evId] ?? []), m]
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(next))
+  } catch {
+    /* 隐私模式下降级为仅内存 */
+  }
+  return next
+}
+
+/** 当前挂载中的剧情推进视图数：0 = 观测者不在本页，这一回合是在后台跑完的 */
+let plotMounts = 0
 
 /** 剧情会话历史（最近 N 条）→ 模型消息 */
 function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
@@ -148,6 +181,12 @@ export function Plot() {
     records, requestProfile,
   } = useTerminal()
 
+  /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
+  const bondOfSquad = useCallback(
+    (ids: string[]) => Object.fromEntries(ids.map((id) => [id, bondNow(id)])),
+    [bondNow],
+  )
+
   const [cfgMain, setCfgMain] = useState<ApiSettings | null | undefined>(undefined)
   const [mode, setMode] = useState<'online' | 'offline'>('online')
   const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadLogs)
@@ -162,6 +201,15 @@ export function Plot() {
   const [concluded, setConcluded] = useState<{ evId: string; title: string; digest: string; diverged: boolean } | null>(null)
   /* —— 剧情交战：指令里带 battle 时，按现场角色与敌人开打 —— */
   const [plotBattle, setPlotBattle] = useState<{ mission: Mission; squad: string[] } | null>(null)
+  /**
+   * 正文里出现的交战。
+   * 不自动接管屏幕 —— 先落成一个「进入战斗」按钮，由操作员决定什么时候打。
+   * 这一格必须**打赢**才走得下去：撤退或战败回到正文时按钮还在，
+   * 「进入下一事件」会拦下来。带的这份编成就是现场那几个人，不能另叫别人来。
+   */
+  const [pendingBattle, setPendingBattle] = useState<{
+    evId: string; name: string; mission: Mission; squad: string[]
+  } | null>(null)
   const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
   const [growth, setGrowth] = useState<Record<string, number>>({})
   const [coin, setCoin] = useState(0)
@@ -267,7 +315,13 @@ export function Plot() {
   }, [logs, busy, focusEv?.id])
 
   const appendMsg = useCallback((evId: string, m: ChatMsg) => {
-    setLogs((prev) => ({ ...prev, [evId]: [...(prev[evId] ?? []), m] }))
+    setLogs(persistMsg(evId, m))
+  }, [])
+
+  /* 记一份在场与否：不在场时跑完的回合，收口要另外报一声（否则观测者以为它中断了） */
+  useEffect(() => {
+    plotMounts += 1
+    return () => { plotMounts -= 1 }
   }, [])
 
   /** 指令落地 + 结算：写变量、toast；eventDone→标记「已收束待手动推进」（正文停留，点按钮才写记录） */
@@ -303,8 +357,9 @@ export function Plot() {
         const want = (d.battle.squad ?? []).filter((id) => isMet(id))
         const squad = want.length ? want.slice(0, 4) : PERSON_IDS.filter((id) => isMet(id)).slice(0, 4)
         if (squad.length) {
-          setPlotBattle({ mission: battleMissionOf(d.battle, evId), squad })
-          push('danger', '交战', `${d.battle.name} 出现在现场 —— 由在场的 ${squad.length} 名成员应敌。`, false)
+          // 落成待战，而不是当场开打：点「进入战斗」才进；打赢了本段才继续
+          setPendingBattle({ evId, name: d.battle.name, mission: battleMissionOf(d.battle, evId), squad })
+          push('danger', '交战', `${d.battle.name} 出现在现场 —— 由在场的 ${squad.length} 名成员应敌。点「进入战斗」开始。`, false)
         } else {
           push('warn', '无可应敌者', `${d.battle.name} 出现在现场，但此刻没有可派遣的成员。`, false)
         }
@@ -374,6 +429,10 @@ export function Plot() {
       const base = toTurns(baseOverride ?? logs[evId])
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
       if (userMsg) messages.push({ role: 'user', content: userMsg })
+      // 预填充（酒馆的 assistant_prefill）：先替模型摆个开头，它顺着这句往下写。
+      // 结尾挂一条 assistant 消息是标准路子；预填本身也要先上屏，否则界面像吞了半句。
+      const prefill = readActivePrefill()
+      const outbox = prefillTurns(messages, prefill)
 
       // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）。
       // 事件衔接回合（opts.long）放宽预算——衔接文本「可以长」。
@@ -386,14 +445,14 @@ export function Plot() {
           abortRef.current = ctrl
           // 流式：途中只累积原文并以无副作用投影上屏活气泡；
           // 收尾（或长度上限/中断）才落正式消息，指令只在完整收口时落地一次。
-          let acc = ''
+          let acc = prefill
           let settled = false
           try {
             const budget = attempt === 1 ? turnBudget : Math.max(5000, Math.round(turnBudget * 1.8))
             // 流式开关（终端设置 · 主线剧情通道）：关掉即整段接收，后续解析路径完全一致
             const res: StreamResult = cfgMain!.stream === false
-              ? { text: await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: budget }) }
-              : await chatCompletionStream(cfgMain!, messages, {
+              ? { text: await chatCompletion(cfgMain!, outbox, { signal: ctrl.signal, maxTokens: budget }) }
+              : await chatCompletionStream(cfgMain!, outbox, {
                 signal: ctrl.signal,
                 maxTokens: budget,
                 onDelta: (chunk) => {
@@ -405,7 +464,8 @@ export function Plot() {
             settled = true
             setLive(null)
 
-            const full = (res.text ?? '').trim()
+            // 预填那一截也算正文的一部分 —— 模型只写后半句，拼回去才是完整的一条
+            const full = (prefill + (res.text ?? '')).trim()
 
             // 空答 / 拒答诊断；若是思考把预算吃光，先自动重试一次
             if (!full) {
@@ -419,7 +479,8 @@ export function Plot() {
                   : '通道未返回任何内容。'
               if (attempt < 2) {
                 push('info', '正文为空，自动重试', '已催通道直接作答并加大输出预算，正在补发一次。', false)
-                messages.push({ role: 'user', content: RETRY_NUDGE })
+                // 催的是 outbox（预填挂在它末尾），别推回 messages —— 那一份不会再发出去
+                outbox.push({ role: 'user', content: RETRY_NUDGE })
                 continue
               }
               needDir.current = true
@@ -460,6 +521,11 @@ export function Plot() {
               })
             }
             applyReply(parsed, evId)
+            // 观测者已切到别的模块：这一回合是在后台跑完的，报一声，别忘了它
+            if (plotMounts === 0) {
+              const evTitle = TIMELINE.find((e) => e.id === evId)?.title ?? '本段'
+              push('decode', '推演已完成', `《${evTitle}》的新一段已写定，回到剧情推进即可查看。`, false)
+            }
             return
           } catch (e) {
             if ((e as Error).name === 'AbortError') {
@@ -622,6 +688,11 @@ export function Plot() {
   const advanceFromConcluded = async () => {
     const ev = focusEv
     if (!ev || busy || !ready || !concluded || concluded.evId !== ev.id) return
+    // 这一格里有还没了结的交战：打赢它，才走得下去
+    if (pendingBattle && pendingBattle.evId === ev.id) {
+      push('warn', '尚有交战未了', `《${pendingBattle.name}》还在现场 —— 打赢它，这一段才继续。`, false)
+      return
+    }
     const digest = concluded.digest || ev.summary
     completeEvent(ev.id, digest, 'online', concluded.diverged) // 此刻才写记录 + epDone → focus 落到下一事件
     setConcluded(null)
@@ -802,10 +873,13 @@ export function Plot() {
 
   /** 导入外部 ST ChatPreset：解析并整体落地（加入本机方案 + 套用），顺带刷新本页主线配置 */
   const importPresetFile = async () => {
-    const data = await readJsonFile()
-    if (data === null) return
+    const picked = await readJsonFile()
+    if (picked === null) {
+      push('warn', '未能读取文件', '所选文件不是可解析的 JSON。', false)
+      return
+    }
     try {
-      const r = await importChatPresetFile(data)
+      const r = await importChatPresetFile(picked.json, picked.name)
       if (!r.ok) {
         push('warn', '无法识别为 ChatPreset', r.warn, false)
         return
@@ -814,7 +888,7 @@ export function Plot() {
       setSchemes(next)
       storeSchemes(next)
       if (r.cfg && cfgMain !== undefined) setCfgMain(r.cfg.main)
-      push('success', '已导入并应用 ChatPreset', `${r.scheme.name} · ${r.model}${r.note ? `（${r.note}）` : ''}`, false)
+      push('success', '已导入并应用 ChatPreset', `${r.scheme.name}${r.model ? ` · ${r.model}` : ''}${r.note ? `（${r.note}）` : ''}`, false)
     } catch (e) {
       push('danger', '导入失败', e instanceof Error ? e.message : String(e), false)
     }
@@ -986,9 +1060,14 @@ export function Plot() {
       )
     }
     return (
-      <div key={key} className={m.meta?.opening ? `${css.narr} ${css.open}` : css.narr}>
+      <div
+        key={key}
+        className={m.meta?.opening ? `${css.narr} ${css.open}`
+          : m.meta?.battle ? `${css.narr} ${css.fight}` : css.narr}
+        data-narration={m.meta?.opening ? 'opening' : m.meta?.battle ? 'battle' : 'director'}
+      >
         <div className={css.narrMeta}>
-          <b>{m.meta?.opening ? '开场白 · 原文' : '导演叙述'}</b>
+          <b>{m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}</b>
           <span className="muted tiny">{m.time}</span>
         </div>
         {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
@@ -1213,9 +1292,13 @@ export function Plot() {
                 ) : (
                   activeLog.map((m, i) =>
                     m.from === 'them' ? (
-                      <div key={m.id} className={m.meta?.opening ? `${css.narr} ${css.open}` : css.narr}>
+                      <div key={m.id}
+                        className={m.meta?.opening ? `${css.narr} ${css.open}`
+                          : m.meta?.battle ? `${css.narr} ${css.fight}` : css.narr}
+                        data-narration={m.meta?.opening ? 'opening' : m.meta?.battle ? 'battle' : 'director'}
+                      >
                         <div className={css.narrMeta}>
-                          <b>{m.meta?.opening ? '开场白 · 原文' : '导演叙述'}</b>
+                          <b>{m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}</b>
                           <span className="muted tiny">{m.time}</span>
                         </div>
                         {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
@@ -1303,6 +1386,33 @@ export function Plot() {
                 ) : null}
                 <div ref={endRef} />
               </div>
+
+              {pendingBattle && pendingBattle.evId === focusEv.id && ready && !busy ? (
+                <div className={css.battleBar} data-plot-battle={pendingBattle.mission.id}>
+                  <div className={css.battleHead}>
+                    <b>交战 · {pendingBattle.name}</b>
+                    <div className={css.battleActs}>
+                      <button
+                        className="btn btn--primary"
+                        style={{ fontSize: 12 }}
+                        data-enter-battle="1"
+                        onClick={() => setPlotBattle({ mission: pendingBattle.mission, squad: pendingBattle.squad })}
+                        title="按现场这几个人开打；打赢了本事件才继续"
+                      >
+                        <Sword size={14} weight="bold" /> 进入战斗
+                      </button>
+                    </div>
+                  </div>
+                  <div className={css.battleRoster}>
+                    {pendingBattle.squad.map((id) => (
+                      <span key={id} className={css.battleWho}>{personOf(id)?.name ?? id}</span>
+                    ))}
+                  </div>
+                  <span className={css.battleNote}>
+                    这一仗要打赢：撤退或战败都回到正文，按钮还在。应敌的只有现场这几个人，别处的人调不过来。
+                  </span>
+                </div>
+              ) : null}
 
               {concluded && concluded.evId === focusEv.id && ready && !busy ? (
                 <div className={css.concludedBar} data-concluded="1">
@@ -1415,11 +1525,13 @@ export function Plot() {
                 </div>
               ) : (
                 <div className={css.offText} data-event={focusEv.id}>
+                  {/* 与后面生成的正文同一种排法：旁白走 narrText、台词走气泡 ——
+                      以前这里单开了一套「书」的字号，同一段正史两种长相。 */}
                   {splitSpeech(offState.text).map((seg, si) =>
                     seg.kind === 'narr' ? (
-                      <p key={si} className={css.offP}>
+                      <div key={si} className={css.narrText}>
                         <Linkified text={seg.text} />
-                      </p>
+                      </div>
                     ) : (
                       segNode(seg, si)
                     ),
@@ -1457,17 +1569,32 @@ export function Plot() {
           equip={equip}
           owned={gearBag}
           bag={bag}
+          /* 上阵这几个人跟你的羁绊 —— 连携接得多快、本人多硬气都看它 */
+          bond={bondOfSquad(plotBattle.squad)}
           coin={coin}
+          /* 撤退或战败：回到正文，这一仗还没了结 —— pendingBattle 留着，按钮还在 */
           onExit={async (spLeft, eq) => {
             await settleExit(spLeft, eq, stamina)
             setEquip(eq)
             setPlotBattle(null)
             await loadKit()
           }}
+          /* 打赢：这一仗翻篇，收束栏的「进入下一事件」这才放行 */
           onSettled={async (rec: BattleRecord, spLeft, eq, bagLeft) => {
             const line = await settleWin({ rec, spLeft, equip: eq, bag: bagLeft, stamina, bumpBond })
             push('success', '交战归档', line, false)
+            /* 归档文书之外的这一份：把这一场写成剧情正文，回填到本事件的推演里 ——
+               故事要接着往下读，不能只在作战记录里留一份公文。
+               成文归成文，底稿照旧：只写真发生过的事，对话照抄已经喊过的台词。 */
+            const evId = pendingBattle?.evId
+            if (evId) {
+              const story = await narrateStorylog(rec)
+              setLogs(persistMsg(evId, {
+                id: idFor(), from: 'them', text: story, time: clock(), meta: { battle: true },
+              }))
+            }
             setPlotBattle(null)
+            setPendingBattle(null)
             await loadKit()
           }}
         />

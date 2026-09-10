@@ -42,7 +42,23 @@ export async function ensureSeeded(): Promise<void> {
     ? Number((seeded as { v?: unknown }).v ?? 0) || 0
     : 0
   if (ver >= CANON_SEED_VERSION) return
-  await db.bulkPutLorebooks(buildCanonLorebooks())
+  const fresh = buildCanonLorebooks()
+  // 重播种不覆盖用户的手指：同 id 的词条沿用他调过的那个开关。
+  // 种子版本一升就重播是必要的（新增/改写的词条要落地），但整本连 enabled 一起盖回去，
+  // 会把他关掉的词条统统打开 —— 那不是重播种，是把他的手一笔抹掉。
+  const prevOn = new Map<string, Map<string, boolean>>()
+  for (const b of existingBooks) {
+    prevOn.set(b.id, new Map(b.entries.map((e) => [e.id, e.enabled !== false])))
+  }
+  for (const b of fresh) {
+    const keep = prevOn.get(b.id)
+    if (!keep) continue
+    for (const e of b.entries) {
+      const was = keep.get(e.id)
+      if (typeof was === 'boolean') e.enabled = was
+    }
+  }
+  await db.bulkPutLorebooks(fresh)
   // canon 库一律全开：既有的激活集保留（用户自建库的选择不动），
   // 但每次重播都把 canon 全集并进来 —— 否则新加的 canon 库
   // （如 v5 的「主角专档」）在旧安装上永远停在未激活。

@@ -6,10 +6,12 @@ import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
+import { bondWithStage } from '../data/bondstage'
 import { clamp } from '../lib/format'
 import { opFull } from '../lib/operator'
 import { ensureSeeded } from '../lib/lorestore'
 import { requestRemount } from '../lib/remount'
+import { sfx } from '../lib/audio'
 import {
   applySnapshot,
   captureSnapshot,
@@ -366,6 +368,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const push = useCallback((kind: ToastKind, title: string, body?: string, live?: boolean) => {
+    /*
+      只有「出事 / 得手」两种才出声；情报类（观测记录、人事通知、委员长的自言自语）
+      在右下角悄悄来去就好 —— 以前每一条都响，后台推一条就叮一下，
+      用户根本对不上是哪件事，只会觉得「又在莫名响」。
+    */
+    if (kind === 'danger' || kind === 'warn') sfx('alert')
+    else if (kind === 'success') sfx('loot')
     toastId.current += 1
     const t: Toast = { id: toastId.current, kind, title, body, live }
     setToasts((prev) => [...prev.slice(-4), t])
@@ -427,14 +436,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     return true
   }, [])
 
-  /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录直接落到剧情推进 */
+  /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录落到终端总览 */
   const hardReset = useCallback((title: string, body: string) => {
     clearRunStorage()
     sessionAuthed = true
     sessionStage = 'game'
     sessionSetup = false
     setSetupMode(false)
-    pendingView = 'plot'
+    // 开场先给总览：这一屏是「你现在什么状况」，
+    // 正史要往哪儿推是下一步的事，不该一进来就压在人脸上。
+    pendingView = 'dashboard'
     pendingToast = { kind: 'warn', title, body }
     requestRemount()
   }, [])
@@ -532,7 +543,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       // 主役锚点 = 当前段原著快照；其余 20 名在册登场者 = 起步值（初见）；均叠加主角行为偏移
       const base = typeof v === 'number' ? v : defaultBondOf(charId)
       const off = world.offset[charId] ?? 0
-      return clamp(base + off, 0, 100)
+      // 阶段上限：有的关系是「到了那一步」才翻篇的，推时间线本身不白送好感
+      // （露娜在缔结使用者契约之前封顶，之后直接满值 —— 见 data/bondstage.ts）
+      return bondWithStage(charId, clamp(base + off, 0, 100), cur)
     },
     [cur, world.offset],
   )

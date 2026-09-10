@@ -5,6 +5,13 @@
    词典 = 档案角色（name+names，→ requestProfile，操作员除外）
          ＋ 终末图鉴条目（name/alias，→ requestCodex）。
    长词优先、单字符不链（避免误命中）；同一位置只匹配最长的词。
+
+   顺带一件事：**台词要看得出来是台词**。
+   写成一整段的正文里，被「」或『』括住的那几句就是有人在说话 ——
+   这里把它们单独分出一段、单独上色，好与旁白分开。
+   按「角色名：」开头的那种整行台词走 lib/dialogue 的气泡版式，
+   而在旁白中间夹着的这几句走这里 —— 两条路都通到「对话比旁白显眼」。
+   深度计数：引号可嵌套（「……『……』……」），收尾那一下算在台词里。
    ============================================================ */
 
 import { useMemo } from 'react'
@@ -17,6 +24,11 @@ import { CODEX } from '../data/codex'
 import css from './Linkified.module.css'
 
 type Target = { text: string; kind: 'profile' | 'codex'; id: string }
+
+/** 拆出来的游程：普通文字（可能落在引号里）或一个可点词 */
+type Run =
+  | { kind: 'text'; s: string; q: boolean }
+  | { kind: 'link'; t: Target; q: boolean }
 
 /** 最短词长：2 字符以上才可点，杜绝单字/标点误链 */
 const MIN_LEN = 2
@@ -54,28 +66,47 @@ export function Linkified({ text }: { text: string }) {
     [requestProfile, requestCodex],
   )
 
+  /** 一段正文拆成若干游程：可点词另算一条，引号里的对话另算一条 */
   const parts = useMemo(() => {
     const s = text ?? ''
-    const nodes: (string | Target)[] = []
+    const nodes: Run[] = []
     let plain = ''
+    let depth = 0
     let i = 0
     const flush = () => {
       if (plain) {
-        nodes.push(plain)
+        nodes.push({ kind: 'text', s: plain, q: depth > 0 })
         plain = ''
       }
     }
     outer: while (i < s.length) {
+      const ch = s[i]
+      if (ch === '「' || ch === '『') {
+        flush()
+        depth++
+        plain = ch
+        i++
+        continue
+      }
+      if (ch === '」' || ch === '』') {
+        // 收尾这一下也算在台词里 —— 引号本身跟着台词一起上色
+        plain += ch
+        nodes.push({ kind: 'text', s: plain, q: depth > 0 })
+        plain = ''
+        depth = Math.max(0, depth - 1)
+        i++
+        continue
+      }
       for (const t of LINKS) {
         if (t.text.length > s.length - i) continue
         if (s.startsWith(t.text, i)) {
           flush()
-          nodes.push(t)
+          nodes.push({ kind: 'link', t, q: depth > 0 })
           i += t.text.length
           continue outer
         }
       }
-      plain += s[i]
+      plain += ch
       i++
     }
     flush()
@@ -98,19 +129,19 @@ export function Linkified({ text }: { text: string }) {
   return (
     <>
       {parts.map((p, idx) =>
-        typeof p === 'string' ? (
-          <span key={idx}>{p}</span>
+        p.kind === 'text' ? (
+          <span key={idx} className={p.q ? css.q : undefined}>{p.s}</span>
         ) : (
           <span
             key={idx}
             role="link"
             tabIndex={0}
-            className={css.lk}
-            title={p.kind === 'profile' ? `打开角色档案 · ${p.text}` : `打开图鉴条目 · ${p.text}`}
-            onClick={(e) => onClick(e, p)}
-            onKeyDown={(e) => onKey(e, p)}
+            className={p.q ? `${css.lk} ${css.q}` : css.lk}
+            title={p.t.kind === 'profile' ? `打开角色档案 · ${p.t.text}` : `打开图鉴条目 · ${p.t.text}`}
+            onClick={(e) => onClick(e, p.t)}
+            onKeyDown={(e) => onKey(e, p.t)}
           >
-            {p.text}
+            {p.t.text}
           </span>
         ),
       )}

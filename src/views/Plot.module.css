@@ -219,12 +219,21 @@
   background: linear-gradient(180deg, rgba(127, 180, 255, 0.05), rgba(127, 180, 255, 0) 55%), var(--bg-2);
 }
 .open .narrMeta b { color: var(--steel); }
-.open .narrText { color: var(--ink-mute); }
+/* 交战成文：打完之后回填的那一段正文。与「导演叙述」同一栏，
+   只是换个边色 —— 一眼看回过去，知道这里是哪一仗打完了。 */
+.fight {
+  border-left-color: var(--red);
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.05), rgba(255, 107, 107, 0) 55%), var(--bg-2);
+}
+.fight .narrMeta b { color: var(--red); }
+/* 旁白压暗一档、台词留亮（见 components/Linkified 的 .q）：
+   正文里谁在说话，不用看引号也分得出来。
+   开场白·原文与后面的生成正文走同一套 —— 原文也是正文，没有另一档。 */
 .narrText {
   margin-top: 8px;
   font-size: 13.5px;
   line-height: 1.95;
-  color: var(--ink);
+  color: var(--ink-dim);
   white-space: pre-line;
   word-break: break-word;
 }
@@ -335,12 +344,6 @@
 }
 
 /* 离线通读的旁白段落 */
-.offP {
-  margin: 0 0 13px;
-  white-space: pre-line;
-}
-.offP:last-child { margin-bottom: 0; }
-
 .errLine {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -470,16 +473,21 @@
   line-height: 1.9;
   color: var(--ink-mute);
 }
+/* 离线通读：与生成正文同一套字（13.5 / 1.95、旁白暗台词亮）。
+   以前这里是「书」的字号（15 / 2.05），于是同一段正史在两种模式里长得不一样 ——
+   现在只有一种排法，通读和生成读到的都是它。 */
 .offText {
-  font-size: 15px;
-  line-height: 2.05;
-  letter-spacing: 0.02em;
-  color: var(--ink);
-  white-space: pre-wrap;
+  font-size: 13.5px;
+  line-height: 1.95;
+  color: var(--ink-dim);
+  white-space: pre-line;
   word-break: break-word;
   padding: 4px 2px;
   max-width: 46em;
 }
+/* 通读里旁白与气泡之间留出与生成正文同量的呼吸 */
+.offText > .narrText { margin-top: 0; }
+.offText > .narrText + .narrText { margin-top: 10px; }
 .offFoot {
   display: flex;
   flex-wrap: wrap;
@@ -510,6 +518,39 @@
 .endedBar > span:not(.muted) { color: var(--ink); }
 
 /* —— 事件收束 · 待手动进入下一事件（正文保留在栏上方的线程里不消失） —— */
+/* —— 正文里的交战：不自动开打，落成一个「进入战斗」按钮 ——
+   与收束栏并排时一眼分得清：收束是黄边（可以走了），交战是红边（先打完）。 */
+.battleBar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--red);
+  background: rgba(255, 86, 86, 0.06);
+  padding: 11px 14px;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+.battleHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.battleHead b { color: var(--red); }
+.battleActs { margin-left: auto; display: flex; gap: 8px; }
+.battleRoster { display: flex; flex-wrap: wrap; gap: 6px; }
+.battleWho {
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.battleNote { color: var(--ink-mute); font-size: 11.5px; }
+
 .concludedBar {
   display: flex;
   flex-direction: column;

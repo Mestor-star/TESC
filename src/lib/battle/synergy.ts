@@ -3,12 +3,12 @@
    ------------------------------------------------------------
    两套东西，走的是同一条口子：
      · 羁绊（队伍层）：按「同一出身的人在这支队伍里凑了几个」给档位加成 ——
-       凑够 2 人一档、再凑够一档再上一阶，人越齐越强（同金铲铲的羁绊计数）。
+       凑够 3 人开档、满 5 人封顶（TUNING.traitMax），人越齐越强（同金铲铲的羁绊计数）。
        档位取「已达成的最高一档」，不叠加。
      · 连携技（人层）：双人（心叶 × 露娜／会长／黑之魔王）与整队（恋兔队全员）
        各有一记合击。它**不由玩家主动点**：羁绊里每人各出一手，共鸣槽就会满 ——
        满了自己就接上（见 BONDS 与 engine 的 chargeLinks / fireLinks）。
-       所以「恋兔队全员才触发」不是一句 UI 提示，而是槽要四个人一人添一笔才满。
+       所以「恋兔队全员才触发」不是一句 UI 提示，而是槽要满编的人一人添一笔才满。
    加成只落在既有的常驻字段上（gearAtk / gearSpd / axes / evade），
    不改引擎口径：羁绊只是「这几个人站在一起时，本来就该更强」。
    数值与组合名一律取原文关系（弹痕、契约、婚约、队伍编制），不另立设定。
@@ -16,6 +16,7 @@
 
 import { OPERATOR_ID } from '../../data/castmeta'
 import { ROSTER_GROUPS } from '../../data/roster'
+import { TUNING } from './tuning'
 import type { AxisKey, AxisSheet, Combatant, FxKind } from './types'
 
 /** 一档羁绊给出的东西（人没凑够就不给） */
@@ -59,18 +60,23 @@ export const TRAITS: Trait[] = [
     id: 'rabbit',
     name: '恋兔队',
     desc: '委员会排行榜多年的榜首所率的实战部队：队长恋兔光、副官梅芙莉莎、护卫小柴喵呜，'
-      + '加上从商会转来的小柴琳 —— 名单上就这四个人。',
-    ids: ['hikari', 'mefisa', 'nyau', 'xiaochai-lin'],
+      + '加上从商会转来的小柴琳，同住恋兔宿舍的心叶与露娜，'
+      + '以及「年年留级的老生」、「即使到现在，名义上也还是恋兔队资历最老的成员」——吴诗涵学姐。'
+      + '（原文里「心叶可是恋兔队的一员！」是小柴对不认得他的人喊的）。名单上就这七个人。',
+    ids: ['hikari', 'mefisa', 'nyau', 'xiaochai-lin', 'luna', 'youshihan', OPERATOR_ID],
     tiers: [
-      { need: 2, atk: 0.06, spd: 0.04 },
-      { need: 3, atk: 0.11, spd: 0.08 },
-      { need: 4, atk: 0.18, spd: 0.14, axes: { 意志力: 10 } },
+      { need: 3, atk: 0.06, spd: 0.04 },
+      // 顶档就是天花板那一档（TUNING.traitMax）—— 恋兔队的顶档给得比别队厚：
+      // 它是全表最强的队伍羁绊，也给那记整队连携垫底。
+      { need: TUNING.traitMax, atk: 0.18, spd: 0.14, axes: { 意志力: 10 } },
     ],
     squadLink: {
       name: '恋兔队 · 全面出动',
-      desc: '四个人一起上——恋兔开路、梅芙收口、喵呜钻缝、小琳把退路拆掉。'
-        + '参加者各自按同一轴出力，合击为一手。（必须四名恋兔队成员全部在场）',
-      line: '「恋兔队——出动！」「收到。」「小柴也上！」「……墙拆了哦。」',
+      desc: '几个人一起上——恋兔开路、梅芙收口、喵呜钻缝、小琳把退路拆掉，'
+        + '心叶读位、露娜牵线，学姐的凶兽压阵。参加者各自按同一轴出力，合击为一手。'
+        + `（凑够 ${TUNING.traitMax} 个人就成立 —— 与档位天花板是同一个数：`
+        + '名单七个人，一队上不了这么多，所以「到齐」指的是把最高那一档凑满）',
+      line: '「队长！」「梅芙、喵呜、心叶！这里就交给你们了！」「了解！」',
       power: 1.6, linkPow: 1.5, axis: '破坏力', fx: 'slash', cost: 12, cd: 5,
     },
   },
@@ -83,7 +89,7 @@ export const TRAITS: Trait[] = [
     ids: [...group('ao'), OPERATOR_ID],
     tiers: [
       { need: 3, axes: { 意志力: 8 }, evade: 0.05 },
-      { need: 5, axes: { 意志力: 14 }, evade: 0.08, atk: 0.08 },
+      { need: TUNING.traitMax, axes: { 意志力: 14 }, evade: 0.08, atk: 0.08 },
     ],
   },
   {
@@ -93,7 +99,7 @@ export const TRAITS: Trait[] = [
     ids: group('kaus'),
     tiers: [
       { need: 3, axes: { 破坏力: 8 }, atk: 0.1 },
-      { need: 5, axes: { 破坏力: 14 }, atk: 0.16 },
+      { need: TUNING.traitMax, axes: { 破坏力: 14 }, atk: 0.16 },
     ],
   },
   {
@@ -103,7 +109,7 @@ export const TRAITS: Trait[] = [
     ids: group('corp'),
     tiers: [
       { need: 3, axes: { 反现实亲和: 8 }, spd: 0.08 },
-      { need: 5, axes: { 反现实亲和: 14, 意志力: 8 }, spd: 0.14 },
+      { need: TUNING.traitMax, axes: { 反现实亲和: 14, 意志力: 8 }, spd: 0.14 },
     ],
   },
 ]
@@ -135,30 +141,32 @@ interface PairBond {
 
 export const PAIRS: PairBond[] = [
   {
-    id: 'golden-rabbit',
-    name: '黄金之兔',
-    desc: '原文里，恋兔队正是以「黄金之兔」（心叶 × 露娜）自鲸额触到了那颗「心」。'
+    id: 'golden-lion',
+    name: '黄金狮子',
+    desc: '【No.8288「黄金狮子」】—— 心叶 × 露娜合击的编号名（异法）。'
+      + '原文那一战里，那道金色的光「简直，就像被读心了一样」地游走于视野之外；'
       + '丝线拉住他不让他沉下去，低语替他读出对方往哪躲。',
     a: OPERATOR_ID, b: 'luna',
     atk: 0.1, spd: 0.08,
     link: {
-      name: '黄金之兔',
+      name: '黄金狮子',
       desc: '两人同时出手：她把他甩出去，他在半空里听见对方心里喊的那一声。合击由两人的对应轴相加。',
-      line: '「——抓稳了。」「嗯。」',
+      line: '「「我！」」「「会保护你！」」',
       power: 2.2, linkPow: 1.6, axis: '反现实亲和', fx: 'noise', cost: 6, cd: 4,
     },
   },
   {
-    id: 'president-dog',
-    name: '会长与她的狗',
-    desc: '灵魂蓄积器差一点把他吞掉的那一瞬，是会长把他拎出来的 —— 顺手让他做了自己的「狗」。'
+    id: 'prose',
+    name: '如散文般',
+    desc: '会长的弹痕「如散文般」—— 能向过去开枪的那一页纸。'
+      + '灵魂蓄积器差一点把他吞掉的那一瞬，是她把他拎出来的，顺手让他做了自己的「狗」；'
       + '此后这层关系一直挂着，谁也没解开。',
     a: OPERATOR_ID, b: 'alive-anatolia',
     atk: 0.06, axes: { 反现实亲和: 10 },
     link: {
       name: '如散文般 · 补笔',
       desc: '她的弹痕「如散文般」能向过去开枪：那些他没能赶上的瞬间，由她一页一页补回来。',
-      line: '「——这一页，我替你写。」',
+      line: '「——你要不要成为我的猎犬？」',
       power: 1.6, linkPow: 1.8, axis: '反现实亲和', fx: 'seal', cost: 5, cd: 4,
     },
   },
@@ -171,8 +179,52 @@ export const PAIRS: PairBond[] = [
     link: {
       name: '终末之前的婚约',
       desc: '「要是你最终没能够停滞终末的话。在世界毁灭之前……我们结婚吧」—— 两人把这句话当筹码压上去。',
-      line: '「说好了。在那之前，先谈一场正常的恋爱。」',
+      line: '「要是你最终没能够停滞终末的话……在世界毁灭之前——」「——我们结婚吧。」',
       power: 1.8, linkPow: 1.8, axis: '意志力', fx: 'noise', cost: 5, cd: 4,
+    },
+  },
+  {
+    id: 'sakura-afterimage',
+    name: '樱之残影',
+    desc: '队长的弹痕「樱之残影」—— 一把从掌心召唤出来的白色吉他。'
+      + '他是她亲手收下的部下（「不，是仆人」），也是她一句话就带进委员会的人；'
+      + '那一手挥下去，等于把队长的调子接到他这边来。',
+    a: OPERATOR_ID, b: 'hikari',
+    atk: 0.1, axes: { 意志力: 8 },
+    link: {
+      name: '樱之残影 · 白色吉他',
+      desc: '队长起了个前奏，他顺着那声把整段收掉 —— 参加的两人各按同一轴出力。',
+      line: '「要上了哦——樱之残影！」',
+      power: 2.0, linkPow: 1.6, axis: '破坏力', fx: 'guitar', cost: 6, cd: 4,
+    },
+  },
+  {
+    id: 'shamshir',
+    name: '沙姆希尔',
+    desc: '喵呜的弹痕「沙姆希尔」—— 把子弹与贴纸的位置对调。'
+      + '「靠着成为了我妹妹的喵呜的弹痕——沙姆希尔——其将子弹与贴纸交换位置的能力」'
+      + '（原文里那一趟书架曼荼罗的回程就是靠它眨眼间走完的）。',
+    a: OPERATOR_ID, b: 'nyau',
+    spd: 0.08, axes: { 反现实亲和: 8 },
+    link: {
+      name: '沙姆希尔 · 换位',
+      desc: '他读准了要落在哪，小柴便把那一发直接换到对面身上。',
+      line: '「——沙姆希尔！」',
+      power: 1.7, linkPow: 1.6, axis: '反现实亲和', fx: 'seal', cost: 5, cd: 4,
+    },
+  },
+  {
+    id: 'eight-legged-horse',
+    name: '八脚马',
+    desc: '梅芙的弹痕「八脚马」—— 一头不讲道理的黏液巨兽，听话得离谱。'
+      + '她一边嫌麻烦一边照旧由她来收口，他负责把前面的账算清楚。',
+    a: OPERATOR_ID, b: 'mefisa',
+    axes: { 意志力: 8 }, spd: 0.05,
+    link: {
+      name: '八脚马 · 收口',
+      desc: '她放出八脚马把场子围住，他趁那一下把该了结的收掉。',
+      line: '「……事到如今也没办法了呢——八脚马！」',
+      power: 1.7, linkPow: 1.7, axis: '意志力', fx: 'blast', cost: 5, cd: 4,
     },
   },
 ]
@@ -233,6 +285,58 @@ export function synergiesOf(ids: string[]): ActiveSynergy[] {
    双人羁绊 3 拍满（两人加起来出三手），恋兔队全员 4 拍满（一人一手）。
    ============================================================ */
 
+/* ============================================================
+   羁绊深度 —— 终端里一点一点攒起来的那个数
+   ------------------------------------------------------------
+   引导里梅芙说过「人跟人熟不熟，是会影响打起来的配合的」。
+   在那之前这句话是空头支票：羁绊只在档案里当个读数看，上了战场一点用没有。
+   现在它落在两处：
+     · 连携技的共鸣槽蓄得更快（主要收益：合击来得更早，这是攒羁绊最大的回报）；
+     · 本人五轴里的「意志力 / 反现实亲和」跟着抬一点（相处久了，人也硬气起来）。
+   算的是**参加者里跟你最生疏的那一个** —— 搭伙这件事，快慢由最生的那节说了算。
+   操作员本人不算数：他不是一段关系，他就是你。
+   ============================================================ */
+
+/** 羁绊档位：到了 at 这一档，共鸣槽按 cut 缩短 */
+export const BOND_TIERS = [
+  { at: 45, cut: 1, name: '过命的交情' },
+  { at: 75, cut: 2, name: '生死与共' },
+] as const
+
+/** 这份交情能把共鸣槽缩短几拍（0 = 还没到档） */
+export function bondCut(v: number): number {
+  let cut = 0
+  for (const t of BOND_TIERS) if (v >= t.at) cut = Math.max(cut, t.cut)
+  return cut
+}
+
+/** 离下一档还差多少（界面挂牌用；已到顶则 null） */
+export function bondNext(v: number): { at: number; left: number; name: string } | null {
+  const t = BOND_TIERS.find((x) => v < x.at)
+  return t ? { at: t.at, left: t.at - v, name: t.name } : null
+}
+
+/** 羁绊给本人的五轴加成 —— 有上限，攒不出怪物 */
+export function bondAxes(v: number): Partial<AxisSheet> {
+  const will = Math.min(8, Math.floor(v / 12))
+  const aff = Math.min(6, Math.floor(v / 16))
+  if (!will && !aff) return {}
+  return { 意志力: will, 反现实亲和: aff }
+}
+
+/**
+ * 一条连携的共鸣槽要几拍 —— 由「跟你最生疏的那个参加者」的羁绊决定。
+ * @param members 参加者 id（含操作员则自动略过）
+ * @param bond    羁绊读数（0~100）
+ */
+export function linkNeed(members: string[], base: number, bond?: Record<string, number>): number {
+  if (!bond) return base
+  const others = members.filter((id) => id !== OPERATOR_ID)
+  if (!others.length) return base
+  const weakest = Math.min(...others.map((id) => bond[id] ?? 0))
+  return Math.max(2, base - bondCut(weakest))
+}
+
 export interface BondLink {
   name: string
   desc: string
@@ -257,26 +361,40 @@ export interface Bond {
   link: BondLink
 }
 
-const PAIR_NEED = 3
+/*
+  一对搭档的共鸣槽底数。
+  从 3 提到 4 是为了给羁绊留出「缩短」的余地：3 拍再缩就只剩 2 拍，
+  两档羁绊（45 / 75）会缩到同一个数上 —— 那这一档就是白设的。
+  底数 4 之下：没交情 4 拍、过命 3 拍、生死与共 2 拍，档档分得开。
+  （没交情比原先的 3 拍慢一拍：合击本来就是羁绊给的，不该是白送的。）
+*/
+const PAIR_NEED = 4
 
-/** 本场在场的连携羁绊（双人 + 整队） */
-export function bondsOf(ids: string[]): Bond[] {
+/**
+ * 本场在场的连携羁绊（双人 + 整队）。
+ * @param bond 羁绊读数 —— 给了就按交情缩短共鸣槽（见 linkNeed）
+ */
+export function bondsOf(ids: string[], bond?: Record<string, number>): Bond[] {
   const out: Bond[] = []
   const on = new Set(ids)
   for (const p of pairsOf(ids)) {
+    const members = [p.a, p.b].filter((x) => on.has(x))
     out.push({
-      id: p.id, name: p.name, members: [p.a, p.b].filter((x) => on.has(x)),
-      need: PAIR_NEED,
+      id: p.id, name: p.name, members,
+      need: linkNeed(members, PAIR_NEED, bond),
       link: { ...p.link, linkPow: p.link.linkPow },
     })
   }
   for (const t of traitsOf(ids)) {
     const l = t.trait.squadLink
     if (!l) continue
-    // 名单上一个不缺才算这条羁绊成立 —— 「必须全员都在」
-    if (t.members.length < t.trait.ids.length) continue
+    // 「全员到场」按档位天花板封顶（TUNING.traitMax）—— 名单七个人、最高档只要五个，
+    // 真要「一个不缺」这条羁绊就永远亮不起来：到齐 = 把最高那一档凑满。
+    const cap = Math.min(t.trait.ids.length, TUNING.traitMax)
+    if (t.members.length < cap) continue
     out.push({
-      id: `${t.trait.id}-full`, name: l.name, members: t.members, need: t.members.length,
+      id: `${t.trait.id}-full`, name: l.name, members: t.members,
+      need: linkNeed(t.members, cap, bond),
       link: { ...l },
     })
   }
@@ -288,8 +406,11 @@ export function bondsOf(ids: string[]): Bond[] {
  * 连携技不再进技能表 —— 它由共鸣槽自动触发（见 engine 的 chargeLinks / fireLinks）。
  * @param targets  要落加成的上阵者
  * @param squadIds 本场的队伍名单（换装重建单人时由调用方传全队，否则会算漏人）
+ * @param bond     羁绊读数（0~100）—— 给了再叠一层「交情」的五轴加成（见 bondAxes）
  */
-export function applySynergies(targets: Combatant[], squadIds?: string[]): void {
+export function applySynergies(
+  targets: Combatant[], squadIds?: string[], bond?: Record<string, number>,
+): void {
   const ids = squadIds ?? targets.map((c) => c.id)
   const traits = traitsOf(ids)
   const pairs = pairsOf(ids)
@@ -300,6 +421,16 @@ export function applySynergies(targets: Combatant[], squadIds?: string[]): void 
     let evade = 0
     const axes: Partial<Record<AxisKey, number>> = {}
     const names: string[] = []
+
+    // 交情：这一栏是攒出来的，不是站在一起就有的
+    const own = bond?.[c.id] ?? 0
+    const bAxes = bondAxes(own)
+    if (Object.keys(bAxes).length) {
+      names.push(`羁绊 ${own}`)
+      for (const [k, v] of Object.entries(bAxes)) {
+        axes[k as AxisKey] = (axes[k as AxisKey] ?? 0) + (v as number)
+      }
+    }
 
     for (const { trait, tier, members } of traits) {
       if (!members.includes(c.id)) continue

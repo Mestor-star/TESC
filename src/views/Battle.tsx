@@ -6,18 +6,25 @@ import {
 } from '@phosphor-icons/react'
 
 import {
-  act, chargeOf, createBattle, digestOf, legalSkills, lootOddsOf, rewardOf,
+  act, bossUltOf, chargeOf, createBattle, digestOf, enemysTurn, legalSkills, lootOddsOf, pendingFoe, rewardOf,
 } from '../lib/battle/engine'
 import type { Command } from '../lib/battle/engine'
+import { askEnemyIntent } from '../lib/battle/ai'
+import { battleBed, sfx } from '../lib/audio'
+import type { SfxName } from '../lib/audio'
+import { isReady, loadProfile } from '../lib/api'
+import type { ApiSettings } from '../lib/api'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
-import { GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
+import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import type { GearDef } from '../lib/battle/types'
-import { POWER_SCALE } from '../lib/battle/roster'
+import { POWER_SCALE, passiveText } from '../lib/battle/roster'
+import { archNameOf } from '../lib/battle/atlas'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
-import type { BattleRecord, BattleState, Combatant, FxKind, SkillSpec, StaminaState } from '../lib/battle/types'
+import { endOf, isDebuff } from '../lib/battle/types'
+import type { BattleRecord, BattleState, Combatant, FxKind, FxTone, SkillKind, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
@@ -38,6 +45,8 @@ interface Props {
   bag: Record<string, number>
   /** 「变成他人」可借的档案池（已解锁、且不在本场队伍里的角色 id） */
   morphPool?: string[]
+  /** 每人与你的羁绊读数（0~100）—— 决定连携接得多快、本人多硬气 */
+  bond: Record<string, number>
   /** 终末点数（结算后写回） */
   coin: number
   /** 撤出：消耗已扣，不结算任务 */
@@ -51,6 +60,10 @@ interface Props {
 interface FxView {
   n: number
   kind: FxKind
+  /** 这一手的性质（回复 / 增益 / 压制 / 纯伤）—— 配色按它走，不按动画类别 */
+  tone: FxTone
+  /** 'all' = 铺一整屏；'one' = 贴着挨打的那个放 */
+  scope: 'one' | 'all'
   actorId: string
   /** 这一手是谁的哪一招 —— 特效按技能 id 取色与变奏，招招不同 */
   skillId: string
@@ -58,6 +71,8 @@ interface FxView {
   targetId?: string
   dmg?: number
   down?: boolean
+  /** 这一手是连携：参加者与招式名，右侧那张牌子照着它立起来 */
+  link?: { id: string; name: string; members: string[] }
 }
 
 /** 技能 id → 稳定的色相与变奏号（同一招永远同一副样子，不同招互不相同） */
@@ -83,13 +98,20 @@ const SEQ = [
   { id: 'flee', label: '战略撤退', Icon: Sneaker },
 ] as const
 
+/* 一种演出配一种响 —— 同一手打出去，眼睛看到的和耳朵听到的得是一件事 */
+const SFX_OF_FX: Record<FxKind, SfxName> = {
+  slash: 'slash', blast: 'blast', guitar: 'guitar', seal: 'alert', drone: 'guard',
+  noise: 'blast', guard: 'guard', heal: 'heal', item: 'loot', gear: 'open',
+}
+
 export function Battle({
-  mission, squad, progress, growth, stamina, equip, owned, bag, coin, morphPool, onExit, onSettled,
+  mission, squad, progress, growth, stamina, equip, owned, bag, coin, morphPool, bond,
+  onExit, onSettled,
 }: Props) {
   const [st, setSt] = useState<BattleState>(() =>
     createBattle({
       mission, squad, progress, growth, gear: equip,
-      sp: stamina.cur, spMax: stamina.max, bag, coin, morphPool,
+      sp: stamina.cur, spMax: stamina.max, bag, coin, morphPool, bond,
     }),
   )
   const [shown, setShown] = useState(0)
@@ -103,31 +125,80 @@ export function Battle({
   const [equipMap, setEquipMap] = useState<Record<string, string>>(equip)
   /** 结算只走一次（严格模式下 effect 会被重放） */
   const settled = useRef(false)
+  /** 敌方指挥：接口接通了才由模型点这一手，否则引擎自己判断 */
+  const [cfg, setCfg] = useState<ApiSettings | null>(null)
+  const thinking = useRef(false)
+  /** 场上有没有 boss 级敌体 —— 有的话底也要跟着换 */
+  const bossUp = st.enemies.some((c) => bossUltOf(c))
+
+  useEffect(() => {
+    let live = true
+    // 敌方走主通道（与剧情同一个接口）：没填 / 填了但调不通 —— 一律退回离线判断
+    void loadProfile('main').then((c) => {
+      if (!live) return
+      setCfg(c)
+      if (isReady(c)) setSt((s) => (s.command === 'ai' ? s : { ...s, command: 'ai' }))
+    })
+    return () => { live = false }
+  }, [])
+
+  /* ---- 敌方的这一手：轮到敌体时引擎交出「思考」相位，这里去问模型 ---- */
+  useEffect(() => {
+    if (st.phase !== 'think' || shown < st.log.length) return
+    if (thinking.current) return
+    thinking.current = true
+    let live = true
+    const foe = pendingFoe(st)
+    const run = async () => {
+      const intent = foe && cfg ? await askEnemyIntent(st, foe, cfg) : null
+      if (!live) return
+      thinking.current = false
+      setSt((s) => (s.phase !== 'think' ? s : { ...enemysTurn(s, intent) }))
+    }
+    void run()
+    return () => { live = false; thinking.current = false }
+  }, [st, shown, cfg])
 
   /* 战场所在的 R 值（与任务简报同一口径）：出招前知道这地方把敌人抬了多少 */
   const siteR = useMemo(() => rBadgeOf(st.place, st.stage), [st.place, st.stage])
   const playing = shown < st.log.length
+  /** 终局：赢 / 输 / 撤。排除 think —— 那只是敌方在决定这一手，仗还没打完 */
+  const ended = st.phase === 'won' || st.phase === 'lost' || st.phase === 'fled'
+  /** 不可操作：终局与敌方思考中都不接指令 */
   const over = st.phase !== 'select'
   const actor = useMemo(
     () => (st.actor ? [...st.allies, ...st.enemies].find((c) => c.id === st.actor) : undefined),
     [st],
   )
 
-  /* ---- 羁绊挂牌：本场成立了哪几条，连携的共鸣槽蓄到几拍 ---- */
+  /* ---- 羁绊挂牌：本场成立了哪几条、连携的共鸣槽蓄到几拍 ----
+     槽要几拍是**羁绊说了算**的（见 synergy.linkNeed）——
+     所以挂牌上要写清「本可以 3 拍，因为交情缩到 2 拍」，不然玩家不知道攒羁绊有什么用。 */
   const synergyRow = useMemo(() => {
     const ids = st.allies.map((c) => c.id)
     const bonds = new Map<string, ReturnType<typeof bondsOf>[number]>()
-    for (const b of bondsOf(ids)) {
+    for (const b of bondsOf(ids, st.bond)) {
       bonds.set(b.id, b)
       // 整队连携（xxx-full）挂在同一条羁绊名下
       if (b.id.endsWith('-full')) bonds.set(b.id.slice(0, -5), b)
     }
+    // 名义拍数（不看羁绊）——用来算「交情省了几拍」
+    const plain = new Map<string, number>()
+    for (const b of bondsOf(ids)) {
+      plain.set(b.id, b.need)
+      if (b.id.endsWith('-full')) plain.set(b.id.slice(0, -5), b.need)
+    }
     return synergiesOf(ids).map((s) => {
       const b = bonds.get(s.id)
+      const base = plain.get(s.id)
       return {
         id: s.id, name: s.name, desc: s.desc, mark: s.mark,
-        link: b
-          ? { name: b.link.name, desc: b.link.desc, need: b.need, cur: Math.min(b.need, st.link?.[b.id] ?? 0) }
+        link: b && base !== undefined
+          ? {
+            name: b.link.name, desc: b.link.desc, need: b.need, base,
+            cur: Math.min(b.need, st.link?.[b.id] ?? 0),
+            members: b.members,
+          }
           : null,
       }
     })
@@ -146,6 +217,12 @@ export function Battle({
       .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
   }, [st])
 
+  /* ---- 底：一进作战屏就换战斗底，boss 上场再压重一层 ---- */
+  useEffect(() => {
+    battleBed(true, bossUp)
+    return () => { battleBed(false) }
+  }, [bossUp])
+
   /* ---- 逐条回放战斗日志（每条配一次演出） ---- */
   useEffect(() => {
     if (shown >= st.log.length) {
@@ -154,10 +231,17 @@ export function Battle({
     }
     const e = st.log[shown]
     setFx({
-      n: shown, kind: e.fx, actorId: e.actorId, skillId: e.skillId, skill: e.skill,
-      targetId: e.targetId, dmg: e.dmg, down: e.down,
+      n: shown, kind: e.fx, tone: e.tone ?? 'strike', scope: e.scope ?? 'one',
+      actorId: e.actorId, skillId: e.skillId, skill: e.skill,
+      targetId: e.targetId, dmg: e.dmg, down: e.down, link: e.link,
     })
-    const hold = e.dmg || e.down ? 620 : 380
+    if (e.down) sfx('down')
+    else if (e.miss) sfx('tick')
+    else if (e.heal) sfx('heal')
+    else if (e.kind === '启动') sfx('form')
+    else sfx(SFX_OF_FX[e.fx] ?? 'hit')
+    // 连携要留够看清两张脸的时间：它后面还跟着一手伤害，380ms 会一闪而过
+    const hold = e.link ? 1500 : e.dmg || e.down ? 620 : 380
     const t = window.setTimeout(() => setShown((n) => n + 1), hold)
     return () => window.clearTimeout(t)
     // 依赖记在长度上：log 数组由引擎就地追加，引用不变
@@ -165,8 +249,9 @@ export function Battle({
 
   /* ---- 收场：结算战利品，然后成文 ---- */
   useEffect(() => {
-    if (!over || playing || narrating || settled.current) return
+    if (!ended || playing || narrating || settled.current) return
     settled.current = true
+    sfx(st.phase === 'won' ? 'win' : st.phase === 'lost' ? 'lose' : 'flee')
     {
       // 没打过就什么都不留：败 / 撤不结算、不归档
       if (st.phase === 'won') {
@@ -181,7 +266,7 @@ export function Battle({
         setNarrating(false)
       })
     }
-  }, [over, playing, rec, narrating, st])
+  }, [ended, playing, rec, narrating, st])
 
   const play = useCallback(
     (cmd: Command) => {
@@ -213,6 +298,7 @@ export function Battle({
     return legalSkills(actor, st).find((x) => x.id === cmd.skillId)?.morph ? cmd : undefined
   }
 
+  /** 出手。要选人的（打敌阵 / 增益自己人）先开瞄准面板，无目标的（自身 · 全体 · 我方全体）直接出 */
   const issue = (cmd: Command) => {
     if (playing || over) return
     if (morphOf(cmd)) {
@@ -236,6 +322,8 @@ export function Battle({
   /** 换装：不消耗回合 —— 引擎改完面板后仍是本人待令 */
   const doEquip = (gearId: string | null) => {
     if (!actor) return
+    // 一件装具只有一副：界面上按不动，这里再拦一道
+    if (gearId && Object.keys(equipMap).some((pid) => pid !== actor.id && equipMap[pid] === gearId)) return
     const next = { ...equipMap }
     if (gearId) next[actor.id] = gearId
     else delete next[actor.id]
@@ -243,9 +331,21 @@ export function Battle({
     setSt((s) => ({ ...act(s, { t: 'equip', gearId }) }))
   }
 
-  const recent = st.log.slice(Math.max(0, shown - 5), shown)
+  // 观测频道挂在右栏，一栏高：多留几手，翻得到上一拍
+  const recent = st.log.slice(Math.max(0, shown - 14), shown)
   const shake = !!fx && (fx.kind === 'blast' || fx.kind === 'noise')
-  const aimEnemies = panel === 'aim' && (!pending || pending.t !== 'item' || ITEM_OF[pending.itemId].target === 'enemyOne')
+  /* 这一手是冲敌阵去，还是冲自己人去的。
+     道具看 target，技能也看 target —— 增益类（梅芙那种「鼓舞」）是给我方挑人的：
+     光标要是打在敌阵上，点下去这一口就喂了对面。 */
+  const aimEnemies = panel === 'aim' && (() => {
+    if (!pending) return true
+    if (pending.t === 'item') return ITEM_OF[pending.itemId]?.target === 'enemyOne'
+    if (pending.t === 'skill') {
+      const k = actor ? legalSkills(actor, st).find((x) => x.id === pending.skillId) : undefined
+      return !k || k.target !== 'allyOne'
+    }
+    return true
+  })()
   const aimAllies = panel === 'aim' && !aimEnemies
 
   /*
@@ -255,13 +355,18 @@ export function Battle({
     挂到 body 之后它才是一块真正独占视图的界面：1920×1080 一屏装得下。
   */
   return createPortal(
-    <div className={css.root} data-battle="1" data-phase={st.phase} data-shake={shake ? '1' : undefined}>
-      {/* 全屏演出层 */}
-      {fx ? (
+    <div className={css.root} data-battle="1" data-phase={st.phase} data-command={st.command} data-shake={shake ? '1' : undefined}>
+      {/*
+        全屏演出层 —— 只管「一手打一群」的那种（全体技 / 合击 / 终末系）。
+        单体技不走这里：打在一个人身上的东西，就该出现在那个人身上
+        （见 Unit / Foe 里的 data-fx-on），把整屏糊一层光是纯噪音。
+      */}
+      {fx && fx.scope === 'all' ? (
         <div
           key={fx.n}
           className={css.fx}
           data-fx={fx.kind}
+          data-fx-tone={fx.tone}
           data-fx-var={fxSeed(fx.skillId).variant}
           data-fx-dir={fxSeed(fx.skillId).dir === 1 ? 'r' : 'l'}
           style={{
@@ -274,6 +379,9 @@ export function Battle({
         </div>
       ) : null}
 
+      {/* 连携技：右侧立一张牌 —— 两个人（或一整队）的头像 + 招式名 */}
+      {fx?.link ? <LinkPop key={fx.n} link={fx.link} /> : null}
+
       {/* 作战屏 —— 自成一块「游戏窗口」，不铺满整个浏览器宽度
           （铺满会让指令窗与小队列隔得太远，出招时眼睛要横跨半屏） */}
       <div className={css.stage}>
@@ -284,6 +392,19 @@ export function Battle({
           <span className={`${css.no} mono`}>{st.no} / S{st.stage}</span>
           <b className={css.title}>{st.title}</b>
           <span className="tiny muted">{st.place}</span>
+          {/* 敌方怎么出手：接通了接口就是模型在指挥，没接通是引擎的离线判断 */}
+          <span
+            className={css.cmdChip}
+            data-enemy-command={st.command}
+            data-thinking={st.phase === 'think' ? '1' : undefined}
+            title={st.command === 'ai'
+              ? '敌方由接入的模型指挥：每一手都由它自己权衡（终结技能不在此列，照旧咏唱）'
+              : '敌方由作战系统离线判断：各按其性质出手'}
+          >
+            {st.command === 'ai'
+              ? (st.phase === 'think' ? '敌方指挥中…' : '敌方 · AI 指挥')
+              : '敌方 · 离线判断'}
+          </span>
           <span className={css.siteR} data-r-badge title={`${siteR.reading.note}
 ${siteR.f.word}`}>
             R {siteR.reading.r.toFixed(3)}
@@ -299,13 +420,27 @@ ${siteR.f.word}`}>
                   key={t.id}
                   className={css.traitChip}
                   data-synergy={t.id}
-                  title={`${t.desc}${t.link ? `　连携：${t.link.name} —— ${t.link.desc}` : ''}`}
+                  title={`${t.desc}${t.link
+                    ? `　连携：${t.link.name} —— ${t.link.desc}`
+                      + `　共鸣：每人各出一手（防御也算一手），蓄满 ${t.link.need} 拍等着接`
+                      + (t.link.base > t.link.need ? `（交情够了，本要 ${t.link.base} 拍）` : '')
+                      + `　接法：槽满后谁出手，这一手就跟着谁出去 —— 防御只蓄拍、不接招`
+                    : ''}`}
                 >
                   <b>{t.name}</b>
                   {t.link ? (
-                    <i className={css.linkGauge} data-link-gauge={t.id} data-full={t.link.cur >= t.link.need ? '1' : undefined}>
-                      {t.link.cur}/{t.link.need}
-                    </i>
+                    <>
+                      <i className={css.linkGauge} data-link-gauge={t.id} data-full={t.link.cur >= t.link.need ? '1' : undefined} data-cut={t.link.base > t.link.need ? '1' : undefined}>
+                        {t.link.cur}/{t.link.need}
+                        {t.link.base > t.link.need ? <em className={css.linkCut}>羁绊</em> : null}
+                      </i>
+                      {/* 槽满不等于接上了 —— 防御不算出手，光架盾是接不上的。这一格就是把话说明白 */}
+                      {t.link.cur >= t.link.need ? (
+                        <em className={css.linkHint} data-link-hint={t.id} title="共鸣已蓄满：谁出手，这一手就跟谁出去；防御只蓄拍、不接招">
+                          出手即接
+                        </em>
+                      ) : null}
+                    </>
                   ) : (
                     <i className={css.traitMark}>{t.mark}</i>
                   )}
@@ -346,10 +481,10 @@ ${siteR.f.word}`}>
               data-ready={ready ? '1' : undefined}
               data-next={i === 0 && !ready ? '1' : undefined}
               style={{ '--u': c.hue } as CSSProperties}
-              title={`${c.name} · 行动条 ${Math.round(pct)}%${ready ? ' · 已待命' : ` · 约 ${eta} 拍后出手`}`}
+              title={`${named(c)} · 行动条 ${Math.round(pct)}%${ready ? ' · 已待命' : ` · 约 ${eta} 拍后出手`}`}
             >
               <i className={css.orderSigil}>{c.sigil}</i>
-              <b>{c.name}</b>
+              <b>{named(c)}</b>
               <span className={css.orderBar}>
                 <i style={{ width: `${pct}%` }} />
               </span>
@@ -375,7 +510,8 @@ ${siteR.f.word}`}>
         </div>
       </div>
 
-      {/* 战报条 —— 贴着敌阵脚下的一条滚动字幕，出战况不占地方 */}
+      {/* 观测频道 —— 右侧一栏竖排战报：谁出了哪一手、说了什么、打在谁身上，一眼扫得到，
+          又不会压在敌阵脚下挡视野 */}
       <div className={css.logStrip} data-battle-log>
         <div className={css.logCap}>
           观测频道
@@ -438,28 +574,39 @@ ${siteR.f.word}`}>
                   <span style={{ fontSize: 14 }}>{actor.sigil}</span>
                 </span>
                 <span style={{ minWidth: 0 }}>
-                  <b style={{ fontSize: 13 }}>{actor.name}</b>
+                  <b style={{ fontSize: 13 }}>{named(actor)}</b>
                   <span className="tiny muted" style={{ display: 'block' }}>
                     {actor.cls}
                     {actor.startNeed > 0 && actor.startUsed < actor.startNeed
                       ? ` · 封印 ${actor.startUsed}/${actor.startNeed} · 普攻与技能尚未解禁`
-                      : actor.scar ? ` · 樱印 ${actor.stack}` : actor.note ? ` · ${actor.note}` : ''}
+                      : stackText(actor) || (actor.note ? ` · ${actor.note}` : '')}
                   </span>
                 </span>
               </div>
 
               {panel === 'root' ? (
                 <div className={css.seq} data-command-menu>
-                  {SEQ.map((b) => (
+                  {SEQ.map((b) => {
+                    // 普通攻击是「攻击」这一条指令本身，不是技能表里的一栏（用户口径）。
+                    // 封印未解的人按不动这一条 —— 灰着并写清为什么，比按下去没反应好。
+                    const basic = b.id === 'atk'
+                      ? legalSkills(actor, st).find((x) => x.kind === '普攻')
+                      : undefined
+                    const locked = b.id === 'atk' && !basic
+                    return (
                     <button
                       key={b.id}
                       type="button"
                       data-cmd={b.id}
+                      data-locked={locked ? '1' : undefined}
+                      disabled={locked}
+                      title={locked
+                        ? `尚未解禁：解封 ${actor.startUsed}/${actor.startNeed} 打满后，普攻与技能才放得出来`
+                        : undefined}
                       className={css.seqBtn}
                       onClick={() => {
                         if (b.id === 'atk') {
-                          const k = legalSkills(actor, st).find((x) => x.kind === '普攻')
-                          if (k) issue({ t: 'atk', targetId: '' })
+                          if (basic) issue({ t: 'atk', targetId: '' })
                         } else if (b.id === 'guard') issue({ t: 'guard' })
                         else setPanel(b.id as Panel)
                       }}
@@ -468,23 +615,37 @@ ${siteR.f.word}`}>
                       <span>{b.label}</span>
                       {b.id === 'flee' ? <span className={css.seqSub}>{Math.round(st.fleeOdds * 100)}%</span> : null}
                       {b.id === 'gear' ? <span className={css.seqSub}>不耗回合</span> : null}
+                      {locked ? <span className={css.seqSub}>未解禁</span> : null}
                     </button>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : null}
 
               {panel === 'skill' ? (
                 <SubPanel title="技能" onBack={() => setPanel('root')}>
                   <div className={css.list} data-skill-list data-actor={actor.id}>
-                    {legalSkills(actor, st).map((k) => (
-                      <SkillBtn
-                        key={k.id}
-                        k={k}
-                        sp={actor.sp}
-                        cd={actor.cds[k.id] ?? 0}
-                        onClick={() => { setPanel('root'); issue({ t: 'skill', skillId: k.id }) }}
-                      />
-                    ))}
+                    {SKILL_GROUPS.map((g) => {
+                      const rows = legalSkills(actor, st).filter((k) => k.kind === g.kind)
+                      if (!rows.length) return null
+                      return (
+                        <div key={g.kind} className={css.skillGroup} data-skill-group={g.kind}>
+                          <div className={css.groupCap} data-skill-group-cap={g.kind}>
+                            <b>{g.label}</b>
+                            <span className={css.groupNote}>{g.note}</span>
+                          </div>
+                          {rows.map((k) => (
+                            <SkillBtn
+                              key={k.id}
+                              k={k}
+                              sp={actor.sp}
+                              cd={actor.cds[k.id] ?? 0}
+                              onClick={() => issue({ t: 'skill', skillId: k.id })}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 </SubPanel>
               ) : null}
@@ -532,24 +693,35 @@ ${siteR.f.word}`}>
                       .map((gid) => {
                         const g = GEAR_OF[gid]
                         const on = actor.gear === gid
+                        // 专属件认人：它认的是系丝线的那只手，不是背包里有没有位置
+                        // 再一条：一件装具只有一副，队伍里谁先系上就是谁的 —— 别人那格按不动
+                        const holder = Object.keys(equipMap).find((pid) => pid !== actor.id && equipMap[pid] === gid)
+                        const ok = canEquip(actor.id, gid) && !holder
                         return (
                           <button
                             key={gid}
                             type="button"
                             data-gear={gid}
+                            data-gear-only-for={!canEquip(actor.id, gid) ? g.onlyFor?.join(',') : undefined}
+                            data-gear-held-by={holder || undefined}
+                            disabled={!ok}
                             className={`${css.row} ${on ? css.rowOn : ''}`}
-                            title={g.desc}
-                            onClick={() => doEquip(gid)}
+                            title={ok ? g.desc
+                              : holder ? `${g.name} 正系在 ${personOf(holder)?.name ?? holder} 身上 —— 一件装具只有一副。`
+                              : `${g.name} 只认 ${g.onlyFor?.map((id) => personOf(id)?.name ?? id).join('、')} —— 别人系上也只是一条普通的线。`}
+                            onClick={() => ok && doEquip(gid)}
                           >
                             <SkillIcon id={`gear-${gid}`} />
                             <span className={css.rowName}>
                               {g.name}
                               <i className={css.rowSub}>{g.sub}</i>
                             </span>
-                            <span className={css.rowCost}>{on ? '装配中' : `×${owned[gid]}`}</span>
+                            <span className={css.rowCost}>{holder ? '在别人身上' : !ok ? '认人' : on ? '装配中' : `×${owned[gid]}`}</span>
                             <span className={css.rowDesc} data-gear-desc>{g.desc}</span>
                             <span className={css.rowNotes} data-gear-notes>
                               {gearNotes(g).map((n, i) => <i key={`${i}-${n}`}>{n}</i>)}
+                              {holder ? <i>已在 {personOf(holder)?.name ?? holder} 身上</i>
+                                : !ok ? <i>仅限 {g.onlyFor?.map((id) => personOf(id)?.name ?? id).join('、')}</i> : null}
                             </span>
                           </button>
                         )
@@ -697,10 +869,35 @@ const TARGET_LABEL: Record<string, string> = {
  * 数值一律从技能本身读（倍率 / 消耗 / 命中段数 / 附带效果），不另写一份说明 ——
  * 免得文案与引擎各说各的。
  */
+/** 变身期间顶的是另一副名字（黄金狮子）—— 场上各处叫的都得跟着换 */
+function named(c: Combatant): string {
+  return c.morph?.kind === 'form' ? c.morph.name : c.name
+}
+
+/** 印记读数：还没蓄满才显示（蓄满了这一手就列在菜单里了，不必再报数） */
+function stackText(c: Combatant): string {
+  const need = endOf(c)?.needsStack ?? 0
+  if (need <= 0 || c.stack >= need) return ''
+  return ` · ${c.scar ? '樱印' : '印记'} ${c.stack}/${need}`
+}
+
+/** 技能面板分组：普攻不是技能，不该和技能混在同一张表里 */
+const SKILL_GROUPS: Array<{ kind: SkillKind; label: string; note: string }> = [
+  { kind: '到达点', label: '到达点（End）', note: '每个人的终结技 · 蓄满印记才列得出来' },
+  { kind: '启动', label: '启动', note: '解封印的前置手 · 打满才算起手完毕' },
+  { kind: '技能', label: '技能', note: '本命的那几手 · 各有代价与冷却' },
+]
+
 function notesOf(k: SkillSpec): string[] {
   const out: string[] = []
-  if (k.power > 0) out.push(`倍率 ${(k.power / POWER_SCALE).toFixed(2)} × ${k.axis}`)
-  else out.push('本手不造成伤害')
+  // 这一手在框架里按哪一类打的 —— 同类的两个人可以直接对着看
+  if (k.arch) out.push(`框架 · ${archNameOf(k.arch) ?? k.arch}`)
+  if (k.power > 0) {
+    const mul = k.variance
+      ? `倍率 ${((k.power * (1 - k.variance)) / POWER_SCALE).toFixed(2)}~${((k.power * (1 + k.variance)) / POWER_SCALE).toFixed(2)} 摇摆 × ${k.axis}`
+      : `倍率 ${(k.power / POWER_SCALE).toFixed(2)} × ${k.axis}`
+    out.push(mul)
+  } else out.push('本手不造成伤害')
   out.push(TARGET_LABEL[k.target] ?? k.target)
   if (k.cost) out.push(`耗 ${k.cost} 体力`)
   if (k.cd) out.push(`冷却 ${k.cd} 拍`)
@@ -731,7 +928,11 @@ function notesOf(k: SkillSpec): string[] {
   if (k.requireAll?.length) out.push(`合击 · ${k.requireAll.length} 人全员在场`)
   if (k.linkPow) out.push(`参加者各补 ${Math.round(k.linkPow * 100)}% 出力`)
   if (k.mergeAlly) out.push(`与 ${personOf(k.mergeAlly)?.name ?? k.mergeAlly} 合体 ${k.mergeTicks ?? 2} 拍`)
-  if (k.morph) out.push(`变身 ${k.morphTicks ?? 3} 拍 · 变身毕起算冷却 ${k.morphCd ?? 0} 拍`)
+  if (k.morph) out.push(`变形 ${k.morphTicks ?? 3} 拍 · 变身毕起算冷却 ${k.morphCd ?? 0} 拍`)
+  if (k.form) {
+    out.push(`变身「${k.form.name}」${k.form.ticks} 拍`)
+    out.push('变身期间整份技能表换成那副面目的打法')
+  }
   if (k.ult) out.push(`终结技 · 蓄 ${k.ult} 拍`)
   if (k.kind === '启动') out.push('启动技 · 解封普攻与技能')
   return out
@@ -767,7 +968,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       data-power={k.power}
       data-cd={cooling ? cd : undefined}
       data-cdmax={k.cd ?? 0}
-      className={`${css.row} ${k.kind === '启动' ? css.rowStart : ''} ${poor || cooling ? css.rowPoor : ''}`}
+      className={`${css.row} ${k.kind === '启动' ? css.rowStart : ''} ${k.kind === '到达点' ? css.rowEnd : ''} ${poor || cooling ? css.rowPoor : ''}`}
       disabled={poor || cooling}
       title={`${k.name}｜${k.desc}${state ? `（${state}）` : ''}`}
       onClick={onClick}
@@ -805,15 +1006,49 @@ function BuffTags({ c }: { c: Combatant }) {
   if (!c.buffs.length && !c.shield && !c.taunt) return null
   const label: Record<string, string> = {
     atk: '攻势', spd: '加速', evade: '闪避', acc: '命中', shield: '护罩', mark: '破绽', slow: '减速',
+    // 敌方向我方挂的三种：标签直说后果，不必让玩家去翻说明
+    silence: '沉默', bleed: '流血', frail: '减攻',
   }
   return (
     <div className={css.buffs}>
       {c.buffs.map((b, i) => (
-        <span key={`${b.k}-${i}`} className={css.buff} data-buff={b.k}>
+        <span key={`${b.k}-${i}`} className={css.buff} data-buff={b.k} data-debuff={isDebuff(b.k) ? '1' : undefined}>
           {label[b.k] ?? b.k}{b.v > 0 ? `+${Math.round(b.v * 100)}%` : ''}
+          <i className={css.buffT} title={`还剩 ${b.t} 拍`}>{b.t}</i>
         </span>
       ))}
       {c.taunt > 0 ? <span className={css.buff} data-buff="taunt">引仇</span> : null}
+    </div>
+  )
+}
+
+/* ---------- 连携技：右侧立起来的那张牌 ----------
+   羁绊攒满、自己接上的那一手，值得单占一块地方：
+   谁跟谁一起打的，看脸就知道 —— 头像叠着排，招式名压在下头。
+   跟伤害数字挤在一起就分不出「这是合击」了。 */
+
+function LinkPop({ link }: { link: { id: string; name: string; members: string[] } }) {
+  return (
+    <div className={css.linkPop} data-link={link.id} data-link-pop="1" role="status">
+      <b className={css.linkPopCap}>连携</b>
+      <div className={css.linkPopFaces}>
+        {link.members.map((id, i) => {
+          const p = personOf(id)
+          return (
+            <span
+              key={id}
+              className={css.linkPopFace}
+              /* 一张压一张：并排太散，叠起来才像「凑在一起」的两个人 */
+              style={{ marginLeft: i ? -15 : 0, zIndex: 9 - i } as CSSProperties}
+              data-link-face={id}
+            >
+              <Portrait avatarId={id} className={css.linkPopAva} size={54} round eager />
+              <i style={{ color: p?.hue ?? 'var(--ink)' }}>{p?.name ?? id}</i>
+            </span>
+          )
+        })}
+      </div>
+      <b className={css.linkPopName}>{link.name}</b>
     </div>
   )
 }
@@ -830,6 +1065,8 @@ function Unit({
   onPick?: () => void
 }) {
   const hit = !!fx && fx.targetId === c.id
+  /** 单体演出就落在他身上（全体技走全屏那一层，这里只留飘字） */
+  const onMe = hit && fx!.scope === 'one'
   const hpPct = (c.hp / c.hpMax) * 100
   const low = hpPct <= 30
   return (
@@ -850,7 +1087,9 @@ function Unit({
 
       <div className={css.unitBody}>
         <div className={css.unitTop}>
-          <b className={css.unitName}>{c.name}</b>
+          <b className={css.unitName} data-form={c.morph?.kind === 'form' ? c.morph.name : undefined}>
+            {named(c)}
+          </b>
           {c.startNeed > 0 ? (
             <span className={css.unitGate} title={`解封 ${c.startUsed}/${c.startNeed}`}>
               {c.startUsed}/{c.startNeed}
@@ -878,19 +1117,41 @@ function Unit({
         <div className={css.unitTags}>
           <span className={css.unitCls}>{c.cls}</span>
           {c.passive ? (
-            <span className={css.unitPas} data-passive={c.passive.name} title={c.passive.desc}>
+            /* 说明写它从原文哪儿来，读数写它这一场究竟加减多少 —— 两样都得有 */
+            <span
+              className={css.unitPas}
+              data-passive={c.passive.name}
+              title={[c.passive.desc, ...passiveText(c.passive)].join('\n')}
+            >
               〔{c.passive.name}〕
             </span>
           ) : null}
           {c.gone > 0 ? <span className={css.goneMark}>合体中 · {c.gone} 拍</span> : null}
           {c.morph ? (
             <span className={css.morphMark} data-morph={c.morph.name}>
-              化身 · {c.morph.name} · {c.morph.ticks} 拍
+              {c.morph.kind === 'form'
+                ? `变身 · 剩 ${c.morph.ticks} 拍`
+                : `化身 · ${c.morph.name} · ${c.morph.ticks} 拍`}
             </span>
           ) : null}
           <BuffTags c={c} />
         </div>
       </div>
+
+      {onMe ? (
+        <span
+          key={fx!.n}
+          className={css.fxOn}
+          data-fx-on={c.id}
+          data-fx={fx!.kind}
+          data-fx-tone={fx!.tone}
+          data-fx-var={fxSeed(fx!.skillId).variant}
+          style={{ '--fx-hue': fxSeed(fx!.skillId).hue, '--u': c.hue } as CSSProperties}
+          aria-hidden
+        >
+          <em className={css.fxTagOn}>{fx!.skill}</em>
+        </span>
+      ) : null}
 
       {hit && fx.dmg ? <span key={fx.n} className={css.dmgNum}>{fx.dmg}</span> : null}
       {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
@@ -910,12 +1171,24 @@ function Foe({
   onPick?: () => void
 }) {
   const hit = !!fx && fx.targetId === c.id
+  /** 单体演出就落在他身上（全体技走全屏那一层，这里只留飘字） */
+  const onMe = hit && fx!.scope === 'one'
   const hpPct = (c.hp / c.hpMax) * 100
   const ready = c.bar >= TUNING.barMax
   return (
     <div className={css.foe} data-unit={c.id} data-side="enemy" data-foe-card={c.id}>
       {/* 名字在头上 */}
       <div className={css.foeName} data-foe-name>
+        {/* 头目档：每场至少一个。徽标只是把名册上的分层摆到明面上 ——
+            精英是硬骨头，首领还带一记要防的终结技。 */}
+        {c.tier ? (
+          <span
+            className={`${css.foeTier} ${c.tier === 'boss' ? css.foeTierBoss : ''}`}
+            data-foe-tier={c.tier}
+          >
+            {c.tier === 'boss' ? '首领' : '精英'}
+          </span>
+        ) : null}
         <b>{c.name}</b>
         <i>{c.cls}</i>
         {c.trait ? <em className="tiny muted">{c.trait}</em> : null}
@@ -935,6 +1208,20 @@ function Foe({
         </span>
         {hit && fx.dmg ? <span key={fx.n} className={css.dmgNumBig}>{fx.dmg}</span> : null}
         {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
+        {onMe ? (
+          <span
+            key={fx!.n}
+            className={css.fxOnBig}
+            data-fx-on={c.id}
+            data-fx={fx!.kind}
+            data-fx-tone={fx!.tone}
+            data-fx-var={fxSeed(fx!.skillId).variant}
+            style={{ '--fx-hue': fxSeed(fx!.skillId).hue } as CSSProperties}
+            aria-hidden
+          >
+            <em className={css.fxTagOn}>{fx!.skill}</em>
+          </span>
+        ) : null}
       </div>
 
       {/* 数值与状态在脚下 */}

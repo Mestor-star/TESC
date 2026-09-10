@@ -16,6 +16,16 @@ import { OPERATOR_ID } from '../data/castmeta'
 /** 与名册同一口径：power 以「对应轴的百分之多少」计（见 roster.ts 的 POWER_SCALE） */
 import { POWER_SCALE } from './battle/roster'
 
+/** 变身后的那副面目：名字／五轴／整份技能表（技能表按 OpAbility 写，转面板在 derive） */
+export interface OpForm {
+  name: string
+  note?: string
+  ticks: number
+  cd?: number
+  axes?: Partial<AxisSheet>
+  skills: OpAbility[]
+}
+
 /** 他的一手技能（原文有则用原名，分支即同一门的变奏） */
 export interface OpAbility {
   name: string
@@ -31,6 +41,10 @@ export interface OpAbility {
   needsStack?: number
   /** 冷却：出手后 N 次自身行动之内不得再出 */
   cd?: number
+  /** 解封之后还要过几拍才放得出来（与名册同一口径，见 SkillSpec.openAfter） */
+  openAfter?: number
+  /** 这一手在技能框架里按哪一类打的（见 battle/atlas.ts） */
+  arch?: string
   /** 需场上同在者（角色 id）——人不在，这一手就不列出来 */
   requireAlly?: string
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，mergeTicks 拍后自行归位 */
@@ -38,6 +52,12 @@ export interface OpAbility {
   mergeTicks?: number
   /** 解锁点：读到这一段时间线事件（含）之后，这一手才进他的技能组 */
   unlockAt?: string
+  /** 出手时的一句台词（原文有则用原文；缺省 = 走台词池） */
+  line?: string
+  /** 变身：出手当场换成另一副面目（名字／五轴／整份技能表一起换） */
+  form?: OpForm
+  /** 倍率浮动：每次出手轻重差很多（出力在 pow × (1 ± variance) 之间摇） */
+  variance?: number
   /** 变身（noapusa「变成他人」）：照一份已解锁的档案角色变身，复制其全部能力 */
   morph?: boolean
   morphTicks?: number
@@ -80,7 +100,7 @@ const A = (
 ): AxisSheet => ({ 破坏力, 敏捷度, 物理抗性, 反现实亲和, 意志力 })
 
 /** 第一卷的最后一节：走完它，露娜的丝线才算真的系在他手腕上 */
-const VOL1_END = 'v1-9'
+export const VOL1_END = 'v1-9'
 
 const ab = (
   name: string, kind: SkillKind, desc: string, pow: number, axis: AxisKey, fx: FxKind,
@@ -91,18 +111,70 @@ const ab = (
 })
 
 /**
- * 「黄金狮子」——露娜的本源终末。
- * 她是「境界领域商会」以金属丝线织成的机器人偶，狮形是她被造出来时的样子；
- * 合体出力远超两人相加，代价是此刻必须由他一个人站着：她在三拍之内不在场上。
+ * 「黄金狮子」——露娜的本源终末，现在是他的第二副面目。
+ *
+ * 她是「境界领域商会」以金属丝线织成的机器人偶，狮形是她被造出来时的样子。
+ * 第一卷最后一节立下契约之后，这份东西交到了他手上：不是借力、也不是合体，
+ * 是他自己当场变成那头狮子——名字换掉、五轴换掉、连打法整套换掉。
+ * 解禁的是「他能不能一个人撑住」，所以变身期间不再需要露娜站在旁边，
+ * 代价是这几拍他不能再打拳，只能用狮子的方式出手。
  */
-const GOLDEN_LION = (pow: number): OpAbility => ab(
+/** 狮子那套打法（变身期间整份顶替掉他的拳法）。scale = 时期成长系数 */
+const lionSkills = (sc: number) => [
+  ab('黄金狮子 · 獠牙', '普攻',
+    '牙齿不是金属——是她一根一根织出来的线，咬进去之后自己会收紧。',
+    1.9 * sc, '破坏力', 'slash', { line: '「——咬住了。别挣，会断的。」' }),
+  ab('黄金狮子 · 咆哮', '技能',
+    '本源终末的一声。敌方全体被震退，蓄着的充能一并塌下去。',
+    1.1 * sc, '反现实亲和', 'noise',
+    { target: 'all', cost: 4, effect: { pushBack: 0.55, slow: 0.3 },
+      line: '「这一次，它选择守护人类。」' }),
+  ab('丝线 · 千手', '技能',
+    '千万根丝同时收紧，从各个关节的缝里切进去——无视闪避与减伤，多段贯穿。',
+    1.3 * sc, '破坏力', 'slash',
+    { cost: 5, cd: 2, effect: { pierce: true, hits: 3 },
+      line: '「你甩得动，我就接得住。」' }),
+  ab('黄金的护佑', '技能',
+    '狮身横在队伍前面。这份契约的正文本来就是「守护」，不是「歼灭」。',
+    0, '意志力', 'guard',
+    { target: 'allyAll', cost: 3, turns: 2, cd: 3, effect: { taunt: true, shield: 0.4 },
+      line: '「这一次，我不会再让它一个人站着。」' }),
+  ab('本源终末 · 歼灭', '技能',
+    '到达点：把「终末」这个词本身按下去——这一记连着守护者群一起抹掉。',
+    3.8 * sc, '反现实亲和', 'noise',
+    { target: 'all', cost: 9, cd: 4, line: '「——「可以哦」。你说的。那我就不松手了。」' }),
+]
+
+/**
+ * 「黄金狮子」——露娜的本源终末，现在是他的第二副面目。
+ *
+ * 她是「境界领域商会」以金属丝线织成的机器人偶，狮形是她被造出来时的样子。
+ * 第一卷最后一节立下契约之后，这份东西交到了他手上：不是借力、也不是合体，
+ * 是他自己当场变成那头狮子——名字换掉、五轴换掉、连打法整套换掉。
+ * 解禁的是「他能不能一个人撑住」，所以他不再需要露娜站在旁边接着；
+ * 代价写在另一头：这几拍他打不了拳，只能用狮子的方式出手。
+ */
+const GOLDEN_LION = (sc: number): OpAbility => ab(
   '黄金狮子', '技能',
-  '与露娜合而为一——丝线织成的狮。她暂时从他身上消失，三拍之后自行归位；'
-  + '这一击的出力远超两人相加。（需露娜在场）',
-  pow, '反现实亲和', 'noise',
-  // 不设「到达点」：这门合体的门槛是「露娜在场」与「契约已立」，
-  // 不是攒印记——代价已经写在「三拍之内她不在场上」上了。
-  { target: 'all', cd: 5, requireAlly: 'luna', mergeAlly: 'luna', mergeTicks: 3 },
+  '第一卷最后一节立下的契约：她把自己交给了他。此后他可以不靠她站在旁边——'
+  + '当面化成那头丝线织成的狮，换一套打法出手，四拍之后自行变回来。'
+  + '变身期间用不了拳法。（需露娜在场）',
+  0, '反现实亲和', 'guitar',
+  {
+    target: 'self', cost: 6, cd: 6, requireAlly: 'luna', unlockAt: VOL1_END,
+    form: {
+      name: '黄金狮子',
+      note: 'NO.8288 · 丝线织成的狮',
+      ticks: 4,
+      cd: 6,
+      // 兽化的代价写在原著里：破坏力与物理抗性大幅上抬，意志力反而下去
+      axes: {
+        破坏力: Math.round(42 * sc), 物理抗性: Math.round(34 * sc),
+        反现实亲和: Math.round(48 * sc), 意志力: Math.round(22 * sc),
+      },
+      skills: lionSkills(sc),
+    },
+  },
 )
 
 export const OP_PERIODS: OpPeriod[] = [
@@ -132,12 +204,19 @@ export const OP_PERIODS: OpPeriod[] = [
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
         2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
-      ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
-        + '他要喊的东西总在出手之前就到。',
-        0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
+      ab('低语 · 读心', '技能', '他把听见的东西念给全队听——对方的「往左躲」不再是秘密。'
+        + '自身回避率上升，全队命中率一并上升。',
+        0, '反现实亲和', 'seal',
+        { target: 'allyAll', cost: 3, turns: 3, effect: { evade: 0.3, accUp: 0.35 } }),
       ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
-      GOLDEN_LION(2.6),
+      GOLDEN_LION(1),
+      /* 到达点：委员会的执行权在他手上 —— 全场宣读一次「停滞观测」 */
+      ab('停滞观测 · 宣告', '到达点',
+        '以低语者把整片战场的心声一次读完，再反向灌回去：这份观测记录当场成立，'
+        + '场上所有东西都被按在原地。',
+        2.4, '意志力', 'noise',
+        { target: 'all', cost: 8, cd: 4, needsStack: 3, effect: { mark: 0.35, slow: 0.3 } }),
     ],
   },
   {
@@ -177,7 +256,12 @@ export const OP_PERIODS: OpPeriod[] = [
         0, '反现实亲和', 'guitar',
         // 出手当时不上冷却：冷却从「变身解除」那一刻才起算（见 engine 的拍子循环）
         { cost: 3, cd: 0, target: 'one', morph: true, morphTicks: 3, morphCd: 3 }),
-      GOLDEN_LION(2.8),
+      GOLDEN_LION(1.2),
+      ab('noapusa · 万物皆我', '到达点',
+        '化身之枪的极限：同时借来在场所有东西的形状，一次打出去。'
+        + '借来的东西打出去之后是要还的 —— 这一手不带任何后手。',
+        2.6, '反现实亲和', 'noise',
+        { target: 'all', cost: 8, cd: 4, needsStack: 3, effect: { pierce: true } }),
     ],
   },
   {
@@ -212,7 +296,12 @@ export const OP_PERIODS: OpPeriod[] = [
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
       ab('a Session. · 合而为一', '技能', '与同伴灵魂共奏：全队攻击与充能一并上扬。',
         0, '意志力', 'slash', { target: 'allyAll', turns: 3, effect: { atkUp: 0.35, spdUp: 0.3 } }),
-      GOLDEN_LION(3.2),
+      GOLDEN_LION(1.5),
+      ab('a Session. · 终章', '到达点',
+        '两枚戒指相互共鸣到极限的那一拍：把同行者的灵魂一并拉进这一拳里。'
+        + '打完这一手，他还要站在原地 —— 那是他学会的最后一件事。',
+        3.0, '意志力', 'slash',
+        { cost: 8, cd: 4, needsStack: 3, effect: { pushBar: 0.4, heal: 0.2 } }),
     ],
   },
 ]

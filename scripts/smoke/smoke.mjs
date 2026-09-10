@@ -339,6 +339,53 @@ try {
   // A0：P9 角色档案受门禁保护——此时仍是全新世界、unlocked=false，档案不可调阅
   await goto('角色档案')
   await sleep(700)
+  /* ---------- A·G：梅芙的引导（方形头像 + 对话气泡 · 可跳过） ---------- */
+  await poll(`!!document.querySelector('[data-guide-layer="boot"]')`, 15000, 'A guide boot')
+  const gA = await ev(`(()=>{const lay=document.querySelector('[data-guide-layer]');const b=document.querySelector('[data-guide-bubble]');
+    const f=document.querySelector('[data-guide-face]');
+    return {tour:lay?lay.getAttribute('data-guide-layer'):null, step:lay?lay.getAttribute('data-guide-step'):null,
+      who:b?b.innerText.includes('梅芙莉莎'):false, face:f?Math.round(f.getBoundingClientRect().width):0,
+      skip:!!document.querySelector('[data-guide-skip]'), next:!!document.querySelector('[data-guide-next]'),
+      dim:!!document.querySelector('[data-guide-layer] > div')}})()`)
+  ok('AG0 开屏引导：梅芙方形头像 + 气泡 + 压暗层 + 跳过/下一步',
+    gA.tour === 'boot' && gA.step === '0' && gA.who === true && gA.face > 24 && gA.skip === true && gA.next === true && gA.dim === true,
+    JSON.stringify(gA))
+
+  // 下一步 → 走一步；再按「跳过教程」→ 整层收走，且不再回来
+  await ev(`(()=>{const b=document.querySelector('[data-guide-next]');if(b)b.click();return true})()`)
+  await sleep(300)
+  const gA2 = await ev(`(()=>{const lay=document.querySelector('[data-guide-layer]');return lay?lay.getAttribute('data-guide-step'):null})()`)
+  const gTxt = await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');return b?b.innerText.replace(/\\s+/g,' ').slice(0,60):''})()`)
+  ok('AG1 下一步推进到第 2 步（气泡换文案）', gA2 === '1' && !!gTxt, 'step=' + gA2 + ' txt=' + gTxt)
+
+  // 长气泡不许把「下一步」顶出屏幕：现场往这一步里灌 40 条，看按钮还在不在视野里
+  await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');const ul=b&&b.querySelector('ul');
+    if(!ul)return false;
+    for(let i=0;i<40;i++){const li=document.createElement('li');li.textContent='撑高测试行 '+i+' —— 这一步的字多到装不下时，条目自己滚，按钮行不许跟着往下走';ul.appendChild(li)}
+    window.dispatchEvent(new Event('resize'));return true})()`)
+  await sleep(320)
+  const gFit = await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');if(!b)return {err:'no bubble'};
+    const ul=b.querySelector('ul');if(!ul)return {err:'no ul'};
+    const r=b.getBoundingClientRect(),n=document.querySelector('[data-guide-next]').getBoundingClientRect();
+    return {h:Math.round(r.height),vh:innerHeight,top:Math.round(r.top),bottom:Math.round(r.bottom),
+      btn:Math.round(n.bottom),
+      scrolls:ul.scrollHeight>ul.clientHeight+1&&getComputedStyle(ul).overflowY==='auto'}})()`)
+  ok('AG1b 长气泡封顶：条目自己滚，「下一步」仍留在屏幕里（不再点不到）',
+    gFit.err === undefined && gFit.top >= -1 && gFit.bottom <= gFit.vh + 1 && gFit.btn <= gFit.vh + 1 && gFit.scrolls === true,
+    JSON.stringify(gFit))
+
+  await ev(`(()=>{const b=document.querySelector('[data-guide-skip]');if(b)b.click();return true})()`)
+  await sleep(400)
+  const gSkip = await ev(`(()=>{let st=null;try{st=JSON.parse(localStorage.getItem('zts-guide:v1'))}catch(e){}
+    return {layer:!!document.querySelector('[data-guide-layer]'), skipped:!!(st&&st.skipped)}})()`)
+  ok('AG2 跳过教程：引导层撤走 · 快照记 skipped', gSkip.layer === false && gSkip.skipped === true, JSON.stringify(gSkip))
+
+  // 跳过之后换模块也不再冒出来
+  await goto('智库')
+  await sleep(700)
+  const gAfter = await ev(`!!document.querySelector('[data-guide-layer]')`)
+  ok('AG3 跳过之后换模块不再出现引导', gAfter === false, 'layer=' + gAfter)
+  await goto('终端总览')
   const a0 = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色档案'));const v=document.querySelector('.vpage');return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length,toast:document.body.innerText.includes('权限未解锁'),sub:v?v.innerText.slice(0,300):''}})()`)
   const preUnlock = await ev(`(${wState}).unlocked`)
   ok('A0 未解锁时角色档案被拦下（导航 LOCKED · 无档案卡 · 提示权限未解锁）',
@@ -419,6 +466,7 @@ try {
   await poll(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');const l=o['v1-1']||[];return l.some(x=>x.text.includes('【DIR1】'))}catch(e){return false}})()`, 10000, 'C dir1 log')
   const log1 = await ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o['v1-1']||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
   ok('C2 叙述已写入 v1-1 会话且指令剥离', log1.includes('【DIR1】') && !log1.includes('```') && !log1.includes('eventDone'), '')
+
   // 点「进入下一事件」→ 此刻才写记录；同时自动为 v1-2 生成衔接开场（req2 eventDone → v1-2 收束栏现）
   await concludedGo()
   await poll(`(${wState}).rec.length===1`, 40000, 'C v1-1 archived (进入下一事件)')
@@ -465,6 +513,19 @@ try {
   ok('C8 SMS bond +10 被 clamp 到 +3', st.off.hikari === h0 + 3, 'off.hikari=' + st.off.hikari + ' h0=' + h0)
   await poll(`document.body.innerText.includes('【SMS】')`, 15000, 'C sms bubble')
   ok('C9 SMS 叙述上屏', true)
+
+  // 交战成文：一场仗打完回填进推演的那段剧情，与导演叙述分栏（走观感不同的那一路）
+  await ev(`(()=>{const k='zts-plot:v1';const o=JSON.parse(localStorage.getItem(k)||'{}');
+    o['v1-1']=(o['v1-1']||[]).concat([{id:'smoke-story',from:'them',time:'--:--',
+      text:'【战斗开始】\\n现场的空气先一步沉了下去。',meta:{battle:true}}]);
+    localStorage.setItem(k,JSON.stringify(o));return true})()`)
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-narration="battle"]')`, 15000, 'C storylog rendered')
+  const cStory = await ev(`(()=>{const n=document.querySelector('[data-narration="battle"]');
+    return {n:document.querySelectorAll('[data-narration="battle"]').length,
+      cap:n&&n.querySelector('b')?n.querySelector('b').textContent:'', txt:n?n.innerText:''}})()`)
+  ok('C9b 交战成文进推演：以「交战 · 成文」分栏渲染，不混进导演叙述',
+    cStory.n === 1 && cStory.cap === '交战 · 成文' && cStory.txt.includes('【战斗开始】'), JSON.stringify(cStory).slice(0, 160))
 
   /* ============ Phase D：旧 zts-tavern:v1 线程延续（清空后仍现旧记录） ============ */
   console.log('\n[Phase D] 短信旧线程延续（zts-tavern:v1）')
@@ -528,6 +589,9 @@ try {
   const opened = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('世界书'));if(!b)return false;b.click();return true})()`)
   await poll(`!!document.querySelector('[data-loremanager]') && document.body.innerText.includes('命中规则') && document.body.innerText.includes('世界书管理器')`, 15000, 'E lore manager embedded')
   ok('E7 世界书按钮 → 智库页 · 管理器整页内嵌', opened === true, '')
+  // 智库里的文本教程（操作手册）：整页陈列、节数与条目都不为空
+  const manual = await ev(`(()=>{const s=[...document.querySelectorAll('[data-manual-section]')];return {n:s.length,items:s.reduce((a,x)=>a+x.querySelectorAll('li').length,0)}})()`)
+  ok('E7b 智库 · 观测终端操作手册陈列（章节齐 · 条目非空）', manual.n >= 8 && manual.items >= 30, `sections=${manual.n} items=${manual.items}`)
   await ev(clickTxt('浏览 / 编辑'))
   await poll(`document.body.innerText.includes('选择或新增一个词条')`, 10000, 'E lore editor open')
   await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('新增词条'));if(!b)return false;b.click();return true})()`)
@@ -804,8 +868,9 @@ try {
   await ev(fillInput('存档名称', '存档员A'))
   await ev(clickExact('保存'))
   await poll(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1')||'null');return !!(f&&f.slots&&f.slots[1]&&f.slots[1].name==='存档员A')}catch(e){return false}})()`, 8000, 'J slot1 saved')
-  const sf1 = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));const s=f.slots[1];return {name:s.name,records:s.records,op:s.snapshot.operatorName,plot:(s.snapshot.plot&&s.snapshot.plot['v1-1']||[]).map(x=>x.text).join('\\n')}}catch(e){return {err:String(e)}}})()`)
+  const sf1 = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));const s=f.slots[1];return {name:s.name,records:s.records,op:s.snapshot.operatorName,guide:!!s.snapshot.guide,plot:(s.snapshot.plot&&s.snapshot.plot['v1-1']||[]).map(x=>x.text).join('\\n')}}catch(e){return {err:String(e)}}})()`)
   ok('J3 空槽保存成功（SLOT 02 · 存档员A · 1 记录 · 含 plot 会话）', sf1.name === '存档员A' && sf1.records === 1 && sf1.op === '存A' && (sf1.plot || '').includes('【存A标记】'), JSON.stringify(sf1))
+  ok('J3b 存档带上引导进度（梅芙讲到哪儿，跟着这一档走）', sf1.guide === true, `guide=${sf1.guide}`)
   await ev(closeDialog)
   await poll(`!document.querySelector('[data-savedialog]')`, 8000, 'J dialog close 1')
 
@@ -861,6 +926,9 @@ try {
   ok('J11 行动开始不清手动档（slots[0]=旧档留档 · slots[1]=存档员A·改）', keepSlots.s0 === '旧档留档' && keepSlots.s1 === '存档员A·改', JSON.stringify(keepSlots))
   await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='言万心叶'}catch(e){return false}})()`, 12000, 'J10 fresh run default operator')
   ok('J12 行动开始 → 运行归零（操作员代号回到默认）', true)
+  // 新的一档就是新的一轮：引导进度一并清掉，梅芙从头再讲一遍
+  const freshGuide = await ev(`localStorage.getItem('zts-guide:v1')`)
+  ok('J12b 行动开始（新档）→ 引导进度清空，梅芙从开头重讲', freshGuide === null, `zts-guide:v1=${freshGuide === null ? 'null' : String(freshGuide).slice(0, 80)}`)
 
   /* ============ Phase K：P8 武装图鉴门禁 —— noapusa / a Session. 在 v2-2 / v4-5 前灰卡、读毕点亮 ============ */
   console.log('\n[Phase K] P8 武装图鉴门禁：操作员武装 揭示前灰卡不泄 · 读毕点亮 · 计数过滤后算')
@@ -977,6 +1045,9 @@ try {
   await boot()
   await goto('任务简报')
   await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N patrol-lock mounted')
+  // 军需处现在是一个按钮：点开才展开柜台（贡献点兑换研究所产出的装备）
+  await ev(`(()=>{const b=document.querySelector('[data-shop-open]');if(b)b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-shop-grid]')`, 8000, 'N shop modal')
   const nLock = await ev(`(()=>{const b=document.querySelector('[data-board-refresh]');
     return {lock:!!document.querySelector('[data-patrol-locked]'),
       gen:document.querySelectorAll('[data-mission]').length,
@@ -991,22 +1062,75 @@ try {
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true,'v1-5':true},cur:'v1-5',
       operatorName:'作战观察员',focusId:'gcn',
-      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],pick:{},records:[]}
+      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true,youshihan:true,'alive-anatolia':true,'kuro-no-maou':true,reiya:true,'danae-whitmore':true},ends:{},own:[],pick:{},records:[]}
     }));
     return true})()`)
   // 掐掉此前各段留下的接口存根 → 收场成文走模板路径（离线也要能成文）
   await ev(`(async()=>{try{const db=await new Promise(res=>{const r=indexedDB.open('zts-terminal-store');r.onsuccess=()=>res(r.result)});
     await new Promise(res=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').delete('api:main');t.oncomplete=()=>res(true)});return true}catch(e){return String(e)}})()`)
+  // 军需库先铺几件通用装具：编队面板的装备调整要有东西可调（同一件不能挂两个人，见 N2e）
+  await ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+    await new Promise((res,rej)=>{const tx=db.transaction('meta','readwrite');
+      tx.objectStore('meta').put({key:'gear',value:{brace:1,scope:1,filter:1}});tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
+    return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('任务简报')
   await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N missions mounted')
+  // 军需处柜台：同一处按钮
+  await ev(`(()=>{const b=document.querySelector('[data-shop-open]');if(b)b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-shop-grid]')`, 8000, 'N shop modal (board)')
   const nBoard = await ev(`(()=>{const b=document.querySelector('[data-battle-records]');const s=document.querySelector('[data-squad-stamina]');
     const cards=[...document.querySelectorAll('[data-mission]')];
+    // 「出击」是接取之后才挂上去的：待接取卡只有接取那一条，别把两者混为一谈
     const open=cards.filter(c=>c.querySelector('[data-sortie]:not([disabled])'));
-    return {rec:!!b,stam:!!s,cards:cards.length,open:open.length,refresh:!!document.querySelector('[data-board-refresh]'),
+    const raw=cards.filter(c=>c.querySelector('[data-act="接取"]'));
+    const leaked=raw.filter(c=>c.querySelector('[data-sortie]'));
+    return {rec:!!b,stam:!!s,cards:cards.length,open:open.length,raw:raw.length,leaked:leaked.length,
+      refresh:!!document.querySelector('[data-board-refresh]'),
       shop:!!document.querySelector('[data-gear-shop]'),coin:!!document.querySelector('[data-coin]'),txt:s?s.innerText:''}})()`)
-  ok('N1 任务板：随机看板 + 手动刷新 + 体力条 + 军需处 + 作战记录区', nBoard.rec === true && nBoard.stam === true && nBoard.refresh === true && nBoard.shop === true && nBoard.open >= 1, JSON.stringify(nBoard))
+  ok('N1 任务板：随机看板 + 手动刷新 + 体力条 + 军需处 + 作战记录区', nBoard.rec === true && nBoard.stam === true && nBoard.refresh === true && nBoard.shop === true && nBoard.cards >= 1, JSON.stringify(nBoard))
+  ok('N1a 待接取的任务没有「出击」：先签字，才有出战这一说', nBoard.raw >= 1 && nBoard.leaked === 0 && nBoard.open === 0, JSON.stringify(nBoard))
+  // 剧情作战：不是派单，是正史里那一场 —— 一场一场来，从灵魂蓄积器TM 起
+  const nMain = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-mainline-mission]')];
+    const c=cards[0];if(!c)return {n:0};
+    const arc=c.querySelector('[data-archive]');
+    return {n:cards.length,id:c.getAttribute('data-mainline-mission'),
+      accept:!!c.querySelector('[data-act="接取"]'),
+      fight:!!c.querySelector('[data-mainline-fight]'),
+      claimDisabled:arc?arc.disabled:null,
+      act:c.querySelector('[data-act]')?c.querySelector('[data-act]').getAttribute('data-act'):''}})()`)
+  // 眼下这一场 = 时间线上第一段真有对手的事件：v1-1「船与影」的实体是「——」，不成其为一场作战
+  ok('N1f 剧情作战：没得接取 · 打赢之前领不了归档 · 牌面只摆眼下这一场（灵魂蓄积器TM · v1-2 起）',
+    nMain.n === 1 && nMain.id === 'main-v1-2' && nMain.accept === false && nMain.fight === true
+      && nMain.claimDisabled === true && nMain.act === '待战',
+    JSON.stringify(nMain))
+
+  // 柜台里的三件事：售货员是梅芙的哥哥、货币口径是贡献点、特殊装备限购一件
+  const nShop = await ev(`(()=>{const m=document.querySelector('[data-shop-modal]');
+    const seller=m?m.innerText:"";if(!m)return null;
+    const cards=[...m.querySelectorAll('[data-shop]')];
+    const lim=[...m.querySelectorAll('[data-buy-full]')].map(b=>b.getAttribute('data-buy'));
+    const one=cards.find(c=>c.getAttribute('data-shop')==='skates');
+    return {seller:seller.includes('泰尔米别克'),contrib:/贡献点/.test(seller),
+      limited:cards.filter(c=>/限兑 1/.test(c.innerText)).length, buy:!!m.querySelector('[data-buy]'),
+      text:one?one.innerText.replace(/\\s+/g,' ').slice(0,120):''}})()`)
+  ok('N1c 军需处柜台：售货员为泰尔米别克 · 口径为贡献点 · 研究所产出件标「限兑 1」且可兑换',
+    nShop && nShop.seller === true && nShop.contrib === true && nShop.limited >= 2 && nShop.buy === true,
+    JSON.stringify(nShop))
+
+  // 限购：把「滑步靴」兑到手之后，同一格必须变成不可再兑
+  const bought = await ev(`(async()=>{const b=document.querySelector('[data-shop-modal] [data-buy="skates"]');
+    if(!b||b.disabled)return {skip:true};b.click();return {skip:false}})()`)
+  if (!bought.skip) {
+    await sleep(700)
+    const after = await ev(`(()=>{const c=document.querySelector('[data-shop-modal] [data-shop="skates"]');
+      return {full:!!document.querySelector('[data-shop-modal] [data-buy-full="skates"]'),
+        txt:c?c.innerText.replace(/\\s+/g,' ').slice(0,90):''}})()`)
+    ok('N1d 特殊装备限购一件：兑过一次之后同一格不再出货', after.full === true, JSON.stringify(after))
+  }
+  await ev(`(()=>{const b=document.querySelector('[data-shop-close]');if(b)b.click();return true})()`)
+  await sleep(200)
   // 地点 R 值 → 敌方成色：出击前就摆在卡上
   const nR = await ev(`(()=>{const c=document.querySelectorAll('[data-mission-r]');
     return {n:c.length, known:[...c].filter(x=>x.hasAttribute('data-r-known')).length,
@@ -1022,19 +1146,71 @@ try {
   await sleep(400)
   const boardAfter = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-mission]')];
     const open=cards.filter(c=>c.querySelector('[data-sortie]:not([disabled])'));
-    return {n:cards.length,open:open.length,ids:open.map(c=>c.getAttribute('data-mission')).join('|')}})()`)
-  ok('N1b 手动刷新看板重掷出一批新任务', boardAfter.n >= 1 && boardAfter.open >= 1 && boardAfter.ids !== noBefore, JSON.stringify(boardAfter).slice(0, 140))
+    return {n:cards.length,open:open.length,ids:cards.filter(c=>c.querySelector('[data-act="接取"]')).map(c=>c.getAttribute('data-mission')).join('|')}})()`)
+  ok('N1b 手动刷新看板重掷出一批新任务', boardAfter.n >= 1 && boardAfter.ids.length > 0 && boardAfter.ids !== noBefore, JSON.stringify(boardAfter).slice(0, 140))
 
-  // 出击 → 编队（主角可编入；只留恋兔光，保证慢启动门可被完整观测）
+  // 接取 → 出击 → 编队（主角可编入；只留恋兔光，保证慢启动门可被完整观测）
   const target = boardAfter.ids.split('|')[0]
+  await ev(`(()=>{const b=document.querySelector('[data-mission="${target}"] [data-act="接取"]');if(b)b.click();return true})()`)
+  await sleep(250)
+  const nAccept = await ev(`(()=>{const c=document.querySelector('[data-mission="${target}"]');
+    return {sortie:!!c.querySelector('[data-sortie]:not([disabled])'),act:c.querySelector('[data-act]')?c.querySelector('[data-act]').getAttribute('data-act'):''}})()`)
+  ok('N1e 接取之后「出击」才出现，且下一条指令转为「下令压制」', nAccept.sortie === true && nAccept.act === '压制', JSON.stringify(nAccept))
   await ev(`(()=>{const b=document.querySelector('[data-mission="${target}"] [data-sortie]');if(b)b.click();return true})()`)
   await poll(`!!document.querySelector('[data-sortie-briefing]')`, 10000, 'N briefing')
   const nBrief = await ev(`(()=>{const c=document.querySelector('[data-operator-card]');
     return {op:!!c,txt:c?c.innerText.slice(0,160):'',opPick:!!document.querySelector('[data-sortie-briefing] [data-pick="operator"]')}})()`)
   ok('N2 编队面板：主角卡不再是「不下场出手」，且可编入小队', nBrief.op === true && nBrief.opPick === true && nBrief.txt.includes('操作员') === false, JSON.stringify(nBrief))
+  // 上限 6 人，且主角占一个不可摘的位置
+  const nCap = await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing]');
+    const fixed=document.querySelector('[data-sortie-briefing] [data-pick-fixed]');
+    const grid=[...b.querySelectorAll('[data-pick]:not([data-pick-fixed])')];
+    const met=grid.filter(x=>!x.disabled);
+    // 全部点上，看能编进几个
+    return {txt:b.innerText,cap:/最多 6 人/.test(b.innerText),fixed:!!fixed,
+      fixedOn:!!(fixed&&fixed.hasAttribute('data-on')),met:met.length,
+      stat:(b.innerText.match(/已选 ([0-9]+)[^0-9]+([0-9]+)/)||[]).slice(1).join('/')}})()`)
+  ok('N2b 编队上限 6 人（含主角）：主角固定占位且摘不下来',
+    nCap.cap === true && nCap.fixed === true && nCap.fixedOn === true && /\/6$/.test(nCap.stat),
+    JSON.stringify(nCap))
+  // 点满所有人 —— 上限必须停在 6
+  await ev(`(()=>{const g=[...document.querySelectorAll('[data-sortie-briefing] [data-pick]:not([data-pick-fixed])')];
+    for(const b of g){if(b.disabled)continue;if(!b.hasAttribute('data-on'))b.click()}return true})()`)
+  await sleep(400)
+  const nCap2 = await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing]');
+    return {on:b.querySelectorAll('[data-pick][data-on]').length,
+      stat:(b.innerText.match(/已选 ([0-9]+)[^0-9]+([0-9]+)/)||[]).slice(1).join('/')}})()`)
+  ok('N2c 全员点满之后仍停在 6 人', nCap2.on === 6 && nCap2.stat === '6/6', JSON.stringify(nCap2))
+  // 编队面板里的装备调整：按已选的人逐条列出，每条都能选「不装配」
+  const nLoad = await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing] [data-briefing-gear]');
+    if(!b)return {ok:false};
+    const rows=[...b.querySelectorAll('[data-load-row]')];
+    return {ok:true,rows:rows.length,caps:rows.filter(r=>r.querySelector('[data-load-gear=""]')).length,
+      picks:b.closest('[data-sortie-briefing]').querySelectorAll('[data-pick][data-on]').length}})()`)
+  ok('N2d 编队面板可调装备：按已选角色逐条列出（每条都能选「不装配」）',
+    nLoad.ok === true && nLoad.rows >= 2 && nLoad.rows === nLoad.picks && nLoad.caps === nLoad.rows,
+    JSON.stringify(nLoad))
+  // 一件装具只有一副：给一个人系上，别人那一格必须按不动并写明在谁身上
+  const nExcl = await ev(`(async()=>{
+    const b=document.querySelector('[data-sortie-briefing] [data-briefing-gear]');
+    if(!b)return {ok:false};
+    const rows=[...b.querySelectorAll('[data-load-row]')];
+    let gid='';
+    for(const r of rows){const btn=[...r.querySelectorAll('[data-load-gear]')].find(x=>x.getAttribute('data-load-gear'));
+      if(btn&&!btn.disabled){gid=btn.getAttribute('data-load-gear');btn.click();break}}
+    if(!gid)return {ok:false,why:'no-gear'};
+    await new Promise(r=>setTimeout(r,200));
+    const rows2=[...document.querySelector('[data-sortie-briefing] [data-briefing-gear]').querySelectorAll('[data-load-row]')];
+    const mine=rows2.filter(r=>r.querySelector('[data-load-gear="'+gid+'"]:not([disabled])'));
+    const other=rows2.filter(r=>r.querySelector('[data-load-gear="'+gid+'"][disabled]'));
+    const held=other.map(r=>{const x=r.querySelector('[data-load-gear="'+gid+'"]');return x?x.getAttribute('data-taken'):''});
+    return {ok:true,gid,on:mine.length,off:other.length,held:held.join(',')}})()`)
+  ok('N2e 一件装具只有一副：系上之后别人那一格按不动，并标出在谁身上',
+    nExcl.ok === true && nExcl.on === 1 && nExcl.off >= 1 && nExcl.held.split(',').every((x) => x),
+    JSON.stringify(nExcl))
   // 清空自动编队，再按「主角 + 恋兔光 + 露娜 + 梅芙」四人上场（慢启动门与主角在场都要观测到）
   for (let i = 0; i < 8; i++) {
-    const off = await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing] [data-pick][data-on]');if(!b)return false;b.click();return true})()`)
+    const off = await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing] [data-pick][data-on]:not([data-pick-fixed])');if(!b)return false;b.click();return true})()`)
     if (!off) break
     await sleep(110)
   }
@@ -1051,6 +1227,20 @@ try {
       atb:!!a,party:!!p,op:!!document.querySelector('[data-party-field] [data-unit="operator"]')}})()`)
   ok('N3 出击 → 全屏作战界面：敌人居中大字卡（名在头上 · 血量在脚下）+ 行动条 + 我方队列（主角在场）',
     nFoe.foe === true && nFoe.name === true && nFoe.foot === true && nFoe.atb === true && nFoe.op === true, JSON.stringify(nFoe))
+
+  // N3c：每一场敌阵至少有一个头目档（低危是精英，危险度到顶是首领）
+  const nTier = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-foe-card]')];
+    const tiers=cards.map(c=>{const t=c.querySelector('[data-foe-tier]');return t?t.getAttribute('data-foe-tier'):null});
+    return {n:cards.length,tiers,has:tiers.some(x=>x==='elite'||x==='boss')}})()`)
+  ok('N3c 每场敌阵至少一个精英／首领（头目档标在名字上方）',
+    nTier.n >= 1 && nTier.has === true, JSON.stringify(nTier))
+
+  // N3b：敌方怎么出手 —— 本段已掐掉 api:main，必须落在离线判断上
+  const nCmd = await ev(`(()=>{const c=document.querySelector('[data-enemy-command]');const r=document.querySelector('[data-battle]');
+    return {chip:!!c, mode:c?c.getAttribute('data-enemy-command'):null, root:r?r.getAttribute('data-command'):null,
+      txt:c?c.innerText.replace(/\\s+/g,' '):'', think:document.querySelector('[data-battle]').getAttribute('data-phase')}})()`)
+  ok('N3b 敌方指挥：没接通接口时走离线判断（接通后同一处显示 AI 指挥）',
+    nCmd.chip === true && nCmd.mode === 'offline' && nCmd.root === 'offline' && nCmd.txt.includes('离线'), JSON.stringify(nCmd))
 
   // 需要看版式时：SHOT=<目录> 把作战屏与技能面板各截一张（默认不跑）
   if (process.env.SHOT) {
@@ -1079,7 +1269,7 @@ try {
     const cards=[...document.querySelectorAll('[data-order]')];
     const units=[...document.querySelectorAll('[data-unit]:not([data-down])')].length;
     return {strip:!!strip,cards:cards.length,units:units,
-      eta:cards.map(c=>c.innerText.replace(/\s+/g,' ').trim())}})()`)
+      eta:cards.map(c=>c.innerText.replace(/\\s+/g,' ').trim())}})()`)
   ok('N3c 行动顺位：每人一张牌（行动条 + 还差几拍），牌数 = 场上unit数',
     nOrder.strip === true && nOrder.cards >= 2 && nOrder.cards === nOrder.units
     && nOrder.eta.every((t) => /待命|\d+ 拍/.test(t)), JSON.stringify(nOrder.eta).slice(0, 160))
@@ -1092,7 +1282,15 @@ try {
     return {row:!!row,chips:chips,gauges:gauges,full:full}})()`)
   ok('N3d 羁绊挂牌：成立哪几条 + 连携共鸣槽（x/y）',
     nSyn.row === true && nSyn.chips.length >= 1 && nSyn.gauges.length >= 1
-    && nSyn.gauges.every((g) => /^\d+\/\d+$/.test(g)), JSON.stringify(nSyn))
+    && nSyn.gauges.every((g) => /^\d+\/\d+/.test(g)), JSON.stringify(nSyn))
+
+  // 羁绊确实在战场上说话：缩了槽的，牌上必须挂「羁绊」标（否则玩家不知道攒它干嘛）
+  const nCut = await ev(`(()=>{
+    const g=[...document.querySelectorAll('[data-link-gauge]')]
+    return {cut:g.filter(e=>e.getAttribute('data-cut')==='1').length,
+            marked:g.filter(e=>e.getAttribute('data-cut')==='1'&&e.textContent.includes('羁绊')).length}})()`)
+  ok('N3d2 羁绊缩短共鸣槽时，牌上挂「羁绊」标', nCut.cut === 0 || nCut.cut === nCut.marked,
+    JSON.stringify(nCut))
 
   const chSpW0 = await ev(`(()=>[...document.querySelectorAll('[data-party-field] [data-chsp]')].map(e=>e.querySelector('i').style.width))()`)
   const until = async (expr, ms = 9000) => {
@@ -1106,7 +1304,11 @@ try {
   }
   let gateLocked = false, gateUnlocked = false, lastKindSet = [], sawCd = false
   let gearFree = false, atbGate = false, usedGuard = false, steps = 0
-  let sawLink = false, sawGaugeFull = false
+  let sawLink = false, sawGaugeFull = false, sawHint = false, gmax = 0
+  // 敌方也要有名字与动静：场上见过一次「敌方的日志行带台词」就算数
+  let sawFoeLine = false
+  // 战报挂右栏：整场都没横在战场前面才算数
+  let sawSideLog = false
   while (steps++ < 200) {
     const snap = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
       if(document.querySelector('[data-battle-result]'))return {r:1};
@@ -1116,12 +1318,28 @@ try {
         aim:!!document.querySelector('[data-battle-aim]'),hand:handEl?handEl.getAttribute('data-hand'):'',
         ready:ready?ready.getAttribute('data-atb'):'',
         link:!!document.querySelector('[data-battle-log] [data-log-link]'),
+        // 共鸣槽：这一瞬满没满，以及整场见过的最大蓄拍数（诊断 N5f2 用）
+        full:!!document.querySelector('[data-link-gauge][data-full="1"]'),
+        hint:[...document.querySelectorAll('[data-link-gauge][data-full="1"]')]
+          .every(e=>{const w=e.parentElement&&e.parentElement.querySelector('[data-link-hint]');return !!w}),
+        gmax:(window.__smokeGmax=Math.max(window.__smokeGmax||0,
+          ...Array.from(document.querySelectorAll('[data-link-gauge]'),
+            e=>Number((e.textContent.trim().match(/^(\\d+)\\//)||[0,0])[1]), 0))),
         lines:(window.__smokeLines=window.__smokeLines||[],document.querySelectorAll('[data-battle-log] [data-log-line]').forEach(x=>{const t=x.innerText.trim();if(t&&!window.__smokeLines.includes(t))window.__smokeLines.push(t)}),window.__smokeLines.length),
+        foeLine:!!document.querySelector('[data-battle-log] [data-log-side="enemy"] [data-log-line]'),
+        // 观测频道挂右栏：整条战报的左边不越过战场的右边（横向重叠就是又挡视野了）
+        side:(()=>{const l=document.querySelector('[data-battle-log]'),a=document.querySelector('[data-enemy-field]');
+          if(!l||!a)return false;const L=l.getBoundingClientRect(),A=a.getBoundingClientRect();
+          return L.left>=A.right-1&&L.width>=200&&L.height>=A.height*0.6})(),
         kinds:[...document.querySelectorAll('[data-skill-list] [data-skill]')].map(b=>b.getAttribute('data-kind'))}})()`)
     if (!snap || snap.r) break
     if (snap.ready) atbGate = true
     if (snap.link) sawLink = true
     if (snap.full) sawGaugeFull = true
+    if (snap.full && snap.hint) sawHint = true
+    if (snap.gmax > gmax) gmax = snap.gmax
+    if (snap.foeLine) sawFoeLine = true
+    if (snap.side) sawSideLog = true
     if (!snap.actor) { await sleep(220); continue }
     if (snap.aim) {
       // 敌人的可点元素是脚下那张大字卡本体（[data-foe-body]）；我方的可点元素是 [data-unit][data-side="ally"] 根节点
@@ -1142,16 +1360,33 @@ try {
       continue
     }
     if (snap.menu) {
-      // 慢启动门观测：恋兔光在封印期只能出「启动」；另测「更换装备」不耗回合
+      // 慢启动门观测：封印期技能表只剩「启动」，且根菜单的「攻击」是灰的
+      // （普攻已从技能表移到「攻击」指令里，所以门要看的是那条指令能不能按）。
       if (snap.actor === 'hikari') {
-        const kinds = await ev(`(async()=>{const b=document.querySelector('[data-command-menu] [data-cmd="skill"]');if(b)b.click();
-          await new Promise(r=>setTimeout(r,160));
-          return [...document.querySelectorAll('[data-skill-list] [data-skill]')].map(x=>x.getAttribute('data-kind'))})()`)
+        const gate = await ev(`(async()=>{const a=document.querySelector('[data-command-menu] [data-cmd="atk"]');
+          const b=document.querySelector('[data-command-menu] [data-cmd="skill"]');
+          let kinds=[];
+          if(b){b.click();await new Promise(r=>setTimeout(r,160));
+            const rows=[...document.querySelectorAll('[data-skill-list] [data-skill]')];
+            kinds=rows.map(x=>x.getAttribute('data-kind'));
+            // 技能表的 CD 观测也在这里顺手做掉：面板开了就算，不挑是谁开的
+            const cdm=rows.map(x=>Number(x.getAttribute('data-cdmax')||0));
+            // 技能表是多组拼出来的，单次开面板未必同时含两种；把历次见到的 CD 值并起来看，
+            // 才是「这张表里有带 CD 的、也有不带的」这个事实。
+            window.__smokeCdmSet=window.__smokeCdmSet||[];
+            cdm.forEach(v=>{if(!window.__smokeCdmSet.includes(v))window.__smokeCdmSet.push(v)});
+            const seen=window.__smokeCdmSet;
+            if(seen.some(v=>v>0)&&seen.some(v=>v===0))window.__smokeMix=true;
+            // 注意：这段是模板字符串，正则里的 \d 会被吃掉转义 —— 用 [0-9] 才到得了页面
+            if(rows.some(x=>Number(x.getAttribute('data-cdmax')||0)>0&&/CD [0-9]/.test(x.innerText)))window.__smokeCdHint=true;
+            if(rows.some(x=>/冷却 [0-9]/.test(x.innerText)))window.__smokeCd=true;
+            if(document.querySelector('[data-skill-list] [data-skill][data-cd]'))window.__smokeCd=true;
+            const k=document.querySelector('[data-sub-back]');if(k)k.click()}
+          return {locked: !a || a.disabled===true || a.getAttribute('data-locked')==='1', kinds}})()`)
+        const kinds = gate && gate.kinds
         lastKindSet = kinds || []
-        if (kinds && !kinds.includes('普攻') && !kinds.includes('技能')) gateLocked = true
-        if (kinds && kinds.includes('普攻')) gateUnlocked = true
-        const back = await ev(`(()=>{const b=document.querySelector('[data-sub-back]');if(b)b.click();return true})()`)
-        if (!back) { await sleep(200); continue }
+        if (gate && gate.locked === true) gateLocked = true
+        if (gate && gate.locked === false) gateUnlocked = true
         await sleep(140)
         if (!gearFree) {
           const h0 = await ev(`(()=>{const e=document.querySelector('[data-hand]');return e?e.getAttribute('data-hand'):''})()`)
@@ -1182,10 +1417,12 @@ try {
             .find(b=>Number(b.getAttribute('data-power'))>0)||null};
         if(pick('启动'))return true;
         if(hit('技能')){hit('技能').click();return true}
-        if(hit('普攻')){hit('普攻').click();return true}
-        if(pick('技能'))return true; if(pick('普攻'))return true;
+        if(pick('技能'))return true;
         const back=document.querySelector('[data-sub-back]');if(back)back.click();
-        await new Promise(r=>setTimeout(r,120));
+        await new Promise(r=>setTimeout(r,140));
+        // 普攻在「攻击」这条指令上（不在技能表里）：技能都按不动时用它。
+        const atk=document.querySelector('[data-command-menu] [data-cmd="atk"]');
+        if(atk&&!atk.disabled){atk.click();return true}
         return 'noop'})()`)
       if (clicked === 'noop') {
         usedGuard = true
@@ -1201,8 +1438,13 @@ try {
     }
     await sleep(220)
   }
-  ok('N4 恋兔光未打满封印前，普攻与技能均不解禁（慢启动门）', gateLocked === true && lastKindSet.length > 0, JSON.stringify(lastKindSet))
-  ok('N5 打满后普攻解禁', gateUnlocked === true, JSON.stringify(lastKindSet))
+  ok('N4 恋兔光未打满封印前，「攻击」与技能均不解禁（慢启动门）', gateLocked === true && lastKindSet.length > 0, JSON.stringify(lastKindSet))
+  // 诊断：门没解开时，到底是「没打够 5 次」还是「打够了但没再轮到过」——
+  // 日志里每一下启动都留一句「封印 n/5」，取其中最大值就知道门走到哪了。
+  const gateEnd = await ev(`(()=>{const s=document.querySelector('[data-unit][data-side="ally"] span[title^="解封"]');
+    const L=window.__smokeLines||[];const ns=L.map(t=>Number((t.match(/封印 (\\d+)\\//)||[])[1]||0));
+    return {badge:s?s.getAttribute('title'):'',maxSeal:ns.length?Math.max(...ns):0,unseal:L.some(t=>t.includes('解禁')),lines:L.length}})()`)
+  ok('N5 打满后「攻击」解禁（普攻从技能表挪到「攻击」指令）', gateUnlocked === true, JSON.stringify(lastKindSet) + ' · ' + JSON.stringify(gateEnd))
   ok('N5b 行动条：非满格不出手（出手者必为 ready）', atbGate === true, String(atbGate))
   ok('N5c「更换装备」不消耗回合（手数不变）', gearFree === true, String(gearFree))
   const chSpNow = await ev(`(()=>[...document.querySelectorAll('[data-party-field] [data-chsp]')].map(e=>e.querySelector('i').style.width))()`)
@@ -1211,12 +1453,28 @@ try {
     JSON.stringify({ n: (chSpW0 || []).length, spent }))
   sawCd = await ev(`!!window.__smokeCd`)
   const sawMix = await ev(`!!window.__smokeMix`)
-  ok('N5e 技能表有 CD 与无 CD 并存（部分技能带冷却 · 冷却中那行标出剩余拍数）',
-    sawMix === true, `mix=${sawMix} 冷却窗口曾被观测=${sawCd}`)
+  const sawCdHint = await ev(`!!window.__smokeCdHint`)
+  const cdmSet = await ev(`(window.__smokeCdmSet||[]).join(',')`)
+  ok('N5e 技能表有 CD 与无 CD 并存（带 CD 的那行标出 CD 拍数，冷却中改写剩余拍数）',
+    sawMix === true && sawCdHint === true,
+    `mix=${sawMix} cdHint=${sawCdHint} cdMax见到的=${cdmSet} 冷却窗口曾被观测=${sawCd}`)
   const guardLog = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
     return {guard:t.includes('防御'),rec:t.includes('体力 +')}})()`)
   ok('N5f2 连携技不由玩家点：共鸣槽蓄满后自动接上（日志出现「连携 · …」）',
-    sawLink === true, `link=${sawLink} gaugeFull=${sawGaugeFull}`)
+    sawLink === true, `link=${sawLink} gaugeFull=${sawGaugeFull} 槽最高蓄到=${gmax}`)
+  // 敌方的每一手都带名字与出手话：日志里敌方那一行不该比小队那一行秃
+  ok('N5f3 敌方出手也带技能名与出手话（观测频道里敌我两行一样齐全）',
+    sawFoeLine === true, `foeLine=${sawFoeLine}`)
+  // 战报是右栏，不是压在战场脚下的横条
+  ok('N5f4 观测频道挂在右侧栏（与战场横向不重叠，不再挡视野）',
+    sawSideLog === true, `side=${sawSideLog}`)
+  // 槽满 ≠ 接上了：防御只蓄拍、不接招。牌上要挂「出手即接」，防御时日志要把这句说白
+  ok('N5f2b 槽满时牌上挂「出手即接」提示（否则玩家只看到槽停在上限）',
+    sawGaugeFull === false || sawHint === true, `gaugeFull=${sawGaugeFull} hint=${sawHint} 槽最高蓄到=${gmax}`)
+  const waitLog = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
+    return {said:t.includes('共鸣已满'),why:t.includes('出手才接得上')}})()`)
+  ok('N5f2c 槽满仍防御时，日志写明「防御只蓄拍不接招」',
+    waitLog.said === false || waitLog.why === true, JSON.stringify(waitLog))
   ok('N5f 防御回复自身体力（回得不多，且入日志）', usedGuard === false || (guardLog.guard === true && guardLog.rec === true),
     JSON.stringify({ usedGuard, ...guardLog }))
 
@@ -1251,8 +1509,9 @@ try {
     return {n:l.length,u:[...new Set(l)].length,l:[...new Set(l)],rows:rows.length,
       seq:seq.slice(0,24)}
   }catch(e){return {n:0,l:[],err:String(e)}}})()`)
-  const FOLLOWER = ['那我就往那儿打', '你读你的', '偏了？再来一次', '丝线还在', '你甩得动',
-    '掩护得不错', '照旧由我来收', '小柴也上', '别钻太深', '墙我拆了', '记得砌回去']
+  const FOLLOWER = ['小主人', '上吧，露娜小姐', '成为我的俘虏', '完全被玩弄了', '我们结婚吧',
+    '真正的决胜时刻', '小柴绝对要赢', '你们俩扣工资', '扯下来痛扁', '拖进海里', '天上天下唯我独尊',
+    '等会再解释', '号外号外', '热沃当的少女']
   const sawFollow = (nVoice.l || []).some((t) => FOLLOWER.some((f) => t.includes(f)))
   // 联动台词要「熟人连着出手」才观测得到，而自动战斗大段在「防御」（指令无台词），
   // 故这里只把关「台词逐手轮换」，联动的观测结果随消息一并报出。

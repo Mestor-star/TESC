@@ -45,7 +45,7 @@ export const MINDS: MindVoice[] = [
     { id: 'm3-3', who: 'hikari', speaker: '恋兔光', scene: '上野 · 人群', text: '好多人……好可怕……不要挤过来……' },
     { id: 'm3-4', who: 'other', speaker: '蓝兔', scene: '舰桥 · 胜率', text: '一成……不，连一成都没有。但总要有人去试。' },
     { id: 'm3-5', who: 'other', speaker: '星鲸', scene: '孤鲸 · 祈愿', text: '好想……回家。可是已经……回不去了。' },
-    { id: 'm3-6', who: 'luna', speaker: '露娜', scene: '黄金之兔 · 告别', text: '……对不起，小主人……' },
+    { id: 'm3-6', who: 'luna', speaker: '露娜', scene: '黄金兔子 · 告别', text: '……对不起，小主人……' },
     { id: 'm3-7', who: 'other', speaker: '六十亿人', scene: '星鲸战 · 共鸣', text: '想要幸福……想要活下去……想要有人记得我。' },
     { id: 'm3-8', who: 'nyau', speaker: '小柴喵呜', scene: '津轻 · 高空', text: '哥哥……再陪喵呜一会儿……' },
   ]),

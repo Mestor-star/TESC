@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { LORE } from '../data/lore'
+import { MANUAL } from '../data/manual'
 import type { LoreCat } from '../data/types'
 import { LoreManager } from './lorebook/LoreManager'
 
@@ -61,6 +62,33 @@ export function Lore() {
         </span>
       </div>
       <LoreManager embedded />
+
+      {/* 观测终端操作手册（文本教程）—— 讲这台终端怎么用，不是设定，故不进世界书 */}
+      <div style={{ ...secHead, marginTop: 26, paddingTop: 18, borderTop: '1px dashed var(--line-2)' }}>
+        <span style={secKicker}>MANUAL / OPERATION</span>
+        <h2 style={secTitle}>观测终端操作手册</h2>
+        <span className="chip chip--warn" style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>
+          共 {MANUAL.length} 节 · 可照着做
+        </span>
+      </div>
+      <div className={css.grid} data-manual>
+        {MANUAL.map((s) => (
+          <article key={s.id} className={css.card} data-sub={s.no} data-manual-section={s.id}
+            style={{ '--c': 'var(--amber)' } as CSSProperties}>
+            <div className={css.cardHead}>
+              <h3 className={css.cardTitle}>{s.title}</h3>
+              <span className={css.cardSub}>{s.no}</span>
+              <span className={css.cardRef}>{s.at}</span>
+            </div>
+            <p className={css.cardBody}><b>{s.lead}</b></p>
+            <ol className={css.mList}>
+              {s.items.map((t) => (
+                <li key={t} className={css.mItem}>{t}</li>
+              ))}
+            </ol>
+          </article>
+        ))}
+      </div>
 
       {/* 内置 canon 速览 */}
       <div style={{ ...secHead, marginTop: 26, paddingTop: 18, borderTop: '1px dashed var(--line-2)' }}>

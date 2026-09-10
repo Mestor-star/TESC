@@ -7,6 +7,11 @@
 
 export const TUNING = {
   /* —— 我方 —— */
+  /** 编队上限（含主角） */
+  squadMax: 6,
+  /** 羁绊档位的天花板：最高的那一档都是「凑够五个人」，
+      整队连携也按它算「到齐」—— 名单再长也不往上加。 */
+  traitMax: 5,
   hpBase: 28,
   hpPerResist: 2.2,      // 物理抗性 → 生命
   hpPerWill: 1.4,        // 意志力 → 生命
@@ -74,9 +79,21 @@ export const TUNING = {
   overdriveAt: 30,       // 体力低于此值仍要出击 → 过载
   overdrivePenalty: 0.8, // 过载全场我方输出打折
 
-  /* —— 敌方（按任务阶段缩放） —— */
-  enemyHpBase: 70,
-  enemyHpPerStage: 26,
+  /* —— 敌方的负面机制（沉默 / 流血 / 减攻） ——
+     持续拍数沿用上面的 buffTurnsCap；frailFloor 是减攻的底，
+     免得几层「磨蚀」叠起来把我方打成零输出。 */
+  frailFloor: 0.35,
+  stasisCap: 2,          // 停滞最长几拍（冻太久会变成干等，不是紧张）
+  archiveCap: 2,         // 归档最长几拍
+  echoPower: 0.75,       // 回响复写我方那手时的威力折扣
+
+  /* —— 敌方（按任务阶段缩放） ——
+     斜率刻意放缓、底子抬高：复核跑出来的老曲线是 70 + 26×阶段，
+     危险度 1~4 在任何时期都是 1~2 拍结束——敌方一手都没出过，
+     等于半个任务板是空场。改成 150 + 18×阶段：阶段 10 的血量分文不动
+     （150+180 = 70+260 = 330），只把低档抬起来，让每一档都打得起来。 */
+  enemyHpBase: 150,
+  enemyHpPerStage: 18,
   enemyAtkBase: 14,
   enemyAtkPerStage: 5.2,
   enemyResistBase: 6,
@@ -95,6 +112,11 @@ export const TUNING = {
 
   /* —— boss 的终结技能（大招）与其反制 —— */
   ultStage: 6,           // 危险度自此起视为 boss 级（配一记终结技能）
+
+  /* —— 头目（每场至少一个） —— */
+  eliteHpMul: 1.5,       // 精英怪：血量倍数
+  eliteAtkMul: 1.15,     // 破坏力倍数
+  eliteWillMul: 1.12,    // 意志力倍数（更硬的骨头，也能多扛几手）
   ultCharge: 4,          // 终结技能的咏唱拍数（每次自身出手 +1）
   ultBreak: 0.14,        // 咏唱期间一次被打掉最大生命的 14% 即打断
   ultDebuffCut: 0.12,    // 咏唱期间身上每层减益，大招威力 −12%
@@ -115,7 +137,8 @@ export const TUNING = {
  */
 export const START_GATE: Record<string, number> = {
   hikari: 5,   // 人类最强：弹痕『樱之残影』是封印，须逐重解开
-  mefisa: 2,   // 委员会两翼之一，起手需稳住封印
+  // 梅芙不设启动：她的炮术是练出来的，不是解开来的 ——
+  // 让她先站两拍热身，只是把副官从第一手就架空。
 }
 
 /** 无五轴档案的名录角色 → 一份明确的「未评定」通用面板（不冒充原作数值） */

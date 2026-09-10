@@ -10,6 +10,7 @@
    道具是消耗品，出击时按补给池携带。
    ============================================================ */
 
+import { OPERATOR_ID } from '../../data/castmeta'
 import type { AxisKey, FxKind, GearDef, ItemDef, SkillEffect } from './types'
 
 /* ---------- 道具 ---------- */
@@ -55,17 +56,20 @@ export const ITEM_OF: Record<string, ItemDef> = Object.fromEntries(ITEMS.map((i)
 
 export const GEARS: GearDef[] = [
   {
-    // 非卖品：露娜抽了自己一束丝线给他系上。此后它一直在他身上，
-    // 与他是不是拿着弹痕无关 —— 全属性上升，出手也比别人重。
+    // 非卖品，也不是捡来的：第一卷最后一节那一仗打完，她自己抽了一束丝线
+    // 系在他手腕上。此后它一直在他身上，与他是不是拿着弹痕无关 ——
+    // 全属性上升，出手也比别人重。换个人拿在手里，只是一团冷掉的丝。
     id: 'luna-thread',
     name: '露娜的丝线',
     sub: 'THREAD OF LUNA',
     desc: '一束银色的丝线，绕过手腕系成结。它自己会收紧、会把人往回拽；'
-      + '系着它的人，比原来更站得住，出手也更重。',
+      + '系着它的人，比原来更站得住，出手也更重。'
+      + '——它认人。除了言万心叶，别人系上也只是一条普通的线。',
     mods: { 破坏力: 8, 敏捷度: 6, 物理抗性: 10, 反现实亲和: 8, 意志力: 10, atk: 0.1, basicMul: 0.6 },
     price: 0,
     rank: 3,
     noDrop: true,
+    onlyFor: [OPERATOR_ID],
   },
   {
     id: 'scope',
@@ -129,7 +133,7 @@ export const GEARS: GearDef[] = [
     skill: {
       name: '标记破绽',
       desc: '把目标的破绽钉在全队视野里：全队打它更重，它也更难充能。',
-      cost: 3, power: 0, axis: '反现实亲和', fx: 'drone', line: '「——看到了。」',
+      cost: 3, power: 0, axis: '反现实亲和', fx: 'drone', line: '「看到了，白痴青春期混蛋露出来的破绽！」',
       effect: { mark: 0.3, slow: 0.25 },
     },
   },
@@ -143,6 +147,7 @@ export const GEARS: GearDef[] = [
     rank: 3,
     // 脏器公寓那一案的现场缴获被复刻成了制式件：正史走到那里才配发
     unlockMain: 'v1-5',
+    maxOwn: 1,   // 研究所产出的配给：一人一件，兑完为止
   },
   {
     id: 'printer',
@@ -154,10 +159,11 @@ export const GEARS: GearDef[] = [
     rank: 3,
     // 商会的制品：天空要塞一役之后，委员会才拿到可供拆解的同源件
     unlockMain: 'v2-8',
+    maxOwn: 1,   // 研究所产出的配给：一人一件，兑完为止
     skill: {
       name: '塑形 · 屏障',
       desc: '当场塑出一面墙：全队减伤。',
-      cost: 4, power: 0, axis: '反现实亲和', fx: 'guard', line: '「墙。……现在有了。」',
+      cost: 4, power: 0, axis: '反现实亲和', fx: 'guard', line: '「要来了！准备防御！」',
       effect: { shield: 0.4 },
     },
   },
@@ -171,10 +177,22 @@ export const GEARS: GearDef[] = [
     rank: 3,
     // 斩击的天使落下的那一片：直到戴上 a Session. 才有人看懂它是什么
     unlockMain: 'v4-5',
+    maxOwn: 1,   // 研究所产出的配给：一人一件，兑完为止
   },
 ]
 
 export const GEAR_OF: Record<string, GearDef> = Object.fromEntries(GEARS.map((g) => [g.id, g]))
+
+/**
+ * 这件装具，这个人装不装得上。
+ * 大部分件谁都能装；「露娜的丝线」一类只认名单上的人 ——
+ * 它不是数值门槛，是它本身认人。
+ */
+export function canEquip(charId: string, gearId: string): boolean {
+  const g = GEAR_OF[gearId]
+  if (!g) return false
+  return !g.onlyFor || g.onlyFor.includes(charId)
+}
 
 /** 军需处货架（可购买的装具；非卖品 price=0 不在此列 —— 含须主线解锁的特殊装备） */
 export const GEAR_SHOP: GearDef[] = GEARS.filter((g) => g.price > 0).sort((a, b) => a.price - b.price)

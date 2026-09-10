@@ -303,6 +303,17 @@
 
 .relationGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
 
+/* 关系确认：羁绊到满值才出现的那一栏（不是数值，是一句定性的话） */
+.bondConfirm {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+}
+.bondConfirm b { font-size: 12.5px; letter-spacing: 0.06em; }
+.bondConfirm p { margin: 5px 0 0; font-size: 12px; line-height: 1.85; color: var(--ink-dim); }
+
 /* 带∞的满格读数（条纹在组件内联 background 完成，此处仅收边框高亮） */
 .infFill { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
 
@@ -475,3 +486,95 @@
 }
 .opCardTitle { flex: 1 1 auto; min-width: 0; }
 .opCardTitle h3 { margin: 0; font-size: 14px; letter-spacing: .04em; }
+
+/* ============================================================
+   战斗数值：档案卷宗上的评定 ≠ 下场时的那份面板
+   ============================================================ */
+.combat { display: flex; flex-direction: column; gap: 10px; }
+.combatNums {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px;
+}
+.combatNum {
+  display: flex; flex-direction: column; gap: 2px; padding: 7px 9px;
+  border: 1px solid var(--line); border-left: 2px solid var(--amber);
+  background: color-mix(in srgb, var(--bg-2) 68%, transparent);
+}
+.combatNum small { font-size: 9.5px; letter-spacing: 0.14em; color: var(--ink-faint); }
+.combatNum b { font-size: 14px; color: var(--ink, #e8e6e3); }
+.combatAxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); gap: 6px; }
+.combatAxis {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  padding: 4px 8px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-1) 72%, transparent);
+}
+.combatAxis small { font-size: 9.5px; color: var(--ink-mute); }
+.combatAxis b { font-size: 13px; color: var(--amber); }
+.combatPassive, .combatGear {
+  display: flex; flex-direction: column; gap: 3px; padding: 8px 10px;
+  border-left: 2px solid var(--violet);
+  background: color-mix(in srgb, var(--bg-2) 66%, transparent);
+  font-size: 11px; line-height: 1.65; color: var(--ink-mute);
+}
+.combatGear { border-left-color: var(--jade); }
+.combatPassive b, .combatGear b { font-size: 12px; color: var(--ink, #e8e6e3); }
+/* 被动的读数：说明底下把生效的那几个数逐条念出来 */
+.combatNums2 { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+.combatNums2 i {
+  padding: 0 5px; border: 1px solid color-mix(in srgb, var(--violet) 45%, transparent);
+  border-radius: 2px; font-style: normal; font-size: 10px;
+  font-family: var(--font-mono); color: var(--ink);
+}
+.combatArch {
+  padding: 0 5px; border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  border-radius: 2px; font-family: var(--font-mono); font-size: 9px; line-height: 15px;
+  color: var(--amber);
+}
+.combatSkills { display: flex; flex-direction: column; gap: 6px; }
+
+/* ——— 档案里换反现实辅助装备 ——— */
+.gearSwap { display: flex; flex-direction: column; gap: 6px; }
+.gearSwapHead { display: flex; align-items: baseline; gap: 8px; }
+.gearList { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow-y: auto; }
+.gearRow {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left;
+  padding: 7px 10px; cursor: pointer;
+  border: 1px solid var(--line); border-left: 2px solid var(--line-2);
+  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+  color: inherit; font: inherit;
+}
+.gearRow:hover:not(:disabled) { border-left-color: var(--jade); }
+.gearRow:disabled { opacity: 0.5; cursor: not-allowed; }
+.gearOn { border-left-color: var(--jade); background: color-mix(in srgb, var(--jade) 8%, transparent); }
+.gearName { font-size: 12.5px; }
+.gearSub {
+  margin-left: 6px; font-style: normal; font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.06em; color: var(--ink-mute);
+}
+.gearMod { grid-column: 2; justify-self: end; font-family: var(--font-mono); font-size: 10px; color: var(--jade); }
+.gearNote { grid-column: 1 / -1; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }
+.gearOn2 {
+  grid-column: 2; justify-self: end; font-family: var(--font-mono);
+  font-size: 9px; color: var(--jade);
+}
+.combatSkill {
+  display: flex; flex-direction: column; gap: 3px; padding: 7px 10px;
+  border: 1px solid var(--line); border-left: 2px solid var(--line-2);
+  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+}
+.combatSkill[data-kind='技能'] { border-left-color: var(--amber); }
+.combatSkill[data-kind='启动'] { border-left-color: var(--violet); }
+.combatSkill[data-kind='普攻'] { border-left-color: var(--steel); opacity: 0.86; }
+/* 到达点：这个人的终结技，压在技能表最后、边框最亮 */
+.combatSkill[data-kind='到达点'] {
+  border-left-color: var(--amber);
+  border-left-width: 3px;
+  background: color-mix(in srgb, var(--amber) 6%, transparent);
+}
+.combatSkillTop { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.combatSkillTop b { font-size: 12.5px; }
+.combatKind {
+  padding: 0 5px; border: 1px solid var(--line-2); border-radius: 2px;
+  font-family: var(--font-mono); font-size: 9px; line-height: 15px; color: var(--ink-mute);
+}
+.combatSkillTop .tiny { margin-left: auto; }
+.combatSkill p { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }

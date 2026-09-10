@@ -159,6 +159,26 @@
 .navItem.isActive .navItem__icon { color: var(--red); filter: drop-shadow(0 0 6px rgba(255,46,67,.6)); }
 .navItem.isActive .navItem__idx { opacity: 1; color: var(--red); }
 
+/* 未读短信角标：压在行尾，选中态与未选中态都看得见 */
+.navBadge {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--red);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg-deep, rgba(0, 0, 0, 0.4));
+}
+
 /* 锁定的视图：暗化 + 悬停露出锁提示 */
 .navItem.isLocked { opacity: 0.5; }
 .navItem.isLocked .navItem__icon { color: var(--ink-mute); }

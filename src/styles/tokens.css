@@ -379,9 +379,12 @@ select.field { appearance: none; }
   0% { transform: translateX(-120%); }
   100% { transform: translateX(260%); }
 }
+/* 收尾必须停在 transform: none —— 停在 translateY(0) 会留下一个
+   matrix(1,0,0,1,0,0)，带 transform 的元素会成为 position: fixed 后代的
+   包含块，弹层就会被压进页面那一栏里。 */
 @keyframes riseIn {
   from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; }
 }
 @keyframes flickerIn {
   0% { opacity: 0; }

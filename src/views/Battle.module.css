@@ -29,8 +29,15 @@
   position: relative;
   z-index: 6;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  gap: 7px;
+  /* 观测频道改挂右侧竖栏：战场与指令占左列，战报自成一栏，不再横在脚底下挡视野 */
+  grid-template-columns: minmax(0, 1fr) clamp(246px, 20vw, 322px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'hud   hud'
+    'order log'
+    'arena log'
+    'console log';
+  gap: 7px 9px;
   width: 100%;
   height: 100%;
   max-width: none;
@@ -196,6 +203,7 @@
 /* ---------- HUD ---------- */
 
 .hud {
+  grid-area: hud;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -250,6 +258,7 @@
    ============================================================ */
 
 .arena {
+  grid-area: arena;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -284,6 +293,22 @@
   text-align: center;
 }
 .foeName b { font-size: 16px; letter-spacing: 0.06em; }
+
+/* 头目档的徽标：精英一枚冷色小签，首领换成醒目的红 —— 一眼看得出这一场谁是要防的 */
+.foeTier {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--amber) 46%, transparent);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.foeTierBoss {
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
 .foeName i { font-style: normal; font-size: 11px; color: var(--ink-mute); }
 .foeName em { font-style: normal; }
 
@@ -369,6 +394,33 @@
 .buff[data-buff='slow'] { border-color: color-mix(in srgb, var(--steel) 48%, transparent); color: var(--steel); }
 .buff[data-buff='shield'] { border-color: color-mix(in srgb, var(--jade) 48%, transparent); color: var(--jade); }
 
+/* 负面：一律红系，但深浅与描边分三档，扫一眼就分得出轻重 */
+.buff[data-debuff] {
+  border-color: color-mix(in srgb, var(--red) 42%, transparent);
+  color: color-mix(in srgb, var(--red) 88%, var(--ink));
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+/* 沉默与停滞是「出不了手」一类，最重：加一圈描边，让它从一列标签里跳出来 */
+.buff[data-buff='silence'],
+.buff[data-buff='stasis'] {
+  border-color: color-mix(in srgb, var(--red) 78%, transparent);
+  color: #ffd9d2;
+  background: color-mix(in srgb, var(--red) 22%, transparent);
+}
+.buff[data-buff='bleed'] { border-color: color-mix(in srgb, #c8554e 62%, transparent); }
+.buff[data-buff='frail'],
+.buff[data-buff='lockdown'] { border-color: color-mix(in srgb, var(--amber) 52%, transparent); color: var(--amber); }
+
+/* 剩余拍数：挂在标签尾巴上的一枚小角标 */
+.buffT {
+  font-style: normal;
+  margin-left: 3px;
+  padding-left: 3px;
+  font-size: 8.5px;
+  opacity: 0.72;
+  border-left: 1px solid currentColor;
+}
+
 /* ============================================================
    我方小队
    ============================================================ */
@@ -442,6 +494,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.unitActive .unitName[data-form], .unitName[data-form] {
+  color: color-mix(in srgb, var(--amber) 88%, #fff);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 45%, transparent);
+  letter-spacing: 0.1em;
 }
 .unitHpNum {
   flex-shrink: 0;
@@ -580,6 +637,7 @@
    ============================================================ */
 
 .console {
+  grid-area: console;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
   gap: 9px;
@@ -589,29 +647,32 @@
   max-height: min(296px, 35vh);
 }
 
-/* 战报条：横贯屏底的一条字幕，左端挂「观测频道」的斜杠标 */
+/*
+  观测频道：右侧一栏竖排战报。
+  原先横在屏底，压在敌阵脚下挡视野；改挂右列之后，
+  顶格一行标题，下面整栏都是正文，能一直往下翻。
+*/
 .logStrip {
+  grid-area: log;
   position: relative;
   z-index: 6;
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 9px;
-  align-items: stretch;
-  min-height: 44px;
-  max-height: min(74px, 11vh);
-  padding: 6px 10px;
+  min-height: 0;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-left: 2px solid var(--amber);
   background: color-mix(in srgb, var(--bg-1) 82%, #000);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
 }
 .logCap {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  flex: none;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.22em;
   color: var(--amber);
   writing-mode: horizontal-tb;
@@ -619,19 +680,22 @@
 .logSlash {
   display: block;
   height: 2px;
-  width: 34px;
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 18px;
   background: linear-gradient(90deg, var(--amber), transparent);
   transform: skewX(-32deg);
 }
 .logLines {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 3px;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
-.logLine { font-size: 11px; line-height: 1.45; animation: logIn 0.25s ease-out; }
+.logLine { font-size: 12.5px; line-height: 1.5; animation: logIn 0.25s ease-out; }
 @keyframes logIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
 .logLine[data-log-side='enemy'] { color: color-mix(in srgb, var(--red) 62%, var(--ink, #e8e6e3)); }
 .line { display: block; color: var(--amber); font-style: italic; }
@@ -681,6 +745,14 @@
   transform: translateY(-1px);
 }
 .seqBtn[data-cmd='flee']:hover { border-color: color-mix(in srgb, var(--red) 62%, transparent); }
+/* 封印未解时「攻击」按不动：灰掉、虚化，别让它看起来像还能按 */
+.seqBtn:disabled,
+.seqBtn[data-locked] {
+  cursor: not-allowed;
+  opacity: 0.45;
+  color: var(--ink-mute);
+}
+.seqBtn:disabled:hover { transform: none; border-color: var(--line-2); background: color-mix(in srgb, var(--bg-1) 70%, transparent); }
 .seqSub {
   position: absolute;
   right: 5px;
@@ -731,6 +803,11 @@
   transform: translateX(2px);
 }
 .rowStart { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
+/* 到达点：这个人的终结技 —— 全菜单最重的一手，边框要比技能亮一档 */
+.rowEnd {
+  border-color: color-mix(in srgb, var(--amber) 62%, transparent);
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
 
 /* 技能行的第二、三排：说明 + 要点（倍率 / 消耗 / 附带效果一律取自技能数据本身） */
 .rowDesc {
@@ -837,9 +914,53 @@
   color: var(--ink-mute);
 }
 
+/* ---------- 技能面板的分组：普攻不是技能，单独搁在最后 ---------- */
+.skillGroup { display: flex; flex-direction: column; gap: 4px; }
+.groupCap {
+  display: flex; align-items: baseline; gap: 7px;
+  margin-top: 3px; padding-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+}
+.groupCap b {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.24em; color: var(--amber);
+}
+.groupNote { font-size: 9.5px; line-height: 1.3; color: var(--ink-faint); }
+/* 普攻那一组压暗一档：它一直可用，不该跟本命的那几手抢眼 */
+.skillGroup[data-skill-group='普攻'] .row { opacity: 0.82; }
+.skillGroup[data-skill-group='普攻'] .row:hover:not([disabled]) { opacity: 1; }
+
+.cmdChip {
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+.cmdChip[data-enemy-command='ai'] {
+  border-color: var(--violet);
+  color: var(--violet);
+}
+.cmdChip[data-thinking] {
+  animation: cmdPulse 1.1s ease-in-out infinite;
+}
+@keyframes cmdPulse {
+  0%, 100% { opacity: 0.45 }
+  50% { opacity: 1 }
+}
+
 @media (max-width: 900px) {
   .root { padding: 0; }
-  .stage { clip-path: none; border: 0; padding: 8px 10px 10px; }
+  /* 窄屏放不下右栏：观测频道回落成屏底一条，仍按原样横排 */
+  .stage {
+    clip-path: none; border: 0; padding: 8px 10px 10px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'hud' 'order' 'arena' 'log' 'console';
+  }
   .console { grid-template-columns: minmax(0, 1fr); max-height: min(380px, 52vh); }
   .cmd { min-height: 0; }
   .partyCol { flex-direction: row; flex-wrap: wrap; }
@@ -847,8 +968,8 @@
   .foeBody { width: 84px; height: 84px; }
   .foe { min-width: 92px; }
   .seq { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .logStrip { grid-template-columns: minmax(0, 1fr); }
-  .logCap { flex-direction: row; align-items: center; gap: 8px; }
+  .logStrip { min-height: 62px; max-height: min(190px, 26vh); }
+  .logLines { justify-content: flex-end; }
 }
 
 /* ---------- 角色自身的体力（与小队体力分开：出手扣这一条） ---------- */
@@ -873,9 +994,17 @@
 /* ---------- 招招不同的演出：色相 / 变奏 / 斜向由技能 id 决定 ---------- */
 
 .fx {
-  /* 由 JS 写入：--fx-hue 色相、--fx-rot 斜向增量 */
-  filter: hue-rotate(calc(var(--fx-hue, 0) * 1deg)) saturate(calc(1 + (var(--fx-hue, 0) - 180) / 720));
+  /*
+    由 JS 写入：--fx-hue 色相、--fx-rot 斜向增量。
+    --fx-base 是「这一手是什么性质」决定的底色：纯伤用技能自己的色相（招招不同），
+    回复 / 增益 / 压制各自钉在一个色上 —— 不看字也认得出这一手在干嘛（见 toneOf）。
+  */
+  --fx-base: var(--fx-hue, 0);
+  filter: hue-rotate(calc(var(--fx-base) * 1deg)) saturate(calc(1 + (var(--fx-hue, 0) - 180) / 720));
 }
+.fx[data-fx-tone='mend'] { --fx-base: 152; }
+.fx[data-fx-tone='ward'] { --fx-base: 42; }
+.fx[data-fx-tone='hex'] { --fx-base: 355; }
 .fx[data-fx-var='1'] { transform: scale(1.05); }
 .fx[data-fx-var='2'] { transform: scale(0.95) rotate(var(--fx-rot, 0deg)); }
 .fx[data-fx-var='3'] { transform: scale(1.12); }
@@ -955,12 +1084,31 @@
   border-color: color-mix(in srgb, var(--amber) 55%, transparent);
   color: var(--amber);
 }
+/* 交情把这槽缩短了 —— 挂一枚小标，攒羁绊的回报得看得见 */
+.linkGauge[data-cut='1'] { border-color: color-mix(in srgb, var(--jade) 55%, transparent); }
+.linkCut {
+  font-style: normal; margin-left: 4px; padding-left: 4px;
+  font-size: 9px; letter-spacing: 0.06em;
+  color: var(--jade);
+  border-left: 1px solid color-mix(in srgb, var(--jade) 45%, transparent);
+}
+/* 槽满之后的提示：防御不算出手 —— 光架盾接不上，得有人真的出那一手 */
+.linkHint {
+  font-style: normal; margin-left: 4px;
+  font-size: 9px; letter-spacing: 0.04em;
+  color: var(--amber);
+  opacity: 0.85;
+  animation: linkHintPulse 1.6s ease-in-out infinite;
+}
+@keyframes linkHintPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .linkHint { animation: none; opacity: 0.9; } }
 
 /* ============================================================
    行动顺位 —— 一条横排：行动条 + 还差几拍，出招前先看这里
    ============================================================ */
 
 .orderStrip {
+  grid-area: order;
   display: flex; align-items: center; gap: 10px;
   padding: 6px 12px;
   border-top: 1px solid var(--line);
@@ -1085,4 +1233,209 @@
   border-radius: 999px;
   color: color-mix(in srgb, var(--steel) 80%, var(--ink));
   cursor: help;
+}
+
+/* ============================================================
+   贴身演出 —— 单体技落在挨打（或被治）的那个人身上
+   ------------------------------------------------------------
+   以前所有出招都往同一个全屏层上糊：一手单体斩击，整块屏幕跟着闪一下，
+   等于是「一出招就全屏炸」，看两次就麻了，也看不出到底打中了谁。
+   现在单体技画在目标卡里（全体技才走全屏那一层），并且按性质上色：
+   回复青、增益金、压制红、纯伤用技能自己的色相 —— 这一手在干嘛，看颜色就知道。
+   ============================================================ */
+
+.fxOn,
+.fxOnBig {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  /* 纯伤：技能自己的色相（--fx-hue 由 JS 写入）；另外三档各自钉死 */
+  --fx-h: var(--fx-hue, 210);
+}
+.fxOn[data-fx-tone='mend'], .fxOnBig[data-fx-tone='mend'] { --fx-h: 158; }
+.fxOn[data-fx-tone='ward'], .fxOnBig[data-fx-tone='ward'] { --fx-h: 42; }
+.fxOn[data-fx-tone='hex'], .fxOnBig[data-fx-tone='hex'] { --fx-h: 356; }
+
+/* 底子：一圈从中心炸开的光 + 一层斜掠 */
+.fxOn::before,
+.fxOnBig::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(closest-side at 50% 50%,
+      hsl(var(--fx-h) 95% 74% / 0.5), hsl(var(--fx-h) 95% 58% / 0.16) 58%, transparent 80%),
+    linear-gradient(118deg, transparent 32%, hsl(var(--fx-h) 95% 80% / 0.42) 50%, transparent 68%);
+  animation: fxOnBurst 0.46s ease-out forwards;
+}
+@keyframes fxOnBurst {
+  0% { opacity: 0; transform: scale(0.62); }
+  22% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.18); }
+}
+/* 边框收一圈：让「这一下是打在他身上」有个明确的落点 */
+.fxOn::after,
+.fxOnBig::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow:
+    inset 0 0 0 2px hsl(var(--fx-h) 95% 72% / 0.85),
+    inset 0 0 24px hsl(var(--fx-h) 95% 58% / 0.45);
+  animation: fxOnRing 0.5s ease-out forwards;
+}
+@keyframes fxOnRing {
+  0% { opacity: 0; }
+  16% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 斩击：一道斜切，不是一团光 */
+.fxOn[data-fx='slash']::before,
+.fxOnBig[data-fx='slash']::before {
+  background: linear-gradient(104deg, transparent 40%, hsl(var(--fx-h) 100% 90% / 0.95) 50%, transparent 60%);
+  animation-name: fxOnCut;
+}
+@keyframes fxOnCut {
+  0% { opacity: 0; transform: translateX(-42%); }
+  28% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(42%); }
+}
+
+/* 回复：光粒往上走 —— 治疗不该长得跟挨打一样 */
+.fxOn[data-fx-tone='mend']::before,
+.fxOnBig[data-fx-tone='mend']::before {
+  background:
+    radial-gradient(closest-side at 50% 62%, hsl(var(--fx-h) 95% 80% / 0.38), transparent 72%),
+    repeating-linear-gradient(0deg, hsl(var(--fx-h) 95% 82% / 0.34) 0 2px, transparent 2px 9px);
+  animation-name: fxOnRise;
+}
+@keyframes fxOnRise {
+  0% { opacity: 0; transform: translateY(26%) scale(0.92); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-22%) scale(1.04); }
+}
+
+/* 压制：往里收的暗环 —— 负面是「被箍住」的观感 */
+.fxOn[data-fx-tone='hex']::after,
+.fxOnBig[data-fx-tone='hex']::after {
+  box-shadow:
+    inset 0 0 0 2px hsl(var(--fx-h) 88% 64% / 0.9),
+    inset 0 0 30px hsl(var(--fx-h) 88% 44% / 0.6);
+  animation-name: fxOnHex;
+}
+@keyframes fxOnHex {
+  0% { opacity: 0; transform: scale(1.22); }
+  26% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; }
+}
+
+/* 增益：向上撑开的护罩 */
+.fxOn[data-fx-tone='ward']::before,
+.fxOnBig[data-fx-tone='ward']::before {
+  background:
+    radial-gradient(closest-side at 50% 52%, transparent 40%, hsl(var(--fx-h) 92% 72% / 0.42) 62%, transparent 84%),
+    linear-gradient(0deg, hsl(var(--fx-h) 92% 76% / 0.3), transparent 62%);
+  animation-name: fxOnWard;
+}
+@keyframes fxOnWard {
+  0% { opacity: 0; transform: scaleY(0.7); }
+  26% { opacity: 1; transform: scaleY(1.04); }
+  100% { opacity: 0; transform: scaleY(1.1); }
+}
+
+/* 招式名：贴在卡片上沿，一小枚 —— 全屏那层已经有一枚大的，这里只报是哪一手 */
+.fxTagOn {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: #fff;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-1) 84%, transparent);
+  border: 1px solid hsl(var(--fx-h) 90% 72% / 0.62);
+  animation: fxTagOnIn 0.8s ease-out forwards;
+}
+@keyframes fxTagOnIn {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  20% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -5px); }
+}
+
+/* ============================================================
+   连携技 —— 右侧立起来的那张牌
+   ------------------------------------------------------------
+   羁绊攒满、自己接上的那一手，值得单占一块地方：
+   谁跟谁一起打的，看脸就知道。跟伤害数字挤在一处就分不出「这是合击」了。
+   ============================================================ */
+
+.linkPop {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 13px;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--amber) 48%, transparent);
+  border-radius: 4px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--amber) 14%, #07080d) 0%,
+    color-mix(in srgb, #07080d 94%, transparent) 100%);
+  box-shadow:
+    0 0 0 1px #000,
+    0 22px 54px -20px #000,
+    0 0 36px -8px color-mix(in srgb, var(--amber) 42%, transparent);
+  animation: linkPopIn 0.34s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+@keyframes linkPopIn {
+  from { opacity: 0; transform: translate(28px, -50%) scale(0.94); }
+  to { opacity: 1; transform: translate(0, -50%) scale(1); }
+}
+
+.linkPopCap {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--amber);
+}
+
+/* 头像一张压一张：并排太散，叠起来才像「凑在一起」的两个人 */
+.linkPopFaces { display: flex; align-items: flex-start; }
+.linkPopFace {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.linkPopFace i {
+  font-style: normal;
+  font-size: 10px;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px #000;
+}
+.linkPopAva {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 55%, transparent), 0 4px 14px -4px #000;
+}
+
+.linkPopName {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 65%, transparent);
 }

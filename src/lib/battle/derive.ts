@@ -9,12 +9,13 @@
    ============================================================ */
 
 import { CHARACTERS } from '../../data/chars'
+import { SIDE_AXIS } from '../../data/roster'
 import { ARMS } from '../../data/arms'
 import { AXIS_MAX } from '../../data/types'
 import type { Character, Mission } from '../../data/types'
 import { CAST, OPERATOR_ID, avatarIdOf, personOf } from '../../data/castmeta'
 import { opBuiltinOf, opPeriodAtProgress } from '../operator-arc'
-import type { OpPeriod } from '../operator-arc'
+import type { OpAbility, OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
 import { POWER_SCALE, ROSTER } from './roster'
@@ -96,6 +97,15 @@ export function axisSheetOf(id: string, progress: number, growthPct = 0): AxisSh
   const f = (a + (b - a) * clamp01(progress)) * (1 + growthPct / 100)
   const out = {} as AxisSheet
   if (!c) {
+    /* 名录（chars.ts）只收核心几位；侧翼那二十来号人的五轴定在 SIDE_AXIS 里，
+       逐条依原文锚过（见该表上方注释）。这里必须接上它 —— 不然整支侧翼
+       全掉进同一个 UNRATED 占位面板：角色档案上写着破 42 的人，
+       上了战场是破 26，查档案看到的和打起来用的对不上。 */
+    const side = SIDE_AXIS[id]
+    if (side) {
+      AXES.forEach((k, i) => { out[k] = Math.round((side[i] ?? UNRATED_AXES[k]) * f) })
+      return out
+    }
     for (const k of AXES) out[k] = Math.round(UNRATED_AXES[k] * f)
     return out
   }
@@ -141,16 +151,28 @@ function isScar(id: string): boolean {
 /** 无名册者的退路：一手通用普攻 + 一手协同压制（不冒充原作技能） */
 function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
   const base = armName ? `${armName} · ` : ''
+  /* 名册里没写的人（临时编入的侧翼）也照着框架给：普攻、技能、**到达点**。
+     终结技现在是人人都有的一份，缺它的那一个上战场就只能看着别人放 ——
+     所以这条兜底也必须落到「到达点」这一类上，而不是只补两手伤害。 */
   return [
     {
       id: `${id}-atk`, name: `${base}横扫`, kind: '普攻', desc: '不耗心神的常规一击。',
       cost: TUNING.atkCost, power: TUNING.atkPower, axis: '破坏力', fx, line: '——上了。', target: 'one',
+      arch: 'basic',
     },
     {
       id: `${id}-skill`, name: armName ? `${base}解放` : '协同压制', kind: '技能',
       desc: '把观测到的弱点一次打穿。',
       cost: TUNING.skillCost, power: TUNING.skillPower * POWER_SCALE, axis: '破坏力', fx,
       line: '「让开——」', target: 'one',
+      arch: '强袭',
+    },
+    {
+      id: `${id}-end`, name: armName ? `${base}全开` : '全力协同', kind: '到达点',
+      desc: '攒够印记之后的那一手：把这一仗交了结。',
+      cost: 8, power: 2.6 * POWER_SCALE, axis: '破坏力', fx,
+      line: '「——到此为止。」', target: 'one', cd: 4, needsStack: 3,
+      arch: '到达点',
     },
   ]
 }
@@ -167,22 +189,27 @@ function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
     const i = TIMELINE.findIndex((e) => e.id === a.unlockAt)
     return i < 0 || progress + 1e-6 >= i / Math.max(1, TIMELINE.length - 1)
   })
-  return open.map((a, i) => ({
-    id: `op-${per.at}-${i}`,
+  // 一手 OpAbility → 一份 SkillSpec。变身的技能表是同一种写法套一层，
+  // 所以这里递归一次，id 挂在父技能下面（`…-fm0`），免得与常规手撞号。
+  const spec = (a: OpAbility, id: string): SkillSpec => ({
+    id,
     name: a.name,
     kind: a.kind,
     desc: a.desc,
-    cost: a.cost ?? (a.kind === '普攻' ? 1 : a.kind === '启动' ? 2 : 4),
+    cost: a.cost ?? (a.kind === '普攻' ? 1 : a.kind === '启动' ? 2 : a.kind === '到达点' ? 8 : 4),
     power: a.pow,
     axis: a.axis,
     fx: a.fx,
-    line: '',
+    line: a.line ?? '',
     target: a.target ?? (a.kind === '启动' ? 'self' : 'one'),
     effect: a.effect,
     turns: a.turns,
     needsStack: a.needsStack,
     // 冷却与名册同一口径：普攻 / 启动无冷却，到达点 4 拍，其余 2 拍
     cd: a.cd ?? (a.kind === '普攻' || a.kind === '启动' ? 0 : a.needsStack ? 4 : 2),
+    // 框架：这一手按哪一类打的（operator-arc 的 OpAbility 也可以自己标注）
+    arch: a.arch,
+    openAfter: a.openAfter,
     // 「合体」类：需同伴在场才可出，出手时把人请下场、若干拍后归位
     requireAlly: a.requireAlly,
     mergeAlly: a.mergeAlly,
@@ -190,7 +217,17 @@ function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
     morph: a.morph,
     morphTicks: a.morphTicks,
     morphCd: a.morphCd,
-  }))
+    // 变身（黄金狮子）：名字／五轴／技能表整套换掉，数拍之后还原
+    form: a.form
+      ? {
+        name: a.form.name, note: a.form.note, ticks: a.form.ticks,
+        cd: a.form.cd, axes: a.form.axes,
+        skills: a.form.skills.map((k, j) => spec(k, `${id}-fm${j}`)),
+      }
+      : undefined,
+    variance: a.variance,
+  })
+  return open.map((a, i) => spec(a, `op-${per.at}-${i}`))
 }
 
 export function skillsOf(id: string, gearId?: string): SkillSpec[] {
@@ -272,6 +309,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       sp: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
       spMax: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
       startUsed: 0,
+      unsealedAt: 0,
       startNeed: START_GATE[id] ?? 0,
       stack: 0,
     chant: {},
@@ -324,6 +362,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     sp: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
     spMax: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
     startUsed: 0,
+    unsealedAt: 0,
     startNeed: START_GATE[id] ?? 0,
     stack: 0,
     chant: {},
@@ -357,6 +396,14 @@ interface FoeSkill {
   effect?: SkillEffect
   turns?: number
   cd?: number
+  /** 回响：复写我方上一手（整手照抄，所以是技能自己的性质，不在 effect 里） */
+  echo?: boolean
+  /**
+   * 这一手自己的出手话。缺省才退回该型那一句通用的。
+   * 普攻也算一手 —— 敌人打出来的每一下都该有名字、有动静，
+   * 不能让日志里敌方那几行比小队那几行秃。
+   */
+  line?: string
 }
 
 interface FoeProfile {
@@ -377,9 +424,55 @@ interface FoeProfile {
   ult?: { name: string; desc: string; power: number; axis: AxisKey; target: Target; line: string; effect?: SkillEffect; turns?: number }
 }
 
-/** 普攻公用形态：每型的普攻名字与轴不同，其余口径一致 */
-const foeAtk = (id: string, name: string, desc: string, axis: AxisKey, power = 1): FoeSkill =>
-  ({ id, name, kind: '普攻', desc, cost: 0, power, axis, target: 'one', cd: 0 })
+/**
+ * 普攻公用形态：每型的普攻名字、轴与出手话不同，其余口径一致。
+ * 出手话是必给的 —— 敌方的普攻也要说得出「它做了什么」。
+ */
+const foeAtk = (id: string, name: string, desc: string, axis: AxisKey, power: number, line: string): FoeSkill =>
+  ({ id, name, kind: '普攻', desc, line, cost: 0, power, axis, target: 'one', cd: 0 })
+
+/**
+ * boss 级专属的机制包。
+ * ------------------------------------------------------------
+ * 口径：**不是每只怪物都有**。只有危险度到顶（≥ TUNING.ultStage）的那几只，
+ * 在自己本就有的那几手之外，再挂上这一套「观测机构级别的处置手段」——
+ * 普通遭遇战里的小股敌人永远见不到这些。
+ *
+ * 四手分别对应四种不同的压迫：
+ *   停滞   —— 冻结行动条。名字就叫终末停滞，这是它最本位的一手
+ *   归档   —— 把人从战场上收走几拍，等于临时少一个人
+ *   封锁   —— 压命中：看不见的东西打不准
+ *   回响   —— 把我方刚用过的那招原样打回来
+ */
+const BOSS_MOVES: FoeSkill[] = [
+  {
+    id: 'foe-boss-stasis', name: '停滞 · 观测冻结', kind: '技能',
+    desc: '把一个人按在原地：行动条冻结两拍，这段时间他一步也走不动。',
+    cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 4,
+    line: '「——」它把谁从记录里按住了，那个人就动不了。',
+    effect: { stasis: 2 }, turns: 2,
+  },
+  {
+    id: 'foe-boss-archive', name: '归档 · 静默收容', kind: '技能',
+    desc: '把一名我方从战场上收走两拍：这段时间他不算在场，回来时行动条从零起。',
+    cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 5,
+    line: '「——」不打了。有人被收进档案，场上少了一个。',
+    effect: { archive: 2 }, turns: 2,
+  },
+  {
+    id: 'foe-boss-lockdown', name: '观测封锁', kind: '技能',
+    desc: '把这一带从观测记录里抹掉：我方全体命中下降 —— 不在记录里的东西，打不准东西。',
+    cost: 4, power: 0, axis: '反现实亲和', target: 'all', cd: 4,
+    line: '「——」这一带被从记录里抹掉了。不在记录里的东西，打不准东西。',
+    effect: { lockdown: 0.25 }, turns: 3,
+  },
+  {
+    id: 'foe-boss-echo', name: '回响 · 复写', kind: '技能',
+    desc: '它把小队方才用过的那一手原样念回来，照着同样的分量落回小队自己人身上。',
+    cost: 3, power: 0, axis: '反现实亲和', target: 'one', cd: 3, echo: true,
+    line: '「——」它把小队方才那一手，原样念了回来。',
+  },
+]
 
 const ENEMY_PROFILE: FoeProfile[] = [
   {
@@ -388,7 +481,8 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '王', hue: '#7a4de0',
     line: '「——」黑金的狮子低下来，那不是咆哮，是重量。',
     skills: [
-      foeAtk('foe-maou-bite', '狮子 · 咬碎', '终末化之后仍在咬的那张嘴。', '破坏力', 1.1),
+      foeAtk('foe-maou-bite', '狮子 · 咬碎', '终末化之后仍在咬的那张嘴。', '破坏力', 1.1,
+        '「——」那张嘴合上的动静，比咬本身迟一步才到。'),
       {
         id: 'foe-maou-roar', name: '终末化 · 咆哮', kind: '技能',
         desc: '把这一带的现实密度整体压下去：全场受伤，且所有人的行动条被推后。',
@@ -399,7 +493,7 @@ const ENEMY_PROFILE: FoeProfile[] = [
         id: 'foe-maou-crown', name: '黑金的重量', kind: '技能',
         desc: '黑金化的躯体砸落：单体重击，且这个人此后更容易被咬。',
         cost: 3, power: 2.2, axis: '破坏力', target: 'one', cd: 2,
-        effect: { mark: 0.35, pushBack: 0.5 }, turns: 2,
+        effect: { mark: 0.35, pushBack: 0.5, bleed: 0.05 }, turns: 2,
       },
     ],
   },
@@ -409,7 +503,8 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '异', hue: '#c8554e',
     line: '「它没有脸，但它在看你。」',
     skills: [
-      foeAtk('foe-hetan-hold', '触须 · 掼', '不成形的手抡过来。', '破坏力'),
+      foeAtk('foe-hetan-hold', '触须 · 掼', '不成形的手抡过来。', '破坏力', 1,
+        '「——」那条没有形状的手抡下来，风比它先到。'),
       {
         id: 'foe-hetan-gaze', name: '异端的注视', kind: '技能',
         desc: '被它盯上的人会一直被盯着：标记一名我方，并让其充能变慢。',
@@ -430,7 +525,8 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '械', hue: '#4ea6c8',
     line: '「它按着图纸办事，图纸上没有『停』。」',
     skills: [
-      foeAtk('foe-mech-arm', '机械臂 · 碾压', '工学制品的标准出力。', '破坏力', 1.05),
+      foeAtk('foe-mech-arm', '机械臂 · 碾压', '工学制品的标准出力。', '破坏力', 1.05,
+        '「——」机械臂按着同一个角度落下来。一次，再一次。'),
       {
         id: 'foe-mech-drain', name: '灵魂保存 · 抽离', kind: '技能',
         desc: '工学装置对着人抽一口：单体高伤并直接抹掉一部分行动条。',
@@ -450,12 +546,19 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '末', hue: '#c8a04e',
     line: '「扫不干净的那种东西。」',
     skills: [
-      foeAtk('foe-dregs-wear', '残渣 · 磨蚀', '蹭上来的一下，不重，但一直在。', '破坏力', 0.9),
+      foeAtk('foe-dregs-wear', '残渣 · 磨蚀', '蹭上来的一下，不重，但一直在。', '破坏力', 0.9,
+        '「——」蹭上来的一下不重。难办的是它一直在。'),
       {
         id: 'foe-dregs-regather', name: '再聚拢', kind: '技能',
         desc: '被打散的部分重新聚回来：它给自己回一口气，并架起一重减伤。',
         cost: 3, power: 0, axis: '意志力', target: 'self', cd: 3,
         effect: { heal: 0.5, shield: 0.35 }, turns: 2,
+      },
+      {
+        id: 'foe-dregs-wear-down', name: '磨蚀 · 积', kind: '技能',
+        desc: '黏上来的东西越积越厚：一名我方被磨软，打不出原来的分量。',
+        cost: 3, power: 0.5, axis: '破坏力', target: 'one', cd: 3,
+        effect: { frail: 0.3 }, turns: 3,
       },
       {
         id: 'foe-dregs-crush', name: '高密度 · 压覆', kind: '技能',
@@ -471,12 +574,19 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '语', hue: '#3f9c86',
     line: '「很多人同时在你耳朵里说话，但你听得清每一句。」',
     skills: [
-      foeAtk('foe-whisper-din', '低语 · 灌耳', '把杂音直接倒进脑子里。', '反现实亲和', 1),
+      foeAtk('foe-whisper-din', '低语 · 灌耳', '把杂音直接倒进脑子里。', '反现实亲和', 1,
+        '「——」几十句话同时钻进同一只耳朵。'),
       {
         id: 'foe-whisper-chorus', name: '杂音 · 共鸣', kind: '技能',
         desc: '全场一起响：我方全体充能变慢，且更容易被听见（易伤）。',
         cost: 4, power: 0.8, axis: '反现实亲和', target: 'all', cd: 3,
         effect: { slow: 0.3, mark: 0.25 }, turns: 3,
+      },
+      {
+        id: 'foe-whisper-mute', name: '杂音 · 封口', kind: '技能',
+        desc: '把话从你嘴里拿走：沉默一名我方，这段时间他只剩普攻。',
+        cost: 3, power: 0, axis: '反现实亲和', target: 'one', cd: 3,
+        effect: { silence: true }, turns: 2,
       },
       {
         id: 'foe-whisper-refold', name: '再聚合 · 齐声', kind: '技能',
@@ -491,7 +601,14 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '龙', hue: '#c86a9a',
     line: '「异界开了口，从里面开出来的是花。」',
     skills: [
-      foeAtk('foe-ryuka-bloom', '龙花 · 绽', '花瓣边缘是割人的。', '破坏力', 1.05),
+      foeAtk('foe-ryuka-bloom', '龙花 · 绽', '花瓣边缘是割人的。', '破坏力', 1.05,
+        '「——」花瓣张开的那一下，边缘是割人的。'),
+      {
+        id: 'foe-ryuka-cut', name: '花瓣 · 割伤', kind: '技能',
+        desc: '被花瓣边缘带过的地方一直在流血：每拍掉一截生命，不治就一路流下去。',
+        cost: 3, power: 0.6, axis: '破坏力', target: 'one', cd: 3,
+        effect: { bleed: 0.06 }, turns: 3,
+      },
       {
         id: 'foe-ryuka-vine', name: '异界 · 蔓生', kind: '技能',
         desc: '异界的藤从地面铺开：全场受伤，并被缠住慢下来。',
@@ -512,7 +629,8 @@ const ENEMY_PROFILE: FoeProfile[] = [
     sigil: '未', hue: '#8a8f9c',
     line: '「图鉴上没有它。它也没有等你登记。」',
     skills: [
-      foeAtk('foe-unk-touch', '记录外 · 触碰', '没被登记过的一次接触。', '反现实亲和', 1),
+      foeAtk('foe-unk-touch', '记录外 · 触碰', '没被登记过的一次接触。', '反现实亲和', 1,
+        '「——」它碰了你一下。图鉴上仍然没有它。'),
       {
         id: 'foe-unk-warp', name: '未分类 · 扭曲', kind: '技能',
         desc: '把观测到的事实扭一下：全场受伤，行动条一并被推后。',
@@ -535,9 +653,10 @@ const ENEMY_PROFILE: FoeProfile[] = [
  */
 const FOE_ULT: Record<string, NonNullable<FoeProfile['ult']>> = {
   漆黑的影: {
-    name: '终末降临 · 黑金的黄昏', desc: '它把这一带的现实整体压低：全场重创，行动条一并被推后。',
+    name: '终末降临 · 黑金的黄昏', desc: '它把这一带的现实整体压低：全场重创，行动条被推后，全员开始流血。',
     power: 2.6, axis: '反现实亲和', target: 'all',
-    line: '「——看好了。这就是终末的样子。」', effect: { pushBack: 0.45, mark: 0.25 }, turns: 3,
+    line: '「——看好了。这就是终末的样子。」',
+    effect: { pushBack: 0.45, mark: 0.25, bleed: 0.05 }, turns: 3,
   },
   异端显形: {
     name: '异端审问 · 万目', desc: '无数只眼睛同时睁开：单体审判，无视减伤与闪避。',
@@ -565,7 +684,7 @@ const FOE_ULT: Record<string, NonNullable<FoeProfile['ult']>> = {
     line: '「开花的动静，比雷还大。」', effect: { pierce: true }, turns: 2,
   },
   未分类观测体: {
-    name: '观测终止 · 悖论坍缩', desc: '它把「自己被观测到」这件事结算掉：全场重创，并抹掉自身的负面。',
+    name: '观测终止 · 悖论坍缩', desc: '它把「自己被观测到」这件事一并了结：全场受到重创，它自己身上的不利也随之消去。',
     power: 2.4, axis: '意志力', target: 'all',
     line: '「记录到这里为止。」', effect: { cleanse: true, mark: 0.25 }, turns: 3,
   },
@@ -588,15 +707,26 @@ export function enemiesOf(m: Mission): Combatant[] {
   const rf = rFactor(r.r)
   const out: Combatant[] = []
   for (let i = 0; i < count; i++) {
-    const hpMax = Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul)
+    // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到顶时它升格为「首领」。
+    // 一支小队清完一整场却没碰上一个像样的东西，那不算作战，只算打扫。
+    const tier: Combatant['tier'] = i > 0
+      ? undefined
+      : m.stage >= TUNING.ultStage ? 'boss' : 'elite'
+    const hpMul = tier === 'elite' ? TUNING.eliteHpMul : 1
+    const atkMul = tier ? TUNING.eliteAtkMul : 1
+    const willMul = tier ? TUNING.eliteWillMul : 1
+    const hpMax = Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul * hpMul)
     const axes: AxisSheet = {
-      破坏力: Math.round(TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage),
+      破坏力: Math.round((TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage) * atkMul),
       敏捷度: Math.round(TUNING.enemySpdBase + m.stage * TUNING.enemySpdPerStage),
       物理抗性: Math.round(TUNING.enemyResistBase + m.stage * TUNING.enemyResistPerStage),
       反现实亲和: Math.round((10 + m.stage * 4) * rf.mul),
-      意志力: Math.round(10 + m.stage * TUNING.enemyWillPerStage),
+      意志力: Math.round((10 + m.stage * TUNING.enemyWillPerStage) * willMul),
     }
-    const ename = count > 1 ? `${prof.name} ${SUFFIX[i]}` : prof.name
+    const tag = tier === 'boss' ? '首领' : tier === 'elite' ? '精英' : ''
+    const ename = count > 1
+      ? `${prof.name} ${SUFFIX[i]}${tag ? ` · ${tag}` : ''}`
+      : tag ? `${prof.name} · ${tag}` : prof.name
     // 敌方体力随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
     const spMax = chSpMax(axes.意志力)
     out.push({
@@ -607,6 +737,7 @@ export function enemiesOf(m: Mission): Combatant[] {
       hue: prof.hue,
       cls: prof.cls,
       trait: m.nature,
+      tier,
       hp: hpMax,
       hpMax,
       axes,
@@ -614,11 +745,22 @@ export function enemiesOf(m: Mission): Combatant[] {
         ...prof.skills.map((k) => ({
           id: k.id, name: k.name, kind: k.kind, desc: k.desc,
           cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
-          line: k.kind === '普攻' ? '' : prof.line,
+          // 每一手都带自己的话：普攻也算一手，缺省才退回该型那一句
+          line: k.line ?? prof.line,
           target: k.target, effect: k.effect, turns: k.turns, cd: k.cd ?? 0,
         } satisfies SkillSpec)),
+        // boss 级的机制包：只有「首领」这一档才配这套（见 BOSS_MOVES）——
+        // 判的是头上那一档，不是危险度：低危场的精英照样是正经对手，只是不带机制包。
+        ...(tier === 'boss'
+          ? BOSS_MOVES.map((k) => ({
+              id: k.id, name: k.name, kind: k.kind, desc: k.desc,
+              cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
+              line: k.line ?? prof.line, target: k.target, effect: k.effect, turns: k.turns,
+              cd: k.cd ?? 0, echo: k.echo,
+            } satisfies SkillSpec))
+          : []),
         // boss 级的终结技能：不占常规出手，蓄满自己放（见 engine 的咏唱三段）
-        ...(m.stage >= TUNING.ultStage
+        ...(tier === 'boss'
           ? [{
               id: 'foe-ult',
               name: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).name,
@@ -651,6 +793,7 @@ export function enemiesOf(m: Mission): Combatant[] {
       gone: 0,
       morph: null,
       startUsed: 0,
+      unsealedAt: 0,
       sp: spMax,
       spMax,
       startNeed: 0,

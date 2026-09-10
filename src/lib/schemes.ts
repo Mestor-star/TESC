@@ -30,6 +30,11 @@ export interface Scheme {
    * 缺省 = 该预设不含指令条目。
    */
   entries?: PresetEntry[]
+  /**
+   * 预填充（酒馆的 assistant_prefill）：每次生成先摆上的那个开头。
+   * 套用本预设时随指令条目一并落进生效快照（见 preset.ts）。
+   */
+  prefill?: string
 }
 
 export const SCHEME_KEY = 'zts-schemes:v1'
@@ -62,17 +67,18 @@ export function schemePart(cfg: ApiSettings): SchemePart {
 
 export function makeScheme(
   name: string, main: SchemePart, sms: SchemePart, activeLoreIds: string[],
-  loreEntryOff?: Record<string, string[]>, entries?: PresetEntry[],
+  loreEntryOff?: Record<string, string[]>, entries?: PresetEntry[], prefill?: string,
 ): Scheme {
   return {
     id: crypto.randomUUID(), name, main, sms, activeLoreIds,
     ...(loreEntryOff ? { loreEntryOff } : {}),
     ...(entries ? { entries } : {}),
+    ...(prefill && prefill.trim() ? { prefill: prefill.trim() } : {}),
   }
 }
 
-/** 读取单个本地 .json 文件（返回解析值；非 JSON 时为 null） */
-export function readJsonFile(): Promise<unknown | null> {
+/** 读取单个本地 .json 文件（返回解析值与文件名；非 JSON 时为 null） */
+export function readJsonFile(): Promise<{ name: string; json: unknown } | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -81,7 +87,8 @@ export function readJsonFile(): Promise<unknown | null> {
       const f = input.files?.[0]
       if (!f) { resolve(null); return }
       try {
-        resolve(JSON.parse(await f.text()) as unknown)
+        const nm = typeof f.name === 'string' ? f.name.replace(/\.json$/i, '') : ''
+        resolve({ name: nm, json: JSON.parse(await f.text()) as unknown })
       } catch {
         resolve(null)
       }
@@ -110,8 +117,10 @@ export async function capturePersisted(name: string): Promise<Scheme> {
 function merge(cfg: ApiSettings, p: SchemePart, fb: number): ApiSettings {
   return {
     ...cfg,
-    baseUrl: p.baseUrl,
-    model: p.model,
+    // 方案没带地址/模型名时沿用通道现值 —— 否则「导入一份不含模型名的预设」
+    // 会把手上填好的终端地址连同模型一起抹掉
+    baseUrl: p.baseUrl || cfg.baseUrl,
+    model: p.model || cfg.model,
     temperature: p.temperature,
     maxTokens: p.maxTokens || cfg.maxTokens || fb,
   }
@@ -128,8 +137,8 @@ export async function applySchemeTo(cfgs: ChannelCfg, s: Scheme): Promise<Channe
   for (const id of s.activeLoreIds) if (!cur.includes(id)) await lore.setBookActive(id, true)
   // 词条滤网：只有本预设亲自记过的书才覆盖，其余保持书上的原样
   if (s.loreEntryOff) await lore.applyEntryOff(s.loreEntryOff)
-  // 导演指令：套用即落生效快照，此后生成只认它
-  snapshotActivePreset(s.id, s.name, s.entries ?? [])
+  // 导演指令：套用即落生效快照，此后生成只认它（预填充一并落进去）
+  snapshotActivePreset(s.id, s.name, s.entries ?? [], s.prefill ?? '')
   return { main: nextMain, sms: nextSms }
 }
 
@@ -137,11 +146,14 @@ export async function applySchemeTo(cfgs: ChannelCfg, s: Scheme): Promise<Channe
  * 管理预设 · 局部改写某个方案（指令条目 / 词条滤网 …）。
  * 若该方案正是当前生效的那个，顺手刷新生效快照——界面上的开关因此立刻对下一次生成生效。
  */
-export function patchScheme(id: string, patch: Partial<Pick<Scheme, 'name' | 'entries' | 'loreEntryOff'>>): Scheme[] {
+export function patchScheme(
+  id: string,
+  patch: Partial<Pick<Scheme, 'name' | 'entries' | 'loreEntryOff' | 'prefill'>>,
+): Scheme[] {
   const next = listSchemes().map((s) => (s.id === id ? { ...s, ...patch } : s))
   storeSchemes(next)
   const cur = next.find((s) => s.id === id)
-  if (cur && activePresetId() === id) snapshotActivePreset(cur.id, cur.name, cur.entries ?? [])
+  if (cur && activePresetId() === id) snapshotActivePreset(cur.id, cur.name, cur.entries ?? [], cur.prefill ?? '')
   return next
 }
 
@@ -224,7 +236,7 @@ export type ChatPresetResult =
   | { ok: false; warn: string }
 
 /** ChatPreset JSON → 映射为「方案」（模型/温度/输出预算；baseUrl 沿用当前通道）。不落盘，由调用方 store+apply */
-export function parseChatPreset(data: unknown, cfgs: ChannelCfg): ChatPresetResult {
+export function parseChatPreset(data: unknown, cfgs: ChannelCfg, fileHint?: string): ChatPresetResult {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, warn: '所选文件不是 ChatPreset JSON。' }
   }
@@ -265,15 +277,17 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg): ChatPresetResu
 
   if (!model) {
     // 确属预设（含采样器键）但没带模型名 → 沿用当前通道模型，仅应用温度等参数（同酒馆「导入即套用」语义）
+    // 注意：模型名本来就不是预设的必填项 —— 酒馆里模型是在连接面板选的，预设只管采样器与指令。
+    // 所以「文件无模型名」不构成拒收理由，通道也是空的就照空着导进来，由终端设置去填。
     const samplerish = Object.keys(settings).some((k) => /^(top_p|top_k|rep_pen|min_p|presence_penalty|frequency_penalty|stream_|temp|temperature)/i.test(k))
       || Object.keys(d).some((k) => /^(top_p|top_k|rep_pen|temp|temperature|stream_)/i.test(k))
+    const isLorebook = Array.isArray(d.entries)
+      || (d.data && typeof d.data === 'object' && !Array.isArray(d.data) && Array.isArray((d.data as Record<string, unknown>).entries))
     const curModel = cfgs.main.model.trim() || cfgs.sms.model.trim()
-    if (samplerish && curModel) {
+    if (samplerish && !isLorebook) {
       model = curModel
-      note = '预设未含模型名，已沿用当前通道模型'
+      note = curModel ? '预设未含模型名，已沿用当前通道模型' : '预设未含模型名，导入后在终端设置里填模型'
     } else {
-      const isLorebook = Array.isArray(d.entries)
-        || (d.data && typeof d.data === 'object' && !Array.isArray(d.data) && Array.isArray((d.data as Record<string, unknown>).entries))
       const keysShown = (Object.keys(settings).length ? Object.keys(settings) : Object.keys(d)).slice(0, 8).join('、')
       const warn = isLorebook
         ? '这份是酒馆的世界书（world info）——请改用「导入 ST 世界书」。'
@@ -281,13 +295,22 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg): ChatPresetResu
       return { ok: false, warn }
     }
   }
-  const name = typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `ChatPreset · ${model}`
+  const name = typeof d.name === 'string' && d.name.trim()
+    ? d.name.trim()
+    : (fileHint?.trim() || `ChatPreset · ${model || '未含模型名'}`)
   // 预设自带的指令条目（酒馆 prompts 数组）：分隔行归组、marker 记占位、其余原样入册
   const promptsRaw = Array.isArray(d.prompts)
     ? d.prompts
     : (d.data && typeof d.data === 'object' && !Array.isArray(d.data) ? (d.data as Record<string, unknown>).prompts : null)
-  const entries = parseStPrompts(promptsRaw)
+  // 启用状态：老预设写在 prompts[].enabled，新预设写在 prompt_order[].order[].enabled（以它为准）
+  const entries = parseStPrompts(promptsRaw, d.prompt_order)
   const entryCount = entries?.filter((e) => !e.placeholder).length ?? 0
+  // 预填充（assistant_prefill）：酒馆里是「先替模型写个开头」，本终端照搬语义。
+  // 有的预设把它写在采样器层，有的写在顶层，两处都认。
+  const prefillRaw = typeof d.assistant_prefill === 'string'
+    ? d.assistant_prefill
+    : (typeof settings.assistant_prefill === 'string' ? settings.assistant_prefill : '')
+  const prefill = (prefillRaw ?? '').trim().slice(0, 400)
   const scheme: Scheme = {
     id: crypto.randomUUID(),
     name,
@@ -295,18 +318,20 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg): ChatPresetResu
     sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp, maxTokens },
     activeLoreIds: [],
     ...(entries ? { entries } : {}),
+    ...(prefill ? { prefill } : {}),
   }
   const stream = typeof d.stream_openai === 'boolean'
     ? d.stream_openai
     : (settings.stream_openai as boolean | undefined)
-  const noteFull = [note, budgetNote, entryCount ? `指令条目 ${entryCount}` : ''].filter(Boolean).join(' · ')
+  const noteFull = [note, budgetNote, entryCount ? `指令条目 ${entryCount}` : '', prefill ? '含预填充' : '']
+    .filter(Boolean).join(' · ')
   return { ok: true, scheme, model, note: noteFull, entryCount, ...(typeof stream === 'boolean' ? { stream } : {}) }
 }
 
 /** 导入 ChatPreset 并整体落地（加入方案列表 + 套用两通道）——两页共用 */
-export async function importChatPresetFile(data: unknown): Promise<ChatPresetResult & { cfg?: ChannelCfg }> {
+export async function importChatPresetFile(data: unknown, fileHint?: string): Promise<ChatPresetResult & { cfg?: ChannelCfg }> {
   const cfgs = await readProfiles()
-  const r = parseChatPreset(data, cfgs)
+  const r = parseChatPreset(data, cfgs, fileHint)
   if (!r.ok) return r
   const act = await lore.getActiveLorebookIds()
   r.scheme.activeLoreIds = act

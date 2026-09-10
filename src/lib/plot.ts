@@ -44,6 +44,8 @@ export interface PlotDirective {
   digest?: string
   /** 本段触发交战：按现场的角色与敌人开战（缺省 = 无战事） */
   battle?: PlotBattle
+  /** 角色在对话里派下的托付（短信场景用；进「电话 · 任务列表」，不进世界状态） */
+  task?: { title: string; detail?: string }[]
 }
 
 /** 剧情触发的交战规格 —— 由模型在事件指令里输出 */
@@ -115,6 +117,25 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       bond.push({ char, delta: clamp(Math.round(delta * 10) / 10, -100, 100) })
     }
     if (bond.length) out.bond = bond
+  }
+
+  if (Array.isArray(src.task)) {
+    const task: { title: string; detail?: string }[] = []
+    for (const item of src.task) {
+      // 也接受字符串写法
+      const title = typeof item === 'string'
+        ? item.trim()
+        : (item && typeof item === 'object' && typeof (item as Record<string, unknown>).title === 'string'
+            ? ((item as Record<string, unknown>).title as string).trim()
+            : '')
+      if (!title) continue
+      const detail = item && typeof item === 'object' && typeof (item as Record<string, unknown>).detail === 'string'
+        ? ((item as Record<string, unknown>).detail as string).trim()
+        : ''
+      task.push({ title: title.slice(0, 60), ...(detail ? { detail: detail.slice(0, 240) } : {}) })
+      if (task.length >= 2) break
+    }
+    if (task.length) out.task = task
   }
 
   if (Array.isArray(src.ends)) {
@@ -303,11 +324,60 @@ export interface DirectorReply extends PlotReply {
   source: 'tags' | 'json' | 'none'
 }
 
+/**
+ * 外来标签（酒馆预设自带的那一整套）。
+ * 预设把回执写成 <dream_body>…</dream_body>，外面再套 <dream_after_format>、
+ * <dream_history>、<dream_setting>、<thought_of_chain>、<UpdateVariable>… 这些旁注块。
+ * 换一份预设就换一套名字（本机那份 114 条里至少十几个），所以**不写死名单，反过来认自己人**：
+ *   · 本终端自己的协议（maintext / option / vars / thinking）原样留着；
+ *   · body 类（dream_body / dream_maintext）只脱壳，壳里的字就是正文；
+ *   · 其余成对出现的标签块一律整块丢掉 —— 那是导演写给自己的批注，不是给观测者读的话；
+ *   · 少数 HTML 行内标签只留字（正文里真用它做强调时，不至于连内容一起吃掉）。
+ * 不这么做，那些标签名会原样漏进正文、流式气泡与短信里。
+ */
+const OWN_TAG_RE = /^(?:maintext|option|vars|thinking)$/i
+/** 行内 HTML：只当标记，内容留下 */
+const HTML_TAG_RE = /^(?:a|b|i|u|s|em|strong|span|code|small|sub|sup|ruby|rt|br|p)$/i
+/** body 类标签：只脱壳，内容留下当正文 */
+const BODY_TAG_RE = /<\s*\/?\s*(?:dream_body|dream_maintext)\b[^>]*>/gi
+/** 成对标签块：名字取反 —— 不是自己人、也不是行内 HTML，就连内容一起去掉 */
+const PAIR_RE = /<\s*([a-zA-Z][a-zA-Z0-9_:-]*)\b[^>]*>([\s\S]*?)<\s*\/\s*\1\s*>/g
+/** 收尾处没闭合的外来开标签（只认旁注那几个家族，免得误吃正文里的尖括号） */
+const ALIEN_OPEN_RE = /<\s*(?:simple_thinking|thought_of_chain|think|dream_[a-z_]+|dreamer_[a-z_]+)\b[^>]*>(?:(?!<\s*\/)[\s\S])*$/i
+
+/** 把外来的 body 标签与旁注块清掉（正文保留） */
+function stripAlienTags(s: string): string {
+  if (!s) return ''
+  const t = s
+    .replace(BODY_TAG_RE, '')
+    .replace(PAIR_RE, (m, name: string) => (OWN_TAG_RE.test(name) || HTML_TAG_RE.test(name) ? m : ''))
+    .replace(ALIEN_OPEN_RE, '')
+  return t.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/**
+ * 展示层清洗（**只用于要显示出去的文本**，绝不放在解析之前）。
+ * 剥掉代码围栏与零零散散漏进来的尖括号标签 —— 预设带来的格式残留、模型偶尔
+ * 夹带的 ```json 块，都不该出现在观测者读的正文里。
+ * 注意：指令 JSON 本身是写在 ``` 围栏里的，所以这一步只能在展示路径上做。
+ */
+function scrubDisplay(s: string): string {
+  return s
+    .replace(/```[\s\S]*?(?:```|$)/g, '')
+    .replace(/<\/?[a-zA-Z][^<>]{0,200}>/g, '')
+    // 生成途中被截断、还没等到 '>' 的半截标签：只在文末出现时摘掉。
+    // 名字至少三个字符 —— 免得把「a<b 也行」这种正文里的比较符号当成标签切掉
+    .replace(/<[a-zA-Z][a-zA-Z0-9_:-]{2,}(?:\s[^<>]*)?$/, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 const TAG_BLOCK_RE = /<\s*(?:maintext|option|vars|thinking|think)\b[\s\S]*?<\s*\/\s*(?:maintext|option|vars|thinking|think)\s*>/gi
 
 /** 剥离已知标签块（用于标签缺席 <maintext> 时的正文兜底） */
 function stripBlockTags(s: string): string {
-  return s.replace(TAG_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim()
+  return stripAlienTags(s).replace(TAG_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /**
@@ -315,7 +385,8 @@ function stripBlockTags(s: string): string {
  * 永不 throw。directive/found 语义与 parsePlotReply 一致，供 needDir 复用。
  */
 export function parseDirectorReply(raw: string): DirectorReply {
-  const text = typeof raw === 'string' ? raw : ''
+  // 先把外来标签清干净：body 脱壳，旁注块整块去掉，再走本终端自己的协议
+  const text = stripAlienTags(typeof raw === 'string' ? raw : '')
   const json = parsePlotReply(text)
   const base: DirectorReply = {
     ...json,
@@ -353,7 +424,7 @@ export function parseDirectorReply(raw: string): DirectorReply {
 
   const usedTags = Boolean(maintext || hasVars || options.length || thinking)
   return {
-    narrative: narrative.trim(),
+    narrative: scrubDisplay(narrative),
     directive,
     found,
     options,
@@ -378,7 +449,7 @@ export function parseDirectorReply(raw: string): DirectorReply {
    ============================================================ */
 
 export function extractLiveDisplay(raw: string): string {
-  let s = typeof raw === 'string' ? raw : ''
+  let s = stripAlienTags(typeof raw === 'string' ? raw : '')
   if (!s) return ''
 
   // 1) JSON 围栏：完整 ```…``` 或从第一个 ``` 到文末的悬空围栏，整体摘除
@@ -403,7 +474,8 @@ export function extractLiveDisplay(raw: string): string {
   }
   s = lines.join('\n')
 
-  return s.replace(/\n{3,}/g, '\n\n').trim()
+  // 6) 收尾再走一遍展示清洗：漏网的尖括号标签、半截标签、多余空行
+  return scrubDisplay(s)
 }
 
 /* ============================================================
@@ -486,6 +558,8 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
     if (bond.length) out.bond = bond
   }
   if (d.flag && Object.keys(d.flag).length) out.flag = d.flag
+  // 托付：短信里被正式交代下来的事，落到「电话 · 任务列表」
+  if (d.task && d.task.length) out.task = d.task
   return out
 }
 
@@ -656,6 +730,8 @@ ${baseline.trim() || '（无）'}${reask}${loreSection}${opsSection}${varBlock}$
 /** 短信场景的基础提示补充（轻量羁绊许可），由 Tavern 拼到其 system 末尾 */
 export function smsBondRule(charId: string): string {
   return `\n（可选 · 轻量互动：若本回合对话让该角色心绪明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 } }
-其中 bond.delta 只针对该角色取 ±1~3（正=更亲近），flag 为可选的分支标记；拿不准就不给，直接以对话结束。）`
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }] }
+其中 bond.delta 只针对该角色取 ±1~3（正=更亲近）；flag 为可选的分支标记；
+task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。
+拿不准就不给，直接以对话结束。）`
 }

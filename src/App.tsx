@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowLeft, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk } from '@phosphor-icons/react'
+import { ArrowLeft, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
 import type { Toast, ToastKind } from './data/types'
-import { AMBIENT_TEXTS } from './data/comms'
 import { clock, rSeverity } from './lib/format'
 import { clearRemount, registerRemount } from './lib/remount'
+import { resetGuide } from './lib/guide'
+import { bedForView, installAudio, setAudio, setBed, useAudioSettings } from './lib/audio'
+import { subscribeUnread, totalUnread } from './lib/sms'
+import { useProactiveSms } from './lib/smsauto'
 
 import { Boot } from './Boot'
 import { TitleMenu } from './views/Title'
@@ -24,6 +27,7 @@ import { Settings } from './views/Settings'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { VariablePanel } from './components/VariablePanel'
 import { SaveDialog } from './components/SaveDialog'
+import { Guide } from './components/Guide'
 
 import css from './App.module.css'
 
@@ -79,7 +83,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 function ToastHost() {
   const { toasts, dismiss } = useTerminal()
   return (
-    <div className={css.toasts} aria-live="polite">
+    <div className={css.toasts} aria-live="polite" data-guide="toasts">
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
       ))}
@@ -92,6 +96,8 @@ function NavRail() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(operatorName)
   const [confirmReset, setConfirmReset] = useState(false)
+  /* 未读短信数：后台主动来信也会让它立刻亮起 */
+  const unread = useSyncExternalStore(subscribeUnread, totalUnread)
 
   const commit = () => {
     const v = draft.trim()
@@ -109,11 +115,12 @@ function NavRail() {
       return
     }
     resetWorld()
+    resetGuide()   // 世界重置了，梅芙从头再讲一遍
     setConfirmReset(false)
   }
 
   return (
-    <aside className={css.rail}>
+    <aside className={css.rail} data-guide="rail">
       <div className={css.brand}>
         <div className={css.brandMark}>終</div>
         <div className={css.brandText}>
@@ -122,7 +129,7 @@ function NavRail() {
         </div>
       </div>
 
-      <div className={css.nav}>
+      <div className={css.nav} data-guide="nav">
         <div className={css.navLabel}>Main System</div>
         {NAV.map((n, i) => {
           const locked = LOCKED_VIEWS.includes(n.id) && !unlocked
@@ -130,6 +137,7 @@ function NavRail() {
             <button
               key={n.id}
               className={`${css.navItem} ${view === n.id ? css.isActive : ''} ${locked ? css.isLocked : ''}`}
+              data-guide={`nav-${n.id}`}
               onClick={() => navigate(n.id)}
               aria-current={view === n.id ? 'page' : undefined}
               title={locked ? '需完成事件「欢迎来到，终末停滞委员会」后解锁' : undefined}
@@ -142,6 +150,9 @@ function NavRail() {
               <span className={css.navItem__idx}>
                 {locked ? <Lock size={13} weight="bold" /> : String(i + 1).padStart(2, '0')}
               </span>
+              {n.id === 'tavern' && unread > 0 ? (
+                <span className={css.navBadge} data-sms-unread={unread}>{unread > 99 ? '99+' : unread}</span>
+              ) : null}
             </button>
           )
         })}
@@ -182,6 +193,7 @@ function NavRail() {
         <button
           className="btn btn--ghost"
           style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          data-guide="slot"
           onClick={() => setSlotsOpen(true)}
           title="手动存档 / 读档（独立于当前进度，重置不影响）"
         >
@@ -190,12 +202,14 @@ function NavRail() {
         <button
           className="btn btn--ghost"
           style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          data-guide="vars"
           onClick={() => setVarsOpen(true)}
           title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
         >
           <SlidersHorizontal size={13} weight="bold" /> 查看 / 编辑变量
         </button>
         <button
+          data-guide="reset"
           className={confirmReset ? 'btn btn--amber' : 'btn btn--ghost'}
           style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           onClick={handleReset}
@@ -219,7 +233,7 @@ function TopStatus({ view }: { view: ViewId }) {
 
   const t = TITLE[view]
   return (
-    <header className={css.topbar}>
+    <header className={css.topbar} data-guide="topbar">
       <span className={css.tbTitleSlash} />
       <span className={css.tbLeft}>
         <span className={css.tbTitleEn}>{t.en}</span>
@@ -227,10 +241,10 @@ function TopStatus({ view }: { view: ViewId }) {
       </span>
       <div className={css.tbRight}>
         <button className={css.pill} title="当前监测区域" onClick={() => push('info', '监测区域', `当前焦点：${focus.name} · ${focus.code}`, false)}>
-          区域&nbsp;<span className="muted tiny">{focus.code}</span>&nbsp;{focus.name.split(' · ').pop()}
+          <span data-guide="region-pill" />区域&nbsp;<span className="muted tiny">{focus.code}</span>&nbsp;{focus.name.split(' · ').pop()}
         </button>
         <button className={css.pill} onClick={() => push('info', 'R 值实时读数', `${focus.name} R 值 ${focus.r.toFixed(3)}（${focus.delta >= 0 ? '+' : ''}${focus.delta.toFixed(3)}）`, false)}>
-          R 值&nbsp;<span className={sev.cls} style={{ fontWeight: 800 }}>{focus.r.toFixed(3)}</span>
+          <span data-guide="r-pill" />R 值&nbsp;<span className={sev.cls} style={{ fontWeight: 800 }}>{focus.r.toFixed(3)}</span>
         </button>
         {focus.threatStage > 0 ? (
           <button className={`${css.pill} ${css['pill--danger']}`} onClick={() => push('danger', '区域警戒确认', `观测危险度 STAGE ${focus.threatStage} · ${focus.note}`, false)}>
@@ -249,8 +263,29 @@ function TopStatus({ view }: { view: ViewId }) {
         <button className={css.pill} title="停滞观测信道状态" onClick={() => push('decode', '观测信道稳定', '与停滞观测网 · 弗尔克图斯分区保持全双工连接', false)}>
           <Bell size={14} weight="bold" />
         </button>
+        <AudioPill />
       </div>
     </header>
+  )
+}
+
+/**
+ * 顶栏上的静音钮。
+ * 只动总开关，三个滑块的值原样留着 —— 再按一下原样回来。
+ * 第一次按下同时就是解锁音频的那一下手势（浏览器不许没有手势就出声）。
+ */
+function AudioPill() {
+  const a = useAudioSettings()
+  const on = !a.muted && a.master > 0
+  return (
+    <button
+      className={css.pill}
+      data-audio-pill={on ? 'on' : 'off'}
+      title={on ? '声音已开 · 点击静音' : '声音已静 · 点击开启'}
+      onClick={() => setAudio({ muted: on })}
+    >
+      {on ? <SpeakerHigh size={14} weight="bold" /> : <SpeakerSlash size={14} weight="bold" />}
+    </button>
   )
 }
 
@@ -274,6 +309,9 @@ function Shell() {
   const { view, push, varsOpen, slotsOpen } = useTerminal()
   const booted = useRef(false)
 
+  /* 主动来信：挂在常驻的 Shell 上 —— 观测者不在电话页也照常收到 */
+  useProactiveSms()
+
   useEffect(() => {
     if (booted.current) return
     booted.current = true
@@ -283,26 +321,20 @@ function Shell() {
     return () => { window.clearTimeout(t1) }
   }, [push])
 
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return
-      if (Math.random() > 0.6) return
-      const text = AMBIENT_TEXTS[Math.floor(Math.random() * AMBIENT_TEXTS.length)]
-      push('info', '终端讯息', text, false)
-    }, 46000)
-    return () => window.clearInterval(id)
-  }, [push])
+  /* 换模块就换一段底：每个模块有自己的环境音 */
+  useEffect(() => { setBed(bedForView(view)) }, [view])
 
   return (
     <div className={`${css.root} app--stage ${css.bootPop}`}>
       <NavRail />
       <div className={css.main}>
         <TopStatus view={view} />
-        <main className={css.screen}>
+        <main className={css.screen} data-guide="screen">
           <Stage />
         </main>
       </div>
       <ToastHost />
+      <Guide />
       {varsOpen ? <VariablePanel /> : null}
       {slotsOpen ? <SaveDialog /> : null}
     </div>
@@ -337,6 +369,11 @@ function SetupShell() {
 
 function Gate() {
   const { authed, stage, setupMode, enter } = useTerminal()
+  // 标题菜单与设置专用界面不在 Shell 里，底在这里补上；
+  // 进了终端本体就撒手 —— 那一段由 Shell 按当前模块决定
+  useEffect(() => {
+    if (authed && (stage !== 'game' || setupMode)) setBed('menu')
+  }, [authed, stage, setupMode])
   // 认证开屏 → 标题菜单 → 终端本体 / 设置专用界面（读档/重置经 key 重挂载后按阶段直达）
   if (!authed) return <Boot onDone={enter} />
   if (stage !== 'game') return <TitleMenu />
@@ -361,6 +398,9 @@ function Root() {
 }
 
 export default function App() {
+  // 音频全局接线：一次手势解锁 · 按钮统一音效 · 切后台自动压低
+  useEffect(() => installAudio(), [])
+
   // 兜底放在最外层：任何一处渲染抛错都摊成可读的一屏，而不是黑屏
   return (
     <ErrorBoundary>

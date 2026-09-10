@@ -9,6 +9,8 @@
  *    让 provider 重新从存储读取（本模块保持无 React、可测）。
  */
 import type { ChatMsg, WorldState } from '../data/types'
+import { readGuide, resetGuide, writeGuide } from './guide'
+import type { GuideState } from './guide'
 
 export const RUN_KEY = 'zts-terminal:v3'
 export const PLOT_KEY = 'zts-plot:v1'
@@ -32,6 +34,12 @@ export interface RunSnapshot extends RunStateInput {
   schema: 1
   plot: Record<string, ChatMsg[]>
   tavern: Record<string, ChatMsg[]>
+  /**
+   * 梅芙讲到哪儿了 —— 这一档自己的进度，**跟着存档走**。
+   * 新档里它是空的，所以每一份新存档都会从头触发一次引导；
+   * 读到哪一档，就接着那一档讲到哪里（老档没有这一项，读到则不动当前进度）。
+   */
+  guide?: GuideState
   savedAt: number
 }
 
@@ -144,6 +152,8 @@ export function captureSnapshot(run: RunStateInput): RunSnapshot {
     world: run.world,
     plot: readLogs(PLOT_KEY),
     tavern: readLogs(TAVERN_KEY),
+    // 引导进度一并入档：这一档存的是「梅芙讲到哪儿了」，读档时原样放回去
+    guide: readGuide(),
     savedAt: Date.now(),
   }
 }
@@ -201,9 +211,11 @@ export function applySnapshot(snapshot: RunSnapshot): void {
   } catch {
     /* noop */
   }
+  // 梅芙接着这一档讲：老档没有 guide 字段时不写，别把当前进度搅了
+  writeGuide(snapshot.guide)
 }
 
-/** 清除当前运行（重置用）：只清运行档与会话日志，绝不碰 zts-slots:v1 */
+/** 清除当前运行（重置 / 开新档用）：清运行档、会话日志与引导进度，绝不碰 zts-slots:v1 */
 export function clearRunStorage(): void {
   for (const key of [RUN_KEY, PLOT_KEY, TAVERN_KEY]) {
     try {
@@ -212,6 +224,8 @@ export function clearRunStorage(): void {
       /* noop */
     }
   }
+  // 新的一档就是新的一轮：连同梅芙讲到哪儿一起清掉，引导从头再来
+  resetGuide()
 }
 
 let migrated = false

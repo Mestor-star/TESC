@@ -8,7 +8,7 @@
         就不是常态那一句。心叶甩完一招，露娜接话的语气和陌生人完全不同 ——
         「认识的、熟悉的角色才有的特殊台词」。
    熟悉与否不发散判定，只看既有关系：
-     · 羁绊（PAIRS：黄金之兔 / 会长与她的狗 / 婚约者）
+     · 羁绊（PAIRS：黄金狮子 / 如散文般 / 婚约者）
      · 同队（ROSTER_GROUPS 里的同一编制，含恋兔队）
      · 本场成立的队伍羁绊（synergy.ts 的 traitsOf）
    台词一律按原文关系写（称呼、口癖、相处方式），不新造设定。
@@ -42,13 +42,13 @@ export interface BanterCtx {
  * 键取技能 id 而非招式名 —— 名册的技能 id 是稳定的。
  */
 export const LINE_POOL: Record<string, string[]> = {
-  'hikari-burst': ['「——这是我非做到不可的事。」', '「别拦我。这一次谁也别拦我。」'],
-  'hikari-peer': ['「区区神明，别太嚣张了！」', '「让开——不然连你一起。」'],
-  'luna-blade': ['「丝线，收紧。」', '「——别动，会断的。」'],
-  'mefisa-cannon': ['「主炮，装填。」', '「弹道清零。放。」'],
-  'nyau-void': ['「小柴要钻进去咯！」', '「缝在这儿——找到了！」'],
-  'alive-edit': ['「这一页，我替你写。」', '「已经发生过的事，我可以再写一遍。」'],
-  'kuro-burst': ['「——退后。」', '「别挡在路上。」'],
+  'hikari-burst': ['「你以为……我是谁啊……！」', '「——只要我还活着，就不会让你伤害到大家——！」'],
+  'hikari-peer': ['「就此——结束吧！！」', '「——樱之残影。」'],
+  'luna-blade': ['「你这家伙！恶心死了！去死！」', '「但这个孩子不一样。他只是个普通的孩子。一直以来，他遭遇的都是痛苦和磨难。从今往后，他必须幸福。如果你们要阻碍这一切——我绝不允许。」'],
+  'mefisa-cannon': ['「走吧，八脚马！」', '「……哼。在那里吗！」'],
+  'nyau-void': ['「没问题！小柴对力量很有自信！」', '「是！小柴保证完成任务！」'],
+  'alive-edit': ['「——你要不要成为我的猎犬？」', '「我希望你保护言万同学。」'],
+  'kuro-burst': ['「你的影子，我收下咯。」', '「来吧……沙与风！」'],
 }
 
 /**
@@ -58,36 +58,36 @@ export const LINE_POOL: Record<string, string[]> = {
  */
 export const CHAR_LINES: Record<string, string[]> = {
   [OPERATOR_ID]: [
-    '「——你心里那句，我听见了。」',
-    '「别装了。你嘴上说的和心里想的不是一句。」',
-    '「往左。你刚才想的是往左。」',
-    '「……这次我听清了。」',
+    '「露娜小姐，退后！」',
+    '「露娜小姐！请退后！」',
+    '「——破坏掉！！」',
+    '「露娜小姐。拜托了。」',
   ],
   hikari: [
-    '「要上咯，我的吉他——」',
-    '「别死啊。谁准你们死了！」',
-    '「站到我后面去。」',
-    '「——不够响。再来。」',
+    '「——4号打手，恋兔光！要上了！」',
+    '「你们几个快走。我把这个杂鱼收拾掉，很快就能追上你们。」',
+    '「现在一秒都不能浪费！快走！」',
+    '「天上天下唯我独尊！过去未来独一无二的最强美少女──恋兔光！」',
   ],
   luna: [
-    '「——抓紧了。」',
-    '「丝线拉得住你。」',
-    '「你的关节，现在归我管。」',
-    '「摔下去之前，先抓住这个。」',
+    '「这里就交给我吧小主人。话说这种话好像死亡Flag哦（笑）。」',
+    '「把手放开！我来！」',
+    '「我养育长大的小主人才不会输呢。」',
+    '「你看吧？我就说过的，我家小主人一定没问题的。」',
   ],
   mefisa: [
-    '「弹道修正。」',
-    '「我在你后面。往前走。」',
-    '「这一枪不会偏。」',
-    '「队长身后，照旧由我来收。」',
+    '「队长！那家伙有物理抗性——」',
+    '「言万同学！配合我！」',
+    '「别给他开口的机会！连续进攻」',
+    '「队长！笨蛋！」',
   ],
-  nyau: ['「小柴也上！」', '「跟着队长的！」', '「缝在这里，我钻了哦。」'],
-  'xiaochai-lin': ['「墙拆了哦。」', '「这条线，划掉。」'],
-  'alive-anatolia': ['「叫得不错。——继续。」', '「这一页，我替你写。」', '「已经发生过的事，我可以再写一遍。」'],
-  'kuro-no-maou': ['「——说好了的。你可别先倒下。」', '「你不够重。」', '「看好了。」'],
-  'danae-whitmore': ['「被放逐的部队，也不许后退。」', '「列队。压上去。」'],
-  reiya: ['「这一刀，不给第二次。」', '「斩断就好。」'],
-  'isis-halid': ['「——姐姐打完了，换我。」', '「名门的刀，也不是摆设。」'],
+  nyau: ['「小柴喵呜，登场！」', '「沙姆希尔！」', '「现在还不能乱动哦！」'],
+  'xiaochai-lin': ['「不好意思要打扰你们的兴致了。我要占用你们一点时间。」', '「少啰嗦。我这人一被抱怨就会立刻干劲全无。而且也没办法吧，回收这家伙可要了不少时间。」'],
+  'alive-anatolia': ['「呵呵，你真的像只可爱的小狗呢。好啦人心掌握大成功～～距离你成为我的忠犬也不远了哦。」', '「这一页，我替你写。」', '「已经发生过的事，我可以再写一遍。」'],
+  'kuro-no-maou': ['「你……就由我在这里终结。」', '「——还没完呢，上吧！！」', '「——这就是命运啊！」'],
+  'danae-whitmore': ['「我是你的护卫，所以，放心吧。」', '「那么，最后一击——」'],
+  reiya: ['「——搞定。」', '「喝啊啊啊啊！」'],
+  'isis-halid': ['「哈——好麻烦啊。吃『魔』去吧！——『饕餮 』！」', '「娜蒂雅妹妹，这么急是要去哪呀。坦白从宽，是不是有事瞒着姐姐我呀——☆」'],
 }
 
 /* ---------- 2. 联动台词：熟人接得上 ---------- */
@@ -110,36 +110,36 @@ interface FollowLine {
  * 关系取自原文（婚约、契约、队长与副官、搭档），不是随机搭对。
  */
 const FOLLOW: FollowLine[] = [
-  /* 心叶 → 露娜：黄金之兔，一个把她甩出去、一个在半空听对方的心声 */
-  { by: 'luna', after: OPERATOR_ID, skill: /读心|低语/, when: 'any', line: '「听见了。——那我就往那儿打。」' },
-  { by: 'luna', after: OPERATOR_ID, when: 'hit', line: '「你读你的，我打我的。凑一起正好。」' },
-  { by: 'luna', after: OPERATOR_ID, when: 'miss', line: '「偏了？再来一次，这回我拉紧一点。」' },
+  /* 心叶 → 露娜：黄金狮子，一个把她甩出去、一个在半空听对方的心声 */
+  { by: 'luna', after: OPERATOR_ID, skill: /读心|低语/, when: 'any', line: '「集中精神，小主人！我也撑不了太久！」' },
+  { by: 'luna', after: OPERATOR_ID, when: 'hit', line: '「小主人，真能干呢。」' },
+  { by: 'luna', after: OPERATOR_ID, when: 'miss', line: '「小主人！没事吧？」' },
   /* 露娜 → 心叶 */
-  { by: OPERATOR_ID, after: 'luna', when: 'any', line: '「丝线还在——那我就不用看路了。」' },
-  { by: OPERATOR_ID, after: 'luna', when: 'hit', line: '「你甩得动，我就接得住。」' },
-  /* 心叶 → 会长：会长与她的狗 */
-  { by: 'alive-anatolia', after: OPERATOR_ID, when: 'any', line: '「叫得不错。——继续。」' },
-  { by: 'alive-anatolia', after: OPERATOR_ID, when: 'miss', line: '「连一句都听不准？再练。」' },
-  { by: OPERATOR_ID, after: 'alive-anatolia', when: 'any', line: '「……会长。这次我听清了。」' },
+  { by: OPERATOR_ID, after: 'luna', when: 'any', line: '「上吧，露娜小姐！」' },
+  { by: OPERATOR_ID, after: 'luna', when: 'hit', line: '「哈啊……哈啊……呼……干得漂亮，露娜小姐……」' },
+  /* 心叶 → 会长：如散文般 */
+  { by: 'alive-anatolia', after: OPERATOR_ID, when: 'any', line: '「好啊。到那时，就停战吧。」' },
+  { by: 'alive-anatolia', after: OPERATOR_ID, when: 'miss', line: '「——言万同学。请你现在立刻跪下来，亲吻我的脚尖。」' },
+  { by: OPERATOR_ID, after: 'alive-anatolia', when: 'any', line: '「咕呜呜……完全被玩弄了。」' },
   /* 心叶 → 黑之魔王：婚约者 */
-  { by: 'kuro-no-maou', after: OPERATOR_ID, when: 'any', line: '「——说好了的。你可别先倒下。」' },
-  { by: 'kuro-no-maou', after: OPERATOR_ID, when: 'hit', line: '「这一下，算在约定里。」' },
-  { by: OPERATOR_ID, after: 'kuro-no-maou', when: 'any', line: '「——我们的账，还没算完呢。」' },
+  { by: 'kuro-no-maou', after: OPERATOR_ID, when: 'any', line: '「心叶！我们结婚吧！」' },
+  { by: 'kuro-no-maou', after: OPERATOR_ID, when: 'hit', line: '「怎么能哀求啊。你可是勇者哦，面对我这样的魔王。」' },
+  { by: OPERATOR_ID, after: 'kuro-no-maou', when: 'any', line: '「……魔王。是你……在攻击大家吗？」' },
   /* 恋兔队内部：队长 / 副官 / 护卫 / 小柴琳 */
-  { by: 'hikari', after: 'mefisa', when: 'any', line: '「掩护得不错。接下来交给我。」' },
-  { by: 'mefisa', after: 'hikari', when: 'any', line: '「——队长身后，照旧由我来收。」' },
-  { by: 'nyau', after: 'hikari', when: 'any', line: '「小柴也上！跟着队长的！」' },
-  { by: 'hikari', after: 'nyau', when: 'any', line: '「喵呜，别钻太深。」' },
-  { by: 'xiaochai-lin', after: 'mefisa', when: 'any', line: '「副官，墙我拆了哦。」' },
-  { by: 'mefisa', after: 'xiaochai-lin', when: 'any', line: '「……拆完记得砌回去。」' },
+  { by: 'hikari', after: 'mefisa', when: 'any', line: '「梅芙、喵呜、心叶！这里就交给你们了！」' },
+  { by: 'mefisa', after: 'hikari', when: 'any', line: '「——真正的决胜时刻，从现在开始。」' },
+  { by: 'nyau', after: 'hikari', when: 'any', line: '「队长！小柴绝对要赢！燃烧吧！呜哦哦哦哦！」' },
+  { by: 'hikari', after: 'nyau', when: 'any', line: '「梅芙。喵呜。你们俩扣工资哦。」' },
+  { by: 'xiaochai-lin', after: 'mefisa', when: 'any', line: '「──把那家伙扯下来痛扁一顿。我就是为此而来的。」' },
+  { by: 'mefisa', after: 'xiaochai-lin', when: 'any', line: '「就这样把他拖进海里！」' },
   /* 恋兔光 ↔ 露娜 / 梅芙：同一所学园里长起来的战友 */
-  { by: 'luna', after: 'hikari', when: 'any', line: '「——队长打头，我收尾。」' },
-  { by: 'hikari', after: 'luna', when: 'any', line: '「丝线拉住了？那就别松手。」' },
-  { by: 'mefisa', after: OPERATOR_ID, when: 'any', line: '「心叶，后面交给我。」' },
-  { by: OPERATOR_ID, after: 'mefisa', when: 'any', line: '「梅芙 —— 那我往前一步。」' },
+  { by: 'luna', after: 'hikari', when: 'any', line: '「……那你想怎样？！要放弃吗？！那才是最不可能的吧。那可是我们啊！」' },
+  { by: 'hikari', after: 'luna', when: 'any', line: '「天上天下唯我独尊！过去未来独一无二的最强美少女──恋兔光！」' },
+  { by: 'mefisa', after: OPERATOR_ID, when: 'any', line: '「等会再解释！观众席的人员太密集，根本没法战斗！我们在大舞台这边的人必须掩护他们！」' },
+  { by: OPERATOR_ID, after: 'mefisa', when: 'any', line: '「了解！」' },
   /* 卡乌斯学院：达娜厄 / 奈奈 / 蕾雅姐妹 / 伊西斯（被放逐部队与名门同门） */
-  { by: 'isis-halid', after: 'reiya', when: 'any', line: '「——姐姐打完了，换我。」' },
-  { by: 'reiya', after: 'isis-halid', when: 'any', line: '「伊西斯，别站太前。」' },
+  { by: 'isis-halid', after: 'reiya', when: 'any', line: '「出发吧——号外号外。」' },
+  { by: 'reiya', after: 'isis-halid', when: 'any', line: '「好的！——热沃当的少女！」' },
 ]
 
 /** 同一编制里的都算熟悉（恋兔队、苍之学园、卡乌斯、Corporations） */

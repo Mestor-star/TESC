@@ -132,6 +132,10 @@ export interface ChatMsgMeta {
   hasFx?: boolean
   /** 开场白标记：由终端按原文注入的事件开场（无 AI 参与，渲染为「开场白 · 原文」） */
   opening?: boolean
+  /** 交战成文：一场仗打完之后回填的那段剧情正文（渲染为「交战 · 成文」） */
+  battle?: boolean
+  /** 群聊发言者名（单聊为空；群聊里谁是这一句的作者） */
+  who?: string
 }
 
 export interface ChatMsg {

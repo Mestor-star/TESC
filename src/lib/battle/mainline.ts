@@ -35,19 +35,22 @@ function targetLine(foes: string[]): string {
   return foes.length === 1 ? foes[0] : `${foes[0]} 等 ${foes.length} 个实体`
 }
 
-export interface MainlineOpts {
-  /** 已收束事件（只有走到了的事件才能复盘） */
-  epDone: Record<string, true>
-}
-
 /**
- * 可复盘的主线作战，按时间线正序。
- * 只列「已收束事件」——没走到的地方，作战还没发生，自然也无从复盘。
+ * 可复盘的剧情作战 —— 一场一场来。
+ *
+ * 摆出来的永远只有眼下这一场：按时间线正序，取第一个还没「领取归档」的事件
+ * （从 v1-1 灵魂蓄积器TM 讨伐起）。前一场没在推演里打赢，后一场就不上牌面。
+ * 打赢了它才变成「待领取」，去任务简报点一下归档，牌面才翻到下一场。
+ *
+ * 收束过没走过（epDone）不再作为展示条件：牌面要一直在，人才知道
+ * 眼下该打完的是哪一场 —— 但没走到那一段时，作战无从谈起，所以要等收束。
  */
-export function mainlineMissions(epDone: Record<string, true>): Mission[] {
+export function mainlineMissions(epDone: Record<string, true>, claimed: Record<string, true> = {}): Mission[] {
   const out: Mission[] = []
   const last = Math.max(1, TIMELINE.length - 1)
   TIMELINE.forEach((e, i) => {
+    if (out.length) return
+    if (claimed[e.id]) return
     if (!epDone[e.id]) return
     const foes = (e.entities ?? []).filter((x) => x && x !== NO_FOE)
     if (!foes.length) return
@@ -61,12 +64,14 @@ export function mainlineMissions(epDone: Record<string, true>): Mission[] {
       stage: Math.min(10, Math.max(2, Math.round(2 + (i / last) * 8))),
       nature: natureOf(foes),
       recommend: (e.chars ?? []).map((id) => id),
-      status: '待接取',
-      deadline: '正史 · 可随时复盘',
+      // 剧情作战不是派单，没得接取：它只在推演里发生，牌面只负责告诉你眼下该打哪一场
+      status: '压制中',
+      deadline: '剧情战斗 · 在推演现场发生',
       desc: `${e.summary}`
-        + `\n\n本作战为正史第 ${i + 1} 段「${e.phase}」的复盘：对手是 ${foes.join('、')}。`
-        + `\n战果以档案为准，不与正史冲突；记录会按「详细战斗过程」逐手归档。`,
-      reward: [`${targetLine(foes)} · 处置确认`, '正史复盘记录'],
+        + `\n\n本作战为主线第 ${i + 1} 段「${e.phase}」：对手是 ${foes.join('、')}。`
+        + `\n它不在这里下令开打 —— 到剧情推进里走到这一段，现场自然会撞上；那一仗赢了，再回这里点「领取归档」。`
+        + `\n战果以档案为准，不与观测记录冲突；记录会按「详细战斗过程」逐手归档。`,
+      reward: [`${targetLine(foes)} · 处置确认`, '剧情战斗归档'],
       mainline: true,
     })
   })

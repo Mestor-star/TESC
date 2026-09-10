@@ -1,0 +1,60 @@
+{
+  "name": "终末停滞 · 文风参照原著",
+  "temperature": 0.9,
+  "frequency_penalty": 0.2,
+  "presence_penalty": 0.2,
+  "top_p": 0.95,
+  "top_k": 0,
+  "repetition_penalty": 1.05,
+  "openai_max_context": 200000,
+  "openai_max_tokens": 8000,
+  "wrap_in_quotes": false,
+  "names_behavior": 0,
+  "stream_openai": true,
+  "claude_use_sysprompt": false,
+  "show_thoughts": false,
+  "prompts": [
+    {
+      "identifier": "ts-style-canon",
+      "name": "文风（参照原著）",
+      "enabled": true,
+      "injection_position": 0,
+      "injection_depth": 4,
+      "injection_order": 25,
+      "role": "system",
+      "content": "平常正文的文风参照原著《这里是，终末停滞委员会。》：以短句为主，一段两三句就换行；对白密集，角色之间的一来一往多于叙述；叙述口吻偏轻，带一点自嘲与吐槽，严肃场面里也保留这层轻的底色，不写成抒情散文。不堆形容词，不连续叠用「仿佛」「似乎」「某种」这类虚词。专有名词一律沿用原文（终末停滞委员会、观测、异端、残渣、机械、低语、魔王 等），不要另起译名或另造体系。系统提示里若给了原著锚点（原文摘录），以那份摘录的语感为基准。",
+      "system_prompt": false,
+      "marker": false,
+      "forbid_overrides": false,
+      "injection_trigger": ["🔵"]
+    },
+    {
+      "identifier": "ts-no-cliche",
+      "name": "反八股",
+      "enabled": true,
+      "injection_position": 0,
+      "injection_depth": 4,
+      "injection_order": 35,
+      "role": "user",
+      "content": "不要写成套路文。具体禁掉这些：\n1. 开场不铺垫天气与环境（「夜色如墨」「夕阳的余晖洒在……」），除非天气或时间本身就是这一回合要写的事；直接从人在做什么写起。\n2. 身体反应不写套话：心中一紧／心中一震／心头一颤／瞳孔骤缩／呼吸一滞／后背发凉／攥紧了拳头／喉头一哽。要写反应，就写这个人特有的那一个动作。\n3. 不写填空式表情与副词：嘴角勾起一抹弧度／苦涩地笑了笑／无奈地叹了口气／轻轻地、缓缓地、深深地、默默地 —— 一次性副词能删就删。\n4. 句式的默认骨架不做「不是……而是……」「既……又……」「仿佛……一般」；不三连排比凑气势；不用破折号收尾表余韵。\n5. 结尾不升华、不总结本段情绪，不写「而这，才刚刚开始」「命运的齿轮开始转动」「一切都将不同」这类预告。\n6. 情绪不要用形容词宣布（「他感到非常愤怒」），靠动作、台词和留白带出来。\n7. 不用「空气仿佛凝固了」「时间在这一刻静止」这类万用句。",
+      "system_prompt": false,
+      "marker": false,
+      "forbid_overrides": false,
+      "injection_trigger": []
+    },
+    {
+      "identifier": "ts-style-battle",
+      "name": "文风（交战段落）",
+      "enabled": true,
+      "injection_position": 0,
+      "injection_depth": 4,
+      "injection_order": 26,
+      "role": "system",
+      "content": "交战段落：短句为主，动作写实、节奏紧凑，一招一式交代清楚；不写招式解说、不写数值比较、不在战斗中间插入抒情长句。",
+      "system_prompt": false,
+      "marker": false,
+      "forbid_overrides": false,
+      "injection_trigger": ["交战", "作战", "开打", "异端", "残渣", "魔王"]
+    }
+  ]
+}

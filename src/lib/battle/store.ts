@@ -159,6 +159,7 @@ const COIN_KEY = 'coin'
 const BAG_KEY = 'bag'
 const GEAR_KEY = 'gear'
 const EQUIP_KEY = 'equip'
+const MAIN_CLAIM_KEY = 'mainclaimed'
 
 /** 终末点数（胜利结算累积；商店消费） */
 export async function readCoin(): Promise<number> {
@@ -208,6 +209,20 @@ export async function writeEquip(map: Record<string, string>): Promise<void> {
   }, undefined)
 }
 
+/** 剧情战斗已领取归档的事件 id —— 打赢了还要来任务简报这里点一下才算收尾 */
+export async function readMainClaimed(): Promise<Record<string, true>> {
+  return safe(async () => {
+    const row = await db().meta.get(MAIN_CLAIM_KEY)
+    return (row?.value as Record<string, true> | undefined) ?? {}
+  }, {})
+}
+
+export async function writeMainClaimed(map: Record<string, true>): Promise<void> {
+  await safe(async () => {
+    await db().meta.put({ key: MAIN_CLAIM_KEY, value: map })
+  }, undefined)
+}
+
 /** 道具补给池（id → 个数） */
 export async function readBag(): Promise<Record<string, number>> {
   return safe(async () => {
@@ -234,9 +249,13 @@ export async function buyItem(id: string, price: number): Promise<{ coin: number
 }
 
 /** 装具采购 */
-export async function buyGear(id: string, price: number): Promise<{ coin: number; bag: Record<string, number> }> {
+export async function buyGear(
+  id: string, price: number, max = Number.POSITIVE_INFINITY,
+): Promise<{ coin: number; bag: Record<string, number>; full?: boolean }> {
   const coin = await readCoin()
   const bag = await readGearBag()
+  // 限购：研究所产出的特殊装备是「拿贡献点换的配给」，兑完一件就没有第二件
+  if ((bag[id] ?? 0) >= max) return { coin, bag, full: true }
   if (coin < price) return { coin, bag }
   bag[id] = (bag[id] ?? 0) + 1
   await addCoin(-price)

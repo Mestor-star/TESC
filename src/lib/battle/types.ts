@@ -19,12 +19,46 @@ export type FxKind =
   | 'item'     // 道具：补给闪光
   | 'gear'     // 装具：装填声
 
+/**
+ * 演出的「调子」。
+ * ------------------------------------------------------------
+ * FxKind 说的是这一手**怎么动**（斜切、冲击环、音环…），调子说的是它**是什么性质**：
+ * 同样是「一圈光」，治疗该是青的、增益该是暖的、压制该是红的 —— 不看字也认得出这一手在干嘛。
+ * 由技能自己的 effect 推出来（见 toneOf），不看动画类别，所以「治疗技被配上斩击动画」
+ * 这种本来就是数据的毛病也不会串到观感上。
+ */
+export type FxTone =
+  | 'strike'   // 纯伤：用技能自己的色相，招招不同
+  | 'mend'     // 回复 / 解除负面：青
+  | 'ward'     // 增益 / 护盾 / 提速：暖金
+  | 'hex'      // 压制 / 负面：红
+
+/** 这一手是什么性质 —— 治疗的观感和压制绝不能长一个样 */
+export function toneOf(k: SkillSpec): FxTone {
+  const e = k.effect
+  if (!e) return 'strike'
+  if (e.heal || e.cleanse || e.revive) return 'mend'
+  if (e.mark || e.slow || e.pushBack || e.silence || e.bleed || e.frail
+    || e.stasis || e.archive || e.lockdown) return 'hex'
+  if (e.atkUp || e.spdUp || e.shield || e.evade || e.accUp || e.pushBar || e.taunt) return 'ward'
+  return 'strike'
+}
+
+/**
+ * 这个人的到达点（终结技）。
+ * 现在每个人都有且只有一手 —— 战斗面板要印「印记 2/3」得先知道门槛是几层，
+ * 门槛写在到达点自己身上（arch 的 needsStack），所以从这里取，不另设常量。
+ */
+export function endOf(c: { skills: SkillSpec[] }): SkillSpec | undefined {
+  return c.skills.find((k) => k.kind === '到达点')
+}
+
 export type AxisKey = '破坏力' | '敏捷度' | '物理抗性' | '反现实亲和' | '意志力'
 
 export type AxisSheet = Record<AxisKey, number>
 
 /** 技能类别。防御 / 道具 / 更换装备 / 战略撤退 是「指令」而非技能，不在技能表内。 */
-export type SkillKind = '普攻' | '技能' | '启动'
+export type SkillKind = '普攻' | '技能' | '启动' | '到达点'
 
 export type Target = 'one' | 'all' | 'self' | 'allyOne' | 'allyAll'
 
@@ -89,6 +123,12 @@ export interface SkillEffect {
   heal?: number
   /** 攻击 +（比例） */
   atkUp?: number
+  /**
+   * 全技能倍率**乘算**（2 = 全部翻倍）。
+   * 与 atkUp 分开是为了让它说得清：atkUp 加的是「打得重一点」，
+   * 这一条改的是「他这门东西本身的规格」—— 旧吉他一解封就该是后者。
+   */
+  skillMul?: number
   /** 被击时受伤 +（比例）——「标记」 */
   mark?: number
   /** 敌方充能 −（比例） */
@@ -109,6 +149,39 @@ export interface SkillEffect {
   revive?: boolean
   /** 增益同时及于自己（载具一类「带上我」的技能） */
   selfToo?: boolean
+
+  /* —— 敌方向我方施加的负面（持续拍数取 turns） —— */
+  /** 沉默：这段时间里出不了技能，只剩普攻与防御 */
+  silence?: boolean
+  /** 流血：每拍掉最大生命的这个比例，攒着不治会一路流下去 */
+  bleed?: number
+  /** 减攻：破坏力 −（比例） */
+  frail?: number
+
+  /* —— boss 专属，只有危险度到顶的那几只才有 —— */
+  /** 停滞：目标行动条冻结这么多拍（不按行动次数算，按拍算） */
+  stasis?: number
+  /** 观测封锁：目标命中 −（绝对值），持续 turns */
+  lockdown?: number
+  /** 归档：把目标暂时从战场上收走这么多拍（与「合体」同一套离场机制） */
+  archive?: number
+  /* 回响不在这一层：它是「这一手整手照抄」，是技能自己的性质，写在 SkillSpec 上 */
+}
+
+/** 变身后的那副面目（黄金狮子一类：出手者当场换一副样子，连打法一起换） */
+export interface SkillForm {
+  /** 变身后顶上来的名字 */
+  name: string
+  /** 名字底下的注（本体是谁、这份力从哪来） */
+  note?: string
+  /** 持续拍数：数满自行还原本相 */
+  ticks: number
+  /** 解除之后这一手的冷却 */
+  cd?: number
+  /** 变身期间覆写的五轴（缺省沿用本体） */
+  axes?: Partial<AxisSheet>
+  /** 变身期间的技能表 —— 整份替换，不是追加 */
+  skills: SkillSpec[]
 }
 
 export interface SkillSpec {
@@ -135,6 +208,14 @@ export interface SkillSpec {
   /** 需场上同在者（角色 id）：此人不在场或已失能，这一手就不可用 */
   requireAlly?: string
   /**
+   * 解封之后还要过几拍才放得出来（慢启动门的角色用）。
+   * 旧吉他解封就是这一条：门一解不等于立刻能甩，得先过两拍 ——
+   * 一解封就丢出去的话，那五下启动就只是纯亏的过场。
+   */
+  openAfter?: number
+  /** 这一手在技能框架里按哪一类打的（见 atlas.ts；档案与作战面板都写它） */
+  arch?: string
+  /**
    * 连携技：参加者名单（角色 id）—— 一个都不能少，少一个这一手就不列出来。
    * 出手时参加者各自按同一轴再补一份出力（见 linkPow），事后把先手让出去。
    */
@@ -146,6 +227,11 @@ export interface SkillSpec {
    * 缺省 0 —— 只有出手者出力的「连携」不算连携。
    */
   linkPow?: number
+  /**
+   * 回响：不复写自己的倍率，而是把我方上一手（BattleState.lastSkill）原样打回来。
+   * 只有 boss 的「回响 · 复写」用它 —— 见 engine 的 resolve。
+   */
+  echo?: boolean
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
@@ -168,10 +254,47 @@ export interface SkillSpec {
   morph?: boolean
   morphTicks?: number
   morphCd?: number
+  /**
+   * 变自己（黄金狮子）：出手当场换成另一副面目，连带名字、五轴与整份技能表
+   * 一起换掉，form.ticks 拍后自行还原本相。与 morph 的区别写在 SkillForm 上。
+   */
+  form?: SkillForm
+  /**
+   * 倍率浮动：这一手每次出去的轻重差很多（出力在 power × (1 ± variance) 之间摇）。
+   * 给「性能极端、全凭运气」的手用；缺省 0 = 稳定。
+   */
+  variance?: number
 }
 
-/** 增益 / 减益：k = 类别，v = 量（比例或绝对值），t = 剩余行动次数 */
-export type BuffKey = 'atk' | 'spd' | 'evade' | 'acc' | 'shield' | 'mark' | 'slow'
+/**
+ * 增益 / 减益：k = 类别，v = 量（比例或绝对值），t = 剩余行动次数。
+ * 后三种是敌方专给我方的：沉默 / 流血 / 减攻 ——
+ * 它们同时算作「负面」，能喂给 boss 的终结技能（咏唱期间挂得越多，大招越软）。
+ */
+export type BuffKey =
+  | 'atk' | 'spd' | 'evade' | 'acc' | 'shield' | 'mark' | 'slow'
+  | 'silence' | 'bleed' | 'frail'
+  /**
+   * 全技能倍率乘算（旧吉他解封：+1 即全部翻倍）。
+   * 不是「打得重一点」那种加算 —— 它改的是这个人这门东西的规格，
+   * 所以单独占一个键，也**不算负面**（不是 DEBUFF_KEYS 的成员）。
+   */
+  | 'skillMul'
+  /* —— boss 的看家机制 —— */
+  /** 停滞：行动条原地冻结，一格都不涨（终末停滞委员会这个名字，指的是这东西） */
+  | 'stasis'
+  /** 观测封锁：命中率被压下去 —— 看不见，就打不准 */
+  | 'lockdown'
+
+/** 负面减益一览：能喂终结技能、也能被「解除负面」一并清掉 */
+export const DEBUFF_KEYS: BuffKey[] = [
+  'mark', 'slow', 'silence', 'bleed', 'frail', 'stasis', 'lockdown',
+]
+
+/** 这条 buff 是不是负面的 */
+export function isDebuff(k: BuffKey): boolean {
+  return DEBUFF_KEYS.includes(k)
+}
 
 export interface Buff {
   k: BuffKey
@@ -190,6 +313,9 @@ export interface Combatant {
   cls: string
   /** 专属机制（被动）一句话 */
   trait?: string
+  /** 敌阵里的头目档：每场至少一个 —— 低危是精英，危险度到顶换成首领（Boss）。
+      我方不带这个字段（谁强谁弱写在名册的五轴上，不靠贴标签）。 */
+  tier?: 'elite' | 'boss'
   hp: number
   hpMax: number
   axes: AxisSheet
@@ -221,7 +347,9 @@ export interface Combatant {
    * 解除时把 base 还回 axes，并把 morphCd 记到 skillId 的冷却上。
    */
   morph?: {
-    /** 借来的名字（界面上标「化身 · X · N 拍」） */
+    /** 'other' = 借来的形（变成他人）；'form' = 自己的另一副面目（变身） */
+    kind: 'other' | 'form'
+    /** 顶着的名字（界面上标「化身 · X · N 拍」） */
     name: string
     /** 变回来要还到哪里：自己的五轴、速度与技能表 */
     base: { axes: AxisSheet; spd: number; skills: SkillSpec[] }
@@ -235,6 +363,8 @@ export interface Combatant {
   startUsed: number
   /** 需要几次启动技才解禁普攻/技能（0 = 无门） */
   startNeed: number
+  /** 解封发生在第几拍（s.hand）；没解封过是 0。带 openAfter 的手按它算解禁时间 */
+  unsealedAt: number
   /** 本人这一场的体力（与终端上的小队体力是两回事：出手从这里扣） */
   sp: number
   spMax: number
@@ -268,6 +398,10 @@ export interface LogEntry {
   skill: string
   kind: SkillKind | '指令'
   fx: FxKind
+  /** 这一手的性质（回复 / 增益 / 压制 / 纯伤）—— 演出按它上色，不按动画类别 */
+  tone?: FxTone
+  /** 这一手落在几个人身上：'all' = 全体，演出走全屏；'one' = 单体，演出贴着挨打的那个 */
+  scope?: 'one' | 'all'
   targetId?: string
   target?: string
   dmg?: number
@@ -277,9 +411,32 @@ export interface LogEntry {
   line?: string
   /** 特殊备注（解禁 / 到达点 / 力竭 / 回气 / 换装 …） */
   note?: string
+  /**
+   * 这一手是「连携」—— 参加者与招式名整份带上。
+   * 不由视图拿 skillId 去反查：作战记录是唯一的事实来源，回放时也得独立成立。
+   */
+  link?: { id: string; name: string; members: string[] }
 }
 
-export type Phase = 'select' | 'won' | 'lost' | 'fled'
+/**
+ * 'think' = 轮到敌方、但这一手要由「视图那边算」（接通接口时交给模型决定）。
+ * 引擎在这里让出控制权，视图算完用 enemysTurn() 续上，引擎本身始终是同步的。
+ */
+export type Phase = 'select' | 'think' | 'won' | 'lost' | 'fled'
+
+/** 敌方这一手的决定：由谁指挥、出哪一门、打谁 */
+export interface EnemyIntent {
+  /** 出手者 id */
+  foeId: string
+  /** 选定的技能 id（必须是 legalSkills 里列得出来的一个） */
+  skillId: string
+  /** 目标 id（缺省 = 交给引擎按离线规则挑） */
+  targetId?: string
+  /** 谁指挥的这一手：'ai' = 接通接口由模型决定；'offline' = 引擎自带的判断 */
+  by: 'ai' | 'offline'
+  /** 模型给出的战意一句话（可空；作战记录里看得见） */
+  note?: string
+}
 
 export interface BattleState {
   missionId: string
@@ -297,6 +454,18 @@ export interface BattleState {
   enemies: Combatant[]
   log: LogEntry[]
   phase: Phase
+  /**
+   * 敌方由谁指挥：'offline' = 引擎自带的离线判断（缺省，永远可用）；
+   * 'ai' = 接通接口时交给模型 —— 引擎会停在 'think' 等视图把这一手交回来。
+   */
+  command: 'offline' | 'ai'
+  /** 视图算好、待引擎消费的这一手（用完即清） */
+  intent: EnemyIntent | null
+  /**
+   * 我方上一手用过的技能（整份留下，不是只留 id）。
+   * boss 的「回响」要照着它原样复写一遍，所以连倍率、轴、目标口径都得在手上。
+   */
+  lastSkill?: SkillSpec
   /** 过载出击（体力不足仍上阵）：全场我方输出打折 */
   overdrive: boolean
   sp: number
@@ -317,6 +486,16 @@ export interface BattleState {
    * 不由玩家主动点 —— 打熟了自然接得上。
    */
   link: Record<string, number>
+  /**
+   * 连携冷却（羁绊 id → 还剩几拍）：每条连携自带 cd（见 synergy 的 BondLink.cd），
+   * 接完一手就进冷却，我方每出一手减一。槽满不等于能接 —— 冷却没走完也接不上。
+   */
+  linkCd: Record<string, number>
+  /**
+   * 每人与你的羁绊读数（0~100）。整场只读不写 —— 仗打完了才回写（见 settle 的 bondPerWin）。
+   * 场上只有两处用到它：共鸣槽的拍数、本人五轴的加成，两处都在 synergy 里。
+   */
+  bond: Record<string, number>
   /** 时期进度与成长（换装时重算面板要用） */
   progress: number
   growth: Record<string, number>
@@ -352,6 +531,8 @@ export interface BattleRecord {
   coin: number
   /** 主线作战：归入正史，成文按「逐手复现全过程」写 */
   mainline?: boolean
+  /** 本场对手的档位（首领 / 精英 / 常规）——回填推演的剧情正文按它定分寸 */
+  tier?: 'elite' | 'boss'
 }
 
 /** 体力（小队共用一条；只在执行任务时消耗，平时随观测进度缓慢回复） */
@@ -420,4 +601,14 @@ export interface GearDef {
    * 未完成时只挂牌、不出货，也不进交战的掉落池 —— 它不是捡来的，是拿正史换的。
    */
   unlockMain?: string
+  /**
+   * 专属：只有名单上的人装得上（露娜的丝线是系在他手腕上的，
+   * 换个人拿在手里就是一团废丝）。缺省 = 谁都能装。
+   */
+  onlyFor?: string[]
+  /**
+   * 商店限购件数（缺省不限）。研究所产出的特殊装备一人只兑一件 ——
+   * 它是「拿贡献点换的配给」，不是货架上的商品。
+   */
+  maxOwn?: number
 }

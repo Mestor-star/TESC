@@ -1,0 +1,145 @@
+/* Guide.module.css — 梅芙的引导气泡
+   一层压暗 + 一个锚点高亮孔 + 一张方形头像带气泡的卡。
+   全部走 position: fixed —— 引导不属于任何一屏，它浮在整台终端上面。 */
+
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  pointer-events: none;
+}
+
+/* 有锚点：把锚点框出来，其余全压暗（一个超大 spread 的阴影，不必铺四块板） */
+.dim {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(5, 7, 11, 0.74);
+  border: 1px solid var(--amber);
+  transition: all 0.22s ease;
+}
+
+/* 没锚点（或锚点找不到了）：整屏压暗 */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 7, 11, 0.74);
+}
+
+.bubble {
+  position: fixed;
+  width: 332px;
+  /* 一步的字多了也不许把气泡顶出屏幕：封顶之后由条目自己滚，
+     「下一步」那一行始终挂在屏幕里点得到 */
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
+  display: flex;
+  /* 不能用 flex-start：正文那一栏要拿到气泡的确定高度，
+     里面的条目才滚得起来（拉伸的是容器，头像自己钉在顶上） */
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 13px;
+  background: var(--bg-2);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  animation: guideIn 0.2s ease both;
+}
+
+@keyframes guideIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.97) }
+}
+
+/* 方形头像 —— 引导的辨识点，不做圆形 */
+.faceWrap {
+  flex: none;
+  /* 必须是 flex 容器：Portrait 返回的是 <span>，行内元素的 width/height 不生效，
+     得让它成为 flex 项才会被块化（否则方形头像只按纹章字宽撑开，缩成一小团） */
+  display: flex;
+  /* 气泡封顶、正文变高时，头像仍钉在顶上，不跟着拉长 */
+  align-items: flex-start;
+  line-height: 0;
+}
+.face {
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid var(--line-2);
+}
+
+/* 气泡尖角：贴着头像那一侧 */
+.tail {
+  position: absolute;
+  left: 70px;
+  top: 20px;
+  width: 8px;
+  height: 8px;
+  background: var(--bg-2);
+  border-left: 1px solid var(--amber);
+  border-bottom: 1px solid var(--amber);
+  transform: rotate(45deg);
+}
+
+.body {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  /* 竖着排：抬头与按钮行固定，中间那串条目才是可滚的那一段 */
+  display: flex;
+  flex-direction: column;
+}
+
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 6px;
+  flex: none;
+}
+.who b {
+  font-size: 12px;
+  color: var(--amber);
+  letter-spacing: 0.03em;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  margin-bottom: 5px;
+  flex: none;
+}
+
+.lines {
+  margin: 0;
+  padding-left: 14px;
+  display: grid;
+  gap: 3px;
+  /* 封顶之后溢出的是这一段：条目长了在这里滚，不往外顶 */
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.lines li {
+  font-size: 12px;
+  line-height: 1.62;
+  color: var(--ink-mute);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  flex: none;
+}
+.pager {
+  margin-right: auto;
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 900px) {
+  .bubble { width: min(332px, calc(100vw - 24px)) }
+}

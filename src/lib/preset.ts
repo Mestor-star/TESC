@@ -9,6 +9,8 @@
    套用某个预设 ⇒ 把它的条目落成快照。视图层因此不必认识 Scheme。
    ============================================================ */
 
+import type { ChatTurn } from './api'
+
 export type PresetEntryKind = '行为' | '格式' | '其它'
 export type PresetEntryPos = 'pre' | 'post'
 
@@ -101,14 +103,44 @@ export interface ActivePreset {
   id: string
   name: string
   entries: PresetEntry[]
+  /** 预填充（酒馆的 assistant_prefill）：摆一个开头，让模型顺着它往下写 */
+  prefill?: string
 }
 
 /** 套用预设时落一次快照：此后生成本回合的提示词只认它 */
-export function snapshotActivePreset(id: string, name: string, entries: PresetEntry[]): void {
+export function snapshotActivePreset(
+  id: string,
+  name: string,
+  entries: PresetEntry[],
+  prefill = '',
+): void {
   try {
-    localStorage.setItem(ACTIVE_PRESET_KEY, JSON.stringify({ id, name, entries } satisfies ActivePreset))
+    const p: ActivePreset = { id, name, entries }
+    if (prefill.trim()) p.prefill = prefill
+    localStorage.setItem(ACTIVE_PRESET_KEY, JSON.stringify(p))
   } catch {
     /* 隐私模式下降级：读回时自然为空 */
+  }
+}
+
+/**
+ * 预填充：把 assistant 的开头先摆上桌。
+ * 走的是「最后一条消息是 assistant」这条标准路子 —— 模型接着它写，
+ * 于是正文最终 = 预填 + 续写；预填本身也要先上屏，不然界面会像吞了半句。
+ */
+export function prefillTurns(messages: ChatTurn[], prefill: string): ChatTurn[] {
+  return prefill ? [...messages, { role: 'assistant', content: prefill }] : messages
+}
+
+/** 当前生效的预填充（未套用预设 / 预设没写 → ''） */
+export function readActivePrefill(): string {
+  try {
+    const raw = localStorage.getItem(ACTIVE_PRESET_KEY)
+    if (!raw) return ''
+    const p = JSON.parse(raw) as ActivePreset
+    return typeof p?.prefill === 'string' ? p.prefill : ''
+  } catch {
+    return ''
   }
 }
 
@@ -152,8 +184,24 @@ const groupLabelOf = (name: string) =>
  *  - `role: 'user'` 视作靠后注入（贴近输出），其余归入前置。
  * 注：条目的 {{宏}} 不会被展开，原样保留。
  */
-export function parseStPrompts(prompts: unknown): PresetEntry[] | null {
+export function parseStPrompts(prompts: unknown, promptOrder?: unknown): PresetEntry[] | null {
   if (!Array.isArray(prompts)) return null
+  /* 启用状态的真身在 prompt_order 里（prompts[].enabled 是旧版残留，两边会打架）。
+     新酒馆的勾选只改 prompt_order[].order[].enabled —— 只读 prompts 的话，
+     一份 95 条的预设会整册导成「全关」，看上去就像没导进来。 */
+  const onOf = new Map<string, boolean>()
+  if (Array.isArray(promptOrder)) {
+    for (const po of promptOrder) {
+      if (!po || typeof po !== 'object') continue
+      const order = (po as Record<string, unknown>).order
+      if (!Array.isArray(order)) continue
+      for (const o of order) {
+        if (!o || typeof o !== 'object') continue
+        const it = o as Record<string, unknown>
+        if (typeof it.identifier === 'string' && it.identifier) onOf.set(it.identifier, it.enabled === true)
+      }
+    }
+  }
   const out: PresetEntry[] = []
   let group: string | undefined
   let idx = 0
@@ -165,16 +213,28 @@ export function parseStPrompts(prompts: unknown): PresetEntry[] | null {
     if (isSeparator(name)) { group = groupLabelOf(name); continue }
     idx += 1
     const marker = o.marker === true
+    const ident = typeof o.identifier === 'string' && o.identifier ? o.identifier : ''
+    /* 触发词：酒馆把「常驻」和「命中才注入」都写在这一个数组里 —— 开头的 🔵 表示常驻
+       （🟢 / 无前缀 = 关键词命中）。照搬进来，别一律导成常驻，否则一份预设里
+       那些「只在交战时生效」的条目会每一回合都压在提示词上。 */
+    const trigRaw = Array.isArray(o.injection_trigger)
+      ? (o.injection_trigger as unknown[]).filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : []
+    const always = trigRaw.some((k) => k.startsWith('🔵'))
+    const keys = trigRaw
+      .filter((k) => !k.startsWith('🔵'))
+      .map((k) => k.replace(/^[🟢🔵]\s*/, '').trim())
+      .filter(Boolean)
     out.push({
-      id: typeof o.identifier === 'string' && o.identifier ? `st-${o.identifier}` : crypto.randomUUID(),
+      id: ident ? `st-${ident}` : crypto.randomUUID(),
       name,
       kind: marker ? '其它' : /文风|格式|字数|排版/.test(name) ? '格式' : '行为',
       group,
       placeholder: marker || undefined,
       content: marker ? '' : (typeof o.content === 'string' ? o.content : ''),
-      enabled: o.enabled === true,
-      constant: true,
-      keys: [],
+      enabled: ident && onOf.has(ident) ? onOf.get(ident) === true : o.enabled === true,
+      constant: always || !keys.length,
+      keys,
       order: typeof o.injection_order === 'number' && Number.isFinite(o.injection_order) ? o.injection_order : idx * 10,
       // role:'user' 的酒馆条目挂在对话尾部，对应到本终端即「贴近输出」的后置段
       position: !marker && o.role === 'user' ? 'post' : 'pre',

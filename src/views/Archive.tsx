@@ -8,13 +8,19 @@ import { CHARACTERS } from '../data/chars'
 import { SIDECAST } from '../data/sidecast'
 import { ROSTER_GROUPS, SIDE_AXIS, SIDE_AXIS_LIMIT, SIDE_TRAIT, SIDE_POTENTIAL, committeeRankOf } from '../data/roster'
 import { personOf } from '../data/castmeta'
+import { confirmOf } from '../data/bondstage'
 import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
 import { opSituation } from '../lib/operator'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { AXIS_KEYS, OP_PERIODS, opBuiltinAt, opPeriodAt } from '../lib/operator-arc'
-import { GEAR_OF } from '../lib/battle/gear'
+import { GEAR_OF, GEARS, canEquip } from '../lib/battle/gear'
+import { POWER_SCALE, passiveText } from '../lib/battle/roster'
+import { archNameOf } from '../lib/battle/atlas'
+import { combatantOf, periodProgress } from '../lib/battle/derive'
+import { readEquip, readGearBag, writeEquip } from '../lib/battle/store'
 import { AXIS_MAX } from '../data/types'
+import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { Portrait } from '../components/Portrait'
 
@@ -230,8 +236,159 @@ function SkillIcon({ id }: { id: string }) {
   return <Ico size={14} weight="bold" className={css.opAbilIco} data-skill-ico={iconNameOf(id)} />
 }
 
+/* ---------------- 战斗数值：档案里也能看见他/她下场的面板 ---------------- */
+/**
+ * 档案卷宗上只有「评定」（五轴常态与极限），没有「下场时究竟是什么数」。
+ * 这一段把 derive 真正喂给引擎的那份面板照抄一份出来：
+ * 生命 / 体力 / 出手速度 / 战斗五轴 / 技能表 / 被动 / 自带装具，
+ * 与作战里点开同一个人看到的是同一组数字。
+ * 唯一不还原的是你在作战中临时装配的装具 —— 那件按当前编成读进来。
+ */
+function CombatPanel({ id, progress, gearId }: { id: string; progress: number; gearId?: string }) {
+  const c = combatantOf(id, progress, 0, gearId)
+  return (
+    <div className={css.combat} data-archive-combat={id}>
+      <div className={css.combatNums}>
+        <div className={css.combatNum}><small>生命</small><b className="mono">{c.hpMax}</b></div>
+        <div className={css.combatNum}><small>体力</small><b className="mono">{c.spMax}</b></div>
+        <div className={css.combatNum}><small>出手速度</small><b className="mono">{Math.round(c.spd)}</b></div>
+        <div className={css.combatNum}><small>定位</small><b>{c.cls}</b></div>
+      </div>
+
+      <div className={css.combatAxes}>
+        {AXIS_KEYS.map((k) => (
+          <div key={k} className={css.combatAxis}>
+            <small>{k}</small>
+            <b className="mono">{c.axes[k]}</b>
+          </div>
+        ))}
+      </div>
+
+      {c.passive ? (
+        <div className={css.combatPassive}>
+          <b>被动 · {c.passive.name}</b>
+          <span>{c.passive.desc}</span>
+          {/* 只写说明不写数，等于没写 —— 这里逐条把它的读数念出来 */}
+          <span className={css.combatNums2}>
+            {passiveText(c.passive).map((t) => <i key={t}>{t}</i>)}
+          </span>
+        </div>
+      ) : null}
+
+      {c.gear ? (
+        <div className={css.combatGear}>
+          <b>自带装具 · {GEAR_OF[c.gear]?.name ?? c.gear}</b>
+          <span>{GEAR_OF[c.gear]?.desc}</span>
+        </div>
+      ) : null}
+
+      <div className={css.combatSkills}>
+        {c.skills.map((k) => (
+          <div key={k.id} className={css.combatSkill} data-kind={k.kind}>
+            <div className={css.combatSkillTop}>
+              <b>{k.name}</b>
+              <span className={css.combatKind}>{k.kind === '到达点' ? 'End' : k.kind}</span>
+              {/* 这一手按框架里的哪一类打的：同类的两个人可以对着看 */}
+              {k.arch ? <span className={css.combatArch}>{archNameOf(k.arch) ?? k.arch}</span> : null}
+              <span className="mono tiny">
+                {k.power > 0 ? `倍率 ${(k.power / POWER_SCALE).toFixed(2)} × ${k.axis}` : '不造成伤害'}
+                {k.cost ? ` · 耗 ${k.cost}` : ''}
+                {k.cd ? ` · 冷却 ${k.cd}` : ''}
+              </span>
+            </div>
+            <p>{k.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** 装具改了哪几个数（直接读 GearDef.mods，不另写一份口径） */
+function gearModText(g: GearDef): string {
+  const out: string[] = []
+  const axisMods = g.mods as Record<string, number | undefined>
+  for (const k of AXIS_ORDER) {
+    const v = axisMods[k]
+    if (typeof v === 'number' && v) out.push(`${k} ${v > 0 ? '+' : ''}${v}`)
+  }
+  if (g.mods.atk) out.push(`攻击 ${pct(g.mods.atk)}`)
+  if (g.mods.basicMul) out.push(`普攻倍率 ${pct(g.mods.basicMul)}`)
+  if (g.mods.spd) out.push(`充能 ${pct(g.mods.spd)}`)
+  if (g.mods.evade) out.push(`闪避 ${pct(g.mods.evade)}`)
+  if (g.mods.shield) out.push(`减伤 ${pct(g.mods.shield)}`)
+  if (g.skill) out.push(`附带一手「${g.skill.name}」`)
+  return out.join(' · ') || '无修正'
+}
+const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`
+
+/**
+ * 在档案里换反现实辅助装备。
+ * 与作战中点开的「更换装备」是同一份编成（同一把 key），
+ * 所以在这里换完直接出击就是这套 —— 换装备本身不消耗任何东西。
+ */
+function GearSwap({ id, gearId, owned, onPick }: {
+  id: string
+  gearId?: string
+  owned: Record<string, number>
+  onPick: (g: string | null) => void
+}) {
+  const pool = GEARS.filter((g) => (owned[g.id] ?? 0) > 0)
+  const cur = gearId ? GEAR_OF[gearId] : undefined
+  return (
+    <div className={css.gearSwap} data-gear-swap={id}>
+      <div className={css.gearSwapHead}>
+        <small className="tiny muted">
+          每人至多一件 · 换装备不消耗回合
+          {cur ? ` · 当前：${cur.name}` : ' · 当前：不装配'}
+        </small>
+      </div>
+      {pool.length ? (
+        <div className={css.gearList}>
+          <button
+            type="button"
+            data-gear="__none"
+            className={`${css.gearRow} ${!gearId ? css.gearOn : ''}`}
+            onClick={() => onPick(null)}
+          >
+            <span className={css.gearName}>不装配</span>
+            <span className={css.gearNote}>空着也是空着，但空着不挨罚。</span>
+          </button>
+          {pool.map((g) => {
+            const ok = canEquip(id, g.id)
+            const on = gearId === g.id
+            const who = g.onlyFor?.map((x) => personOf(x)?.name ?? x).join('、')
+            return (
+              <button
+                key={g.id}
+                type="button"
+                data-gear={g.id}
+                data-gear-only-for={ok ? undefined : g.onlyFor?.join(',')}
+                disabled={!ok}
+                className={`${css.gearRow} ${on ? css.gearOn : ''}`}
+                title={ok ? g.desc : `${g.name} 只认 ${who} —— 别人拿在手里也只是一件普通的东西。`}
+                onClick={() => ok && onPick(on ? null : g.id)}
+              >
+                <span className={css.gearName}>
+                  {g.name}
+                  <i className={css.gearSub}>{g.sub}</i>
+                </span>
+                <span className={css.gearMod}>{ok ? gearModText(g) : `认人 · 仅限 ${who}`}</span>
+                <span className={css.gearNote}>{g.desc}</span>
+                {on ? <span className={css.gearOn2}>装配中</span> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="tiny muted">军需处还没换到能装的东西 —— 拿贡献点去兑，或者从打过的敌人身上搜。</div>
+      )}
+    </div>
+  )
+}
+
 export function Archive() {
-  const { operatorName, epDone, bondNow, push, profileRequest, clearProfileRequest, isMet } = useTerminal()
+  const { operatorName, epDone, cur, bondNow, push, profileRequest, clearProfileRequest, isMet } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
@@ -248,6 +405,25 @@ export function Archive() {
   /** 他身上自带的那件东西（露娜的丝线 —— 第一卷走完才系上手腕） */
   const opBuiltin = opBuiltinAt(opArc, epDone)
   const [opOpen, setOpOpen] = useState(false)
+  /** 作战中装的装具：档案里的面板要把当前编成一并算上 */
+  const [equip, setEquip] = useState<Record<string, string>>({})
+  /** 库存：能换的只有手上真有的那几件 */
+  const [owned, setOwned] = useState<Record<string, number>>({})
+  useEffect(() => {
+    void readEquip().then(setEquip)
+    void readGearBag().then(setOwned)
+  }, [])
+  /* 在档案里换装具：与作战中「更换装备」写的是同一份编成，不消耗任何东西 */
+  const setGear = useCallback((charId: string, gearId: string | null) => {
+    setEquip((prev) => {
+      const next = { ...prev }
+      if (gearId) next[charId] = gearId
+      else delete next[charId]
+      void writeEquip(next)
+      return next
+    })
+  }, [])
+  const progress = useMemo(() => periodProgress(epDone), [epDone])
 
   /* 展开某档案（卡片就近） */
   const openFromId = useCallback((id: string) => {
@@ -632,6 +808,25 @@ export function Archive() {
               </div>
 
               <div className={css.dialogSection}>
+                <h4>反现实辅助装备</h4>
+                <GearSwap
+                  id={focus.id}
+                  gearId={equip[focus.id]}
+                  owned={owned}
+                  onPick={(g) => setGear(focus.id, g)}
+                />
+              </div>
+
+              <div className={css.dialogSection}>
+                <h4>战斗数值（下场时的那份面板）</h4>
+                <CombatPanel id={focus.id} progress={progress} gearId={equip[focus.id]} />
+                <div className="tiny muted" style={{ marginTop: 8 }}>
+                  与作战中点开同一人看到的是同一组数字；面板里的那件装具按上面这份编成计算 ——
+                  在这里换完，出击时就是这套。
+                </div>
+              </div>
+
+              <div className={css.dialogSection}>
                 <h4>当前羁绊</h4>
                 <div className={css.relationGrid}>
                   <div className="meter meter--thick">
@@ -647,6 +842,17 @@ export function Archive() {
                     <div className="tiny muted" style={{ marginTop: 6 }}>主役随读到的每一段事件变化；登场者自近似基线起，随剧情中的遇见与短信增减。</div>
                   </div>
                 </div>
+                {/* 关系确认：到满值才现身的那一栏 —— 关系走到头了，档案里要留一句白纸黑字 */}
+                {(() => {
+                  const c = confirmOf(focus.id, cur)
+                  if (!c || bondNow(focus.id) < 100) return null
+                  return (
+                    <div className={css.bondConfirm} data-bond-confirm={focus.id} style={{ borderColor: `${focus.hue}55` }}>
+                      <b style={{ color: focus.hue }}>{c.title}</b>
+                      <p>{c.body}</p>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
