@@ -8,6 +8,7 @@ import type { AiChannel, ApiSettings } from '../lib/api'
 import { API_DEFAULTS, chatCompletion, isReady, listModels, readProfiles, saveProfile } from '../lib/api'
 import * as lore from '../lib/lorestore'
 import { applySchemeTo, captureFrom, listSchemes, parseChatPreset, parseSchemeFile, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
+import { ensureBuiltinPresets } from '../lib/builtin-presets'
 import type { Scheme, SchemePart } from '../lib/schemes'
 import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
@@ -177,6 +178,11 @@ export function Settings() {
   useEffect(() => {
     void refreshLoreInfo()
   }, [refreshLoreInfo])
+
+  /* 内置预设是在终端启动时入册的；万一它落盘比这一屏挂载还晚，这里补一次读取 */
+  useEffect(() => {
+    void ensureBuiltinPresets().then((added) => { if (added) setSchemes(listSchemes()) })
+  }, [])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -749,6 +755,8 @@ export function Settings() {
                     <div key={s.id} className={`${css.schemeRow} ${isSel ? css.isSel : ''}`} onClick={() => setSchemeSel(s.id)}>
                       <div className={css.schemeMain}>
                         <b>{s.name}</b>
+                        {/* 内置的那两份随终端一起来；手动导入的没有这个标 */}
+                        {s.builtin ? <span className={css.builtinTag}>内置</span> : null}
                         <span className="muted tiny">
                           主线 {chip(s.main)} ｜ 短信 {chip(s.sms)} ｜ 启用世界书 {s.activeLoreIds.length}
                         </span>

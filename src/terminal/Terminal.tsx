@@ -10,6 +10,7 @@ import { bondWithStage } from '../data/bondstage'
 import { clamp } from '../lib/format'
 import { opFull } from '../lib/operator'
 import { ensureSeeded } from '../lib/lorestore'
+import { ensureBuiltinPresets } from '../lib/builtin-presets'
 import { requestRemount } from '../lib/remount'
 import { sfx } from '../lib/audio'
 import {
@@ -348,6 +349,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /* 首启迁移：无槽文件但有旧进度 → 留 slots[0]「旧档留档」+ 自动档（幂等） */
   useEffect(() => {
     ensureMigration()
+    // 内置预设也在这个时候入册：用户开「终端设置」时它已经在方案列表里了
+    void ensureBuiltinPresets()
   }, [])
 
   /* 重挂载后落地一条重置/读档的反馈通知（冷启动为 null 则跳过） */

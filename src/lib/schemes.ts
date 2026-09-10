@@ -35,6 +35,13 @@ export interface Scheme {
    * 套用本预设时随指令条目一并落进生效快照（见 preset.ts）。
    */
   prefill?: string
+  /**
+   * 随预设带入的流式开关（酒馆的 stream_openai）。套用时一并落到两通道；
+   * 未带该字段则不动通道现值。
+   */
+  stream?: boolean
+  /** 随终端一起发的内置预设（见 builtin-presets.ts）：界面挂标，删了不再重播 */
+  builtin?: boolean
 }
 
 export const SCHEME_KEY = 'zts-schemes:v1'
@@ -130,6 +137,11 @@ function merge(cfg: ApiSettings, p: SchemePart, fb: number): ApiSettings {
 export async function applySchemeTo(cfgs: ChannelCfg, s: Scheme): Promise<ChannelCfg> {
   const nextMain = merge(cfgs.main, s.main, 1500)
   const nextSms = merge(cfgs.sms, s.sms, 1500)
+  // 预设带了流式开关就一并落下去（酒馆的 stream_openai 语义；导入时也是这么做的）
+  if (typeof s.stream === 'boolean') {
+    nextMain.stream = s.stream
+    nextSms.stream = s.stream
+  }
   await Promise.all([saveProfile('main', nextMain), saveProfile('sms', nextSms)])
   const cur = await lore.getActiveLorebookIds()
   const want = new Set(s.activeLoreIds)

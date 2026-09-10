@@ -701,6 +701,18 @@ try {
   ok('F1 设置视图挂载无黑屏（世界书数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
   ok('F2 P3 增强就位：拉取模型 / 导入 ST 世界书 / 导入 ChatPreset', setProbe.hasFetch === true && setProbe.hasSt === true && setProbe.hasPreset === true, JSON.stringify(setProbe))
   ok('F2b P7 输出预算可配：设置卡片含 MAX TOKENS 输入', setProbe.hasBudget === true, JSON.stringify(setProbe))
+  // 内置预设：随终端来，不必手动找 json 导入
+  const bp = await ev(`(()=>{const l=JSON.parse(localStorage.getItem('zts-schemes:v1')||'[]');
+    const b=l.filter(s=>s.builtin);const k=JSON.parse(localStorage.getItem('zts-builtin-presets:v1')||'null');
+    return {n:b.length,names:b.map(s=>s.name).join(' / '),
+      entries:b.map(s=>(s.entries||[]).filter(e=>!e.placeholder).length).join('/'),
+      temp:b.map(s=>s.main&&s.main.temperature).join('/'),
+      lore:b.length?b[0].activeLoreIds.length:-1,
+      seen:k?k.seeded.length:0,
+      tag:[...document.querySelectorAll('span')].filter(x=>x.textContent==='内置').length}})()`)
+  ok('F2d 内置预设开箱即在方案列表（两条 · 指令条目齐 · 带激活世界书 · 挂「内置」标）',
+    bp.n === 2 && bp.entries.split('/').every((x) => Number(x) >= 1) && bp.lore > 0 && bp.seen === 2 && bp.tag >= 2,
+    JSON.stringify(bp))
   // 输出预算编辑并保存 → 随通道配置持久（思考型模型需调大预算时走这里）
   await ev(`(()=>{const i=document.querySelector('input[type="number"]');if(!i)return false;const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;set.call(i,'2000');i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`)
   await sleep(200)

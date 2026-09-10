@@ -6,6 +6,8 @@
     "module": "esnext",
     "types": ["vite/client"],
     "allowArbitraryExtensions": true,
+    /* presets/*.json 直接当模块读（内置预设的唯一真源就是那两个文件） */
+    "resolveJsonModule": true,
     "skipLibCheck": true,
 
     /* Bundler mode */
