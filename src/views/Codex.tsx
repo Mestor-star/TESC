@@ -371,7 +371,7 @@ export function Codex() {
               <textarea rows={2} value={f.counter} onChange={(e) => set('counter', e.target.value)} placeholder="若为反现实实体，写清应对方式……" />
             </label>
             <div className={css.saveRow}>
-              <span className={css.saveHint}>自记条目将写入本机存档，仅操作员可见。</span>
+              <span className={css.saveHint}>自记条目将写入终端存档，仅操作员可见。</span>
               <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setAdding(false)}>
                 取消
               </button>

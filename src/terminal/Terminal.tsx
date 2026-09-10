@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, WorldState, OwnEndEntry, CharId, WorldRecord, RecordMode, FlagValue } from '../data/types'
-import { CHARACTERS } from '../data/chars'
+import type { RegionReading, Toast, ToastKind, BondSnap, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue } from '../data/types'
+import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
@@ -63,6 +63,8 @@ export interface TerminalState {
   stage: 'title' | 'game'
   /** 行动继续：沿用当前进度进入终端（无运行进度但自动档有档时先读自动档） */
   resume: () => void
+  /** 读取自动存档（不论当前运行档有无进度，一律以自动档覆盖）→ 全量重挂载；无自动档返回 false */
+  loadAutosave: () => boolean
   /** 行动开始 / 重置：清当前 run（手动槽保留），进入全新记录 */
   startNew: () => void
   /** 终端连接：进入设置专用界面（仅此一页 · 隐藏侧边栏；密钥仅运行时录入） */
@@ -206,9 +208,9 @@ function defaultSaved(): Saved {
   }
 }
 
-/** 各角色首次出场的段位（用于「遇见后解锁」） */
+/** 各角色首次出场的段位（用于「遇见后解锁」）；按现场名册判定，外场角色同样可解锁 */
 function meetIndexOf(charId: string): number {
-  const i = TIMELINE.findIndex((e) => e.chars.includes(charId as CharId))
+  const i = TIMELINE.findIndex((e) => castOf(e).includes(charId))
   return i
 }
 
@@ -241,10 +243,10 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     ...[...doneIds].map((id) => readingIndexOf(id)).filter((i) => i >= 0),
     -1,
   )
-  // 角色解锁：读到其首次出场段即视为「遇见」
-  for (const c of CHARACTERS) {
-    const mi = meetIndexOf(c.id)
-    if (mi >= 0 && mi <= readIdx) w.met[c.id] = true
+  // 角色解锁：读到其首次出场段即视为「遇见」（覆盖名录全体，含外场侧角）
+  for (const id of PERSON_IDS) {
+    const mi = meetIndexOf(id)
+    if (mi >= 0 && mi <= readIdx) w.met[id] = true
   }
   // 图鉴登记：把已读段里的实体标注登记进图鉴
   for (const e of TIMELINE) {
@@ -409,6 +411,20 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
     sessionStage = 'game'
     setStageState('game')
+  }, [])
+
+  /** 读取自动存档：无视当前运行档，直接以自动档覆盖并全量重挂载（标题页「自动存档 · 读取」） */
+  const loadAutosave = useCallback((): boolean => {
+    const a = readAutosave()
+    if (!a) return false
+    applySnapshot(a.snapshot)
+    sessionAuthed = true
+    sessionStage = 'game'
+    sessionSetup = false
+    pendingView = 'dashboard'
+    pendingToast = { kind: 'info', title: '已读取自动存档', body: `${a.name || '自动存档'} · 收束 ${a.records} 段` }
+    requestRemount()
+    return true
   }, [])
 
   /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录直接落到剧情推进 */
@@ -682,7 +698,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       const newEnds: string[] = []
       setWorld((prev) => {
         const met = { ...prev.met }
-        for (const c of ev.chars) if (!met[c]) { met[c] = true; newChars.push(c) }
+        // 现场名册（cast 优先，缺省回落 chars）：事件收束即把这些角色登记为「已遇见」
+        for (const c of castOf(ev)) if (!met[c]) { met[c] = true; newChars.push(c) }
         const ends = { ...prev.ends }
         for (const ent of ev.entities) {
           if (ent === '——') continue
@@ -702,7 +719,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       })
 
       if (newChars.length > 0) {
-        const names = newChars.map((c) => CHARACTERS.find((x) => x.id === c)?.name ?? c).join(' · ')
+        const names = newChars.map((c) => personOf(c)?.name ?? c).join(' · ')
         window.setTimeout(() => push('decode', '档案解锁 · 遇见登记', `${names}，已录入角色档案。`, false), 60)
       }
       if (newEnds.length > 0) {
@@ -773,6 +790,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     enter,
     stage,
     resume,
+    loadAutosave,
     startNew,
     enterSettings,
     setupMode,

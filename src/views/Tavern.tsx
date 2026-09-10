@@ -6,12 +6,14 @@ import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { genderOf } from '../data/castmeta'
 import { Linkified } from '../components/Linkified'
 import type { ApiSettings, ChatTurn } from '../lib/api'
-import { chatCompletionStream, isReady, loadProfile } from '../lib/api'
+import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
+import type { StreamResult } from '../lib/api'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import { extractLiveDisplay, parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
+import { buildPresetContext, readActivePreset } from '../lib/preset'
 
 import comm from './Comms.module.css'
 import css from './Tavern.module.css'
@@ -183,7 +185,7 @@ export function Tavern() {
       if (!c || !meta || busy) return
       const cfg = settings
       if (!cfg || !isReady(cfg)) {
-        push('warn', 'AI 通道未配置', '请先在「设置」中为「角色短信」填入接口地址与模型，再回来发消息。')
+        push('warn', '推演通道未配置', '请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来发消息。')
         navigate('settings')
         return
       }
@@ -191,13 +193,13 @@ export function Tavern() {
       setBusy(true)
 
       // 世界书命中注入（仅放行已登记实体 / 已完成事件；失败静默）
+      const scanText = toTurns(log, 10).map((t) => t.content).join('\n')
       let loreBlock = ''
       try {
         const books = await loadActiveBooks()
         if (books.length) {
-          const recent = toTurns(log, 10).map((t) => t.content).join('\n')
           loreBlock = buildLoreContext(books, {
-            scanText: recent,
+            scanText,
             contextText: meta.scenario,
             gate: allowGateForTavern({ epDone, ends: world.ends }),
           })
@@ -206,10 +208,15 @@ export function Tavern() {
         loreBlock = ''
       }
 
+      // 预设导演指令（短信侧同样受「管理预设」的生效快照管辖）
+      const preset = buildPresetContext(readActivePreset(), scanText)
+
       const bond = bondNow(charId)
       const system =
         systemPrompt(charId, operatorName, bond, meta.scenario)
+        + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
+        + (preset.post ? `\n\n${preset.post}` : '')
         + smsBondRule(charId)
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...toTurns(log)]
 
@@ -219,15 +226,18 @@ export function Tavern() {
       let acc = ''
       let settled = false
       try {
-        const res = await chatCompletionStream(cfg, messages, {
-          signal: ctrl.signal,
-          maxTokens: cfg.maxTokens || 1500,
-          onDelta: (chunk) => {
-            if (settled || !chunk) return
-            acc += chunk
-            setLive({ charId, text: acc })
-          },
-        })
+        // 流式开关（终端设置 · 角色短信通道）：关掉即整段接收
+        const res: StreamResult = cfg.stream === false
+          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500 }) }
+          : await chatCompletionStream(cfg, messages, {
+            signal: ctrl.signal,
+            maxTokens: cfg.maxTokens || 1500,
+            onDelta: (chunk) => {
+              if (settled || !chunk) return
+              acc += chunk
+              setLive({ charId, text: acc })
+            },
+          })
         settled = true
         setLive(null)
 
@@ -235,12 +245,12 @@ export function Tavern() {
         if (!reply) {
           const thought = (res.reasoning ?? '').trim()
           const why = res.refusal
-            ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
+            ? `推演通道拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
             : res.finishReason === 'length'
               ? (thought
-                  ? `模型在内部思考上花费过久（约 ${thought.length} 字）把输出预算耗尽，短信正文为空。可在终端设置调高该通道输出预算后重发。`
+                  ? `通道在内部思考上花费过久（约 ${thought.length} 字）把输出预算耗尽，短信正文为空。可在终端设置调高该通道输出预算后重发。`
                   : '回复已达长度上限，且未产出任何正文。')
-              : '模型未返回任何内容。'
+              : '通道未返回任何内容。'
           setErr(`收发中断：${why}`)
           push('danger', '短信收发失败', why, false)
           return
@@ -365,7 +375,7 @@ export function Tavern() {
   const linkState = !settings
     ? '读取本地设置…'
     : !isReady(settings)
-      ? 'AI 通道未配置'
+      ? '推演通道未配置'
       : `已接入 · ${settings.model}`
 
   return (
@@ -375,7 +385,7 @@ export function Tavern() {
           <div className="vhead__kicker">SMS / CHARACTER CHAT</div>
           <h1>角色短信</h1>
           <div className="vhead__sub">
-            与已「遇见」的角色一对一短信。回复由你自配的 OpenAI 兼容接口生成，人格取自角色档案与原文台词；
+            与已「遇见」的角色一对一短信。回复由你在终端设置里配好的推演通道生成，人格取自角色档案与原文台词；
             走「角色短信」通道，可带轻量羁绊。密钥仅存本机。
           </div>
         </div>
@@ -432,7 +442,7 @@ export function Tavern() {
               )
             })}
             <span className="muted tiny" style={{ padding: '6px 8px', lineHeight: 1.7, color: 'var(--ink-faint)' }}>
-              回复由外部 AI 接口生成，非内置脚本。请勿在其中输入真实敏感信息。
+              回复由外部推演通道生成，非内置脚本。请勿在其中输入真实敏感信息。
             </span>
           </div>
           <div className="panel__body" style={{ padding: '10px 12px', borderTop: '1px solid var(--line)' }}>
@@ -561,7 +571,7 @@ export function Tavern() {
               <div>
                 <b>{metIds.length === 0 ? '还没有可联系的角色' : '先选一位联系人'}</b>
                 尚未「遇见」任何角色——先去剧情视图推进事件，遇见角色后即在此解锁。<br />
-                解锁后，于「设置」的「角色短信」卡片中填好接口地址与模型即可开始 AI 对话。
+                解锁后，于「终端设置 · 角色短信」中填好接口地址与模型，即可开始推演对话。
               </div>
             </div>
           )}

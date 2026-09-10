@@ -28,7 +28,13 @@ export const AXIS_MAX = 200
 
 export interface CharacterStat {
   key: string;          // 中文标签
-  value: AxisVal;       // 五轴评定：10≈普通成年人；'∞'=无法测量（满格+徽记）
+  value: AxisVal;       // 常态评定：10≈普通成年人；'∞'=无法测量（满格+徽记）
+  /**
+   * 极限评定：该轴在「机制全开 / 变身 / 限时爆发」下的最强表现（恒 ≥ value）。
+   * 档案页以红色条叠加于常态条之后示出，读数记为「常态/极限」。
+   * 缺省 = 未登记（该轴无更强表现可考），UI 退回单值显示。'∞' = 极限亦无法测量。
+   */
+  limit?: AxisVal
 }
 
 export interface Character {
@@ -39,7 +45,7 @@ export interface Character {
   epithet: string;       // 一句称号/印象
   division: string;      // 所属（终末停滞委员会 · 恋兔队 等）
   role: string;          // 定位
-  scar: string;          // 弹痕 / 终末
+  scar: string;          // 武装 / 终末（弹痕·斩击·片羽·龙花·特殊武器，或其所背负终末之名；兼有者以 / 分隔）
   potential: string;     // 终末潜力（Stage N『…』；未分级填 —）
   station: StationStatus;
   stationNote: string;   // 状态备注
@@ -188,6 +194,12 @@ export interface TimelineEvent {
   summary: string;       // 概述（依原文）
   entities: string[];    // 关联【No.】编号（原文格式）
   chars: CharId[];       // 出场/受影响角色
+  /**
+   * 本事件**现场在场**的名册（含 roster 里的外场角色，如恋兔队/卡乌斯/终末持有者）。
+   * 与 chars 的区别：chars 只有四位主角且含「受影响但未到场」者；
+   * cast 依原文逐事件判定，只收现场出现的人。缺省时回落到 chars（见 lib/cast.ts 的 castOf）。
+   */
+  cast?: string[];
   bond: BondSnap;        // 本段好感快照
   script?: ScriptLine[]; // 正文（逐字）
   unlock?: boolean;      // 完成本段即解锁四大视图（第1卷「欢迎来到」收束事件）
@@ -298,8 +310,11 @@ export interface LoreEntry {
    Corporations 学生持有「片羽」翼状之力。反现实武装的本质只有一个——为持有者实现渴望。
    ============================================================ */
 
-/** 三学园系谱：武装传统 */
-export type ArmKind = '弹痕' | '斩击' | '片羽';
+/**
+ * 武装传统分类。前三者为三学园的天使系谱；「特殊武器」为系谱之外的造物／遗物
+ * （不入任何石像的赠予，如小柴琳自境界领域商会所得的「爪」）。
+ */
+export type ArmKind = '弹痕' | '斩击' | '片羽' | '特殊武器';
 
 export interface ArmEntry {
   id: string;

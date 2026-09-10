@@ -21,6 +21,9 @@ export interface LorebookEntry {
   /** 0=and_any(not_any?), 1=or(not_all?), actual SillyTavern has 4 logics but we normalize to and/or where possible */
   selectiveLogic: 'and_any' | 'not_all' | 'not_any' | 'and_all';
   constant: boolean;
+  /** cnm 追加：词条开关（缺省 = 启用）。false 时该词条不参与注入（含常驻），
+   *  供「预设调配」逐条开关；ST 导入的 disable 词条会保留并置为 false，导出时还原为 disable。 */
+  enabled?: boolean;
   probability: number;
   useProbability?: boolean;
   addMemo: boolean;

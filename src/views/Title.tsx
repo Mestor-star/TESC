@@ -14,7 +14,7 @@ import css from './Title.module.css'
  * 首次冷启动：Boot 指纹认证 → 本页 → 选择后进游戏；同会话读档重挂载直接越过本页。
  */
 export function TitleMenu() {
-  const { operatorName, resume, startNew, enterSettings, exitToBoot } = useTerminal()
+  const { operatorName, resume, loadAutosave, startNew, enterSettings, exitToBoot } = useTerminal()
 
   const auto = useMemo(() => readAutosave(), [])
   const filled = useMemo(() => readSlotsList().filter((s) => s !== null).length, [])
@@ -62,7 +62,7 @@ export function TitleMenu() {
               <span className={css.ic}><Plug size={17} weight="bold" /></span>
               <span className={css.menuTxt}>
                 终端连接
-                <i>进入后直达终端设置 · 配置推演通道（密钥仅本机运行时录入）</i>
+                <i>进入后直达终端设置 · 配置推演通道（密钥仅运行时录入，不落档案）</i>
               </span>
             </button>
 
@@ -75,7 +75,7 @@ export function TitleMenu() {
             </button>
 
             <div className={css.menuFoot}>
-              手动档 <b>{filled}/8</b> 位 · 存档与自动档均只存于本机浏览器，不入库、不上传。
+              手动档 <b>{filled}/8</b> 位 · 存档与自动档只落在本终端，不外传。
             </div>
           </nav>
 
@@ -85,9 +85,35 @@ export function TitleMenu() {
               <b className={css.slotsTitle}>手动存档位</b>
               <span className="muted">{filled}/8 USED</span>
             </div>
+            {/* 自动存档：每次收束事件后自动落盘的那一份，可单独取出（不必依赖「行动继续」） */}
+            <article className={css.autoCard} data-autosave-card>
+              <div className={css.autoMain}>
+                <span className={css.autoKicker}>AUTO SAVE · 自动存档</span>
+                {auto ? (
+                  <>
+                    <b className={css.autoName}>{auto.name || '自动存档'}</b>
+                    <span className={css.autoMeta}>
+                      {fmtSlotTime(auto.savedAt)} · 已收束 {auto.records} 段
+                    </span>
+                  </>
+                ) : (
+                  <span className={css.autoMeta}>尚无自动存档 · 收束一个事件后自动写入</span>
+                )}
+              </div>
+              <button
+                className="btn btn--ghost"
+                style={{ fontSize: 12 }}
+                disabled={!auto}
+                onClick={loadAutosave}
+                title="以自动存档覆盖当前进度并进入终端"
+              >
+                读取
+              </button>
+            </article>
+
             <SlotGrid mode="load" />
             <div className={css.slotsNote}>
-              点「读取」载入对应档并进入游戏。存档与写档在游戏内进行：终端左侧底部「存读档」可把当前进度保存到任一槽。
+              按「读取」以该档续接观测。写档在终端内进行：左侧底部「存读档」可把当前进度写入任一槽。
             </div>
           </section>
         </div>

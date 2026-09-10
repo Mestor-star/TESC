@@ -231,6 +231,31 @@
   border-color: var(--line-2);
 }
 
+/* 预设调配 · 逐条开关：行 = 主体按钮 + 开关按钮 */
+.entryWrap { display: flex; align-items: stretch; gap: 2px; }
+.entryWrap > .entryRow { flex: 1; min-width: 0; }
+.entrySw {
+  flex: none;
+  width: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.entrySw:hover { background: var(--bg-1); color: var(--ink); border-color: var(--line-2); }
+/* 关闭的词条：整行压暗并划掉，一眼可辨哪些不参与注入 */
+.entryRow.isOff { opacity: 0.42; }
+.entryRow.isOff b { text-decoration: line-through; }
+
+/* 整本批量开关 + 关闭计数 */
+.bulkSw { display: inline-flex; gap: 4px; margin-left: auto; }
+.offCount { color: var(--amber, #ffb347); font-weight: 700; }
+
 .form {
   overflow: auto;
   padding: 14px 16px;

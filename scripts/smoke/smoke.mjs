@@ -482,9 +482,9 @@ try {
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'E dash')
-  // E1 播种幂等：A–D 已多次重载，canon 仍为 4 库、无重复累积（「登场者登记」已并入「角色档案」）
-  await poll(`${loreCountSrc()}.then(n=>n===4)`, 10000, 'E canon=4')
-  ok('E1 播种幂等：多轮重载后 canon 仍为 4 库', true)
+  // E1 播种幂等：A–D 已多次重载，canon 仍为 5 库、无重复累积（「登场者登记」已并入「角色档案」）
+  await poll(`${loreCountSrc()}.then(n=>n===5)`, 10000, 'E canon=5 (char/codex/lore/events/ops)')
+  ok('E1 播种幂等：多轮重载后 canon 仍为 5 库', true)
   const canonChar = await loreBook('book-canon-char')
   ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
   ok('E2b 角色档案世界书已并入全员 25 词条', !!canonChar && canonChar.count === 25, 'count=' + (canonChar && canonChar.count))
@@ -613,7 +613,7 @@ try {
   ok('E22 外插用户库并清除种子标记', insUser === true, 'ins=' + insUser)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
-  await poll(`${loreCountSrc()}.then(n=>n===5)`, 15000, 'E user book preserved')
+  await poll(`${loreCountSrc()}.then(n=>n===6)`, 15000, 'E user book preserved')
   const ub = await loreBook('user-book-test-1')
   ok('E23 重播 canon 非破坏：4+用户1（无重复）', true)
   ok('E24 用户自建库在重播后保留', !!ub && ub.name === 'E测试库' && ub.description === 'user-sentinel-7', JSON.stringify(ub))
@@ -638,8 +638,28 @@ try {
   await goto('角色档案')
   await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'G archive 24 cards')
   ok('G1 全员 24 张档案卡（自始开放 · 无需解锁）', true)
-  const infCount = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?(c.innerText.split('∞').length-1):-1})()`)
-  ok('G2 恋兔光破坏力读数为唯一 ∞（满格 · 无法测量）', infCount === 1, 'inf=' + infCount)
+  // P3b：未遇见 → 锁定保密。封存卡不得泄露姓名 / 武装 / 五轴 / 羁绊
+  const lockProbe = await ev(`(()=>{const all=[...document.querySelectorAll('[data-archive-card]')];const lock=all.filter(c=>c.hasAttribute('data-locked-id'));return {all:all.length,lock:lock.length,named:lock.filter(c=>!c.innerText.includes('？？？')).length,axis:lock.filter(c=>c.querySelector('[data-axis-num],[data-axis-normal],[data-axis-limit]')).length,bond:lock.filter(c=>c.innerText.includes('当前羁绊')).length}})()`)
+  ok('G1b 未遇见者一律封存（且封存卡不显姓名/五轴/羁绊）',
+    !!lockProbe && lockProbe.lock > 0 && lockProbe.named === 0 && lockProbe.axis === 0 && lockProbe.bond === 0,
+    JSON.stringify(lockProbe))
+  // 后续断言需看全卡内容：把名录全体登记为「已遇见」后重载（封存门禁另由 G1b 覆盖）
+  const seedMet = await ev(`(()=>{try{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');const ids=[...document.querySelectorAll('[data-archive-card]')].map(c=>c.getAttribute('data-archive-card'));s.world=Object.assign({},s.world||{},{met:Object.fromEntries(ids.map(i=>[i,true]))});localStorage.setItem(k,JSON.stringify(s));return ids.length}catch(e){return String(e)}})()`)
+  ok('G1c 播种「已遇见」名录（供全卡断言）', seedMet === 24, 'seed=' + seedMet)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('角色档案')
+  await poll(`document.querySelectorAll('[data-archive-card]:not([data-locked-id])').length===24`, 20000, 'G archive unlocked')
+  ok('G1d 全员已遇见后封存解除（24/24 可读）', true)
+  // P2 起读数改为「常态/极限」双值，故不再数 ∞ 字符数（∞/∞ 本就算两个），改按 data 属性判定语义
+  const infNorm = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?c.querySelectorAll('[data-axis-normal="∞"]').length:-1})()`)
+  const infLim = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?c.querySelectorAll('[data-axis-limit="∞"]').length:-1})()`)
+  ok('G2 恋兔光破坏力为唯一常态 ∞ 轴，且极限亦 ∞（读数「∞/∞」）', infNorm === 1 && infLim === 1, 'norm=' + infNorm + ' lim=' + infLim)
+  const infOther = await ev(`(()=>{let n=0;document.querySelectorAll('[data-archive-card]').forEach(c=>{if(c.getAttribute('data-archive-card')!=='hikari')n+=c.querySelectorAll('[data-axis-normal="∞"]').length});return n})()`)
+  ok('G2b 常态 ∞ 为恋兔光专属（其余 23 人常态皆为可测数值）', infOther === 0, 'other=' + infOther)
+  // 双值不变式：凡已登记的轴（有 data-axis-limit）恒满足 极限 ≥ 常态；'∞' 视为最大，常态 '∞' 则极限必须亦为 '∞'
+  const badLimit = await ev(`(()=>{const bad=[];document.querySelectorAll('[data-archive-card]').forEach(c=>{c.querySelectorAll('[data-axis-num]').forEach(s=>{const n=s.getAttribute('data-axis-normal'),l=s.getAttribute('data-axis-limit');if(!l)return;if(n==='∞'){if(l!=='∞')bad.push(c.getAttribute('data-archive-card')+':inf/'+l);return}if(l!=='∞'&&Number(l)<Number(n))bad.push(c.getAttribute('data-archive-card')+':'+n+'/'+l)})});return bad})()`)
+  ok('G2c 全员极限 ≥ 常态（P2 双值不变式）', Array.isArray(badLimit) && badLimit.length === 0, JSON.stringify(badLimit))
   const bondChips = await ev(`(()=>[...document.querySelectorAll('[data-archive-card]')].filter(c=>c.innerText.includes('当前羁绊')).length)()`)
   ok('G3 24 张卡均带「当前羁绊」chip', bondChips === 24, 'n=' + bondChips)
   // 名称/数值都有实义：chip 文本形如「当前羁绊 <称谓> · <0-100>」，且数值在界内
@@ -671,8 +691,8 @@ try {
   await poll(`!!document.querySelector('button') && [...document.querySelectorAll('button')].some(b=>b.textContent.includes('编辑变量'))`, 15000, 'H var btn')
   await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('编辑变量'));if(!b)return false;b.click();return true})()`)
   await poll(`!!document.querySelector('[data-vars-panel]')`, 10000, 'H panel open')
-  const hp = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');const t=p?p.innerText:'';return {hasA:t.includes('用户变量'),hasB:t.includes('系统派生')}})()`)
-  ok('H1 变量面板开启（用户变量 + 系统派生两分区）', hp.hasA === true && hp.hasB === true, JSON.stringify(hp))
+  const hp = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');const t=p?p.innerText:'';return {hasA:t.includes('命名变量'),hasB:t.includes('终端派生')}})()`)
+  ok('H1 变量面板开启（命名变量 + 终端派生两分区）', hp.hasA === true && hp.hasB === true, JSON.stringify(hp))
   const sysProbe = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');return {op:!!p.querySelector('[data-var-sys="operatorName"]'),bond:p.querySelectorAll('[data-var-sys^="bond:"]').length,met:!!p.querySelector('[data-var-sys="met"]'),cur:!!p.querySelector('[data-var-sys="cur"]')}})()`)
   ok('H2 系统派生列示 operatorName/24×bond/met/cur', sysProbe.op === true && sysProbe.bond === 24 && sysProbe.met === true && sysProbe.cur === true, JSON.stringify(sysProbe))
   await ev(`(()=>{const b=[...document.querySelectorAll('[data-vars-panel] button')].find(x=>x.textContent&&x.textContent.includes('新增变量'));if(!b)return false;b.click();return true})()`)
@@ -735,6 +755,9 @@ try {
   await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'J title menu')
   const contDisabled = await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('行动继续'));return b?b.disabled:null})()`)
   ok('J0 全新无档 → 标题「行动继续」禁用', contDisabled === true, 'disabled=' + contDisabled)
+  // P10：自动存档在标题页单独成条（有档可直读，无档禁用）
+  const autoNone = await ev(`(()=>{const c=document.querySelector('[data-autosave-card]');if(!c)return null;const b=[...c.querySelectorAll('button')].find(x=>x.textContent.trim()==='读取');return {has:true,readDisabled:b?b.disabled:null,txt:c.innerText}})()`)
+  ok('J0b 无自动档 → 自动存档条存在且「读取」禁用', !!autoNone && autoNone.has === true && autoNone.readDisabled === true, JSON.stringify(autoNone && { readDisabled: autoNone.readDisabled }))
 
   // 直接在标题态预置 run A（先不进 Plot：全新档 Plot 自动开场会消费陈旧 stub 回包、覆写 v1-1 会话）
   const seedA = await ev(`(()=>{localStorage.setItem('zts-terminal:v3',JSON.stringify({unlocked:false,epDone:{'v1-1':true},cur:'v1-1',operatorName:'存A',focusId:'gcn'}));localStorage.setItem('zts-plot:v1',JSON.stringify({'v1-1':[{id:'pa::1',from:'them',text:'【存A标记】夜风穿过甲板，她按下发送。',time:'20:01'}]}));localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
@@ -866,6 +889,164 @@ try {
   await poll(`!!document.querySelector('[data-title="1"]')`, 15000, 'L back to title')
   const backProbe = await ev(`(()=>{const t=document.body.innerText;return {title:!!document.querySelector('[data-title="1"]'),gone:!t.includes('SETUP / CHANNEL')}})()`)
   ok('L2 返回标题按钮 → 回到标题菜单', backProbe.title === true && backProbe.gone === true, JSON.stringify(backProbe))
+  // P10：标题页「自动存档 · 读取」直载（不必绕「行动继续」）
+  const autoReady = await ev(`(()=>{const c=document.querySelector('[data-autosave-card]');if(!c)return null;const b=[...c.querySelectorAll('button')].find(x=>x.textContent.trim()==='读取');return {disabled:b?b.disabled:null,txt:c.innerText}})()`)
+  ok('L3 有自动档 → 该条显示时间与段数、「读取」可用', !!autoReady && autoReady.disabled === false && /已收束\s*\d+\s*段/.test(autoReady.txt), JSON.stringify(autoReady))
+  await ev(`(()=>{const c=document.querySelector('[data-autosave-card]');const b=c&&[...c.querySelectorAll('button')].find(x=>x.textContent.trim()==='读取');if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('.app--stage')`, 30000, 'L4 autosave load mounts shell')
+  const autoLoaded = await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-terminal:v3')||'{}');return {shell:!!document.querySelector('.app--stage'),ep:Object.keys(o.epDone||{}).length,title:!!document.querySelector('[data-title="1"]')}})()`)
+  ok('L4 点「读取」→ 以自动档进终端（含进度 · 离开标题页）', !!autoLoaded && autoLoaded.shell === true && autoLoaded.title === false && autoLoaded.ep > 0, JSON.stringify(autoLoaded))
+
+  /* ============ Phase M：管理预设（指令条目 + 世界书调配） ============ */
+  console.log('\n[Phase M] 管理预设：指令条目开关 · 世界书滤网独立 · 生效快照')
+  const mSeed = await ev(`(()=>{
+    const entries=[
+      {id:'m1',name:'叙述人称',kind:'行为',position:'pre',content:'第三人称限知。',enabled:true,constant:true,keys:[],order:10},
+      {id:'m2',name:'文本格式',kind:'格式',position:'post',content:'对白用「」。',enabled:true,constant:true,keys:[],order:20}
+    ];
+    localStorage.setItem('zts-schemes:v1',JSON.stringify([{id:'mscheme',name:'冒烟预设',
+      main:{baseUrl:'http://x',model:'m',temperature:0.7,maxTokens:1500},
+      sms:{baseUrl:'http://x',model:'m',temperature:0.7,maxTokens:1500},
+      activeLoreIds:[],loreEntryOff:{},entries}]));
+    localStorage.setItem('zts-active-preset:v1',JSON.stringify({id:'mscheme',name:'冒烟预设',entries}));
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({unlocked:true,epDone:{'v1-1':true,'v1-2':true},cur:'v1-2',operatorName:'预设管理员',focusId:'gcn'}));
+    localStorage.setItem('zts-plot:v1',JSON.stringify({}));
+    localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
+    return true})()`)
+  ok('M0 播种一份带指令条目的预设（并使其生效）', mSeed === true, 'seed=' + mSeed)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('终端设置')
+  await poll(`document.body.innerText.includes('管理预设')`, 15000, 'M settings mounted')
+  ok('M1 设置页方案行出现「管理预设」入口', (await ev(clickTxt('管理预设'))) === true, '')
+  await poll(`!!document.querySelector('[data-preset-panel]')`, 12000, 'M preset panel')
+  const mOpen = await ev(`(()=>{const p=document.querySelector('[data-preset-panel]');if(!p)return {open:false};
+    const rows=p.querySelectorAll('[data-preset-entry]');
+    return {open:true,rows:rows.length,tabs:p.querySelectorAll('[data-preset-tab]').length,
+      sw:!!p.querySelector('[data-preset-sw="m1"]'),txt:p.innerText.includes('叙述人称')}})()`)
+  ok('M2 面板展开：两条指令条目 + 两个 Tab', mOpen.open === true && mOpen.rows === 2 && mOpen.tabs === 2 && mOpen.sw === true, JSON.stringify(mOpen))
+
+  // 关掉一条 → 保存 → 生效快照里该条应为 enabled:false
+  await ev(`(()=>{document.querySelector('[data-preset-sw="m1"]').click();return true})()`)
+  await sleep(200)
+  ok('M3 点开关 → 保存到预设', (await ev(clickTxt('保存到预设'))) === true, '')
+  const mSaved = await ev(`(()=>{try{
+    const sch=JSON.parse(localStorage.getItem('zts-schemes:v1'))[0];
+    const act=JSON.parse(localStorage.getItem('zts-active-preset:v1'));
+    const e1=(sch.entries||[]).find(x=>x.id==='m1'), a1=(act.entries||[]).find(x=>x.id==='m1');
+    return {panelGone:!document.querySelector('[data-preset-panel]'),schOff:e1&&e1.enabled===false,actOff:a1&&a1.enabled===false,lore:!!sch.loreEntryOff}
+  }catch(e){return {err:String(e)}}})()`)
+  ok('M4 保存后：方案里的 m1 已关闭，且生效快照同步为关闭', mSaved.schOff === true && mSaved.actOff === true, JSON.stringify(mSaved))
+  ok('M5 保存后关闭面板，世界书滤网字段仍在（两种配置互不覆盖）', mSaved.panelGone === true && mSaved.lore === true, JSON.stringify({ gone: mSaved.panelGone, lore: mSaved.lore }))
+
+  // 再开一次 → 世界书 Tab 仍在（世界书调配未被本次改动破坏）
+  await ev(clickTxt('管理预设'))
+  await poll(`!!document.querySelector('[data-preset-panel]')`, 12000, 'M reopen panel')
+  await ev(`(()=>{const b=document.querySelector('[data-preset-tab="lore"]');if(b)b.click();return true})()`)
+  await sleep(300)
+  const mLore = await ev(`(()=>{const p=document.querySelector('[data-preset-panel]');const t=p?p.innerText:'';return {on:!!document.querySelector('[data-preset-tab="lore"]'),body:t.includes('世界书')&&(t.includes('已接管')||t.includes('未接管')||t.includes('左列选择一本书'))}})()`)
+  ok('M6 世界书调配 Tab 独立可用（滤网未被条目改动波及）', mLore.on === true && mLore.body === true, JSON.stringify(mLore))
+
+  /* ============ Phase N：回合制任务作战（慢启动门 · 演出 · 成文归档） ============ */
+  console.log('\n[Phase N] 回合制作战：出击 → 慢启动门 → 收场成文 → 作战记录')
+  await ev(`(()=>{
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',
+      operatorName:'作战观察员',focusId:'gcn',
+      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],pick:{},records:[]}
+    }));
+    return true})()`)
+  // 掐掉此前各段留下的接口存根 → 收场成文走模板路径（离线也要能成文）
+  await ev(`(async()=>{try{const db=await new Promise(res=>{const r=indexedDB.open('zts-terminal-store');r.onsuccess=()=>res(r.result)});
+    await new Promise(res=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').delete('api:main');t.oncomplete=()=>res(true)});return true}catch(e){return String(e)}})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('任务简报')
+  await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N missions mounted')
+  const nBoard = await ev(`(()=>{const b=document.querySelector('[data-battle-records]');const s=document.querySelector('[data-squad-stamina]');
+    const card=document.querySelector('[data-mission="mst116"]');return {rec:!!b,stam:!!s,sortie:!!(card&&card.querySelector('[data-sortie]')),txt:s?s.innerText:''}})()`)
+  ok('N1 任务板：体力条 + 作战记录区 + 每卡「出击」入口', nBoard.rec === true && nBoard.stam === true && nBoard.sortie === true, JSON.stringify(nBoard))
+  const spBefore = (nBoard.txt.match(/(\d+)\/100/) || [])[1] || ''
+
+  // 出击 → 编队（只留恋兔光，保证慢启动门可被完整观测）
+  await ev(`(()=>{const b=document.querySelector('[data-mission="mst116"] [data-sortie]');if(b)b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-sortie-briefing]')`, 10000, 'N briefing')
+  ok('N2 编队面板打开', true, '')
+  for (let i = 0; i < 6; i++) {
+    const off = await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing] [data-pick][data-on]:not([data-pick="hikari"])');if(!b)return false;b.click();return true})()`)
+    if (!off) break
+    await sleep(120)
+  }
+  await ev(`(()=>{const b=document.querySelector('[data-sortie-briefing] [data-pick="hikari"]');if(b&&!b.hasAttribute('data-on'))b.click();return true})()`)
+  await sleep(150)
+  await ev(`(()=>{const b=document.querySelector('[data-launch]');if(b)b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-battle]')`, 12000, 'N battle mounted')
+  ok('N3 出击 → 全屏作战界面挂载', true, '')
+
+  // 驱动战斗：每轮挑「启动 → 普攻 → 技能 → 其余」中第一个可用的，再点敌阵选目标
+  const until = async (expr, ms = 9000) => {
+    const t0 = Date.now()
+    for (;;) {
+      const v = await ev(expr)
+      if (v) return v
+      if (Date.now() - t0 > ms) return null
+      await sleep(180)
+    }
+  }
+  let gateLocked = false, gateUnlocked = false, lastKindSet = []
+  let steps = 0
+  while (steps++ < 120) {
+    const ready = await until(`(()=>{if(document.querySelector('[data-battle-result]'))return 'result';if(document.querySelector('[data-skill-list]'))return 'act';return ''})()`)
+    if (!ready || ready === 'result') break
+    const info = await ev(`(()=>{const l=document.querySelector('[data-skill-list]');if(!l)return null;
+      return {who:l.getAttribute('data-actor'),kinds:[...l.querySelectorAll('[data-skill]')].map(b=>b.getAttribute('data-kind'))}})()`)
+    if (!info) { await sleep(250); continue }
+    if (info.who === 'hikari') {
+      lastKindSet = info.kinds
+      if (!info.kinds.includes('普攻') && !info.kinds.includes('技能')) gateLocked = true
+      if (info.kinds.includes('普攻')) gateUnlocked = true
+    }
+    const clicked = await ev(`(()=>{const l=document.querySelector('[data-skill-list]');if(!l)return false;
+      const pick=(k)=>{const b=l.querySelector('[data-skill][data-kind="'+k+'"]:not([disabled])');if(b){b.click();return true}return false};
+      if(pick('启动')||pick('普攻')||pick('技能'))return true;
+      const any=l.querySelector('[data-skill]:not([disabled])');if(any){any.click();return true}return false})()`)
+    if (!clicked) { await sleep(300); continue }
+    await sleep(220)
+    const phase = await until(`(()=>{if(document.querySelector('[data-battle-result]'))return 'result';
+      if(document.querySelector('[data-battle-aim]'))return 'aim';
+      if(document.querySelector('[data-skill-list]'))return 'back';return ''})()`, 5000)
+    if (phase === 'aim') {
+      await ev(`(()=>{const u=document.querySelector('[data-unit][data-side="enemy"]:not([data-down])');if(u)u.click();return true})()`)
+      await sleep(260)
+    }
+    if (phase === 'result') break
+    if (!phase) await sleep(400)
+  }
+  ok('N4 恋兔光打满 5 次启动技前，普攻与技能均不解禁（慢启动门）', gateLocked === true && lastKindSet.length > 0, JSON.stringify(lastKindSet))
+  ok('N5 打满 5 次后普攻解禁', gateUnlocked === true, JSON.stringify(lastKindSet))
+
+  await until(`!!document.querySelector('[data-battle-result]')`, 25000)
+  const nRes = await ev(`(()=>{const b=document.querySelector('[data-battle-result]');if(!b)return null;
+    const n=document.querySelector('[data-battle-narrative]');const t=n?n.textContent:'';
+    return {outcome:b.getAttribute('data-battle-result'),len:t.length,four:['部署意图','达成手段','动作经过','现场'].filter(k=>t.includes(k)).length}})()`)
+  ok('N6 收场：战果面板出现，成文含四段式（部署意图/达成手段/动作经过/现场）', !!nRes && nRes.len > 60 && nRes.four === 4, JSON.stringify(nRes))
+  ok('N6b 解禁后由「普攻」了结战斗（慢启动门不是摆设）', nRes && nRes.outcome === '胜', JSON.stringify(nRes && nRes.outcome))
+  await ev(clickTxt('归档并返回任务板'))
+  await poll(`!document.querySelector('[data-battle]')`, 12000, 'N battle closed')
+  await poll(`document.querySelectorAll('[data-battle-record]').length>=1`, 12000, 'N record listed')
+  const nRec = await ev(`(()=>{const r=document.querySelector('[data-battle-record]');const s=document.querySelector('[data-squad-stamina]');
+    return {n:document.querySelectorAll('[data-battle-record]').length,out:r?r.getAttribute('data-outcome'):null,stam:s?s.innerText:''}})()`)
+  ok('N7 归档后作战记录里出现该场（带胜负与成文）', nRec.n >= 1 && (nRec.out === '胜' || nRec.out === '败'), JSON.stringify({ n: nRec.n, out: nRec.out }))
+  const spAfter = (nRec.stam.match(/(\d+)\/100/) || [])[1] || ''
+  ok('N8 出战消耗体力（只在执行任务时扣）', spBefore !== '' && spAfter !== '' && Number(spAfter) < Number(spBefore), `before=${spBefore} after=${spAfter}`)
+
+  // 展开该条 → 逐回合底稿应真实记录本场（成文的依据）
+  await ev(`(()=>{const b=document.querySelector('[data-battle-record] button');if(b)b.click();return true})()`)
+  await sleep(500)
+  const nDig = await ev(`(()=>{const p=document.querySelector('[data-battle-record] pre');const t=p?p.textContent:'';
+    return {hasTurn:t.includes('R1 '),hasNo:t.includes('MST-116'),hasUnseal:t.includes('解封试音')||t.includes('解禁'),len:t.length}})()`)
+  ok('N9 作战记录里留档逐回合底稿（本场编号 + 回合动作，成文即据它而写）',
+    !!nDig && nDig.hasTurn === true && nDig.hasNo === true && nDig.hasUnseal === true, JSON.stringify(nDig))
 
 } catch (e) {
   passAll = false

@@ -88,6 +88,18 @@
   padding: 9px 12px;
   background: var(--bg-2);
   border: 1px solid var(--line);
+  /* 行本身即按钮（点开档案）：清掉浏览器默认外观 */
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius, 8px);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.charRow:hover {
+  border-color: color-mix(in srgb, var(--c) 55%, var(--line));
+  background: color-mix(in srgb, var(--c) 8%, var(--bg-2));
 }
 .charMain { flex: 1; min-width: 0; }
 .charMain b { font-size: 13px; }

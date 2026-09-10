@@ -20,6 +20,9 @@ export interface ApiSettings {
   /** 单回合最大输出 token（max_tokens）。思考型模型（DeepSeek reasoner 等经中继）
    *  会把预算先耗在内部思考上，正文可能被饿死 —— 值偏小就会出现“达长度上限但正文为空”。 */
   maxTokens: number
+  /** 流式生成（SSE，逐字上屏）。对应酒馆预设的 stream_openai。
+   *  缺省视为开启；部分中转网关不支持 SSE，关掉即回退整段接收。 */
+  stream: boolean
 }
 
 export const API_DEFAULTS: ApiSettings = {
@@ -28,6 +31,7 @@ export const API_DEFAULTS: ApiSettings = {
   model: '',
   temperature: 0.8,
   maxTokens: 1500,
+  stream: true,
 }
 
 export interface ChatTurn {
@@ -49,7 +53,7 @@ function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) {
-      reject(new Error('当前环境不支持 IndexedDB'))
+      reject(new Error('本终端不支持本地存储区'))
       return
     }
     const req = indexedDB.open(DB_NAME, DB_VER)
@@ -57,7 +61,7 @@ function openDb(): Promise<IDBDatabase> {
       if (!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv')
     }
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('IndexedDB 打开失败'))
+    req.onerror = () => reject(req.error ?? new Error('本地存储区打开失败'))
   })
   return dbPromise
 }
@@ -68,7 +72,7 @@ async function kvGet(key: string): Promise<unknown> {
     const tx = db.transaction('kv', 'readonly')
     const req = tx.objectStore('kv').get(key)
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('读取 IndexedDB 失败'))
+    req.onerror = () => reject(req.error ?? new Error('读取本地存储区失败'))
   })
 }
 
@@ -78,7 +82,7 @@ async function kvSet(key: string, val: unknown): Promise<void> {
     const tx = db.transaction('kv', 'readwrite')
     tx.objectStore('kv').put(val, key)
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error ?? new Error('写入 IndexedDB 失败'))
+    tx.onerror = () => reject(tx.error ?? new Error('写入本地存储区失败'))
   })
 }
 
@@ -88,7 +92,7 @@ async function kvDel(key: string): Promise<void> {
     const tx = db.transaction('kv', 'readwrite')
     tx.objectStore('kv').delete(key)
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error ?? new Error('删除 IndexedDB 失败'))
+    tx.onerror = () => reject(tx.error ?? new Error('删除本地存储区失败'))
   })
 }
 
@@ -159,8 +163,8 @@ export async function chatCompletion(
   opts?: ChatOpts,
 ): Promise<string> {
   const base = cfg.baseUrl.trim().replace(/\/+$/, '')
-  if (!base) throw new Error('接口地址（baseUrl）为空')
-  if (!cfg.model.trim()) throw new Error('模型名称为空')
+  if (!base) throw new Error('推演通道未填接口地址')
+  if (!cfg.model.trim()) throw new Error('推演通道未填模型名称')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
   const res = await fetch(`${base}/chat/completions`, {
@@ -195,8 +199,8 @@ export async function chatCompletion(
     const thought = data?.choices?.[0]?.message?.reasoning_content?.trim() ?? ''
     throw new Error(
       thought
-        ? `模型仅产出了内部思考、未输出正文（思考约 ${thought.length} 字，可能触发了长度上限）。可调高该通道的输出预算后重试。`
-        : '模型未返回可用内容',
+        ? `通道只产出了内部思考、未输出正文（思考约 ${thought.length} 字，可能触发了长度上限）。可调高该通道的输出预算后重试。`
+        : '通道未返回可用内容',
     )
   }
   return text
@@ -237,8 +241,8 @@ export async function chatCompletionStream(
   opts?: StreamOpts,
 ): Promise<StreamResult> {
   const base = cfg.baseUrl.trim().replace(/\/+$/, '')
-  if (!base) throw new Error('接口地址（baseUrl）为空')
-  if (!cfg.model.trim()) throw new Error('模型名称为空')
+  if (!base) throw new Error('推演通道未填接口地址')
+  if (!cfg.model.trim()) throw new Error('推演通道未填模型名称')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
   const res = await fetch(`${base}/chat/completions`, {
@@ -323,7 +327,7 @@ export async function chatCompletionStream(
  */
 export async function listModels(cfg: ApiSettings, opts?: { signal?: AbortSignal }): Promise<string[]> {
   const base = cfg.baseUrl.trim().replace(/\/+$/, '')
-  if (!base) throw new Error('接口地址（baseUrl）为空')
+  if (!base) throw new Error('推演通道未填接口地址')
   const headers: Record<string, string> = {}
   if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
   const res = await fetch(`${base}/models`, { method: 'GET', headers, signal: opts?.signal })

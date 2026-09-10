@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { ArrowLeft, Check, Download, Plus, Trash, Upload, X } from '@phosphor-icons/react'
+import { ArrowLeft, Check, Download, Eye, EyeSlash, Plus, Trash, Upload, X } from '@phosphor-icons/react'
 
 import type { Lorebook, LorebookEntry, SillyTavernLorebookExport } from '../../lib/tavernlike/types'
 import type { MultiImportInput } from '../../lib/tavernlike/importer'
@@ -212,6 +212,9 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
     setEditSel(e.id)
   }
   const delEntry = (entryId: string) => setEditBook((b) => (b ? removeEntry(b, entryId) : b))
+  /** 预设调配 · 整本批量开关：一键全开／全关本世界书内的词条 */
+  const setAllEntries = (on: boolean) =>
+    setEditBook((b) => (b ? { ...b, entries: b.entries.map((e) => ({ ...e, enabled: on })), updatedAt: Date.now() } : b))
 
   /* modal 形态：整页遮罩 + 居中面板；embedded：无遮罩，面板铺满可用宽度 */
   const panelStyle: CSSProperties = embedded
@@ -331,7 +334,7 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
 
         {onClose ? (
           <div className={css.foot}>
-            <span className="muted tiny">世界书数据与激活标记保存在本地（Dexie · zts-lore），不含任何接口密钥。</span>
+            <span className="muted tiny">世界书数据与激活标记保存在本终端本地，不含任何接口密钥。</span>
             <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={onClose}>
               完成
             </button>
@@ -344,6 +347,8 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
 
   /* ================= 编辑视图 ================= */
   const selected = editSel ? editBook.entries.find((e) => e.id === editSel) : null
+  /** 已启用词条数（预设调配计数，关闭者不计） */
+  const onCount = editBook.entries.filter((e) => e.enabled !== false).length
 
   const edit = (
     <div className={`${css.panel} ${css.wide}`} style={panelStyle} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : 'true'} aria-label="世界书编辑">
@@ -374,7 +379,20 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
       <div className={css.editBody}>
         <aside className={css.entryList}>
           <div className={css.entryListHead}>
-            <span className="muted tiny">词条（{editBook.entries.length}）</span>
+            <span className="muted tiny">
+              词条（{editBook.entries.length}）
+              {onCount < editBook.entries.length ? (
+                <b className={css.offCount}> · 已关 {editBook.entries.length - onCount}</b>
+              ) : null}
+            </span>
+            <span className={css.bulkSw}>
+              <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => setAllEntries(true)}>
+                全开
+              </button>
+              <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => setAllEntries(false)}>
+                全关
+              </button>
+            </span>
             <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={addEntry}>
               <Plus size={12} weight="bold" /> 新增词条
             </button>
@@ -384,15 +402,24 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
               <div className="muted tiny" style={{ padding: 10 }}>尚无词条。</div>
             ) : (
               editBook.entries.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  className={`${css.entryRow} ${e.id === editSel ? css.isActive : ''}`}
-                  onClick={() => setEditSel(e.id)}
-                >
-                  <b>{e.comment || e.keys[0] || '(未命名词条)'}</b>
-                  <span className="muted tiny">{e.keys.slice(0, 3).join(' / ')}{e.keys.length > 3 ? ' …' : ''}</span>
-                </button>
+                <div key={e.id} className={css.entryWrap}>
+                  <button
+                    type="button"
+                    className={`${css.entryRow} ${e.id === editSel ? css.isActive : ''} ${e.enabled === false ? css.isOff : ''}`}
+                    onClick={() => setEditSel(e.id)}
+                  >
+                    <b>{e.comment || e.keys[0] || '(未命名词条)'}</b>
+                    <span className="muted tiny">{e.keys.slice(0, 3).join(' / ')}{e.keys.length > 3 ? ' …' : ''}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={css.entrySw}
+                    title={e.enabled === false ? '已关闭 · 不参与注入（点此启用）' : '已启用 · 点此关闭'}
+                    onClick={() => patchEntry(e.id, { enabled: e.enabled === false })}
+                  >
+                    {e.enabled === false ? <EyeSlash size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -449,6 +476,14 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
                     onChange={(e) => patchEntry(selected.id, { constant: e.target.checked })}
                   />
                   常驻（不按关键词，始终注入）
+                </label>
+                <label className={css.ck}>
+                  <input
+                    type="checkbox"
+                    checked={selected.enabled !== false}
+                    onChange={(e) => patchEntry(selected.id, { enabled: e.target.checked })}
+                  />
+                  启用（关闭后本词条不参与注入，常驻亦然）
                 </label>
                 <button className="btn btn--ghost" style={{ fontSize: 11, marginLeft: 'auto' }} onClick={() => delEntry(selected.id)}>
                   <Trash size={12} weight="bold" /> 删除该词条

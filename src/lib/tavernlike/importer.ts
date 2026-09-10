@@ -43,7 +43,7 @@ const REVERSE_LOGIC_MAP: Record<LorebookEntry['selectiveLogic'], number> = {
 export function importLorebook(data: SillyTavernLorebookExport): Omit<Lorebook, 'id' | 'createdAt' | 'updatedAt'> {
   const rawEntries = Object.values(data.entries || {});
   const entries: LorebookEntry[] = rawEntries
-    .filter((e) => !e.disable && !e.excluded)
+    .filter((e) => !e.excluded)
     .map((e) => ({
       id: crypto.randomUUID(),
       keys: e.key || [],
@@ -57,6 +57,8 @@ export function importLorebook(data: SillyTavernLorebookExport): Omit<Lorebook, 
       selective: e.selective ?? false,
       selectiveLogic: LOGIC_MAP[e.selectiveLogic ?? 1] ?? 'not_all',
       constant: e.constant ?? false,
+      // ST 的 disable 词条不再丢弃：保留并入册，供「预设调配」逐条开关
+      enabled: e.disable !== true,
       probability: e.useProbability ? (e.probability ?? 100) : 100,
       useProbability: e.useProbability ?? false,
       addMemo: e.addMemo ?? false,
@@ -107,7 +109,7 @@ export function exportLorebook(lorebook: Lorebook): SillyTavernLorebookExport {
       order: e.order,
       position: REVERSE_POSITION_MAP[e.position] as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7,
       role: e.role ?? 0,
-      disable: false,
+      disable: e.enabled === false,
       probability: e.probability,
       depth: e.depth ?? 4,
       group: e.group ?? '',

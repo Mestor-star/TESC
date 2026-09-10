@@ -19,6 +19,8 @@ const v1: Evt[] = [
       + '一名被拘束服捆缚的漆黑少女自称「魔王」，与他分食糖果，随即其苍蓝「影」血洗全船；心叶落海自救，还反手救了不会游泳的拉法。'
       + '魔王临别立约：「看看是你先抵达青春，还是我先抵达终焉。」',
     entities: ['——'], chars: [], bond: {},
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['kuro-no-maou'],
   },
   {
     id: 'v1-2', group: '卷1', order: 2, phase: '序章「船与影」／第1话「这里是，终末停滞委员会」', day: '第 0 日',
@@ -26,6 +28,8 @@ const v1: Evt[] = [
     summary: '已溺死的心叶被「女神」召唤。自称女仆的丝线人偶露娜悉心照料他，却藏着一句被读到的恐惧心声。心叶拒绝神授能力，只想做个「普通的善良的人」。'
       + '他识破转生之门内是灵魂蓄积器TM 的「肉块」——所谓永恒的幸福梦，实为吞人的骗局。露娜拼死指向「快逃」被坠石压碎，恋兔光率恋兔队（梅芙、小柴喵呜随行）破门而入，把女神像连同骗局一起砸成星尘。',
     entities: ['NO.3922 灵魂蓄积器TM'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau'],
     bond: B({ luna: 55, hikari: 18, mefisa: 14, nyau: 10 }),
   },
   {
@@ -34,6 +38,8 @@ const v1: Evt[] = [
     summary: '露娜以「境界领域商会制造的反现实实体」受审，被判处即刻销毁。心叶一跃护在她身前——在骑士的刀剑下搏斗、断锁骨夺枪，靠读心伪装出「能预知未来」的底牌。'
       + '会长艾莉芙・安纳托利亚笑着裁定：两人以「苍之学园 体验入学」名义收留，由弗恩・西蒙监视。事件至此完成——你正式成为终末停滞委员会的一员。',
     entities: ['——'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'alive-anatolia', 'vern-simon'],
     bond: B({ luna: 78, hikari: 38, mefisa: 45, nyau: 40 }),
     unlock: true,
   },
@@ -43,6 +49,8 @@ const v1: Evt[] = [
     summary: '艾莉芙向心叶讲述「终末」的真面目——宇宙因寿命将尽，「终末即科学的漏洞、强烈指向性的显露」，而委员会只是想让世界「停滞」下来。'
       + '小柴拉着他与露娜逛集市买菜，宿舍里吃她与露娜合做的晚餐；梅芙为浴室驱逐一事深夜入房道歉，替他按摩满身旧伤。心叶第一次尝到「朋友、吃饭、疗伤」的普通生活。',
     entities: ['——'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'alive-anatolia', 'vern-simon'],
     bond: B({ luna: 86, hikari: 48, mefisa: 55, nyau: 50 }),
   },
   {
@@ -52,6 +60,8 @@ const v1: Evt[] = [
       + '狂热者・格尔以言语命令几乎团灭四人——小柴最后用沙姆希尔，把子弹与「新视野号」探测器的载荷舱交换位置，将不死者放逐进无声的真空宇宙。'
       + '小柴认可了他：「今天……还算挺帅的哦。」',
     entities: ['NO.819 脏器公寓', 'NO.819-A 狂热者・格尔', 'NO.2420 二级天使・黑曜石'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'reiya'],
     bond: B({ luna: 86, hikari: 52, mefisa: 57, nyau: 68 }),
   },
   {
@@ -61,6 +71,8 @@ const v1: Evt[] = [
       + '面具以坐标心声向心叶呼救，他滴血尝试，差点被「人格篡夺」吞噬内心——低语者读取到的剧烈噪音反而救了他。露娜以铁丝贯穿面具。'
       + '两人在研究所深处互诉了此生最初的信任：「你相信我吗？」「……我相信你啦。」这里的主人是梅芙的兄长——泰尔米别克・简别科娃。',
     entities: ['NO.1821 丝绸小丑的残骸', 'NO.228 泥塑面具'], chars: ['luna', 'mefisa'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'mefisa', 'vern-simon'],
     bond: B({ luna: 93, hikari: 54, mefisa: 62, nyau: 68 }),
   },
   {
@@ -69,6 +81,8 @@ const v1: Evt[] = [
     summary: '出发前夕，恋兔提着「布奇」点心来探望梅芙，一句话点破她对心叶的在意。深夜，露娜发现小柴「沙姆希尔」的追踪贴纸，认定委员会给两人上了保险，'
       + '遂劝心叶一起逃走：「我可以赌上一生来保护你。」心叶摇头——「嘴里一直有血的味道，想在这里赎罪」。露娜强忍泪意离去，却并未真的逃，而是以丝线尾随舰队。',
     entities: ['——'], chars: ['luna', 'hikari', 'mefisa'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa'],
     bond: B({ luna: 95, hikari: 58, mefisa: 64, nyau: 68 }),
   },
   {
@@ -77,6 +91,8 @@ const v1: Evt[] = [
     summary: '心叶与梅芙乘弹痕「八脚马」潜航，误入 R 值崩坏的异界，会见数千亿年前旧人类留下的巨型机械「守护者」——它正把被时间冻结的旧人类粉碎制成「泥塑面具」以求复活。'
       + '守护者将两人视为复兴材料。梅芙驾驶八脚马断后，露娜变作丝线「心血来潮」现身，解放了天幕下被缚的旧人类。',
     entities: ['NO.228-A 守护者'], chars: ['mefisa', 'luna'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['mefisa', 'luna'],
     bond: B({ luna: 95, hikari: 60, mefisa: 76, nyau: 68 }),
   },
   {
@@ -85,6 +101,8 @@ const v1: Evt[] = [
     summary: '为守护露娜，心叶再冲阵、被万针刺穿濒死。露娜以己命为他缝伤输血，在「我……可以坚持到最后吗」「可以哦」的遗言中缔结使用者契约，解放本源终末「黄金狮子」歼灭守护者群。'
       + '幸存的最大守护者吞尽旧人类化为「死骸机关之神」冲向现实，被恋兔光一记「樱之残影」当空击成星屑。尾声：心叶住院一周，出院夜露娜迁入宿舍，唤他「我的小主人」。',
     entities: ['NO.8288 黄金狮子', 'NO.228-B 死骸机关之神'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'alive-anatolia', 'vern-simon', 'kuro-no-maou'],
     bond: B({ luna: 95, hikari: 78, mefisa: 80, nyau: 72 }),
   },
 ];
@@ -96,6 +114,8 @@ const v2: Evt[] = [
     summary: '「匿名者集会」围绕第 1123 号案件「恋兔光」议定动手之日。一名绯红色长发的少女放话能杀「怪物」恋兔，并指出新近入队的言万心叶'
       + '「似乎具备预知未来的能力，必须优先排除」。心叶与恋兔自此并列成为暗杀目标。',
     entities: ['——'], chars: [], bond: B({ hikari: 78, luna: 95, mefisa: 80, nyau: 72 }),
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['katherine'],
   },
   {
     id: 'v2-2', group: '卷2', order: 2, phase: '第1话「转校生，登场！」／第2话「noapusa」', day: '',
@@ -103,6 +123,8 @@ const v2: Evt[] = [
     summary: '心叶以模拟装置试炼换得「一枚羽」入学苍之学园 1 年 F 班。集市巧遇扭蛋失败的恋兔，被她拉去做模拟战，见识其碾压级实力。'
       + '当夜他梦见白翼少女，觉醒弹痕「noapusa」——使自己变成与目标完全一致的人，使用期间本人的意志不会反映出来。他与兰在实习迷宫「深穴」对赌，用蛮勇打法救了她。',
     entities: ['NO.192 深穴'], chars: ['hikari', 'luna'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'alive-anatolia', 'vern-simon'],
     bond: B({ hikari: 82, luna: 96, mefisa: 80, nyau: 72 }),
   },
   {
@@ -111,6 +133,8 @@ const v2: Evt[] = [
     summary: '会长艾莉芙向恋兔坦白自己「为了他才当上学生会长」，并把心叶托付给她。恋兔队（恋兔、心叶、露娜、梅芙、小柴，外加被卷进来的吴诗涵）'
       + '乘银河铁道前往第 6 区 Corporations，参加三大学园联合的「天空竞技祭」代表战。深夜，恋兔把心叶叫进房间交心，指认暗杀主谋是凯特琳。',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'alive-anatolia', 'youshihan'],
     bond: B({ hikari: 86, luna: 96, mefisa: 82, nyau: 74 }),
   },
   {
@@ -119,6 +143,8 @@ const v2: Evt[] = [
     summary: '开幕式人潮几乎冲垮心叶，露娜让他枕膝。利维坦购物车厢上，小柴与 Corporations 先锋格蕾为晕车药斗法，梅芙与中坚亚历克斯言语结怨。'
       + '回到体育馆，恋兔踢醒藏在被子里、真正的前任队长吴诗涵，发动弹痕「四大凶兽・浑沌」，把三人吞入特训世界。',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'youshihan', 'merwen-gray', 'alex-cave', 'maria'],
     bond: B({ hikari: 88, luna: 96, mefisa: 83, nyau: 75 }),
   },
   {
@@ -128,6 +154,8 @@ const v2: Evt[] = [
       + '时速 2000 公里撞墙取胜，为恋兔队拿下首胜后力竭昏迷。次锋战吴诗涵对玛丽娅：穷奇被反制，其力颠倒胜负，让玛丽娅拿下了胜局。'
       + '四人围在担架边的「队友命」意识自此定型。',
     entities: ['——'], chars: ['nyau', 'hikari', 'mefisa'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['nyau', 'hikari', 'mefisa', 'merwen-gray', 'maria', 'youshihan', 'isis-halid', 'ameria'],
     bond: B({ hikari: 88, luna: 96, mefisa: 83, nyau: 80 }),
   },
   {
@@ -136,6 +164,8 @@ const v2: Evt[] = [
     summary: '梅芙对亚历克斯：八脚马空海两栖游斗，亚历克斯化身「午夜降临」的硬质化之躯。梅芙舍身把八脚马变形为喷射机，将亚历克斯拖上 1 万米、-55℃ 高空，'
       + '冻碎其心脏——自己却早一步溺死，惜败。她打出了全卷最强的一战，也让心叶明白：再输一局，队伍就完了。',
     entities: ['——'], chars: ['mefisa', 'hikari', 'luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['mefisa', 'hikari', 'luna', 'nyau', 'alex-cave'],
     bond: B({ hikari: 90, luna: 96, mefisa: 88, nyau: 80 }),
   },
   {
@@ -145,6 +175,8 @@ const v2: Evt[] = [
       + '开枪自射太阳穴发动 noapusa，变成与菲德拉完全相同的「第二个菲德拉」，令她陷入「谁是真我」的崩坏。两人拼至最后一击，心叶仅凭运气惨胜。'
       + '梅芙含泪抱住脱机的他；吴诗涵留下一句：「当他真的化作怪物时，杀掉他，就是朋友的职责。」',
     entities: ['——'], chars: ['mefisa', 'hikari', 'luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['mefisa', 'hikari', 'luna', 'nyau', 'phidra', 'katherine', 'merwen-gray', 'maria', 'alex-cave', 'ameria'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -154,6 +186,8 @@ const v2: Evt[] = [
       + '露娜假逃回援、蕾雅潜线爆破巨匠；黑之魔王脱困，与心叶重逢后当场告白强吻，随即与巨匠双双行踪不明。'
       + '恋兔在拉普达迎战凯特琳与车轮联军，断臂仍反杀全场——一句「我就是人类」终结了整场战争，凯特琳被擒。',
     entities: ['NO.819-Z 巨匠', 'NO.5000 黑之魔王', 'NO.2421 二级天使・百翼', 'NO.84 天空要塞・拉普达'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'katherine', 'kuro-no-maou', 'reiya', 'merwen-gray', 'alex-cave', 'maria'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -162,6 +196,8 @@ const v2: Evt[] = [
     summary: '凯特琳因涉恐被捕（刑期估逾四百年）；艾美莉亚辞去会长一职，邀她同行去建「漂浮在沙漠上的夜之城」。'
       + '心叶鼓起勇气请梅芙出去玩，恋兔识趣地拖走小柴撮合，梅芙应约。露娜则与蕾雅一拍即合，同游赌场。',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'reiya', 'katherine', 'ameria'],
     bond: B({ hikari: 90, luna: 96, mefisa: 90, nyau: 82 }),
   },
 ];
@@ -173,6 +209,8 @@ const v3: Evt[] = [
     summary: '日本近郊与上野周围检测到巨型传送门预兆，异厅厅长天草清麿向要员说明：这是远超文明规模的外次元入侵。'
       + '被异厅收容的终末「黑之魔王」自称「我家亲爱的最近正好入学苍之学园」，凭「妻子特权」促成了向苍之学园求援的谈判。',
     entities: ['——'], chars: [], bond: B({ hikari: 90, luna: 96, mefisa: 90, nyau: 82 }),
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['kuro-no-maou'],
   },
   {
     id: 'v3-2', group: '卷3', order: 2, phase: '第1话「一定，会很开心的」', day: '',
@@ -180,6 +218,8 @@ const v3: Evt[] = [
     summary: '心叶奉会长之命，把从 Corporations 敲诈转学来的歌姬玛莉亚从狂热粉丝中护送到学生会室，露娜以丝线结界断后。'
       + '一名自称「侦探」的少女自天坠落——她的能力使半径 10 米内的人被因果分为「杀人者／被害者」互相残杀，集市瞬间地狱化。玛莉亚以歌声镇场，死亡人数最终为零。',
     entities: ['D-1293 锁链的侦探'], chars: ['luna', 'hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'alive-anatolia', 'maria'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -188,6 +228,8 @@ const v3: Evt[] = [
     summary: '被拘捕的侦探「废道昏暗」道出全部真相：本境次元称「樱次元」，远端「死灵次元」的尸兵部队瞄准东京上野不忍池底的机密终末「铁之心脏」——'
       + '一旦被毁，「星鲸」的行进路线将改向樱次元，使其全灭。她为救故乡背叛侦探协会而来，随即被「蔷薇的侦探」以木桩穿胸处决。',
     entities: ['D-289 蔷薇的侦探', 'D-1293 锁链的侦探', 'NO.1000 铁之心脏'], chars: [],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['alive-anatolia'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -196,6 +238,8 @@ const v3: Evt[] = [
     summary: '恋兔队随会长赴永田町地下300米·异厅怪异研究所会谈。归途的深夜，露娜独自在街头买烟，遭一名戴骷髅面具、自认「你的同伴」的神秘男拦路——'
       + '他赠她通往异次元的「通行证」劝她逃走，并以复活的半透明「小蕾雅」之电锯断后遁入亚空间。露娜拒绝跳入「喜望峰的大口」，回到心叶身边。',
     entities: ['NO.19 喜望峰的大口'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'alive-anatolia', 'vern-simon', 'kuro-no-maou', 'reiya'],
     bond: B({ hikari: 91, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -205,6 +249,8 @@ const v3: Evt[] = [
       + '第4话，黑之魔王夜宿他床上闹出「夫妻相声」，随后认真求婚立约：「要是你最终没能停滞终末……在世界毁灭之前——我们结婚吧。」心叶答应，但在终末前坚持正常恋爱；'
       + '撞见两人差点逆推的艾莉芙拔出「如散文般」，却只开出一记空枪。',
     entities: ['——'], chars: ['luna'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'alive-anatolia', 'kuro-no-maou'],
     bond: B({ hikari: 92, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -213,6 +259,8 @@ const v3: Evt[] = [
     summary: '心叶被准假回到三年未归的故乡。老屋已人去楼空，屋内却印着某人端正字迹的寻人传单：「我正在找我的家人，他叫言万心叶」——他崩溃大哭，全城无人记得「三三」。'
       + '夜里，提前完成任务的恋兔队全员赶到，温泉、烟花与聚餐。心叶与梅芙并肩玩着烟花棒，小柴和露娜在海边二刀流——这是全卷最治愈的集体羁绊场景。',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau'],
     bond: B({ hikari: 94, luna: 97, mefisa: 92, nyau: 84 }),
   },
   {
@@ -222,6 +270,8 @@ const v3: Evt[] = [
       + '津轻浮游城的死亡光束由白金・斯托里安德独力拦截；上野上空羽化的猩红蝴蝶，其腐雾把人类溶解成无脸怪物。'
       + '梅芙与小柴驾八脚马在高空狙击贴纸目标——小柴一度过度呼吸陷入恐慌，梅芙在绝境中成为她的支柱。',
     entities: ['NO.8401 死灵舰队', 'NO.8402 死灵的浮游城', 'NO.8403 猩红腐败的巨大蝴蝶'], chars: ['mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['mefisa', 'nyau', 'alive-anatolia', 'vern-simon', 'merwen-gray', 'phidra', 'kuro-no-maou'],
     bond: B({ hikari: 94, luna: 97, mefisa: 92, nyau: 86 }),
   },
   {
@@ -239,6 +289,8 @@ const v3: Evt[] = [
       + '阮宝兰以「被压缩的胜利」燃尽生命把火箭推至光速二十倍。变身的「恋兔」与星鲸死斗，显形的两人合体为「黄金之兔」，'
       + '收束六十亿人心声，以一缕金线触到鲸额——原来星鲸是无数人类祈愿凝结、失控暴走的共同幻想。他们说「欢迎回家」，令其含泪消散。',
     entities: ['NO.8389 星鲸', 'NO.87865 艾莉芙・安纳托利亚'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'alive-anatolia', 'vern-simon', 'reiya', 'kuro-no-maou', 'phidra', 'merwen-gray', 'alex-cave'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 86 }),
   },
 ];
@@ -250,6 +302,8 @@ const v4: Evt[] = [
     summary: '黑锤部队队长达娜厄・惠特摩尔以神流式拔刀术斩杀「永恒沉默的狂热者」的开辟者巨匠，正要拘捕时，一名戴骷髅面具的男人唤出「鸟与诗」的亡灵挡下全员、救走巨匠。'
       + '蕾雅闻声认出：「心叶先生……小言？」——全卷最大的悬念由此展开：异次元的心叶，竟与挚友蕾雅牵绊极深。',
     entities: ['NO.819-Z 巨匠', 'NO.8590 骷髅假面之男'], chars: [],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['danae-whitmore', 'nana-kamiru', 'reiya'],
     bond: B({ hikari: 92, luna: 97, mefisa: 92, nyau: 86 }),
   },
   {
@@ -259,6 +313,8 @@ const v4: Evt[] = [
       + '泰尔学长给出单人任务：去卡乌斯学院短期留学。露娜强烈反对，开出「三小时联系一次＋开 GPS」的条件；梅芙冷静解释露娜作为异法机械生命体进不了卡乌斯。'
       + '心叶想读恋兔的心，却被她「防备好」——她嘴上放行：「就让可爱的孩子前去旅行吧。」',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau'],
     bond: B({ hikari: 92, luna: 98, mefisa: 92, nyau: 86 }),
   },
   {
@@ -267,6 +323,8 @@ const v4: Evt[] = [
     summary: '心叶路遇迷路又哭亏七亿的朋克少女达娜厄（实为黑锤部队队长），随后被艾梅与蕾雅接应。任务揭晓：三日后的「篝火之夜」实为封印「线之人」的火之仪式。'
       + '艾梅强制给他戴上会发讯号的「抑视眼镜」，读心就此失效——心叶第一次体会到听不见心声的寂静。',
     entities: ['NO,951 线之人'], chars: ['hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'danae-whitmore', 'emei', 'reiya'],
     bond: B({ hikari: 92, luna: 98, mefisa: 92, nyau: 86 }),
   },
   {
@@ -275,6 +333,8 @@ const v4: Evt[] = [
     summary: '议长丘库斯以斩击「人类天秤」设公平契约审讯心叶。心叶亲口推理出真相：骷髅假面之男，是「露娜小姐死去的那个次元的我」——另一个次元的言万心叶。'
       + '蕾雅以高洁的气魄力保他过关。当夜神流奈奈自曝真正的委托；蕾雅夜告心叶：异次元的他与她结为夫妻，幽灵蕾雅还戴着同款婚戒。',
     entities: ['NO,8590 骷髅假面之男'], chars: ['hikari', 'luna'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'reiya', 'danae-whitmore', 'emei', 'nana-kamiru'],
     bond: B({ hikari: 92, luna: 98, mefisa: 92, nyau: 86 }),
   },
   {
@@ -283,6 +343,8 @@ const v4: Evt[] = [
     summary: '心叶五人组以涂画签订契约进入篝火之国，遭烈焰吞没后从两千余米高空坠落，靠艾梅「奥尔良的盟约」（奇迹概率最多 50%）与蘑菇林缓冲生还。'
       + '夜里心叶梦见满身伤痕的「斩击的天使」，枕边多了一枚白金戒指——新的斩击「a Session.」。他第一次知道，自己「被篝火喜欢着」。',
     entities: ['NO,951 线之人'], chars: [],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['reiya', 'danae-whitmore', 'nana-kamiru', 'emei'],
     bond: B({ hikari: 92, luna: 98, mefisa: 92, nyau: 86 }),
   },
   {
@@ -292,6 +354,8 @@ const v4: Evt[] = [
       + '恋兔夜谈：请心叶把白金戒指戴在自己手上试验，毫无反应——回到房间后，她自白「跟他在一起的时候，心跳老是会加速」，又因「还有梅芙在」而强行压下。'
       + '心叶向她坦承失去战力后的自卑，被她一把抱住安慰。',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'reiya', 'danae-whitmore', 'nana-kamiru', 'emei'],
     bond: B({ hikari: 94, luna: 98, mefisa: 92, nyau: 87 }),
   },
   {
@@ -300,6 +364,8 @@ const v4: Evt[] = [
     summary: '火之仪式上，当恋兔要轰藏匿于天花板的假面心叶时，艾梅以海军刀贯穿恋兔手背——她就是放走巨匠、藏匿假面心叶的背叛者。'
       + '艾梅视角揭晓其身世：她自出生起便继承异次元自己托付的记忆，那句「我，相信他的冒险」赌上了整个世界。众人破入线之人巨体，追往塔顶。',
     entities: ['NO,951 线之人'], chars: ['hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'reiya', 'danae-whitmore', 'nana-kamiru', 'emei'],
     bond: B({ hikari: 94, luna: 98, mefisa: 92, nyau: 87 }),
   },
   {
@@ -309,6 +375,8 @@ const v4: Evt[] = [
       + '立下「沉默之律」——从此此国再无时间旅行、无人能操纵人类。失去回溯能力的线之人被恋兔重创，遁入异次元裂缝，扬言「下次一定要杀了终末」。'
       + '假面心叶将女儿托付给艾梅、嘱其营救，留下「谢谢你……相信我……」后阖目。卡乌斯众人访苍叙旧——心叶与蕾雅在星夜立下再会之约。',
     entities: ['NO,9510 紫之大树', 'NO,8590 骷髅假面之男', 'NO,951 线之人'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'reiya', 'emei', 'danae-whitmore', 'nana-kamiru', 'alive-anatolia', 'vern-simon'],
     bond: B({ hikari: 94, luna: 98, mefisa: 92, nyau: 87 }),
   },
 ];
@@ -320,6 +388,8 @@ const v5: Evt[] = [
     summary: '心叶向恋兔学姐告白被拒——「我没有把心叶当成那样的对象来看过」。回家与妹妹看恐怖片后，深夜一名半透明、缠苍蓝磷光、穿女仆装的大姐姐含泪现身，'
       + '用银丝往他左手无名指戴上戒指后，他昏了过去。',
     entities: ['——'], chars: ['hikari', 'luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'nyau', 'touyi-caojiro', 'huda-nayume', 'yuina-yoshito'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 88 }),
   },
   {
@@ -328,6 +398,8 @@ const v5: Evt[] = [
     summary: '乃梦姐鉴定出戒指（内刻「a Session.」）是密度 29g/cc、地球不存在的物质。异厅检测到现实变动波长而至，逮捕乃梦姐——但她早备好一枚假戒指任其查获；'
       + '真戒指在事发前已交由草次郎保管，并未落入异厅手中。心叶由此窥见噬鯱者众的另一段人生：乃梦见新长官利光・温彻斯特与怪异之王；草次郎见自己在蓝花岛为少女「空」赴死。',
     entities: ['——'], chars: ['nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['nyau', 'huda-nayume', 'touyi-caojiro', 'yuina-yoshito'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 88 }),
   },
   {
@@ -336,6 +408,8 @@ const v5: Evt[] = [
     summary: '试胆分组令心叶与恋兔同行，发烧的他不愿惊动他人，恋兔学姐便带他到开诊所的梅芙家过夜。梅芙听见他说梦话喊「瑠奈」，'
       + '他又无端念出她哥哥「泰尔」的名字令她恐惧，腕上银丝更弹开了她。他羞愧逃离——记忆的裂痕正在把他撕开。',
     entities: ['——'], chars: ['hikari', 'mefisa', 'luna'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'mefisa', 'luna', 'huda-nayume'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 88 }),
   },
   {
@@ -344,6 +418,8 @@ const v5: Evt[] = [
     summary: '琳回忆：她幼时被线之人溺杀，被「艾梅学姐」的幽灵救走，在境界领域商会长大，如今借墨西哥黑帮 Voice 之手袭击书架曼荼罗复仇——Voice 的首领，其实是艾莉芙・安纳托利亚。'
       + '她与喵呜重逢：她一直以为喵呜已死，喵呜也以为她早在十年前便已死去；重逢后她才知道，故乡实为苍之学园所救。㐰八请苍之学园攻略禁书「残响的遗骸」——心叶趁夜与琳走下那本书的阶梯（露娜留在书外地面充当救生索，喵呜也悄悄跟了下去）。',
     entities: ['NO,357 残响的遗骸'], chars: ['luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'nyau', 'xiaochai-lin', 'alive-anatolia'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 92 }),
   },
   {
@@ -352,6 +428,8 @@ const v5: Evt[] = [
     summary: '心叶与琳在试炼中先后「想起一切」——十七年的幸福记忆，被确认为残响制造的拟似世界。两人抱头痛哭后仍互相扶持。'
       + '心叶拜访把「异厅」「自我同一性崩坏耐性」讲给他听的养父，获赠黑色惠比寿「梦想与希望」的祝福。他决意回到会战斗的世界。',
     entities: ['——'], chars: ['luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'nyau', 'xiaochai-lin'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 93 }),
   },
   {
@@ -360,6 +438,8 @@ const v5: Evt[] = [
     summary: '乃梦姐为「保护弟弟妹妹」欲废心叶四肢囚禁一生，被琳与义人打破僵局。出发前夜，喵呜约心叶看流星，女仆小姐自宇宙彼端以丝线传话：「要幸福啊。」'
       + '喵呜在星空下拥抱他、坦白「喵呜一直、一直最喜欢哥哥了」。',
     entities: ['——'], chars: ['luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'nyau', 'huda-nayume', 'yuina-yoshito', 'xiaochai-lin'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 95 }),
   },
   {
@@ -369,6 +449,8 @@ const v5: Evt[] = [
       + '获加护【残响的盟剑】——一生一次、绝对公平的决斗权。归返后，露娜为跨越宇宙救主缩小成幼女；喵呜其实也是走下阶梯的苍之学园本尊。'
       + '留在那世界以音乐相送的恋兔学姐与梅芙，成了心叶心头抹不去的回声。',
     entities: ['NO,357 残响的遗骸'], chars: ['luna', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'nyau', 'huda-nayume', 'touyi-caojiro', 'yuina-yoshito', 'kuro-no-maou'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 95 }),
   },
 ];
@@ -380,6 +462,8 @@ const v6: Evt[] = [
     summary: '心叶以「残响的盟剑」向线之人宣战。被残响的遗骸选中的裁判「黑白的爱丽丝」现身，抽签定局：协力者四名、一个月后、第零区「尸肉神殿」，'
       + '开赛前杀任何人即败。缩小后的露娜束缚 Voice 俘虏并扶住他，喵呜以沙姆希尔传送归家——琳、喵呜、露娜、奈奈先后出言为他壮胆。',
     entities: ['——'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'xiaochai-lin', 'nana-kamiru', 'vern-simon'],
     bond: B({ hikari: 92, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -388,6 +472,8 @@ const v6: Evt[] = [
     summary: '心叶误闯出浴被恋兔揍飞；晚餐介绍琳、解释露娜变小的缘由，奈奈留宿。睡衣派对聊恋爱八卦时，喵呜正式确立「妹妹」的身份。'
       + '梅芙以理性消去尴尬的记忆，露娜仍是贴身女仆。',
     entities: ['——'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'nana-kamiru', 'xiaochai-lin'],
     bond: B({ hikari: 92, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -396,6 +482,8 @@ const v6: Evt[] = [
     summary: '网红直播的「能成为天使的歌」录像被公开——据说看过的人，会渐渐变成天使。Corporations 代理会长菲德拉・雷诺兹分析遗骸与「注视着你」的片羽，主张派刺客并招揽「圣诞老人」。'
       + '恋兔以队长身份被点名出战，心叶同行。',
     entities: ['NO.8999 艾美莉亚·玛克比尔'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'phidra', 'vern-simon'],
     bond: B({ hikari: 93, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -404,6 +492,8 @@ const v6: Evt[] = [
     summary: '菲德拉以「十轮的铁线莲」千年前的约定请出圣诞老人。纽约用快闪演出「欢迎」艾美莉亚——她现身自辩「没有支配，只是强化并使人幸福」，没收了喵呜的沙姆希尔。'
       + '心叶读得圣诞老人对艾美莉亚隐约的悔意与厌烦。',
     entities: ['NO.8999 艾美莉亚·玛克比尔'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'phidra', 'ameria', 'alex-cave'],
     bond: B({ hikari: 93, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -412,6 +502,8 @@ const v6: Evt[] = [
     summary: '艾美莉亚个体制裁圣诞老人；圣诞老人点破她「八岁想当弟子」的旧缘，劝她回家被拒。夜里奈奈向心叶坦承骗局、让他读尽内心，「要不要抱我」遭他以'
       + '「你并非真的爱到赌命」婉拒。窗外，恋兔看见两人亲密，误会悄然升起。',
     entities: ['NO.8999 艾美莉亚·玛克比尔'], chars: ['hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'nana-kamiru', 'ameria'],
     bond: B({ hikari: 94, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -420,6 +512,8 @@ const v6: Evt[] = [
     summary: '黑之魔王袭击美国第四舰队，放出瞄准遗骸的灵气炮，被凯特琳徒手挡下、落海败走。晚九时的作战会议定下哥伦比亚大学／自由女神像二选一的判断；'
       + '心叶读众人记忆后与恋兔夜赴教堂，触碰了那道「伤痕」。',
     entities: ['NO.8999 艾美莉亚·玛克比尔', 'NO.0001 世界之种'], chars: ['hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'mefisa', 'nyau', 'kuro-no-maou', 'katherine', 'isis-halid'],
     bond: B({ hikari: 95, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -428,6 +522,8 @@ const v6: Evt[] = [
     summary: '会谈破裂，心叶判言「与杀人无异」。恋兔宣布「独断的恐怖袭击」破窗而出，圣诞魔法之雪使数万人丧失战意；凯特琳截击恋兔，心叶与奈奈潜入自由女神像地下。'
       + '恋兔为掩护二人独自留下——这份守护式的爱，是她从未说出口的。',
     entities: ['NO.8999 艾美莉亚·玛克比尔', 'NO.9014 艾美莉亚之箱'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'katherine', 'nana-kamiru', 'ameria', 'merwen-gray', 'yiregel', 'alex-cave', 'phidra'],
     bond: B({ hikari: 96, luna: 98, mefisa: 90, nyau: 95 }),
   },
   {
@@ -438,6 +534,8 @@ const v6: Evt[] = [
       + '艾美莉亚遂统一全人类、只身挑战宇宙根源，败于无限后以到达点抹除自身，令世人遗忘。世界恢复日常，恋兔在病房照料心叶直至出院，嘴上却死不承认。'
       + '喵呜向恋兔剖白「以妹妹的身份爱着哥哥」；露娜始终牵着心叶的手。深夜居酒屋里，西蒙与心叶讨论线之人决斗的五人名单——心叶写下挚友「东夷草次郎」。',
     entities: ['NO.8999 艾美莉亚·玛克比尔', 'NO.0001 世界之种'], chars: ['hikari', 'luna', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'luna', 'mefisa', 'nyau', 'ameria', 'vern-simon'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 96 }),
   },
 ];
@@ -457,6 +555,8 @@ const ga2t3: Evt[] = [
       + '心叶剖白「我只是拼命地，不想被讨厌而已」，获赠十二万手镯并被表白「我想让你喜欢上我」。数日后茶会，恋兔与西蒙就「第一次约会送12万」「不携护卫」轮番吐槽会长；'
       + '艾莉芙坦白眼叶陪她复刻亡母唯一做过的甜点「塔什·卡代夫」。',
     entities: ['——'], chars: ['hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'alive-anatolia', 'vern-simon'],
     bond: B({ hikari: 91, luna: 96, mefisa: 90, nyau: 82 }),
     script: [
       { who: 'you', text: '……我只是拼命地，不想被讨厌而已。', note: '— 第12区咖啡店 · 对会长剖白' },
@@ -472,6 +572,8 @@ const ga3t4: Evt[] = [
       + '心叶讲起小学进寺院带走叔叔贴满贴纸的游戏机、靠帮孩子攻略 BOSS 获得归属感的往事；小柴也想起奶奶每年生日做的「猪肉纱笼卷」与九岁那年让奶奶难过的事。'
       + '日落前约定「一定要再一起玩」，随后两人下厨做宫廷料理。小柴胸口「轻轻一紧」，却自欺为「大概是肚子饿了吧」。',
     entities: ['——'], chars: ['nyau', 'hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['nyau', 'hikari'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 87 }),
     script: [
       { who: 'nyau', text: '一定要再一起玩……这是约定哦。', note: '— 恋兔宿舍 · 对心叶学长' },
@@ -484,6 +586,8 @@ const ga3t4: Evt[] = [
       + '恋兔光以掌中小吉他轰出陨石坑消灭终末，却被副会长派系「尖啸之枪」从天而降灭口。队长吴诗涵以盾相护、抵达「到达点」，巨翼黑光吞没白光，救下恋兔光后倒下。'
       + '现框：小吴每周来访，恋兔光抽走文件给她看鳌虾条目，二人同塌睡午觉——「……啊。有小吴的味道。」',
     entities: ['NO.2873 魇视鳌虾', 'NO.1897 99％圣诞帽'], chars: ['hikari'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['hikari', 'youshihan'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 87 }),
     script: [
       { who: 'hikari', text: '——不管对手有多么可怕，爱和勇气都是无敌的！', note: '— 沙漠决战 · 恋兔光（六年前）' },
@@ -497,6 +601,8 @@ const ga3t4: Evt[] = [
       + '心叶弹痕 noapusa 已坏且记忆被抹，只能靠读心（连动物之心都读）带格蕾找水觅食。长居日久，二人在树屋相恋数年、直至格蕾怀孕……'
       + '文末揭示真相：那是 No.823 生成的极小型人造人在「无人岛模式」下的观测人生；现实中泰尔立刻解开二人，格蕾客套告辞。',
     entities: ['NO.823 人造仿生人类观测套件'], chars: ['luna'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'merwen-gray'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 87 }),
     script: [
       { who: 'other', text: '明明只是从漫画里学来的半吊子知识，还一脸头头是道的样子。', speaker: '格蕾（心声）', note: '— 无人岛 · 读心' },
@@ -510,6 +616,8 @@ const ga3t4: Evt[] = [
       + '她用弹痕「八脚马」执行正义，把他拖回四个月没回的公寓强制大扫除，又用「无限图书馆」逼问出哥哥正碰触连发源地书架曼荼罗都未能掌握的禁忌课题。'
       + '吃炒乌冬（拉格曼）时，梅芙才得知想趁「八脚马还在身边」去旅行，泰尔则打算留校继续研究终末。',
     entities: ['——'], chars: ['mefisa'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['mefisa'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 87 }),
     script: [
       { who: 'mefisa', text: '恋兔总是会唠叨要吃肉……想给心叶同学喂胖一点。', note: '— 做饭时的心里话' },
@@ -522,6 +630,8 @@ const ga3t4: Evt[] = [
       + '席间西蒙坦白家里寄来婚约候补名单，却突然对黛丝克告白式挖角——「我今天，是为了见你而来的」「黛丝克。我，想要你」，请她转学苍之学园加入学生会。'
       + '黛丝克以「拒绝全部婚约候补」「每月一次两人 AA 的会后例会」为条件应允，并揭穿娜蒂雅白操忙——她早料到会被挖角、打算主动出击。',
     entities: ['——'], chars: [],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['vern-simon'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 87 }),
     script: [
       { who: 'other', text: '黛丝克。我，想要你。', speaker: '弗恩·西蒙', note: '— 派对会场 · 挖角告白' },
@@ -534,6 +644,8 @@ const ga3t4: Evt[] = [
       + '露娜赌气跃上屋顶消失。心叶独自在空教室等——露娜果然来了，坦承不爱冬天：故乡是宇宙飞船，「只有在战场上」才有寒冷，「总觉得，会变得很寂寞」。'
       + '二人和好相拥，跨年烟花绽放。',
     entities: ['——'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
+    // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
+    cast: ['luna', 'hikari', 'mefisa', 'nyau'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 88 }),
     script: [
       { who: 'luna', text: '……别……别太急着变成大人啊……别把我一个人丢下。', note: '— 空教室 · 跨年烟花' },

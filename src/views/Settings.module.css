@@ -127,6 +127,24 @@
   padding: 8px 11px;
   cursor: pointer;
 }
+/* 预设调配：已接管几本书的小徽标 */
+.tuneBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--amber, #ffb347);
+  color: #12131a;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .schemeRow.isSel { border-color: var(--amber); }
 .schemeRow:hover { border-color: var(--line-3); }
 .schemeMain {

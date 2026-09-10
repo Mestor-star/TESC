@@ -1,20 +1,16 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { ArrowRight, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { Linkified } from '../components/Linkified'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
-import { CHARACTERS } from '../data/chars'
+import { rosterRowOf, rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import { clock } from '../lib/format'
 import type { RecordMode } from '../data/types'
 
 import css from './Saga.module.css'
-
-const CHAR_META: Record<string, { name: string; sigil: string; hue: string }> = Object.fromEntries(
-  CHARACTERS.map((c) => [c.id, { name: c.name, sigil: c.sigil, hue: c.hue }]),
-)
 
 const REC_MODE_LABEL: Record<RecordMode, string> = {
   online: '在线推演',
@@ -28,11 +24,17 @@ function seqOf(eventId: string): number {
 }
 
 export function Saga() {
-  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records } = useTerminal()
+  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile } = useTerminal()
 
   const focusIdx = useMemo(() => TIMELINE.findIndex((e) => !epDone[e.id]), [epDone])
   const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
   const focusEv = focusIdx >= 0 ? TIMELINE[focusIdx] : null
+  /** 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
+  const castRows = useMemo(() => (focusEv ? rosterRowsOf(focusEv) : []), [focusEv])
+  const openProfile = useCallback((id: string) => {
+    requestProfile(id)
+    navigate('archive')
+  }, [requestProfile, navigate])
   const displayOp = operatorName.trim() ? operatorName : '言万心叶'
   const pct = TIMELINE.length ? Math.round((doneCount / TIMELINE.length) * 100) : 0
 
@@ -133,20 +135,27 @@ export function Saga() {
                   </div>
                 ) : null}
 
-                {(focusEv.chars.length ? focusEv.chars : CHAR_ORDER).length > 0 ? (
+                {castRows.length > 0 ? (
                   <div className={css.secLabel}>出场角色 · 羁绊快照（含偏移）</div>
                 ) : null}
                 <div className={css.charGrid}>
-                  {(focusEv.chars.length ? focusEv.chars : CHAR_ORDER).map((id) => {
-                    const c = CHAR_META[id]
-                    if (!c) return null
+                  {castRows.map((c) => {
+                    const id = c.id
                     const met = isMet(id)
                     const base = focusEv.bond[id as keyof typeof focusEv.bond]
                     const canon = typeof base === 'number' ? base : 0
                     const off = offsetOf(id)
                     const cur = bondNow(id)
                     return (
-                      <div key={id} className={css.charRow} style={{ '--c': c.hue } as CSSProperties}>
+                      <button
+                        key={id}
+                        type="button"
+                        data-saga-cast={id}
+                        className={css.charRow}
+                        style={{ '--c': c.hue } as CSSProperties}
+                        onClick={() => openProfile(id)}
+                        title={met ? `调阅 ${c.name} 的档案` : `${c.name} 的档案尚未显影`}
+                      >
                         <span className="glyph" style={{ '--g': c.hue, width: 30, height: 30 }}>
                           <span>{c.sigil}</span>
                         </span>
@@ -165,7 +174,7 @@ export function Saga() {
                           ) : null}
                         </span>
                         <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>{met ? `基准 ${canon}` : '未遇见'}</span>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -255,7 +264,8 @@ export function Saga() {
             </div>
             <div className={css.widgetBody}>
               {CHAR_ORDER.map((id) => {
-                const c = CHAR_META[id]
+                const c = rosterRowOf(id)
+                if (!c) return null
                 const met = isMet(id)
                 const v = bondNow(id)
                 const off = offsetOf(id)

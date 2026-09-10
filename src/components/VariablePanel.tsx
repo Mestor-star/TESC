@@ -106,7 +106,7 @@ export function VariablePanel() {
       return
     }
     if (flagOf(key) !== undefined) {
-      push('warn', '同名变量已存在', `「${key}」已在用户变量中，可直接编辑。`, false)
+      push('warn', '同名变量已存在', `「${key}」已在命名变量中，可直接编辑。`, false)
       return
     }
     const parsed = parseVal(nType, nRaw)
@@ -183,11 +183,11 @@ export function VariablePanel() {
 
   return createPortal(
     <div className={css.mask} data-vars-panel="1" onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}>
-      <div className={css.panel} role="dialog" aria-modal="true" aria-label="变量系统">
+      <div className={css.panel} role="dialog" aria-modal="true" aria-label="命名变量">
         <div className={css.head}>
           <div>
             <div className={css.kicker}>VARIABLE / REGISTRY</div>
-            <b className={css.title}>变量系统</b>
+            <b className={css.title}>命名变量</b>
           </div>
           <div className={css.headActs}>
             <button className={`btn btn--ghost ${css.iconBtn}`} onClick={close} aria-label="关闭变量面板">
@@ -203,7 +203,7 @@ export function VariablePanel() {
           </div>
 
           <div className={css.secHead}>
-            <b>用户变量</b>
+            <b>命名变量</b>
             <span className="muted tiny">{rows.length} 个 · 可读写</span>
             <div style={{ marginLeft: 'auto' }}>
               {!adding ? (
@@ -233,7 +233,7 @@ export function VariablePanel() {
           ) : null}
 
           {rows.length === 0 && !adding ? (
-            <div className={css.empty}>还没有变量。点「新增变量」加一条，或让 AI 在推演中经指令写入。</div>
+            <div className={css.empty}>还没有变量。按「新增变量」加一条，或由导演在推演中经事件指令写入。</div>
           ) : (
             <div className={css.list}>
               {rows.map(([key, v]) => {
@@ -276,7 +276,7 @@ export function VariablePanel() {
                             style={{ fontSize: 11 }}
                             onClick={() => doDel(key)}
                             onBlur={() => setDelKey((d) => (d === key ? null : d))}
-                            title={delKey === key ? '再次点击确认删除' : '删除'}
+                            title={delKey === key ? '再按一次 · 确认删除' : '删除'}
                             aria-label={`删除 ${key}`}
                           >
                             {delKey === key ? '确认' : <Trash size={13} weight="bold" />}
@@ -293,7 +293,7 @@ export function VariablePanel() {
           <div className={css.divider} />
 
           <div className={css.secHead}>
-            <b>系统派生 · 只读</b>
+            <b>终端派生 · 只读</b>
             <span className="muted tiny">实时现值 · 不落档</span>
           </div>
           <div className={css.sysList}>
@@ -307,7 +307,7 @@ export function VariablePanel() {
         </div>
 
         <div className={css.foot}>
-          <span className="muted tiny">用户变量随世界状态（world.flags）存档，不涉接口密钥。</span>
+          <span className="muted tiny">命名变量随世界状态一并留存，不涉推演通道。</span>
           <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={close}>
             完成
           </button>

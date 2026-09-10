@@ -99,6 +99,43 @@ export async function deleteBook(id: string): Promise<void> {
   if (cur.includes(id)) await setBookActive(id, false)
 }
 
+/* ---------- 预设调配 · 逐条开关 ----------
+   世界书自身的 enabled 是「书上的笔迹」；预设自带的开关集是「套用时才覆上去的一层滤网」。
+   套用之前预设只是本地一份记录，不碰任何书；套用之时整层覆盖（这正是预设的意义）。 */
+
+/** 快照指定世界书的「关闭词条」集（bookId → 已关闭的条目 id）；供预设捕捉 */
+export async function snapshotEntryOff(bookIds: string[]): Promise<Record<string, string[]>> {
+  const want = new Set(bookIds)
+  const out: Record<string, string[]> = {}
+  for (const b of await listAllBooks()) {
+    if (!want.has(b.id)) continue
+    out[b.id] = b.entries.filter((e) => e.enabled === false).map((e) => e.id)
+  }
+  return out
+}
+
+/** 以预设的「关闭词条」集覆盖世界书（未列入者一律启用）；只动集合中出现的书 */
+export async function applyEntryOff(off: Record<string, string[]>): Promise<void> {
+  for (const b of await listAllBooks()) {
+    const offIds = off[b.id]
+    if (!offIds) continue
+    const dead = new Set(offIds)
+    let changed = false
+    const entries = b.entries.map((e) => {
+      const on = !dead.has(e.id)
+      if ((e.enabled !== false) === on) return e
+      changed = true
+      return { ...e, enabled: on }
+    })
+    if (changed) await saveBook({ ...b, entries })
+  }
+}
+
+/** 当前激活世界书的「关闭词条」集（供 UI 显示预设滤网是否与现状一致） */
+export async function activeEntryOff(): Promise<Record<string, string[]>> {
+  return snapshotEntryOff(await getActiveLorebookIds())
+}
+
 /* ---------- ST JSON 导入导出（中性文案在 importer 内兜底） ---------- */
 
 export async function importStLorebook(data: SillyTavernLorebookExport): Promise<Lorebook> {

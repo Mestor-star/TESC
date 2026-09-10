@@ -209,3 +209,27 @@
   .root { overflow: auto; align-items: flex-start; }
   .inner { padding: 30px 8px 40px; }
 }
+
+/* —— 自动存档条（与手动槽位并列，可单独读取） —— */
+.autoCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 13px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--amber, var(--line-3));
+  border-radius: var(--radius, 8px);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 60%),
+    var(--bg-2);
+}
+.autoMain { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.autoKicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.autoName { font-size: 13px; font-weight: 800; overflow-wrap: anywhere; }
+.autoMeta { font-size: 11px; color: var(--ink-mute); }

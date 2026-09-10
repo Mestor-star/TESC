@@ -610,3 +610,24 @@
 .user:hover .rowActs { opacity: 1; }
 .rowActs .linkGo { white-space: nowrap; }
 .rowActs .linkGo + .linkGo { color: var(--steel); }
+
+/* —— 右栏「在场角色」行：点开档案 —— */
+.castRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
+}
+.castRow:hover {
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+  border-color: color-mix(in srgb, var(--c) 40%, transparent);
+}

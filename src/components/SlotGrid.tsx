@@ -71,7 +71,7 @@ export function SlotGrid({ mode }: { mode: 'load' | 'manage' }) {
               </>
             ) : (
               <span className={css.emptyTxt}>
-                {mode === 'load' ? '尚无存档，可从「行动继续」进入后再于游戏中存读档。' : '尚无存档。可把当前进度保存到这一槽。'}
+                {mode === 'load' ? '尚无存档。可先「行动继续」进入终端，再于「存读档」写入某一槽。' : '尚无存档。可把当前进度保存到这一槽。'}
               </span>
             )}
 
@@ -110,7 +110,7 @@ export function SlotGrid({ mode }: { mode: 'load' | 'manage' }) {
                     className="btn btn--ghost"
                     style={{ clipPath: 'none' }}
                     onClick={() => loadSlot(i)}
-                    title="读取此档进入游戏"
+                    title="以此档续接观测 · 覆盖当前运行进度"
                   >
                     <FolderOpen size={12} weight="bold" /> 读取
                   </button>

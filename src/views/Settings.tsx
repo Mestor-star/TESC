@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
+import { ArrowClockwise, ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, SlidersHorizontal, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
+import PresetManager from './PresetManager'
+import type { PresetEntry } from '../lib/preset'
 
 import { useTerminal } from '../terminal/Terminal'
 import type { AiChannel, ApiSettings } from '../lib/api'
 import { API_DEFAULTS, chatCompletion, isReady, listModels, readProfiles, saveProfile } from '../lib/api'
 import * as lore from '../lib/lorestore'
-import { applySchemeTo, captureFrom, listSchemes, parseChatPreset, parseSchemeFile, readJsonFile, storeSchemes } from '../lib/schemes'
+import { applySchemeTo, captureFrom, listSchemes, parseChatPreset, parseSchemeFile, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
 import type { Scheme, SchemePart } from '../lib/schemes'
 import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
@@ -38,20 +40,22 @@ function pickJsons(multiple: boolean): Promise<Array<{ fileName: string; json: u
 
 type Channel = AiChannel
 
-const CH_META: Record<Channel, { title: string; kicker: string; hint: string; tempNote: string; maxNote: string }> = {
+const CH_META: Record<Channel, { title: string; kicker: string; hint: string; tempNote: string; maxNote: string; streamNote: string }> = {
   main: {
     title: '主线剧情',
     kicker: 'STORY / DIRECTOR',
-    hint: '剧情推演通道：AI 以第三人称「导演 + 在场角色」推进当前事件，回执带结构化指令自动落地。',
+    hint: '剧情推演通道：以第三人称「导演 + 在场角色」推进当前事件，回执带结构化指令自动落地。',
     tempNote: '叙事通道。越低越贴原作基调；建议 0.6–0.9。',
-    maxNote: '每次推演的单回合输出上限。思考型模型（DeepSeek reasoner 等）会先消耗预算思考——若提示“达长度上限但正文为空”，就调大此项（如 3000–5000）。',
+    maxNote: '每次推演的单回合输出上限。思考型通道（DeepSeek reasoner 等）会先把预算耗在内部思考上——若出现「达长度上限但正文为空」，就调大此项（如 3000–5000）。',
+    streamNote: '开启后在线推演逐字上屏（SSE 流式）。若中转网关不支持流式、报错或久不出字，关掉即回退为整段接收。',
   },
   sms: {
     title: '角色短信',
     kicker: 'SMS / CHARACTER CHAT',
     hint: '角色一对一短信通道，回复可带轻量羁绊。可与此前的历史线程无缝衔接。',
     tempNote: '聊天通道。越放飞越跳脱；建议 0.7–1.0。',
-    maxNote: '每条短信回复的输出上限。同一思考型模型同理，偏低会先被思考耗尽。',
+    maxNote: '每条短信回复的输出上限。思考型通道同理，偏低会先被思考耗尽。',
+    streamNote: '开启后短信回复逐字上屏；网关不支持流式时关掉。',
   },
 }
 
@@ -68,6 +72,8 @@ export function Settings() {
   const [loreInfo, setLoreInfo] = useState<{ books: number; active: number }>({ books: -1, active: -1 })
   const [schemes, setSchemes] = useState<Scheme[]>(listSchemes)
   const [schemeSel, setSchemeSel] = useState<string | null>(null)
+  /** 预设调配：正在调配条目滤网的方案（null = 未开面板） */
+  const [manageOf, setManageOf] = useState<Scheme | null>(null)
   const [newSchemeName, setNewSchemeName] = useState('')
   const [modelList, setModelList] = useState<Record<Channel, string[] | null>>({ main: null, sms: null })
   const [fetchingModels, setFetchingModels] = useState<Channel | null>(null)
@@ -105,7 +111,7 @@ export function Settings() {
     )
   }
 
-  const set = (ch: Channel, k: keyof ApiSettings, v: string | number) => {
+  const set = (ch: Channel, k: keyof ApiSettings, v: string | number | boolean) => {
     setCfgs((prev) => (prev ? { ...prev, [ch]: { ...prev[ch], [k]: v } } : prev))
   }
 
@@ -114,9 +120,9 @@ export function Settings() {
     if (!cfg) return
     try {
       await saveProfile(ch, cfg)
-      push('success', '设置已保存', `${CH_META[ch].title}：通道配置已写入本机浏览器。`, false)
+      push('success', '设置已保存', `${CH_META[ch].title}：通道配置已写入本终端。`, false)
     } catch {
-      push('danger', '保存失败', '写入 IndexedDB 出错，请重试。', false)
+      push('danger', '保存失败', '本地存储区写入出错，请重试。', false)
     }
   }
 
@@ -125,7 +131,7 @@ export function Settings() {
     if (!cfg) return
     setCfgs((prev) => (prev ? { ...prev, [ch]: { ...prev[ch], apiKey: '' } } : prev))
     await saveProfile(ch, { ...cfg, apiKey: '' })
-    push('info', '已清除密钥', `${CH_META[ch].title}：本地保存的接口密钥已删除。`, false)
+    push('info', '已清除密钥', `${CH_META[ch].title}：本终端留存的接口密钥已删除。`, false)
   }
 
   const reset = (ch: Channel) => {
@@ -154,7 +160,7 @@ export function Settings() {
         ],
         { signal: ctrl.signal },
       )
-      setResults((prev) => ({ ...prev, [ch]: { ok: true, text: `信道正常 · 模型返回：${out.slice(0, 120)}` } }))
+      setResults((prev) => ({ ...prev, [ch]: { ok: true, text: `信道正常 · 通道回话：${out.slice(0, 120)}` } }))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setResults((prev) => ({ ...prev, [ch]: { ok: false, text: msg } }))
@@ -180,7 +186,7 @@ export function Settings() {
       const ids = await listModels(cfg)
       if (!ids.length) {
         setModelList((prev) => ({ ...prev, [ch]: [] }))
-        push('warn', '未返回模型', '该网关 /models 未列出任何模型。', false)
+        push('warn', '未返回模型', '该网关未列出任何模型。', false)
       } else {
         setModelList((prev) => ({ ...prev, [ch]: ids }))
         push('success', '已拉取模型', `${CH_META[ch].title}：网关列出 ${ids.length} 个模型。`, false)
@@ -226,13 +232,20 @@ export function Settings() {
     }
     const { scheme, model, note } = r
     scheme.activeLoreIds = await lore.getActiveLorebookIds()
+    scheme.loreEntryOff = await lore.snapshotEntryOff(scheme.activeLoreIds)
     const next = [...schemes, scheme]
     setSchemes(next)
     storeSchemes(next)
     setSchemeSel(scheme.id)
-    const cfg = await applySchemeTo(cfgs, scheme)
+    let cfg = await applySchemeTo(cfgs, scheme)
+    // 预设里的流式开关（酒馆 stream_openai）一并落到两通道
+    if (typeof r.stream === 'boolean') {
+      cfg = { main: { ...cfg.main, stream: r.stream }, sms: { ...cfg.sms, stream: r.stream } }
+      await Promise.all([saveProfile('main', cfg.main), saveProfile('sms', cfg.sms)])
+    }
     setCfgs(cfg)
-    push('success', '已导入并应用 ChatPreset', `${scheme.name} · ${model}${note ? `（${note}）` : ''}`, false)
+    const streamNote = typeof r.stream === 'boolean' ? ` · 流式${r.stream ? '开' : '关'}` : ''
+    push('success', '已导入并应用 ChatPreset', `${scheme.name} · ${model}${note ? `（${note}）` : ''}${streamNote}`, false)
   }
 
   /* ============ 世界书数据管理 + 方案 ============ */
@@ -298,6 +311,17 @@ export function Settings() {
     setCfgs(cfg)
     push('success', '已应用方案', `${s.name} · 两通道参数与世界书启用已套用`, false)
     void refreshLoreInfo()
+  }
+
+  /** 管理预设 · 保存：只改本地方案记录（含生效快照的同步），不碰任何世界书 */
+  const savePreset = (s: Scheme, patch: { entries: PresetEntry[]; loreEntryOff: Record<string, string[]> }) => {
+    // patchScheme 会在该方案正生效时顺手刷新快照，开关因此立刻对下一次生成生效
+    setSchemes(patchScheme(s.id, patch))
+    setManageOf(null)
+    const on = patch.entries.filter((e) => e.enabled !== false && !e.placeholder).length
+    const all = patch.entries.filter((e) => !e.placeholder).length
+    const n = Object.values(patch.loreEntryOff).reduce((a, ids) => a + ids.length, 0)
+    push('success', '已保存预设', `${s.name} · 指令条目 ${on}/${all} 启用 · 世界书接管 ${Object.keys(patch.loreEntryOff).length} 本 / 关闭 ${n} 条`, false)
   }
 
   const deleteScheme = (id: string) => {
@@ -366,7 +390,7 @@ export function Settings() {
                 {eye[ch] ? <EyeSlash size={17} weight="bold" /> : <Eye size={17} weight="bold" />}
               </button>
             </span>
-            <span style={SUB_FIELD}>密钥经 IndexedDB 本地存储，不写进代码或任何明文文件。</span>
+            <span style={SUB_FIELD}>密钥只落在本终端的本地存储区，不写进代码或任何明文文件。</span>
           </label>
 
           <label className={css.fieldRow}>
@@ -449,6 +473,21 @@ export function Settings() {
             <span style={SUB_FIELD}>{meta.maxNote}</span>
           </label>
 
+          <label className={css.fieldRow}>
+            <span>流式生成 STREAM</span>
+            <span className={css.rowInline}>
+              <label className={css.ck}>
+                <input
+                  type="checkbox"
+                  checked={cfg.stream !== false}
+                  onChange={(e) => set(ch, 'stream', e.target.checked)}
+                />
+                逐字上屏（对应酒馆预设的 stream_openai）
+              </label>
+            </span>
+            <span style={SUB_FIELD}>{meta.streamNote}</span>
+          </label>
+
           <div className={css.actions}>
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => reset(ch)}>恢复默认地址</button>
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => clearKey(ch)}>清除密钥</button>
@@ -477,7 +516,7 @@ export function Settings() {
         <div>
           <div className="vhead__kicker">SYSTEM / SETTINGS</div>
           <h1>终端设置</h1>
-          <div className="vhead__sub">双通道 AI 配置：主线剧情与角色短信彼此独立，可同可异。所有字段仅保存在本机浏览器，随时可清除。</div>
+          <div className="vhead__sub">双通道推演配置：主线剧情与角色短信彼此独立，可同可异。所有字段只落在本终端，随时可清除。</div>
         </div>
         <div className="vhead__right">
           {setupMode ? (
@@ -503,8 +542,8 @@ export function Settings() {
         </div>
         <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className={css.note}>
-            <b>世界书与「方案」仅存本机，绝不包含密钥。</b><br />
-            世界书（Dexie · zts-lore）存有从 canon 生成的种子书与你导入/编辑的内容，可整库导出一份备份 JSON；
+            <b>世界书与「方案」只落本终端，绝不包含密钥。</b><br />
+            世界书存有本终端从 canon 生成的种子书与你导入／编辑的内容，可整库导出一份备份 JSON；
             备份不含接口密钥（密钥在 api:main / api:sms，也不会被写进任何文件）。下方「整库备份」导入会覆盖当前世界书与启用标记。
           </div>
 
@@ -512,13 +551,13 @@ export function Settings() {
           <div className={css.importBox}>
             <div className={css.importHead}>
               <b>数据导入 / IMPORT</b>
-              <span style={{ marginLeft: 'auto' }}>外部预设与备份读回本机 · 密钥永不在文件里</span>
+              <span style={{ marginLeft: 'auto' }}>外部预设与备份读回本终端 · 密钥永不在文件里</span>
             </div>
 
             <div className={css.importRow}>
               <div className={css.importInfo}>
                 <b>ST 世界书 JSON（追加导入）</b>
-                <span>多选外部 SillyTavern 世界书文件，追加为本机世界书；可到智库页启停与编辑。</span>
+                <span>多选外部 SillyTavern 世界书文件，追加为终端世界书；可到智库页启停与编辑。</span>
               </div>
               <div className={css.importAct}>
                 <button className="btn btn--amber" style={{ fontSize: 12, padding: '7px 14px' }} onClick={() => void doImportStLore()} disabled={importBusy}>
@@ -541,7 +580,7 @@ export function Settings() {
 
             <div className={css.importRow}>
               <div className={css.importInfo}>
-                <b>方案 JSON（读回本机）</b>
+                <b>方案 JSON（读回本终端）</b>
                 <span>导入此前导出的方案文件，加入下方「方案」列表，随时一键套用。</span>
               </div>
               <div className={css.importAct}>
@@ -562,7 +601,7 @@ export function Settings() {
                   style={{ fontSize: 12, padding: '7px 14px' }}
                   onClick={() => void doRestoreLore()}
                 >
-                  <UploadSimple size={14} weight="bold" /> {confirmAct === 'restore' ? '再次点击确认覆盖' : '导入备份覆盖'}
+                  <UploadSimple size={14} weight="bold" /> {confirmAct === 'restore' ? '再按一次确认覆盖' : '导入备份覆盖'}
                 </button>
               </div>
             </div>
@@ -584,7 +623,7 @@ export function Settings() {
               style={{ fontSize: 12 }}
               onClick={() => void doClearLore()}
             >
-              <Trash size={14} weight="bold" /> {confirmAct === 'clear' ? '再次点击确认清空' : '清空世界书'}
+              <Trash size={14} weight="bold" /> {confirmAct === 'clear' ? '再按一次确认清空' : '清空世界书'}
             </button>
           </div>
 
@@ -628,6 +667,18 @@ export function Settings() {
                         <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => void applyScheme(s)}>
                           <Play size={12} weight="bold" /> 应用
                         </button>
+                        <button
+                          className="btn btn--ghost"
+                          style={{ fontSize: 11, padding: '5px 9px' }}
+                          onClick={() => setManageOf(s)}
+                          title="管理预设：调本预设自带的指令条目与世界书词条开关，与世界书自身状态互不干扰"
+                        >
+                          <SlidersHorizontal size={12} weight="bold" /> 管理预设
+                          {(() => {
+                            const n = (s.entries ?? []).filter((e) => e.enabled !== false && !e.placeholder).length
+                            return n > 0 ? <span className={css.tuneBadge}>{n}</span> : null
+                          })()}
+                        </button>
                         <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => exportScheme(s)} title="导出为方案 JSON">
                           <DownloadSimple size={12} weight="bold" />
                         </button>
@@ -651,19 +702,19 @@ export function Settings() {
         </div>
         <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className={css.note}>
-            <b>密钥只属于你的浏览器。</b><br />
-            两路通道的密钥与模型配置分别写入本机的 IndexedDB（键名 api:main / api:sms），不会随存档同步，也不会上传任何服务器。
+            <b>密钥只落在本终端。</b><br />
+            两路通道的密钥与模型配置分别写入本终端的本地存储区（键名 api:main / api:sms），不随存档同步，也不会送往任何服务器。
             若不放心，使用完可点各卡片的「清除密钥」，或在浏览器站点数据中删除本终端。
           </div>
           <div className={css.note}>
-            <b>会话记录存 localStorage。</b><br />
-            剧情会话（zts-plot:v1）与角色短信线程（zts-tavern:v1）均保存在浏览器本地，不含密钥。
-            对话内容会发送给你配置的接口地址，请勿在其中输入真实账号密码或敏感信息。
+            <b>会话留存于本终端。</b><br />
+            剧情会话（zts-plot:v1）与角色短信线程（zts-tavern:v1）均留在本终端本地，不含密钥。
+            对话内容会送往你所配置的接口地址，请勿在其中输入真实账号密码或敏感信息。
           </div>
           <div className={css.note}>
             <b>兼容性说明。</b><br />
-            本终端按 OpenAI 的 /chat/completions 规范调用。若你的网关需要自定义请求头或流式输出，
-            可在配置的接口地址旁架设一层兼容代理后填入 baseUrl。
+            本终端按 OpenAI 的 /chat/completions 规范调用。若网关需要自定义请求头或流式输出，
+            可在接口地址旁架设一层兼容代理后填入。
           </div>
           <div className={css.actions} style={{ marginTop: 2 }}>
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => clearKey('main')}>
@@ -675,6 +726,15 @@ export function Settings() {
           </div>
         </div>
       </section>
+
+      {/* 预设调配：调的是预设自带的词条滤网，与世界书自身状态互不干扰 */}
+      {manageOf && (
+        <PresetManager
+          scheme={manageOf}
+          onSave={(patch) => savePreset(manageOf, patch)}
+          onClose={() => setManageOf(null)}
+        />
+      )}
     </div>
   )
 }

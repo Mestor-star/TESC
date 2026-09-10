@@ -20,6 +20,9 @@ export class LorebookEngine {
     const matched: MatchedEntry[] = [];
 
     for (const entry of this.lorebook.entries) {
+      // 预设调配：被逐条关闭的词条不参与注入（常驻亦然），在唯一的取词入口拦下
+      if (entry.enabled === false) continue;
+
       if (entry.constant) {
         matched.push({ entry, score: -9999, matchedKeywords: ['constant'] });
         continue;

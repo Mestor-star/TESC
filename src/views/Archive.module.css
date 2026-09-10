@@ -131,6 +131,36 @@
   opacity: 0.85;
 }
 
+/* 未遇见 · 封存态：不可点、无色相、留白处只写事实（此人在本终端还未显影） */
+.cardLocked {
+  cursor: default;
+  border-style: dashed;
+  filter: saturate(0.15);
+}
+.cardLocked:hover { transform: none; border-color: var(--line); box-shadow: none; }
+.cardLocked::before { background: linear-gradient(90deg, var(--ink-faint), transparent 85%); opacity: 0.4; }
+.cardLocked .cardQuote { color: var(--ink-faint); font-style: italic; }
+.lockSigil {
+  flex: 0 0 auto;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border: 1px dashed var(--line-2);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  color: var(--ink-faint);
+  background: rgba(255, 255, 255, 0.02);
+}
+.lockTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .cardHead {
   display: flex;
   align-items: center;
@@ -174,9 +204,14 @@
 .kvCell small { display: block; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.08em; margin-bottom: 2px; }
 .kvCell b { font-size: 12.5px; font-weight: 700; color: var(--ink-dim); }
 
-.stat { display: grid; grid-template-columns: 44px 1fr 34px; align-items: center; gap: 10px; }
+/* 末列需容纳「常态/极限」双值（如 53/∞），故较单值时更宽 */
+.stat { display: grid; grid-template-columns: 44px 1fr 58px; align-items: center; gap: 10px; }
 .stat small { color: var(--ink-faint); font-size: 11.5px; }
-.stat .num { font-family: var(--font-mono); font-size: 12px; text-align: right; color: var(--ink-dim); }
+.stat .num { font-family: var(--font-mono); font-size: 12px; text-align: right; color: var(--ink-dim); white-space: nowrap; }
+
+/* 极限条：红色，渲染于常态条之下；两者重合处被常态条盖住，
+   只有「极限超出常态」的那一段露出红色 */
+.limitFill { background: linear-gradient(90deg, var(--red-deep), var(--red)); }
 
 .bondRow { display: flex; align-items: center; gap: 10px; }
 .bondName {

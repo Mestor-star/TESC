@@ -6,7 +6,7 @@ import { X } from '@phosphor-icons/react'
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
 import { SIDECAST } from '../data/sidecast'
-import { ROSTER_GROUPS, SIDE_AXIS, SIDE_TRAIT, committeeRankOf } from '../data/roster'
+import { ROSTER_GROUPS, SIDE_AXIS, SIDE_AXIS_LIMIT, SIDE_TRAIT, SIDE_POTENTIAL, committeeRankOf } from '../data/roster'
 import { personOf } from '../data/castmeta'
 import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
@@ -35,6 +35,11 @@ function axisOf(c: Character, key: string): AxisVal {
 /** 五轴读数 / 条宽（'∞' → 满格） */
 function axisW(v: AxisVal): number {
   return v === '∞' ? 100 : Math.min(100, (v / AXIS_MAX) * 100)
+}
+
+/** 读数文本（'∞' 原样） */
+function axisText(v: AxisVal): string {
+  return v === '∞' ? '∞' : String(v)
 }
 
 /** 每组所属的原貌介绍（仅复述三学园系谱与原文定位，不新造设定） */
@@ -69,7 +74,8 @@ interface Row {
   state: string       // 状态 / 出场
   quote: string
   bio: string
-  axis: AxisVal[]     // 与 AXIS_ORDER 对齐的五轴值（可含 '∞' = 无法测量）
+  axis: AxisVal[]     // 与 AXIS_ORDER 对齐的五轴常态值（可含 '∞' = 无法测量）
+  axisLimit: (AxisVal | null)[]  // 对齐的五轴极限值；null = 未登记（该轴无更强表现可考 → 单值显示）
   gender: BondGender  // 羁绊称谓按目标性别取用
   hue: string
   sigil: string
@@ -104,6 +110,7 @@ function buildRows(): Row[] {
           quote: c.quote,
           bio: c.bio,
           axis: AXIS_ORDER.map((k) => axisOf(c, k)),
+          axisLimit: AXIS_ORDER.map((k) => c.stats.find((x) => x.key === k)?.limit ?? null),
           gender: personOf(c.id)?.gender ?? '?',
           hue: c.hue,
           sigil: c.sigil,
@@ -126,12 +133,13 @@ function buildRows(): Row[] {
           epithet: e.role,
           division: g.label,
           trait: SIDE_TRAIT[id] ?? '—',
-          potential: '—',
+          potential: SIDE_POTENTIAL[id] ?? '—',
           rank: committeeRankOf(e.id),
           state: `第 ${e.vol} 卷 · 登场`,
           quote: e.quote,
           bio: e.desc,
           axis: SIDE_AXIS[id] ?? [0, 0, 0, 0, 0],
+          axisLimit: SIDE_AXIS_LIMIT[id] ?? [null, null, null, null, null],
           gender: personOf(e.id)?.gender ?? '?',
           hue,
           sigil: e.name.slice(0, 1),
@@ -143,12 +151,22 @@ function buildRows(): Row[] {
   return rows
 }
 
-/** 单条五轴（m 为外层 .stat） */
+/**
+ * 单条五轴（m 为外层 .stat）。
+ * 常态条＝主题色（紫色系），极限条＝红色、垫在其后：两者重合处只显常态，
+ * 超出常态的那一段才露出红色 —— 即「极限超出常态多少」。
+ * 读数同步记为「常态/极限」；该轴未登记极限（或极限未超常态）时退回单值。
+ */
 function Meters({ row }: { row: Row }) {
   return (
     <>
       {AXIS_ORDER.map((k, i) => {
         const v = row.axis[i] ?? 0
+        const lim = row.axisLimit[i] ?? null
+        const vW = axisW(v)
+        const limW = lim === null ? vW : Math.max(vW, axisW(lim))
+        // 已登记的轴恒记双值「常态/极限」（含 ∞/∞）；未登记的轴退回单值
+        const showLimit = lim !== null
         const inf = v === '∞'
         const fillBg = inf
           ? `repeating-linear-gradient(-45deg, ${row.hue} 0 5px, transparent 5px 10px)`
@@ -156,13 +174,18 @@ function Meters({ row }: { row: Row }) {
         return (
           <div key={k} className={css.stat}>
             <small>{k}</small>
-            <div className="meter">
+            <div className="meter" title={showLimit ? `常态 ${axisText(v)} · 极限 ${axisText(lim)}` : undefined}>
+              {lim !== null && limW > vW ? (
+                <div className={`meter__fill ${css.limitFill}`} style={{ width: `${limW}%` }} />
+              ) : null}
               <div
                 className={`meter__fill ${inf ? css.infFill : ''}`}
-                style={{ width: `${axisW(v)}%`, background: fillBg }}
+                style={{ width: `${vW}%`, background: fillBg }}
               />
             </div>
-            <span className="num">{inf ? '∞' : String(v)}</span>
+            <span className="num" data-axis-num data-axis-normal={axisText(v)} data-axis-limit={showLimit ? axisText(lim) : ''}>
+              {showLimit ? `${axisText(v)}/${axisText(lim)}` : axisText(v)}
+            </span>
           </div>
         )
       })}
@@ -199,7 +222,7 @@ function placeDialog(
 }
 
 export function Archive() {
-  const { operatorName, epDone, bondNow, push, profileRequest, clearProfileRequest } = useTerminal()
+  const { operatorName, epDone, bondNow, push, profileRequest, clearProfileRequest, isMet } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
@@ -255,12 +278,18 @@ export function Archive() {
     handledReq.current = profileRequest.ts
     const el = rootRef.current?.querySelector(`[data-archive-card="${profileRequest.id}"]`) as HTMLElement | null
     if (el) el.scrollIntoView({ block: 'center' })
+    // 未遇见者不展开：只把它滚进视野，正文里点名字也撬不开封存档案
+    if (!isMet(profileRequest.id)) {
+      push('warn', '档案封存中', `${profileRequest.name} 尚未遇见，无从调阅。`, false)
+      clearProfileRequest()
+      return
+    }
     const raf = window.requestAnimationFrame(() => {
       openFromId(profileRequest.id)
       clearProfileRequest()
     })
     return () => window.cancelAnimationFrame(raf)
-  }, [profileRequest, openFromId, clearProfileRequest])
+  }, [profileRequest, openFromId, clearProfileRequest, isMet, push])
 
   /* —— 渲染 —— */
   return (
@@ -296,6 +325,10 @@ export function Archive() {
         </div>
         <div className="tiny muted" style={{ color: 'var(--ink-faint)', margin: '-8px 0 14px', lineHeight: 1.7 }}>
           五轴标尺：10 ≈ 普通成年人的该轴水准；精锐约 20–35；超规格约 50–60；『∞』表示该轴已超出委员会可评定范围（无法测量），读数以满格示出。
+          <br />
+          每轴并记两值：<b style={{ color: 'var(--ink-dim)' }}>常态</b>（紫条 · 平常态可测体评）与
+          <b style={{ color: 'var(--red)' }}>极限</b>（红条 · 机制全开／变身／限时爆发下的最强表现），读数为「常态/极限」。
+          红条只在极限确实高于常态时露出——重合处仍读常态；两值皆不可测者记『∞/∞』。未登记极限的轴退回单值。
         </div>
 
         {/* 操作员横幅 */}
@@ -342,6 +375,32 @@ export function Archive() {
               <div className={css.cards}>
                 {members.map((r) => {
                   const bond = bondNow(r.id)
+                  // 未遇见 → 锁定保密：不显名、不显武装、不显五轴、不显羁绊
+                  if (!isMet(r.id)) {
+                    return (
+                      <article
+                        key={r.id}
+                        data-archive-card={r.id}
+                        data-locked-id={r.id}
+                        className={`${css.card} ${css.cardLocked}`}
+                        aria-disabled
+                      >
+                        <div className={css.cardHead}>
+                          <span className={css.lockSigil} aria-hidden>？</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div className={css.cardNo}>观测未及 · 保密</div>
+                            <div className={css.cardName}><h3>？？？</h3></div>
+                            <div className={css.cardEpithet}>档案封存中</div>
+                          </div>
+                        </div>
+                        <div className={css.cardQuote}>尚未遇见。抵达其出场段落，本页才会显影。</div>
+                        <div className={css.cardFoot}>
+                          <span className={css.cardStatusNote}>解析度不足 · 无可读记录</span>
+                          <span className={css.lockTag}>LOCKED</span>
+                        </div>
+                      </article>
+                    )
+                  }
                   return (
                     <article
                       key={r.id}
@@ -370,7 +429,7 @@ export function Archive() {
                       <div className={css.cardBody}>
                         <div className={css.kvBlock}>
                           <div className={css.kvCell}><small>所属</small><b>{r.division}</b></div>
-                          <div className={css.kvCell}><small>弹痕 / 终末</small><b>{r.trait}</b></div>
+                          <div className={css.kvCell}><small>武装 / 终末</small><b>{r.trait}</b></div>
                           <div className={css.kvCell}><small>终末潜力</small><b>{r.potential}</b></div>
                           <div className={css.kvCell}><small>状态 · 出场</small><b>{r.state}</b></div>
                         </div>
@@ -448,7 +507,7 @@ export function Archive() {
                 <div className={css.kvBlock}>
                   <div className={css.kvCell}><small>所属</small><b>{focus.division}</b></div>
                   <div className={css.kvCell}><small>定位 / 呼号</small><b>{focus.alias}</b></div>
-                  <div className={css.kvCell}><small>弹痕 / 终末</small><b>{focus.trait}</b></div>
+                  <div className={css.kvCell}><small>武装 / 终末</small><b>{focus.trait}</b></div>
                   <div className={css.kvCell}><small>终末潜力</small><b>{focus.potential}</b></div>
                   <div className={css.kvCell}><small>状态 · 出场</small><b>{focus.state}</b></div>
                   <div className={css.kvCell}><small>委员会排行</small><b>{focus.rank ?? '—'}</b></div>
@@ -508,7 +567,7 @@ export function Archive() {
             />
             <div className={css.lightboxMeta}>
               <b>{focus.name}</b>
-              <span className="tiny muted">立绘全图 · 点击画面关闭</span>
+              <span className="tiny muted">立绘全图 · 点按任意处合上</span>
               <button className={css.dialogClose} onClick={() => setViewer(false)} aria-label="关闭">
                 <X size={18} weight="bold" />
               </button>

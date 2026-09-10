@@ -463,7 +463,16 @@ export interface DirectorCtx {
   loreContext?: string
   /** 后接事件锚（软门禁）：在线整回合推演时给出；让导演判断收束能否自然引向后接事件，才允许 eventDone */
   nextEvent?: TimelineEvent | null
+  /** 预设指令（管「如何理解」）：紧贴导演规则之后注入 */
+  presetPre?: string
+  /** 预设指令（管「如何输出」）：紧贴事件指令 schema 之前注入 */
+  presetPost?: string
+  /** 近期作战记录摘要（取自隐藏存档；用来承接已打过的任务，防前后文不搭） */
+  battleLog?: string
 }
+
+/** 预设段：非空时前置两个换行，与 loreSection / anchor 同款写法 */
+const presetSection = (s?: string) => (s ? `\n\n${s}` : '')
 
 function outlineRules(opName: string): string {
   return `你是《这里是，终末停滞委员会。》的剧情导演，同时扮演在场的全部角色。
@@ -541,8 +550,10 @@ ${varList}
 
   const notesSection = notesSectionFor(ev)
   const anchor = ctx.nextEvent ? `\n\n${nextAnchorBlock(ctx.nextEvent)}` : ''
+  // 近期作战：与 loreContext 同格（都是「已发生的事实」，只作延续性背景）
+  const opsSection = ctx.battleLog ? `\n\n${ctx.battleLog}` : ''
 
-  return `${outlineRules(ctx.operatorName || '言万心叶')}
+  return `${outlineRules(ctx.operatorName || '言万心叶')}${presetSection(ctx.presetPre)}
 
 【当前事件】${ev.group} · ${ev.phase}｜${ev.place}${ev.day ? `｜${ev.day}` : ''}
 标题：${ev.title}
@@ -558,7 +569,7 @@ ${entList}
   }
 
 【羁绊基准（数值仅参考，勿过度解读）】
-${baseline.trim() || '（无）'}${reask}${loreSection}${varBlock}${anchor}
+${baseline.trim() || '（无）'}${reask}${loreSection}${opsSection}${varBlock}${anchor}${presetSection(ctx.presetPost)}
 
 【事件指令 · 每回合末尾必须输出】
 标签行（单独一行）：

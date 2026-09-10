@@ -5,6 +5,8 @@
 import type { AiChannel, ApiSettings } from './api'
 import { readProfiles, saveProfile } from './api'
 import * as lore from './lorestore'
+import type { PresetEntry } from './preset'
+import { activePresetId, DEFAULT_PRESET_ENTRIES, parsePresetEntries, parseStPrompts, snapshotActivePreset } from './preset'
 
 export type ChannelCfg = Record<AiChannel, ApiSettings>
 
@@ -15,6 +17,19 @@ export interface Scheme {
   main: SchemePart
   sms: SchemePart
   activeLoreIds: string[]
+  /**
+   * 预设自带的词条滤网：bookId → 本预设下**关闭**的词条 id。
+   * 与世界书自身的 enabled 解耦——书上是「上一笔」，这里是「本预设的一笔」；
+   * 套用时整层覆盖（未列入的词条一律启用），缺省则整层不动。
+   * 未在此出现的书 = 本预设不管它，套用时保持原样。
+   */
+  loreEntryOff?: Record<string, string[]>
+  /**
+   * 预设自带的**导演指令条目**（生成行为 / 文本格式 …），不属于任何世界书。
+   * 套用本预设时落成「生效快照」（见 preset.ts），由 plot/tavern 直接注入提示词。
+   * 缺省 = 该预设不含指令条目。
+   */
+  entries?: PresetEntry[]
 }
 
 export const SCHEME_KEY = 'zts-schemes:v1'
@@ -45,8 +60,15 @@ export function schemePart(cfg: ApiSettings): SchemePart {
   return { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature, maxTokens: cfg.maxTokens }
 }
 
-export function makeScheme(name: string, main: SchemePart, sms: SchemePart, activeLoreIds: string[]): Scheme {
-  return { id: crypto.randomUUID(), name, main, sms, activeLoreIds }
+export function makeScheme(
+  name: string, main: SchemePart, sms: SchemePart, activeLoreIds: string[],
+  loreEntryOff?: Record<string, string[]>, entries?: PresetEntry[],
+): Scheme {
+  return {
+    id: crypto.randomUUID(), name, main, sms, activeLoreIds,
+    ...(loreEntryOff ? { loreEntryOff } : {}),
+    ...(entries ? { entries } : {}),
+  }
 }
 
 /** 读取单个本地 .json 文件（返回解析值；非 JSON 时为 null） */
@@ -68,10 +90,15 @@ export function readJsonFile(): Promise<unknown | null> {
   })
 }
 
-/** 把当前两通道配置存成命名方案（顺带捕捉当前激活世界书） */
+/** 把当前两通道配置存成命名方案（顺带捕捉当前激活世界书 + 其逐条开关滤网） */
 export async function captureFrom(cfgs: ChannelCfg, name: string): Promise<Scheme> {
   const ids = await lore.getActiveLorebookIds()
-  return makeScheme(name.trim(), schemePart(cfgs.main), schemePart(cfgs.sms), ids)
+  const off = await lore.snapshotEntryOff(ids)
+  // 起步指令条目：新建的预设先带上一套结构性约定，用户可在「管理预设」里改删
+  return makeScheme(
+    name.trim(), schemePart(cfgs.main), schemePart(cfgs.sms), ids, off,
+    DEFAULT_PRESET_ENTRIES.map((e) => ({ ...e, id: crypto.randomUUID() })),
+  )
 }
 
 /** 从本机持久配置直接捕捉（无需组件持有双通道编辑态） */
@@ -90,7 +117,7 @@ function merge(cfg: ApiSettings, p: SchemePart, fb: number): ApiSettings {
   }
 }
 
-/** 套用方案：写双通道 + 协调激活世界书；返回套用后的双通道配置 */
+/** 套用方案：写双通道 + 协调激活世界书 + 覆上词条滤网；返回套用后的双通道配置 */
 export async function applySchemeTo(cfgs: ChannelCfg, s: Scheme): Promise<ChannelCfg> {
   const nextMain = merge(cfgs.main, s.main, 1500)
   const nextSms = merge(cfgs.sms, s.sms, 1500)
@@ -99,12 +126,63 @@ export async function applySchemeTo(cfgs: ChannelCfg, s: Scheme): Promise<Channe
   const want = new Set(s.activeLoreIds)
   for (const id of cur) if (!want.has(id)) await lore.setBookActive(id, false)
   for (const id of s.activeLoreIds) if (!cur.includes(id)) await lore.setBookActive(id, true)
+  // 词条滤网：只有本预设亲自记过的书才覆盖，其余保持书上的原样
+  if (s.loreEntryOff) await lore.applyEntryOff(s.loreEntryOff)
+  // 导演指令：套用即落生效快照，此后生成只认它
+  snapshotActivePreset(s.id, s.name, s.entries ?? [])
   return { main: nextMain, sms: nextSms }
+}
+
+/**
+ * 管理预设 · 局部改写某个方案（指令条目 / 词条滤网 …）。
+ * 若该方案正是当前生效的那个，顺手刷新生效快照——界面上的开关因此立刻对下一次生成生效。
+ */
+export function patchScheme(id: string, patch: Partial<Pick<Scheme, 'name' | 'entries' | 'loreEntryOff'>>): Scheme[] {
+  const next = listSchemes().map((s) => (s.id === id ? { ...s, ...patch } : s))
+  storeSchemes(next)
+  const cur = next.find((s) => s.id === id)
+  if (cur && activePresetId() === id) snapshotActivePreset(cur.id, cur.name, cur.entries ?? [])
+  return next
 }
 
 /** 从本机持久配置直接套用方案（剧情推进页内嵌控件用） */
 export async function applySchemePersisted(s: Scheme): Promise<ChannelCfg> {
   return applySchemeTo(await readProfiles(), s)
+}
+
+/* ---------- 预设调配 · 词条滤网 ---------- */
+
+/** 词条滤网容错解析：只留「书 id → 字符串数组」，非法项丢弃；无有效项返回 null */
+export function parseEntryOff(v: unknown): Record<string, string[]> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const out: Record<string, string[]> = {}
+  for (const [k, arr] of Object.entries(v as Record<string, unknown>)) {
+    if (!Array.isArray(arr)) continue
+    const ids = arr.filter((x): x is string => typeof x === 'string')
+    if (ids.length) out[k] = ids
+  }
+  return Object.keys(out).length ? out : null
+}
+
+/** 首次调配某本书：以该书当前的关闭集为基线落键，之后才谈增减（避免「一开整本」的意外覆盖） */
+export function seedEntryOff(
+  off: Record<string, string[]> | undefined, bookId: string, currentOffIds: string[],
+): Record<string, string[]> {
+  const cur = off ?? {}
+  return cur[bookId] ? cur : { ...cur, [bookId]: [...currentOffIds] }
+}
+
+/** 在滤网上翻转某条（on=true 即该条启用，从关闭集中移除）；书目为空则删键 */
+export function toggleEntryOff(
+  off: Record<string, string[]> | undefined, bookId: string, entryId: string, on: boolean,
+): Record<string, string[]> {
+  const next: Record<string, string[]> = { ...(off ?? {}) }
+  const set = new Set(next[bookId] ?? [])
+  if (on) set.delete(entryId)
+  else set.add(entryId)
+  if (set.size) next[bookId] = [...set]
+  else delete next[bookId]
+  return next
 }
 
 /** 方案 JSON 文件 → 新 Scheme（id 重生成，字段容错）；不是方案返回 null */
@@ -127,11 +205,22 @@ export function parseSchemeFile(data: unknown): Scheme | null {
     main: mk(d.main, DEFAULT_PART),
     sms: mk(d.sms, DEFAULT_PART),
     activeLoreIds: Array.isArray(d.activeLoreIds) ? (d.activeLoreIds as unknown[]).filter((x): x is string => typeof x === 'string') : [],
+    ...(parseEntryOff(d.loreEntryOff) ? { loreEntryOff: parseEntryOff(d.loreEntryOff)! } : {}),
+    ...(parsePresetEntries(d.entries) ? { entries: parsePresetEntries(d.entries)! } : {}),
   }
 }
 
 export type ChatPresetResult =
-  | { ok: true; scheme: Scheme; model: string; note: string }
+  | {
+      ok: true
+      scheme: Scheme
+      model: string
+      note: string
+      /** 预设里的流式开关（酒馆 stream_openai）；未带该字段为 undefined */
+      stream?: boolean
+      /** 随预设带入的指令条目数（已扣除分隔行与占位条目），供提示语显示 */
+      entryCount: number
+    }
   | { ok: false; warn: string }
 
 /** ChatPreset JSON → 映射为「方案」（模型/温度/输出预算；baseUrl 沿用当前通道）。不落盘，由调用方 store+apply */
@@ -187,21 +276,31 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg): ChatPresetResu
         || (d.data && typeof d.data === 'object' && !Array.isArray(d.data) && Array.isArray((d.data as Record<string, unknown>).entries))
       const keysShown = (Object.keys(settings).length ? Object.keys(settings) : Object.keys(d)).slice(0, 8).join('、')
       const warn = isLorebook
-        ? '这份是酒馆世界书（world info，含 entries）——请改用「导入 ST 世界书」。'
-        : `未找到模型名。文件键：${keysShown || '（空对象）'}；可识别 ${MODEL_KEYS.join(' / ')} 或以 _model 结尾的字段。`
+        ? '这份是酒馆的世界书（world info）——请改用「导入 ST 世界书」。'
+        : `未找到模型名。文件里的字段：${keysShown || '（空对象）'}；可识别 ${MODEL_KEYS.join(' / ')} 或以 _model 收尾的字段。`
       return { ok: false, warn }
     }
   }
   const name = typeof d.name === 'string' && d.name.trim() ? d.name.trim() : `ChatPreset · ${model}`
+  // 预设自带的指令条目（酒馆 prompts 数组）：分隔行归组、marker 记占位、其余原样入册
+  const promptsRaw = Array.isArray(d.prompts)
+    ? d.prompts
+    : (d.data && typeof d.data === 'object' && !Array.isArray(d.data) ? (d.data as Record<string, unknown>).prompts : null)
+  const entries = parseStPrompts(promptsRaw)
+  const entryCount = entries?.filter((e) => !e.placeholder).length ?? 0
   const scheme: Scheme = {
     id: crypto.randomUUID(),
     name,
     main: { baseUrl: cfgs.main.baseUrl, model, temperature: temp, maxTokens },
     sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp, maxTokens },
     activeLoreIds: [],
+    ...(entries ? { entries } : {}),
   }
-  const noteFull = [note, budgetNote].filter(Boolean).join(' · ')
-  return { ok: true, scheme, model, note: noteFull }
+  const stream = typeof d.stream_openai === 'boolean'
+    ? d.stream_openai
+    : (settings.stream_openai as boolean | undefined)
+  const noteFull = [note, budgetNote, entryCount ? `指令条目 ${entryCount}` : ''].filter(Boolean).join(' · ')
+  return { ok: true, scheme, model, note: noteFull, entryCount, ...(typeof stream === 'boolean' ? { stream } : {}) }
 }
 
 /** 导入 ChatPreset 并整体落地（加入方案列表 + 套用两通道）——两页共用 */
@@ -211,6 +310,11 @@ export async function importChatPresetFile(data: unknown): Promise<ChatPresetRes
   if (!r.ok) return r
   const act = await lore.getActiveLorebookIds()
   r.scheme.activeLoreIds = act
-  const cfg = await applySchemeTo(cfgs, r.scheme)
+  let cfg = await applySchemeTo(cfgs, r.scheme)
+  // 预设里的流式开关一并落到两通道（酒馆的 stream_openai 语义）
+  if (typeof r.stream === 'boolean') {
+    cfg = { main: { ...cfg.main, stream: r.stream }, sms: { ...cfg.sms, stream: r.stream } }
+    await Promise.all([saveProfile('main', cfg.main), saveProfile('sms', cfg.sms)])
+  }
   return { ...r, cfg }
 }

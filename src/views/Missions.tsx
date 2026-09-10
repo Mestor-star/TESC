@@ -1,11 +1,19 @@
-import { useMemo, useState } from 'react'
-import { ArrowRight, Check, PaperPlaneTilt } from '@phosphor-icons/react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Check, Crosshair, PaperPlaneTilt, Trash, Users } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { MISSIONS } from '../data/missions'
 import { CHARACTERS } from '../data/chars'
+import { OPERATOR_PERSON, PERSON_IDS, personOf } from '../data/castmeta'
 import type { Mission } from '../data/types'
 import { stageSeverity } from '../lib/format'
+import { Battle } from './Battle'
+import { periodProgress, squadIdsFrom } from '../lib/battle/derive'
+import { TUNING } from '../lib/battle/tuning'
+import {
+  addGrowth, deleteRecord, listRecords, putRecord, readGrowth, readStamina, writeStamina,
+} from '../lib/battle/store'
+import type { BattleRecord, StaminaState } from '../lib/battle/types'
 
 import css from './Missions.module.css'
 
@@ -25,10 +33,32 @@ const STATUS_META: Record<LocalStatus, { cls: string; color: string; label: stri
 const CHAR_HUE: Record<string, string> = Object.fromEntries(CHARACTERS.map((c) => [c.name, c.hue]))
 
 export function Missions() {
-  const { push } = useTerminal()
+  const { push, epDone, bumpBond, isMet, operatorName } = useTerminal()
   const [filter, setFilter] = useState<FilterKey>('全部')
   const [status, setStatus] = useState<Record<string, LocalStatus>>({})
   const [openId, setOpenId] = useState<string | null>(null)
+
+  /* —— 作战子系统状态 —— */
+  const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
+  const [growth, setGrowth] = useState<Record<string, number>>({})
+  const [records, setRecords] = useState<BattleRecord[]>([])
+  const [openRec, setOpenRec] = useState<string | null>(null)
+  /** 编队中的任务（非 null = 编队面板开着） */
+  const [briefing, setBriefing] = useState<Mission | null>(null)
+  const [picked, setPicked] = useState<string[]>([])
+  /** 正在打的那一场 */
+  const [live, setLive] = useState<{ mission: Mission; squad: string[] } | null>(null)
+
+  const eventsDone = Object.keys(epDone).length
+
+  const reload = useCallback(async () => {
+    const [sp, g, rs] = await Promise.all([readStamina(eventsDone), readGrowth(), listRecords()])
+    setStamina(sp)
+    setGrowth(g)
+    setRecords(rs)
+  }, [eventsDone])
+
+  useEffect(() => { void reload() }, [reload])
 
   const set = (id: string, s: LocalStatus) => setStatus((prev) => ({ ...prev, [id]: s }))
 
@@ -65,6 +95,59 @@ export function Missions() {
     }
   }
 
+  /* —— 编队 —— */
+  const openBriefing = (m: Mission) => {
+    const rec = squadIdsFrom(m.recommend)
+    setPicked(rec.length ? rec : PERSON_IDS.filter((id) => isMet(id)).slice(0, 3))
+    setBriefing(m)
+  }
+
+  const togglePick = (id: string) => {
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 4 ? p : [...p, id]))
+  }
+
+  const launch = () => {
+    if (!briefing || picked.length === 0) return
+    if (stamina.cur < TUNING.spPerSortie) {
+      push('warn', '体力不足', '小队体力见底，先让观测间隔过去再说。', false)
+      return
+    }
+    if (stamina.cur <= TUNING.overdriveAt) {
+      push('warn', '过载出击', `余 ${Math.round(stamina.cur)} 体力仍强行出击 · 全场输出打折`, false)
+    }
+    setLive({ mission: briefing, squad: picked })
+    setBriefing(null)
+  }
+
+  /* —— 结算：写隐藏存档 + 加数值 —— */
+  const settle = async (rec: BattleRecord, spLeft: number) => {
+    const win = rec.outcome === '胜'
+    await putRecord(rec)
+    const patch: Record<string, number> = {}
+    for (const id of rec.squad) patch[id] = win ? TUNING.growthPerWin : TUNING.growthPerLoss
+    await addGrowth(patch)
+    const mvpId = squadIdsFrom([rec.mvp])[0]
+    if (win) {
+      for (const id of rec.squad) bumpBond(id, TUNING.bondPerWin + (id === mvpId ? TUNING.bondMvp : 0))
+    }
+    await writeStamina({ ...stamina, cur: Math.max(0, spLeft) })
+    set(rec.missionId, win ? '完成' : '压制中')
+    push(
+      win ? 'success' : 'warn',
+      win ? '作战归档' : '撤出归档',
+      `${rec.no}「${rec.title}」· ${rec.rounds} 回合 · 出力最重 ${rec.mvp}${win ? ' · 已写入作战记录' : ''}`,
+      false,
+    )
+    setLive(null)
+    await reload()
+  }
+
+  const deleteRec = async (id: string) => {
+    await deleteRecord(id)
+    setOpenRec(null)
+    await reload()
+  }
+
   return (
     <div className="vpage">
       <div className="vhead">
@@ -83,6 +166,19 @@ export function Missions() {
         </div>
       </div>
 
+      {/* 小队体力：只在执行任务时消耗，随观测间隔缓慢回复 */}
+      <div className={css.stamina} data-squad-stamina>
+        <span className="tiny mono" style={{ letterSpacing: '0.18em', color: 'var(--ink-mute)' }}>小队体力</span>
+        <div className={css.staminaBar}>
+          <i
+            style={{ width: `${(stamina.cur / stamina.max) * 100}%` }}
+            data-low={stamina.cur <= TUNING.overdriveAt ? '1' : undefined}
+          />
+        </div>
+        <span className="tiny mono">{Math.round(stamina.cur)}/{stamina.max}</span>
+        <span className="tiny muted">出击扣除，观测推进时回补</span>
+      </div>
+
       {list.length === 0 ? (
         <div className={css.empty}>
           <div style={{ fontSize: 26, marginBottom: 8, fontFamily: 'var(--font-mono)' }}>NO ACTIVE TASKS</div>
@@ -90,62 +186,73 @@ export function Missions() {
         </div>
       ) : (
         <div className={css.board}>
-          {list.map((m) => {
-            const sev = stageSeverity(m.stage)
-            const sm = STATUS_META[m.status]
-            const ribbonCls = m.status === '完成' ? css.done : m.status === '压制中' ? css.danger : m.status === '锁定' ? css.warn : m.stage >= 6 ? css.danger : m.stage >= 3 ? css.warn : css.ok
+          {list.map((m2) => {
+            const sev = stageSeverity(m2.stage)
+            const sm = STATUS_META[m2.status]
+            const done = m2.status === '完成'
+            const ribbonCls = m2.status === '完成' ? css.done : m2.status === '压制中' ? css.danger : m2.status === '锁定' ? css.warn : m2.stage >= 6 ? css.danger : m2.stage >= 3 ? css.warn : css.ok
             return (
-              <article key={m.id} className={css.card} style={{ '--s': m.stage >= 6 ? 'var(--red)' : m.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
+              <article key={m2.id} className={css.card} data-mission={m2.id} style={{ '--s': m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
                 <div className={`${css.cardRibbon} ${ribbonCls}`} />
                 <div className={css.cardMain}>
                   <div className={css.cardTop}>
-                    <span className={css.cardNo}>档案 {m.no} / 阶段 S{m.stage}</span>
+                    <span className={css.cardNo}>档案 {m2.no} / 阶段 S{m2.stage}</span>
                     <span className="num badge" style={{ color: sev.color, borderColor: sev.color }}>{sev.label}</span>
                     <span className={`${sm.cls}`}><span className={css.statusBadge}><span className={css.dot} style={{ background: sm.color, boxShadow: `0 0 6px ${sm.color}` }} />{sm.label}</span></span>
-                    <span className={`chip`} style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>{m.nature}</span>
+                    <span className={`chip`} style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>{m2.nature}</span>
                   </div>
-                  <h3 className={css.cardTitle} style={{ marginTop: 6 }}>{m.title}</h3>
+                  <h3 className={css.cardTitle} style={{ marginTop: 6 }}>{m2.title}</h3>
                   <div className={css.cardSub}>
-                    <span>地点 {m.place}</span>
+                    <span>地点 {m2.place}</span>
                     <span className={css.sep}>/</span>
-                    <span className={css.deadline}>期限 · {m.deadline}</span>
+                    <span className={css.deadline}>期限 · {m2.deadline}</span>
                     <span className={css.sep}>/</span>
-                    <span>编号 {m.no}</span>
+                    <span>编号 {m2.no}</span>
                   </div>
-                  <p className={`${css.cardDesc} ${openId === m.id ? css.open : ''}`}>{m.desc}</p>
+                  <p className={`${css.cardDesc} ${openId === m2.id ? css.open : ''}`}>{m2.desc}</p>
                   <div className={css.crew}>
                     <span className="tag tiny" style={{ padding: '4px 8px' }}>推荐小队</span>
-                    {m.recommend.map((r) => (
+                    {m2.recommend.map((r) => (
                       <span key={r} className={css.crewChip} style={{ '--crew': CHAR_HUE[r] ?? 'var(--violet)' }}>
                         <i>{CHAR_HUE[r] ? CHARACTERS.find((c) => c.name === r)?.sigil ?? '?' : '?'}</i>
                         {r}
                       </span>
                     ))}
-                    <button className="linkGo" onClick={() => setOpenId(openId === m.id ? null : m.id)} style={{ marginLeft: 'auto' }}>
-                      {openId === m.id ? '收起' : '展开详情'}
+                    <button className="linkGo" onClick={() => setOpenId(openId === m2.id ? null : m2.id)} style={{ marginLeft: 'auto' }}>
+                      {openId === m2.id ? '收起' : '展开详情'}
                     </button>
                   </div>
                 </div>
 
                 <div className={css.cardAside}>
                   <div className={css.rewards}>
-                    {m.reward.map((rw) => (
+                    {m2.reward.map((rw) => (
                       <span key={rw} className={css.rewardLine}>{rw}</span>
                     ))}
                   </div>
                   <div className={css.asideAction}>
-                    {m.status === '锁定' ? (
-                      <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m)}>
+                    {m2.status === '锁定' ? (
+                      <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m2)}>
                         <PaperPlaneTilt size={13} /> 等待签署
                       </button>
-                    ) : m.status === '完成' ? (
-                      <button className="btn btn--ghost" style={{ fontSize: 12 }} disabled>已归档</button>
+                    ) : done ? (
+                      <>
+                        <button className="btn btn--ghost" style={{ fontSize: 12 }} disabled>已归档</button>
+                        <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => openBriefing(m2)} title="再次出击（不计入首次归档）">
+                          <Crosshair size={13} /> 再出击
+                        </button>
+                      </>
                     ) : (
-                      <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => act(m)}>
-                        {m.status === '待接取' && <>接取任务 <Check size={13} weight="bold" /></>}
-                        {m.status === '已派遣' && <>下令压制 <ArrowRight size={13} /></>}
-                        {m.status === '压制中' && <>标记完成 <Check size={13} weight="bold" /></>}
-                      </button>
+                      <>
+                        <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => openBriefing(m2)} data-sortie={m2.id}>
+                          <Crosshair size={13} weight="bold" /> 出击
+                        </button>
+                        <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m2)}>
+                          {m2.status === '待接取' && <>接取任务 <Check size={13} weight="bold" /></>}
+                          {m2.status === '已派遣' && <>下令压制 <ArrowRight size={13} /></>}
+                          {m2.status === '压制中' && <>标记完成 <Check size={13} weight="bold" /></>}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -154,6 +261,120 @@ export function Missions() {
           })}
         </div>
       )}
+
+      {/* 作战记录 */}
+      <section className={css.records} data-battle-records>
+        <div className={css.recordsHead}>
+          <b>作战记录</b>
+          <span className="tiny muted">{records.length} 场已归档 · 逐回合底稿与成文一并留档</span>
+        </div>
+        {records.length === 0 ? (
+          <div className="tiny muted" style={{ padding: '10px 2px' }}>尚无作战记录。出击一次，回来就有了。</div>
+        ) : (
+          <div className={css.recList}>
+            {records.map((r) => (
+              <article key={r.id} className={css.rec} data-battle-record={r.id} data-outcome={r.outcome}>
+                <button className={css.recTop} onClick={() => setOpenRec(openRec === r.id ? null : r.id)}>
+                  <span className={css.recOut} data-outcome={r.outcome}>{r.outcome}</span>
+                  <b className={css.recTitle}>{r.no}「{r.title}」</b>
+                  <span className="tiny muted">{r.rounds} 回合 · MVP {r.mvp} · {r.narrativeBy}</span>
+                  <span className={css.recChev} data-open={openRec === r.id ? '1' : undefined}>›</span>
+                </button>
+                {openRec === r.id ? (
+                  <div className={css.recBody}>
+                    <div className={css.recNarr} data-battle-narrative>{r.narrative || '（未成文）'}</div>
+                    <details className={css.recRaw}>
+                      <summary className="tiny mono">逐回合底稿</summary>
+                      <pre className={css.recPre}>{r.digest}</pre>
+                    </details>
+                    <button className="btn btn--ghost" style={{ fontSize: 11 }} onClick={() => deleteRec(r.id)}>
+                      <Trash size={12} /> 删除此条
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 编队 */}
+      {briefing ? (
+        <div className={css.modal} data-sortie-briefing>
+          <div className={css.modalBox}>
+            <div className={css.modalHead}>
+              <Users size={15} weight="bold" />
+              <b>编队 · {briefing.no}「{briefing.title}」</b>
+              <span className="tiny muted">危险度 S{briefing.stage} · 最多 4 人</span>
+            </div>
+            {/* 主角在作战子系统里的位置：指挥与观测，不下场出手 */}
+            <div className={css.opCard} data-operator-card>
+              <span className="glyph" style={{ '--g': OPERATOR_PERSON.hue, width: 30, height: 30 }}>
+                <span style={{ fontSize: 13 }}>{OPERATOR_PERSON.sigil}</span>
+              </span>
+              <div className={css.opMain}>
+                <b>{operatorName.trim() || '言万心叶'} · 操作员</b>
+                <span className="tiny muted">
+                  作战位置 · 指挥与观测：不下场出手，只决定由谁出击、以何等手数应敌、目标指向何处，收束后撰写作战记录。
+                </span>
+                <span className="tiny muted">低语者（Susurrador）持有者 / Stage4『活性化』 · 体验入学后登记在册</span>
+              </div>
+            </div>
+            <div className={css.pickGrid}>
+              {PERSON_IDS.map((id) => {
+                const p = personOf(id)
+                if (!p) return null
+                const met = isMet(id)
+                const on = picked.includes(id)
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`${css.pick} ${on ? css.pickOn : ''}`}
+                    disabled={!met}
+                    data-pick={id}
+                    data-on={on ? '1' : undefined}
+                    onClick={() => togglePick(id)}
+                    title={met ? p.name : '尚未遇见'}
+                  >
+                    <span className="glyph" style={{ '--g': p.hue, width: 24, height: 24 }}>
+                      <span style={{ fontSize: 11 }}>{p.sigil}</span>
+                    </span>
+                    <span className={css.pickName}>{met ? p.name : '？？？'}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className={css.modalFoot}>
+              <span className="tiny muted">
+                已选 {picked.length}/4 · 预计消耗体力 {TUNING.spPerSortie}
+                {stamina.cur <= TUNING.overdriveAt ? ' · 体力偏低，将过载出击' : ''}
+              </span>
+              <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setBriefing(null)}>取消</button>
+              <button className="btn btn--primary" style={{ fontSize: 12 }} disabled={picked.length === 0} onClick={launch} data-launch>
+                出击
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 作战本体 */}
+      {live ? (
+        <Battle
+          mission={live.mission}
+          squad={live.squad}
+          progress={periodProgress(epDone)}
+          growth={growth}
+          stamina={stamina}
+          onExit={async (spLeft) => {
+            await writeStamina({ ...stamina, cur: Math.max(0, spLeft) })
+            setLive(null)
+            await reload()
+          }}
+          onSettled={(rec, spLeft) => { void settle(rec, spLeft) }}
+        />
+      ) : null}
     </div>
   )
 }

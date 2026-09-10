@@ -1,23 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Key } from 'react'
-import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, Stop, UploadSimple } from '@phosphor-icons/react'
+import type { CSSProperties, Key } from 'react'
+import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, UploadSimple } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
-import { CHARACTERS } from '../data/chars'
 import { personOf } from '../data/castmeta'
+import { rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
+import type { StreamResult } from '../lib/api'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
-import type { ChatMsg, CharId, RecordMode } from '../data/types'
+import type { ChatMsg, RecordMode } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply } from '../lib/plot'
+import { listRecords } from '../lib/battle/store'
+import { recentBattleContext } from '../lib/battle/narrate'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
-import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, readJsonFile, storeSchemes } from '../lib/schemes'
+import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
 import type { Scheme } from '../lib/schemes'
+import PresetManager from './PresetManager'
+import type { PresetEntry } from '../lib/preset'
+import { activePresetId } from '../lib/preset'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
+import { buildPresetContext, readActivePreset } from '../lib/preset'
 import { splitSpeech } from '../lib/dialogue'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -112,9 +119,9 @@ function parseDraftLines(raw: string): string[] {
 export function Plot() {
   const {
     operatorName, navigate, push,
-    epDone, bondNow, world,
+    epDone, bondNow, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, recordPick, completeEvent,
-    records,
+    records, requestProfile,
   } = useTerminal()
 
   const [cfgMain, setCfgMain] = useState<ApiSettings | null | undefined>(undefined)
@@ -136,6 +143,8 @@ export function Plot() {
   /** 内嵌预设条：本机方案列表 + 存当前参数用的命名输入 */
   const [schemes, setSchemes] = useState<Scheme[]>(listSchemes)
   const [presetName, setPresetName] = useState('')
+  /** 正在「管理预设」的方案（null = 未开面板） */
+  const [manageOf, setManageOf] = useState<Scheme | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const draftAbortRef = useRef<AbortController | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -153,6 +162,14 @@ export function Plot() {
     })
   }, [])
 
+  // 近期作战记录（隐藏存档）：作为延续性背景注入本回合推演，防前后文不搭
+  const [battleLog, setBattleLog] = useState('')
+  useEffect(() => {
+    let alive = true
+    void listRecords().then((rs) => { if (alive) setBattleLog(recentBattleContext(rs)) })
+    return () => { alive = false }
+  }, [])
+
   // 在线门禁 = 主线直连通道已配置（密钥仅运行时存于本机，不入库）
   const ready = !!cfgMain && isReady(cfgMain)
   const showOnline = mode === 'online'
@@ -165,6 +182,13 @@ export function Plot() {
     [epDone, allDone],
   )
   const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
+
+  /* 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
+  const castRows = useMemo(() => (focusEv ? rosterRowsOf(focusEv) : []), [focusEv])
+  const openProfile = useCallback((id: string) => {
+    requestProfile(id)
+    navigate('archive')
+  }, [requestProfile, navigate])
 
   /* —— 通道配置：读取主线直连配置 —— */
   useEffect(() => {
@@ -256,14 +280,14 @@ export function Plot() {
       const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id]) ?? null) : null
 
       // 世界书命中注入（仅就绪在线；失败静默，主线不受影响）
+      const scanLog = baseOverride ?? logs[evId]
+      const scanText = `${toTurns(scanLog, 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
       let loreBlock = ''
       try {
         const books = await loadActiveBooks()
         if (books.length) {
-          const scanLog = baseOverride ?? logs[evId]
-          const recent = toTurns(scanLog, 10).map((t) => t.content).join('\n')
           loreBlock = buildLoreContext(books, {
-            scanText: `${recent}${userMsg ? `\n${userMsg}` : ''}`,
+            scanText,
             contextText: `${ev.group} · ${ev.title} · ${ev.place} ${ev.summary}`,
             gate: allowGateFor({ epDone, ends: world.ends }, evId),
           })
@@ -272,6 +296,9 @@ export function Plot() {
         loreBlock = ''
       }
 
+      // 预设导演指令：由「管理预设」套用后落下的生效快照提供；与本回合扫描同一份文本
+      const preset = buildPresetContext(readActivePreset(), scanText)
+
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
@@ -279,6 +306,9 @@ export function Plot() {
         needDirective: needDir.current,
         loreContext: loreBlock || undefined,
         nextEvent: nextEv,
+        presetPre: preset.pre || undefined,
+        presetPost: preset.post || undefined,
+        battleLog: battleLog || undefined,
       })
       const base = toTurns(baseOverride ?? logs[evId])
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
@@ -298,15 +328,19 @@ export function Plot() {
           let acc = ''
           let settled = false
           try {
-            const res = await chatCompletionStream(cfgMain!, messages, {
-              signal: ctrl.signal,
-              maxTokens: attempt === 1 ? turnBudget : Math.max(5000, Math.round(turnBudget * 1.8)),
-              onDelta: (chunk) => {
-                if (settled || !chunk) return
-                acc += chunk
-                setLive({ evId, text: acc })
-              },
-            })
+            const budget = attempt === 1 ? turnBudget : Math.max(5000, Math.round(turnBudget * 1.8))
+            // 流式开关（终端设置 · 主线剧情通道）：关掉即整段接收，后续解析路径完全一致
+            const res: StreamResult = cfgMain!.stream === false
+              ? { text: await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: budget }) }
+              : await chatCompletionStream(cfgMain!, messages, {
+                signal: ctrl.signal,
+                maxTokens: budget,
+                onDelta: (chunk) => {
+                  if (settled || !chunk) return
+                  acc += chunk
+                  setLive({ evId, text: acc })
+                },
+              })
             settled = true
             setLive(null)
 
@@ -316,20 +350,20 @@ export function Plot() {
             if (!full) {
               const thought = (res.reasoning ?? '').trim()
               const why = res.refusal
-                ? `模型拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
+                ? `推演通道拒绝作答${res.refusal ? ` · ${res.refusal}` : ''}`
                 : res.finishReason === 'length'
                   ? (thought
-                      ? `模型在内部思考上花费过久（约 ${thought.length} 字）把输出预算耗尽，正文为空。`
+                      ? `通道在内部思考上花费过久（约 ${thought.length} 字）把输出预算耗尽，正文为空。`
                       : '回复已达长度上限，且未产出任何正文。')
-                  : '模型未返回任何内容。'
+                  : '通道未返回任何内容。'
               if (attempt < 2) {
-                push('info', '正文为空，自动重试', '已提示模型直接作答并加大输出预算，正在补发一次。', false)
+                push('info', '正文为空，自动重试', '已催通道直接作答并加大输出预算，正在补发一次。', false)
                 messages.push({ role: 'user', content: RETRY_NUDGE })
                 continue
               }
               needDir.current = true
               setErr(why)
-              push('danger', 'AI 推演失败', why, false)
+              push('danger', '推演中断', why, false)
               return
             }
 
@@ -382,7 +416,7 @@ export function Plot() {
             setLive(null)
             const msg = e instanceof Error ? e.message : String(e)
             setErr(`推演中断：${msg}`)
-            push('danger', 'AI 推演失败', msg, false)
+            push('danger', '推演中断', msg, false)
             return
           } finally {
             abortRef.current = null
@@ -426,7 +460,7 @@ export function Plot() {
       const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: cfgMain!.maxTokens || 1500 })
       const text = (res ?? '').trim()
       if (!text) {
-        setDraftErr('模型没有返回可用内容，可再试一次。')
+        setDraftErr('通道没有返回可用内容，可再试一次。')
         return
       }
       const sugg = parseDraftLines(text)
@@ -435,7 +469,7 @@ export function Plot() {
         return
       }
       setDraftSugg(sugg)
-      push('info', 'AI 起草', `已草拟 ${sugg.length} 条可发送的行动/话语，点选一条填入。`, false)
+      push('info', '代拟', `已草拟 ${sugg.length} 条可发送的行动/话语，点选一条填入。`, false)
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
       const msg = e instanceof Error ? e.message : String(e)
@@ -514,7 +548,7 @@ export function Plot() {
     recordPick(focusEv.id, ch.key)
     if (ch.bond) for (const b of ch.bond) bumpBond(b.char, b.delta)
     if (ch.flag) setFlag(ch.flag[0], ch.flag[1])
-    push('decode', '行动已定 · 系统存档', ch.label, false)
+    push('decode', '行动已定 · 终端留存', ch.label, false)
     const text =
       `（言万心叶的行动已定，并已由终端自动存档：）${ch.label}。\n`
       + `（该行动的既定余波：${ch.after}）\n`
@@ -572,7 +606,7 @@ export function Plot() {
       if ((e as Error).name === 'AbortError') return
       const msg = e instanceof Error ? e.message : String(e)
       setErr(`补发失败：${msg}`)
-      push('danger', 'AI 推演失败', msg, false)
+      push('danger', '推演中断', msg, false)
     } finally {
       setBusy(false)
       abortRef.current = null
@@ -651,6 +685,27 @@ export function Plot() {
   const refreshSchemes = () => {
     const cur = listSchemes()
     setSchemes((prev) => (prev.length === cur.length && prev.every((s, i) => s.id === cur[i]?.id) ? prev : cur))
+  }
+
+  /** 打开「管理预设」：优先调正在生效的那个，否则第一份；没有方案就提示 */
+  const openPresetManager = () => {
+    const list = listSchemes()
+    setSchemes(list)
+    if (!list.length) {
+      push('warn', '尚无方案', '先在下方命名并存一份方案，再回来调它的指令条目。', false)
+      return
+    }
+    const act = activePresetId()
+    setManageOf(list.find((s) => s.id === act) ?? list[0])
+  }
+
+  /** 管理预设 · 保存：只改本地方案记录（patchScheme 会同步生效快照） */
+  const savePresetFromPlot = (s: Scheme, patch: { entries: PresetEntry[]; loreEntryOff: Record<string, string[]> }) => {
+    setSchemes(patchScheme(s.id, patch))
+    setManageOf(null)
+    const on = patch.entries.filter((e) => e.enabled !== false && !e.placeholder).length
+    const all = patch.entries.filter((e) => !e.placeholder).length
+    push('success', '已保存预设', `${s.name} · 指令条目 ${on}/${all} 启用`, false)
   }
 
   const applySchemePreset = async (s: Scheme) => {
@@ -733,23 +788,32 @@ export function Plot() {
         <div>
           <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>在场角色 · 羁绊</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {(focusEv.chars.length ? focusEv.chars : (CHARACTERS.map((c) => c.id) as CharId[])).map((id) => {
-              const c = CHARACTERS.find((x) => x.id === id)
-              if (!c) return null
-              const bond = bondNow(id)
+            {castRows.map((r) => {
+              const bond = bondNow(r.id)
+              const met = isMet(r.id)
               return (
-                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="glyph" style={{ '--g': c.hue, width: 26, height: 26 }}>
-                    <span style={{ fontSize: 12 }}>{c.sigil}</span>
+                <button
+                  key={r.id}
+                  type="button"
+                  data-plot-cast={r.id}
+                  className={css.castRow}
+                  style={{ '--c': r.hue } as CSSProperties}
+                  onClick={() => openProfile(r.id)}
+                  title={met ? `调阅 ${r.name} 的档案` : `${r.name} 的档案尚未显影`}
+                >
+                  <span className="glyph" style={{ '--g': r.hue, width: 26, height: 26 }}>
+                    <span style={{ fontSize: 12 }}>{r.sigil}</span>
                   </span>
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <b style={{ fontSize: 12.5 }}>{c.name}</b>
-                    <span className="tiny muted" style={{ marginLeft: 6, color: 'var(--ink-faint)' }}>{c.epithet}</span>
+                    <b style={{ fontSize: 12.5 }}>{r.name}</b>
                   </span>
-                  <span className="tiny mono" style={{ color: 'var(--ink-mute)' }}>{bond}</span>
-                </div>
+                  <span className="tiny mono" style={{ color: 'var(--ink-mute)' }}>{met ? bond : '?'}</span>
+                </button>
               )
             })}
+            {castRows.length === 0 ? (
+              <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>本段无在册在场者。</span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -881,7 +945,7 @@ export function Plot() {
             <button
               className={`${css.segBtn} ${showOnline ? css.isOn : ''}`}
               onClick={() => {
-                if (!ready) push('warn', '主线通道未配置', '请先在「设置」中为主线剧情填入接口地址与模型。')
+                if (!ready) push('warn', '主线通道未配置', '请先在「终端设置 · 剧情推演通道」中填入接口地址与模型。')
                 setMode('online')
               }}
             >
@@ -903,7 +967,7 @@ export function Plot() {
         <select
           className="field"
           style={{ width: 'auto', maxWidth: 220, fontSize: 12 }}
-          aria-label="套用本机方案"
+          aria-label="套用终端方案"
           title="把方案参数一键套用到主线/短信两通道（不含密钥）"
           defaultValue=""
           onFocus={refreshSchemes}
@@ -914,7 +978,7 @@ export function Plot() {
             if (s) void applySchemePreset(s)
           }}
         >
-          <option value="">{schemes.length ? `选择方案套用（${schemes.length}）…` : '暂无本机方案'}</option>
+          <option value="">{schemes.length ? `选择方案套用（${schemes.length}）…` : '暂无终端方案'}</option>
           {schemes.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
@@ -944,8 +1008,24 @@ export function Plot() {
         >
           <UploadSimple size={13} weight="bold" /> 导入预设
         </button>
-        <span className={`tiny muted ${css.presetHint}`}>密钥不进方案，仅存本机</span>
+        <button
+          className="btn btn--ghost"
+          style={{ fontSize: 12, padding: '6px 11px', flex: '0 0 auto' }}
+          onClick={openPresetManager}
+          title="管理预设：调本预设自带的指令条目（生成行为 / 文本格式）与世界书词条开关"
+        >
+          <SlidersHorizontal size={13} weight="bold" /> 管理预设
+        </button>
+        <span className={`tiny muted ${css.presetHint}`}>密钥不进方案，只留本终端</span>
       </div>
+
+      {manageOf && (
+        <PresetManager
+          scheme={manageOf}
+          onSave={(patch) => savePresetFromPlot(manageOf, patch)}
+          onClose={() => setManageOf(null)}
+        />
+      )}
 
       <div className={css.layout}>
         <section className="panel" data-session-area="1">
@@ -953,7 +1033,7 @@ export function Plot() {
             <span className="panel__title">事件会话 <span className="slash" /></span>
             {showOnline ? (
               <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
-                {busy ? '推演中…' : activeLog.length ? '回车或按钮发送' : '尚未开始'}
+                {busy ? '推演中…' : activeLog.length ? '回车送出' : '尚未开始'}
               </span>
             ) : (
               <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>第三人称原文通读</span>
@@ -970,7 +1050,7 @@ export function Plot() {
               {cfgMain !== undefined && !ready ? (
                 <div className={css.warn}>
                   <b>主线通道未配置</b>
-                  <span>当前为离线环境。填入接口地址与模型后即可在线推演；或点下方「离线通读」读本段原文。</span>
+                  <span>当前为离线环境。填入接口地址与模型后即可在线推演；或按下方「离线通读」读本段原文。</span>
                   <button className="btn btn--amber" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
                     前往设置
                   </button>
@@ -1134,7 +1214,7 @@ export function Plot() {
                   {draftSugg && draftSugg.length ? (
                     <div className={css.draftSugg}>
                       <div className={css.draftSuggHead}>
-                        <b>AI 起草 · 言万心叶可说的下一步</b>
+                        <b>代拟 · 言万心叶可说的下一步</b>
                         <button type="button" className="linkGo" onClick={() => setDraftSugg(null)}>收起</button>
                       </div>
                       <div className={css.draftRow}>
@@ -1155,7 +1235,7 @@ export function Plot() {
                   <div className={css.composer}>
                     <input
                       className="field"
-                      placeholder={`推进事件：向导演传达言万心叶的行动…（Enter 发送）`}
+                      placeholder={`推进事件：向导演传达言万心叶的行动…（回车送出）`}
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -1171,11 +1251,11 @@ export function Plot() {
                       className={`btn btn--ghost ${css.draftBtn}`}
                       onClick={() => void draftCandidates()}
                       disabled={busy || drafting}
-                      aria-label="AI 起草行动候选"
+                      aria-label="代拟行动候选"
                     >
                       {drafting ? <span className={css.draftSpin} aria-hidden="true" /> : null}
                       <MagicWand size={16} weight="bold" />
-                      <span>{drafting ? '起草中…' : 'AI 起草'}</span>
+                      <span>{drafting ? '起草中…' : '代拟'}</span>
                     </button>
                     {busy ? (
                       <button className={`btn btn--amber ${css.composerBtn}`} onClick={stop} aria-label="中断推演">

@@ -62,7 +62,7 @@ export function SaveDialog() {
             <button
               className="btn btn--ghost"
               style={{ fontSize: 11, padding: '6px 12px' }}
-              onClick={() => push('info', '自动存档说明', '终端每有进度变化，1.5 秒后自动把当前运行镜像到自动档（仅本机，不入库）。', false)}
+              onClick={() => push('info', '自动存档说明', '终端每有进度变化，1.5 秒后自动把当前运行镜像到自动档——只落在本终端，不外传。', false)}
             >
               说明
             </button>

@@ -1,0 +1,450 @@
+/* ============================================================
+   回合制作战 · 全屏作战界面
+   演出（fx）全部由 CSS 承担，不引第三方动画库。
+   ============================================================ */
+
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding: 14px 18px 16px;
+  background:
+    radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--amber) 7%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--bg-1), #06070b 70%);
+  color: var(--ink, #e8e6e3);
+  overflow: hidden;
+  animation: battleIn 0.28s ease-out;
+}
+@keyframes battleIn {
+  from { opacity: 0; transform: scale(1.015); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 抖屏：只在爆破 / 终末系技能时抖 */
+.root[data-shake='1'] { animation: shake 0.26s linear; }
+@keyframes shake {
+  0%, 100% { transform: none; }
+  20% { transform: translate3d(-5px, 2px, 0); }
+  45% { transform: translate3d(4px, -3px, 0); }
+  70% { transform: translate3d(-2px, 1px, 0); }
+}
+
+/* ---------- 全屏演出层 ---------- */
+
+.fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+}
+
+/* 斩击：斜切白光 + 画面二分 */
+.fx[data-fx='slash']::before {
+  content: '';
+  position: absolute;
+  left: -30%;
+  top: 50%;
+  width: 160%;
+  height: 5px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  box-shadow: 0 0 26px 6px color-mix(in srgb, #fff 70%, transparent);
+  transform: rotate(-19deg);
+  animation: slashCut 0.42s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+@keyframes slashCut {
+  0% { opacity: 0; transform: rotate(-19deg) translateX(-60%); }
+  22% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(-19deg) translateX(60%); }
+}
+
+/* 爆破：径向冲击环 */
+.fx[data-fx='blast']::before,
+.fx[data-fx='blast']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--amber) 80%, #fff);
+  animation: blastRing 0.6s ease-out forwards;
+}
+.fx[data-fx='blast']::after { animation-delay: 0.1s; border-color: #fff; }
+@keyframes blastRing {
+  0% { opacity: 0.95; transform: scale(0.3); }
+  100% { opacity: 0; transform: scale(14); }
+}
+
+/* 弹痕 · 声波：同心音环 */
+.fx[data-fx='guitar']::before,
+.fx[data-fx='guitar']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, #ff8a5c 85%, transparent);
+  animation: soundRing 0.72s ease-out forwards;
+}
+.fx[data-fx='guitar']::after { animation-delay: 0.16s; border-color: #ffe0cf; }
+@keyframes soundRing {
+  0% { opacity: 0.9; transform: scale(0.2) ; }
+  70% { opacity: 0.35; }
+  100% { opacity: 0; transform: scale(6.2); }
+}
+
+/* 封印 / 亲和：六边形网格脉冲 */
+.fx[data-fx='seal'] {
+  background:
+    repeating-linear-gradient(60deg, color-mix(in srgb, var(--violet) 22%, transparent) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(-60deg, color-mix(in srgb, var(--violet) 22%, transparent) 0 1px, transparent 1px 26px);
+  animation: sealPulse 0.6s ease-out forwards;
+}
+@keyframes sealPulse {
+  0% { opacity: 0; transform: scale(1.25); }
+  35% { opacity: 0.85; }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* 反现实机械：故障扫描线 */
+.fx[data-fx='drone'] {
+  background: repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb, #4ea6c8 26%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+  animation: droneScan 0.55s linear forwards;
+}
+@keyframes droneScan {
+  0% { opacity: 0; transform: translateY(-40%); }
+  40% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(40%); }
+}
+
+/* 终末：暗噪点 */
+.fx[data-fx='noise'] {
+  background:
+    repeating-conic-gradient(from 0deg, rgba(0, 0, 0, 0.42) 0 2deg, transparent 2deg 7deg),
+    radial-gradient(closest-side, color-mix(in srgb, #7a4de0 34%, transparent), transparent 75%);
+  animation: noiseFlick 0.5s steps(4, end) forwards;
+}
+@keyframes noiseFlick {
+  0% { opacity: 0; }
+  25% { opacity: 0.8; }
+  50% { opacity: 0.25; }
+  75% { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+/* 防御：护盾折光 */
+.fx[data-fx='guard'] {
+  background: radial-gradient(circle at 50% 78%, color-mix(in srgb, var(--steel) 30%, transparent), transparent 58%);
+  animation: guardFlash 0.4s ease-out forwards;
+}
+@keyframes guardFlash {
+  0% { opacity: 0; }
+  40% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+/* 回复：上升光粒 */
+.fx[data-fx='heal'] {
+  background: radial-gradient(circle at 50% 80%, color-mix(in srgb, var(--jade) 26%, transparent), transparent 62%);
+  animation: healUp 0.55s ease-out forwards;
+}
+@keyframes healUp {
+  0% { opacity: 0; transform: translateY(14px); }
+  45% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-22px); }
+}
+
+/* ---------- HUD ---------- */
+
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 6;
+}
+.hudL { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.no {
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.title { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hudR { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.round {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+}
+.round b { color: var(--amber); font-size: 15px; }
+
+.spWrap { display: flex; align-items: center; gap: 7px; color: var(--ink-mute); }
+.spBar {
+  width: 118px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  overflow: hidden;
+}
+.spBar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--jade), color-mix(in srgb, var(--jade) 55%, #fff));
+  transition: width 0.35s ease;
+}
+.spBar i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
+
+/* ---------- 阵型 ---------- */
+
+.ranks { display: flex; flex-direction: column; justify-content: center; gap: 6px; position: relative; z-index: 6; }
+.rankLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+.rank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+}
+
+/* ---------- 单位卡 ---------- */
+
+.unit {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 208px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--u) 8%, var(--bg-1)), var(--bg-2));
+  transition: border-color 0.2s, transform 0.14s, box-shadow 0.2s;
+}
+.unit[data-side='enemy'] { border-left: 3px solid color-mix(in srgb, var(--u) 70%, transparent); }
+.unitActive {
+  border-color: color-mix(in srgb, var(--amber) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--amber) 30%, transparent), 0 6px 22px -12px var(--amber);
+  transform: translateY(-2px);
+}
+.unitAim {
+  cursor: crosshair;
+  border-color: color-mix(in srgb, var(--red) 65%, transparent);
+  animation: aimPulse 1s ease-in-out infinite;
+}
+@keyframes aimPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 45%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+.unitDown { filter: saturate(0.1) brightness(0.6); }
+
+.unitFace { position: relative; flex-shrink: 0; }
+.unitGate {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  color: var(--amber);
+}
+.unitBody { min-width: 0; flex: 1; }
+.unitName { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.unitName b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unitUnrated {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.hpBar {
+  margin-top: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  overflow: hidden;
+}
+.hpBar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--jade), color-mix(in srgb, var(--jade) 55%, #fff));
+  transition: width 0.3s ease;
+}
+.hpBar i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
+.unitMeta {
+  margin-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--ink-mute);
+}
+
+.dmgNum {
+  position: absolute;
+  right: 10px;
+  top: 2px;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--red) 85%, transparent), 0 2px 0 #000;
+  animation: dmgFloat 0.62s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes dmgFloat {
+  0% { opacity: 0; transform: translateY(10px) scale(0.7); }
+  25% { opacity: 1; transform: translateY(0) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-26px) scale(1); }
+}
+.downMark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  color: var(--red);
+  background: color-mix(in srgb, #000 45%, transparent);
+  border-radius: var(--radius);
+}
+
+/* ---------- 控制台 ---------- */
+
+.console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 480px);
+  gap: 12px;
+  align-items: stretch;
+  position: relative;
+  z-index: 6;
+}
+.logBox {
+  min-height: 108px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-1) 80%, #000);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.logLine { font-size: 12px; line-height: 1.55; animation: logIn 0.25s ease-out; }
+@keyframes logIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+.logLine[data-log-side='enemy'] { color: color-mix(in srgb, var(--red) 62%, var(--ink, #e8e6e3)); }
+.line { display: block; color: var(--amber); font-style: italic; }
+.logTxt { display: block; }
+.dmgTag { color: #fff; font-family: var(--font-mono); font-weight: 700; }
+.downTag { color: var(--red); font-family: var(--font-mono); }
+
+.cmd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 80%, #000));
+  min-height: 148px;
+}
+.wait { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; flex: 1; }
+
+.who { display: flex; align-items: center; gap: 9px; }
+.skillList { display: flex; flex-direction: column; gap: 6px; }
+.skill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, transform 0.1s;
+}
+.skill:hover { border-color: color-mix(in srgb, var(--amber) 60%, transparent); transform: translateX(2px); }
+.skillStart { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
+.skillPoor { opacity: 0.42; cursor: not-allowed; transform: none; }
+.skillIc {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: var(--amber);
+  flex-shrink: 0;
+}
+.skillIc[data-kind='防御'] { background: color-mix(in srgb, var(--steel) 20%, transparent); color: var(--steel); }
+.skillIc[data-kind='启动'] { background: color-mix(in srgb, var(--violet) 22%, transparent); color: var(--violet); }
+.skillName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skillCost { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); flex-shrink: 0; }
+
+.aimBox { display: flex; flex-direction: column; gap: 8px; }
+.aimHead { display: flex; align-items: center; gap: 8px; color: var(--red); }
+
+/* ---------- 收场 ---------- */
+
+.result { display: flex; flex-direction: column; gap: 9px; min-height: 0; }
+.resultHead { display: flex; flex-direction: column; gap: 3px; }
+.resultHead b { font-size: 15px; letter-spacing: 0.08em; }
+.resultHead b[data-outcome='胜'] { color: var(--jade); }
+.resultHead b[data-outcome='败'] { color: var(--red); }
+.resultBody {
+  flex: 1;
+  min-height: 90px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-1) 75%, #000);
+  font-size: 12.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  color: var(--ink-mute);
+}
+
+@media (max-width: 900px) {
+  .console { grid-template-columns: minmax(0, 1fr); }
+  .logBox { max-height: 110px; }
+}

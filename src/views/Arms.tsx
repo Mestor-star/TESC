@@ -7,7 +7,7 @@ import { useTerminal } from '../terminal/Terminal'
 
 import css from './Arms.module.css'
 
-const KINDS: ArmKind[] = ['弹痕', '斩击', '片羽']
+const KINDS: ArmKind[] = ['弹痕', '斩击', '片羽', '特殊武器']
 
 /**
  * 图鉴门禁（P8）：

@@ -216,23 +216,67 @@ function sidecastEntry(s: SideCastEntry): LorebookEntry {
 }
 
 /** 全部 canon 种子世界书（4 本；「登场者登记」已并入「角色档案」） */
-export function buildCanonLorebooks(): Lorebook[] {
-  return [buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook()]
+/* ---------- 世界书：任务作战（回合制子系统的设定与主角位置） ---------- */
+
+function buildOpsBook(): Lorebook {
+  const e1 = entry(
+    'ops-engage',
+    ['任务', '任务简报', '作战', '出击', '交战', '讨伐', '反现实实体'],
+    '任务简报板上的每一条，都是一次可派出的作战。委员会以小队为单位处置反现实实体：'
+      + '按敏捷度排定出手序，以常规接触、武装解放与「到达点」逐次削减敌方的反现实反应，归零即为达成。'
+      + '弹痕、斩击一类武装对反现实实体是本职，打普通目标反而不占优；'
+      + '反过来，体术再强的人，若其武装尚未解封，也打不出应有的分量。',
+    10,
+    '作战准则',
+    { ops: true },
+  )
+  const e2 = entry(
+    'ops-stamina',
+    ['体力', '观测间隔', '出击', '撤出', '驻扎', '过载'],
+    '小队体力只在执行任务时消耗：一次出击先扣固定份额，出手另计。'
+      + '它不会因休整而立刻回满——只有操作员继续推进观测、收束新的剧情段，它才随观测间隔缓慢回补。'
+      + '体力偏低时仍可强行出击，代价是全场出力打折；撤出并不退档，任务只回到「压制中」，另留一条伤情记录。',
+    20,
+    '体力与观测间隔',
+    { ops: true },
+  )
+  const e3 = entry(
+    'ops-operator',
+    ['操作员', '指挥', '言万心叶', '低语者', '观测员', '下令'],
+    '言万心叶是这台终端的操作员，也是登记在册的 Stage4『活性化』、低语者（Susurrador）的持有者。'
+      + '他不在战斗序列里直接出手：作战时他是下令的一方——决定由谁出击、以何等手数应敌、目标指向何处，'
+      + '并在每一次收束之后撰写作战记录。他的位置是指挥与观测，不是刀锋。'
+      + '（注：低语者之名在体验入学、登记成立之后才对外示出。）',
+    30,
+    '操作员的作战位置',
+    { ops: true },
+  )
+  return book(
+    'book-canon-ops',
+    '任务作战',
+    '回合制作战子系统的设定：交战准则、体力与观测间隔、操作员在作战中的位置。',
+    [e1, e2, e3],
+  )
 }
 
-/** 默认激活的 canon 库 id（全 4 本默认激活） */
+export function buildCanonLorebooks(): Lorebook[] {
+  return [buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook(), buildOpsBook()]
+}
+
+/** 默认激活的 canon 库 id（全 5 本默认激活） */
 export const CANON_BOOK_ACTIVE_IDS = [
   'book-canon-char',
   'book-canon-codex',
   'book-canon-lore',
   'book-canon-events',
+  'book-canon-ops',
 ]
 
 /** 旧版种子里的废弃库 id（迁移时删除：v1 的独立「登场者登记」） */
 export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
 
-/** 种子内容版本：v2 → v3 = 智库势力条目去剧情化整改＋新增各学园附属机构（树木骑士团/抹消小组/放逐部队/黑锤部队/企业警备队），触发一次性重播升级 */
-export const CANON_SEED_VERSION = 3
+/** 种子内容版本：v3 → v4 = 新增「任务作战」canon 库（交战准则 / 体力与观测间隔 / 操作员的作战位置），触发一次性重播升级 */
+export const CANON_SEED_VERSION = 4
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'
