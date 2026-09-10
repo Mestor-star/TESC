@@ -77,7 +77,7 @@ interface Row {
   alias: string       // 呼号/昵称（主役 = 定位；登场者 = 昵称）
   epithet: string     // 称号行
   division: string    // 所属
-  trait: string       // 弹痕 / 片羽 / 斩击 / 特性
+  trait: string       // 弹痕 / 片羽 / 斩击 / 终末
   potential: string   // 终末潜力
   rank?: string       // 委员会学生排行 RANK（原文/人物页有明确者；无则不标）
   state: string       // 状态 / 出场
