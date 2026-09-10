@@ -1052,6 +1052,22 @@ try {
   ok('N3 出击 → 全屏作战界面：敌人居中大字卡（名在头上 · 血量在脚下）+ 行动条 + 我方队列（主角在场）',
     nFoe.foe === true && nFoe.name === true && nFoe.foot === true && nFoe.atb === true && nFoe.op === true, JSON.stringify(nFoe))
 
+  // 需要看版式时：SHOT=<目录> 把作战屏与技能面板各截一张（默认不跑）
+  if (process.env.SHOT) {
+    const shot = async (name) => {
+      const r = await cdp.send('Page.captureScreenshot', { format: 'png' })
+      writeFileSync(path.join(process.env.SHOT, name + '.png'), Buffer.from(r.data, 'base64'))
+    }
+    await sleep(700)
+    await shot('battle-root')
+    await ev(`(()=>{const b=document.querySelector('[data-command-menu] [data-cmd="skill"]');if(b)b.click();return true})()`)
+    await poll(`!!document.querySelector('[data-skill-list]')`, 6000, 'shot skill panel')
+    await sleep(300)
+    await shot('battle-skill')
+    await ev(`(()=>{const b=document.querySelector('[data-sub-back]');if(b)b.click();return true})()`)
+    await sleep(200)
+  }
+
   // 指令序固定为 攻击/技能/道具/防御/更换装备/战略撤退
   await poll(`!!document.querySelector('[data-command-menu]')`, 8000, 'N root menu')
   const seq = await ev(`(()=>[...document.querySelectorAll('[data-command-menu] [data-cmd]')].map(b=>b.getAttribute('data-cmd')).join(','))()`)

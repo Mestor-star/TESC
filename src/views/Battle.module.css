@@ -3,20 +3,45 @@
    演出（fx）全部由 CSS 承担，不引第三方动画库。
    ============================================================ */
 
+/* 幕布：只在最外层铺满浏览器，里面那块「作战屏」另有自己的宽度 */
 .root {
   position: fixed;
   inset: 0;
   z-index: 90;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 7px;
-  padding: 9px 13px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 14px;
   background:
-    radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--amber) 7%, transparent), transparent 70%),
+    radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--amber) 6%, transparent), transparent 70%),
     linear-gradient(180deg, var(--bg-1), #06070b 70%);
   color: var(--ink, #e8e6e3);
   overflow: hidden;
   animation: battleIn 0.28s ease-out;
+}
+
+/*
+  作战屏：自成一块「游戏窗口」，不随浏览器宽度无限拉伸。
+  窗口拉满时，指令窗在左、小队在右，中间隔着一整个屏幕，出招得横着找 ——
+  定宽之后，「看血 → 出招」是一眼的距离。四角切斜边是 P5 的版式口吻。
+*/
+.stage {
+  position: relative;
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 7px;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  padding: 12px 20px 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-2) 62%, transparent), transparent 38%),
+    #07080d;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
+  box-shadow: 0 0 0 1px #000, 0 26px 74px -32px #000;
 }
 @keyframes battleIn {
   from { opacity: 0; transform: scale(1.015); }
@@ -34,11 +59,12 @@
 
 /* ---------- 全屏演出层 ---------- */
 
+/* 演出层压在最上面：全屏特效要盖过作战屏本身 */
 .fx {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  z-index: 20;
   overflow: hidden;
 }
 
@@ -228,6 +254,7 @@
   align-items: center;
   justify-content: center;
   min-height: 0;
+  overflow: hidden;
   position: relative;
   z-index: 6;
 }
@@ -265,8 +292,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: clamp(92px, 10.5vw, 128px);
-  height: clamp(92px, 10.5vw, 128px);
+  width: clamp(100px, min(11vw, 17vh), 168px);
+  height: clamp(100px, min(11vw, 17vh), 168px);
   border: 1px solid color-mix(in srgb, var(--u) 55%, transparent);
   border-radius: 14px;
   background:
@@ -346,29 +373,58 @@
    我方小队
    ============================================================ */
 
-.party { position: relative; z-index: 6; }
-.partyRow { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; }
-
-.unit {
+/* 小队列：下窗右侧的一列，血与体力挨着指令窗，出招前不用横着找 */
+.party {
   position: relative;
   display: flex;
   flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  padding: 6px 7px 7px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--red);
+  background: color-mix(in srgb, var(--bg-2) 78%, transparent);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+.partyCap {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--ink-mute);
+}
+.partyCol {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
-  width: clamp(124px, 12.5vw, 158px);
-  padding: 6px 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.unit {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  padding: 4px 7px;
   border: 1px solid var(--line);
   border-left: 3px solid color-mix(in srgb, var(--u) 62%, transparent);
-  border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-2) 82%, transparent);
-  transition: border-color 0.16s ease, transform 0.16s ease;
+  transition: border-color 0.16s ease, background 0.16s ease;
 }
+.unitBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .unit[role='button'] { cursor: crosshair; }
 .unitActive {
   border-color: var(--amber);
   border-left-color: var(--amber);
-  transform: translateY(-2px);
-  box-shadow: 0 0 26px -12px var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, var(--bg-2));
+  box-shadow: inset 0 0 22px -14px var(--amber);
 }
+.unitActive .unitName { color: var(--amber); }
 .unitAim { animation: aimPulse 1s ease-in-out infinite; }
 @keyframes aimPulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 55%, transparent); }
@@ -376,9 +432,37 @@
 }
 .unitDown { filter: saturate(0.1) brightness(0.6); }
 
-.unitTop { display: flex; align-items: center; gap: 7px; }
-.unitName { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.unitName b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unitTop { display: flex; align-items: baseline; gap: 6px; min-width: 0; line-height: 1.25; }
+.unitName {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unitHpNum {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.unitHpNum i { font-style: normal; font-weight: 400; font-size: 9px; color: var(--ink-mute); }
+.unitHpNum[data-low='1'] { color: var(--red); }
+.unitFootRow { display: flex; align-items: center; gap: 6px; }
+.unitFootRow .atb { flex: 1; min-width: 0; }
+.unitTags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 5px;
+  font-size: 9.5px;
+  line-height: 1.25;
+  min-height: 12px;
+}
 .unitCls { font-style: normal; font-size: 10px; color: var(--ink-mute); letter-spacing: 0.06em; }
 
 .unitGate {
@@ -414,7 +498,7 @@
   color: var(--ink-mute);
 }
 .gearTag {
-  margin-left: auto;
+  flex-shrink: 0;
   padding: 0 4px;
   border-radius: 3px;
   border: 1px solid color-mix(in srgb, var(--amber) 38%, transparent);
@@ -497,25 +581,55 @@
 
 .console {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(258px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
   gap: 9px;
   position: relative;
   z-index: 6;
   min-height: 0;
-  max-height: min(232px, 30vh);
+  max-height: min(296px, 35vh);
 }
 
-.logBox {
+/* 战报条：横贯屏底的一条字幕，左端挂「观测频道」的斜杠标 */
+.logStrip {
+  position: relative;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 9px;
+  align-items: stretch;
+  min-height: 44px;
+  max-height: min(74px, 11vh);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--amber);
+  background: color-mix(in srgb, var(--bg-1) 82%, #000);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+.logCap {
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--amber);
+  writing-mode: horizontal-tb;
+}
+.logSlash {
+  display: block;
+  height: 2px;
+  width: 34px;
+  background: linear-gradient(90deg, var(--amber), transparent);
+  transform: skewX(-32deg);
+}
+.logLines {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   gap: 3px;
-  padding: 7px 9px;
   min-height: 0;
-  max-height: none;
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-1) 78%, #000);
 }
 .logLine { font-size: 11px; line-height: 1.45; animation: logIn 0.25s ease-out; }
 @keyframes logIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
@@ -595,11 +709,12 @@
 }
 .x:hover { color: var(--ink); border-color: var(--amber); }
 
-.list { display: flex; flex-direction: column; gap: 4px; max-height: 132px; overflow-y: auto; }
+.list { display: flex; flex-direction: column; gap: 4px; max-height: 186px; overflow-y: auto; }
 .row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px 7px;
   width: 100%;
   padding: 6px 8px;
   font-size: 11.5px;
@@ -616,6 +731,32 @@
   transform: translateX(2px);
 }
 .rowStart { border-color: color-mix(in srgb, var(--violet) 55%, transparent); }
+
+/* 技能行的第二、三排：说明 + 要点（倍率 / 消耗 / 附带效果一律取自技能数据本身） */
+.rowDesc {
+  grid-column: 1 / -1;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-mute);
+}
+.rowNotes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rowNotes i {
+  font-style: normal;
+  padding: 0 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 15px;
+  color: color-mix(in srgb, var(--amber) 78%, var(--ink));
+  white-space: nowrap;
+}
 .rowPoor { opacity: 0.42; cursor: not-allowed; }
 .rowOn {
   border-color: color-mix(in srgb, var(--amber) 70%, transparent);
@@ -697,19 +838,24 @@
 }
 
 @media (max-width: 900px) {
-  .console { grid-template-columns: minmax(0, 1fr); max-height: min(360px, 46vh); }
-  .logBox { min-height: 0; max-height: none; }
+  .root { padding: 0; }
+  .stage { clip-path: none; border: 0; padding: 8px 10px 10px; }
+  .console { grid-template-columns: minmax(0, 1fr); max-height: min(380px, 52vh); }
   .cmd { min-height: 0; }
+  .partyCol { flex-direction: row; flex-wrap: wrap; }
+  .partyCol > .unit { flex: 1 1 168px; }
   .foeBody { width: 84px; height: 84px; }
   .foe { min-width: 92px; }
-  .unit { width: 116px; }
   .seq { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .logStrip { grid-template-columns: minmax(0, 1fr); }
+  .logCap { flex-direction: row; align-items: center; gap: 8px; }
 }
 
 /* ---------- 角色自身的体力（与小队体力分开：出手扣这一条） ---------- */
 
 .chSpBar {
-  height: 3px;
+  flex: 0 0 46px;
+  height: 4px;
   border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-1) 80%, #000);
@@ -722,7 +868,7 @@
   transition: width 0.24s ease;
 }
 .chSpBar > i[data-low='1'] { background: linear-gradient(90deg, #8a5a2a, var(--amber)); }
-.spNum { color: var(--jade); }
+.spNum { flex-shrink: 0; font-size: 9px; color: var(--jade); }
 
 /* ---------- 招招不同的演出：色相 / 变奏 / 斜向由技能 id 决定 ---------- */
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowLeft, Backpack, CaretRight, Crosshair, Lightning, Shield, Sneaker, Swap, X,
@@ -11,6 +12,8 @@ import type { Command } from '../lib/battle/engine'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
+import type { GearDef } from '../lib/battle/types'
+import { POWER_SCALE } from '../lib/battle/roster'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
@@ -245,7 +248,13 @@ export function Battle({
   const aimEnemies = panel === 'aim' && (!pending || pending.t !== 'item' || ITEM_OF[pending.itemId].target === 'enemyOne')
   const aimAllies = panel === 'aim' && !aimEnemies
 
-  return (
+  /*
+    作战屏走 portal 挂到 body 上。
+    任务板 / 剧情页的容器带 transform，fixed 会被它当成包含块 ——
+    直接渲染的话，作战界面会被压进简报那一栏里，还得上下翻。
+    挂到 body 之后它才是一块真正独占视图的界面：1920×1080 一屏装得下。
+  */
+  return createPortal(
     <div className={css.root} data-battle="1" data-phase={st.phase} data-shake={shake ? '1' : undefined}>
       {/* 全屏演出层 */}
       {fx ? (
@@ -264,6 +273,10 @@ export function Battle({
           <span className={css.fxTag} data-fx-tag={fx.skillId}>{fx.skill}</span>
         </div>
       ) : null}
+
+      {/* 作战屏 —— 自成一块「游戏窗口」，不铺满整个浏览器宽度
+          （铺满会让指令窗与小队列隔得太远，出招时眼睛要横跨半屏） */}
+      <div className={css.stage}>
 
       {/* HUD */}
       <header className={css.hud}>
@@ -362,25 +375,13 @@ ${siteR.f.word}`}>
         </div>
       </div>
 
-      {/* 我方小队 */}
-      <div className={css.party} data-party-field>
-        <div className={css.partyRow}>
-          {st.allies.map((c) => (
-            <Unit
-              key={c.id}
-              c={c}
-              fx={fx}
-              active={!over && actor?.id === c.id}
-              targetable={aimAllies && !c.down && !playing}
-              onPick={() => pickTarget(c.id)}
-            />
-          ))}
+      {/* 战报条 —— 贴着敌阵脚下的一条滚动字幕，出战况不占地方 */}
+      <div className={css.logStrip} data-battle-log>
+        <div className={css.logCap}>
+          观测频道
+          <i className={css.logSlash} />
         </div>
-      </div>
-
-      {/* 控制台：左日志 / 右指令 */}
-      <div className={css.console}>
-        <div className={css.logBox} data-battle-log>
+        <div className={css.logLines}>
           {recent.length === 0 ? (
             <div className="tiny muted">观测频道静默。</div>
           ) : (
@@ -403,7 +404,10 @@ ${siteR.f.word}`}>
             ))
           )}
         </div>
+      </div>
 
+      {/* 下窗 —— 左指令 / 右小队（black souls 式：出招与看血在同一块里） */}
+      <div className={css.console}>
         <div className={css.cmd} data-battle-cmd data-actor={!over && !playing && actor ? actor.id : undefined}>
           {over ? (
             <Result
@@ -503,6 +507,7 @@ ${siteR.f.word}`}>
                           <SkillIcon id={`item-${it.id}`} />
                           <span className={css.rowName}>{it.name}</span>
                           <span className={css.rowCost}>×{n}</span>
+                          <span className={css.rowDesc} data-item-desc>{it.desc}</span>
                         </button>
                       )
                     })}
@@ -542,6 +547,10 @@ ${siteR.f.word}`}>
                               <i className={css.rowSub}>{g.sub}</i>
                             </span>
                             <span className={css.rowCost}>{on ? '装配中' : `×${owned[gid]}`}</span>
+                            <span className={css.rowDesc} data-gear-desc>{g.desc}</span>
+                            <span className={css.rowNotes} data-gear-notes>
+                              {gearNotes(g).map((n, i) => <i key={`${i}-${n}`}>{n}</i>)}
+                            </span>
                           </button>
                         )
                       })}
@@ -618,8 +627,31 @@ ${siteR.f.word}`}>
             </>
           )}
         </div>
+
+        {/* 小队列 —— 谁的血还剩几成、体力还剩几口，出招前就在手边 */}
+        <div className={css.party} data-party-field>
+          <div className={css.partyCap}>
+            小队
+            <span className="tiny muted">点名字可指定为目标</span>
+          </div>
+          <div className={css.partyCol}>
+            {st.allies.map((c) => (
+              <Unit
+                key={c.id}
+                c={c}
+                fx={fx}
+                active={!over && actor?.id === c.id}
+                targetable={aimAllies && !c.down && !playing}
+                onPick={() => pickTarget(c.id)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
+
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -656,9 +688,77 @@ function SkillIcon({ id, size = 15 }: { id: string; size?: number }) {
   return <Ico size={size} weight="bold" className={css.rowIco} data-skill-ico={iconNameOf(id)} />
 }
 
+const TARGET_LABEL: Record<string, string> = {
+  one: '单体敌人', all: '全体敌人', self: '自身', allyOne: '单体队友', allyAll: '全队',
+}
+
+/**
+ * 把一手技能拆成看得懂的要点。
+ * 数值一律从技能本身读（倍率 / 消耗 / 命中段数 / 附带效果），不另写一份说明 ——
+ * 免得文案与引擎各说各的。
+ */
+function notesOf(k: SkillSpec): string[] {
+  const out: string[] = []
+  if (k.power > 0) out.push(`倍率 ${(k.power / POWER_SCALE).toFixed(2)} × ${k.axis}`)
+  else out.push('本手不造成伤害')
+  out.push(TARGET_LABEL[k.target] ?? k.target)
+  if (k.cost) out.push(`耗 ${k.cost} 体力`)
+  if (k.cd) out.push(`冷却 ${k.cd} 拍`)
+
+  const e = k.effect
+  if (e) {
+    if (e.hits && e.hits > 1) out.push(`${e.hits} 段`)
+    if (e.heal) out.push(`回复 ×${e.heal} 意志力`)
+    if (e.shield) out.push(`减伤 ${Math.round(e.shield * 100)}%`)
+    if (e.mark) out.push(`目标受伤 +${Math.round(e.mark * 100)}%`)
+    if (e.slow) out.push(`敌方充能 −${Math.round(e.slow * 100)}%`)
+    if (e.pushBack) out.push(`击退行动条 ${Math.round(e.pushBack * 100)}%`)
+    if (e.clearBar) out.push('清空行动条 · 打断咏唱')
+    if (e.pierce) out.push('无视闪避与减伤')
+    if (e.cleanse) out.push('解除负面')
+    if (e.taunt) out.push(`引仇 ${k.turns ?? 2} 拍`)
+    if (e.revive) out.push('把失能者拉回战列')
+    if (e.selfToo) out.push('增益同时及于自身')
+    if (e.atkUp) out.push(`攻击 +${Math.round(e.atkUp * 100)}%`)
+    if (e.spdUp) out.push(`充能 +${Math.round(e.spdUp * 100)}%`)
+    if (e.evade) out.push(`闪避 +${Math.round(e.evade * 100)}%`)
+    if (e.accUp) out.push(`命中 +${Math.round(e.accUp * 100)}%`)
+    if (e.pushBar) out.push(`立刻充能 ${Math.round(e.pushBar * 100)}%`)
+  }
+
+  if (k.needsStack) out.push(`需 ${k.needsStack} 层印记`)
+  if (k.requireAlly) out.push(`需 ${personOf(k.requireAlly)?.name ?? k.requireAlly} 在场`)
+  if (k.requireAll?.length) out.push(`合击 · ${k.requireAll.length} 人全员在场`)
+  if (k.linkPow) out.push(`参加者各补 ${Math.round(k.linkPow * 100)}% 出力`)
+  if (k.mergeAlly) out.push(`与 ${personOf(k.mergeAlly)?.name ?? k.mergeAlly} 合体 ${k.mergeTicks ?? 2} 拍`)
+  if (k.morph) out.push(`变身 ${k.morphTicks ?? 3} 拍 · 变身毕起算冷却 ${k.morphCd ?? 0} 拍`)
+  if (k.ult) out.push(`终结技 · 蓄 ${k.ult} 拍`)
+  if (k.kind === '启动') out.push('启动技 · 解封普攻与技能')
+  return out
+}
+
+/** 装具的要点：装上去究竟改了什么数（取自 GearDef.mods，不另写一份） */
+function gearNotes(g: GearDef): string[] {
+  const out: string[] = []
+  for (const [k, v] of Object.entries(g.mods)) {
+    if (typeof v !== 'number' || !v) continue
+    if (k === 'spd') out.push(`充能 +${Math.round(v * 100)}%`)
+    else if (k === 'evade') out.push(`闪避 +${Math.round(v * 100)}%`)
+    else if (k === 'shield') out.push(`减伤 ${Math.round(v * 100)}%`)
+    else if (k === 'atk') out.push(`攻击 +${Math.round(v * 100)}%`)
+    else if (k === 'basicMul') out.push(`普攻 ×${(1 + v).toFixed(1)}`)
+    else out.push(`${k} ${v > 0 ? '+' : ''}${v}`)
+  }
+  if (g.skill) out.push(`附带一手「${g.skill.name}」`)
+  if (g.unlockMain) out.push('须先完成对应主线才上架')
+  return out
+}
+
 function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number; onClick: () => void }) {
   const poor = k.cost > sp
   const cooling = cd > 0
+  const notes = notesOf(k)
+  const state = cooling ? `冷却中 · 还需 ${cd} 拍` : poor ? '体力不足' : ''
   return (
     <button
       type="button"
@@ -669,7 +769,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       data-cdmax={k.cd ?? 0}
       className={`${css.row} ${k.kind === '启动' ? css.rowStart : ''} ${poor || cooling ? css.rowPoor : ''}`}
       disabled={poor || cooling}
-      title={k.desc + (cooling ? `（冷却中 · 还需 ${cd} 拍）` : poor ? '（体力不足）' : k.cd ? `（冷却 ${k.cd} 拍）` : '')}
+      title={`${k.name}｜${k.desc}${state ? `（${state}）` : ''}`}
       onClick={onClick}
     >
       <SkillIcon id={k.id} />
@@ -680,6 +780,10 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       <span className={css.rowCost}>
         {cooling ? `冷却 ${cd}` : k.cost ? `${k.cost} 体力` : '无耗'}
         {!cooling && k.cd ? <i className={css.rowSub}>CD {k.cd}</i> : null}
+      </span>
+      <span className={css.rowDesc} data-skill-desc>{k.desc}</span>
+      <span className={css.rowNotes} data-skill-notes>
+        {notes.map((n, i) => <i key={`${i}-${n}`}>{n}</i>)}
       </span>
     </button>
   )
@@ -714,7 +818,7 @@ function BuffTags({ c }: { c: Combatant }) {
   )
 }
 
-/* ---------- 单位卡：我方（横排紧凑） ---------- */
+/* ---------- 单位卡：我方（小队列里的一行 —— 血、体力、行动条一眼看全） ---------- */
 
 function Unit({
   c, fx, active, targetable, onPick,
@@ -727,6 +831,7 @@ function Unit({
 }) {
   const hit = !!fx && fx.targetId === c.id
   const hpPct = (c.hp / c.hpMax) * 100
+  const low = hpPct <= 30
   return (
     <div
       className={`${css.unit} ${c.down ? css.unitDown : ''} ${c.gone > 0 ? css.unitGone : ''} ${active ? css.unitActive : ''} ${targetable ? css.unitAim : ''}`}
@@ -739,43 +844,54 @@ function Unit({
       role={targetable ? 'button' : undefined}
       tabIndex={targetable ? 0 : undefined}
     >
-      <Bar c={c} />
-      <div className={css.unitTop}>
-        <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
-          <span style={{ fontSize: 14 }}>{c.sigil}</span>
-        </span>
-        <span className={css.unitName}>
-          <b>{c.name}</b>
-          <i className={css.unitCls}>{c.cls}</i>
-        </span>
-        {c.startNeed > 0 ? (
-          <span className={css.unitGate} title={`解封 ${c.startUsed}/${c.startNeed}`}>
-            {c.startUsed}/{c.startNeed}
+      <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
+        <span style={{ fontSize: 14 }}>{c.sigil}</span>
+      </span>
+
+      <div className={css.unitBody}>
+        <div className={css.unitTop}>
+          <b className={css.unitName}>{c.name}</b>
+          {c.startNeed > 0 ? (
+            <span className={css.unitGate} title={`解封 ${c.startUsed}/${c.startNeed}`}>
+              {c.startUsed}/{c.startNeed}
+            </span>
+          ) : null}
+          {c.gear ? <span className={css.gearTag}>{GEAR_OF[c.gear]?.name}</span> : null}
+          <span className={css.unitHpNum} data-low={low ? '1' : undefined}>
+            {c.hp}<i>/{c.hpMax}</i>
           </span>
-        ) : null}
+        </div>
+
+        {/* 血条 —— 出招前先看这一条 */}
+        <div className={css.hpBar}>
+          <i style={{ width: `${hpPct}%` }} data-low={low ? '1' : undefined} />
+        </div>
+
+        <div className={css.unitFootRow}>
+          <Bar c={c} />
+          <span className={css.chSpBar} data-chsp={c.id} title={`自身体力 ${c.sp}/${c.spMax} · 出手从这里扣`}>
+            <i style={{ width: `${(c.sp / c.spMax) * 100}%` }} data-low={c.sp <= c.spMax * 0.25 ? '1' : undefined} />
+          </span>
+          <span className={`${css.spNum} mono`}>体力 {c.sp}</span>
+        </div>
+
+        <div className={css.unitTags}>
+          <span className={css.unitCls}>{c.cls}</span>
+          {c.passive ? (
+            <span className={css.unitPas} data-passive={c.passive.name} title={c.passive.desc}>
+              〔{c.passive.name}〕
+            </span>
+          ) : null}
+          {c.gone > 0 ? <span className={css.goneMark}>合体中 · {c.gone} 拍</span> : null}
+          {c.morph ? (
+            <span className={css.morphMark} data-morph={c.morph.name}>
+              化身 · {c.morph.name} · {c.morph.ticks} 拍
+            </span>
+          ) : null}
+          <BuffTags c={c} />
+        </div>
       </div>
-      <div className={css.hpBar}>
-        <i style={{ width: `${hpPct}%` }} data-low={hpPct <= 30 ? '1' : undefined} />
-      </div>
-      <div className={css.chSpBar} data-chsp={c.id} title={`自身体力 ${c.sp}/${c.spMax} · 出手从这里扣`}>
-        <i style={{ width: `${(c.sp / c.spMax) * 100}%` }} data-low={c.sp <= c.spMax * 0.25 ? '1' : undefined} />
-      </div>
-      <div className={`${css.unitMeta} mono`}>
-        <span>{c.hp}/{c.hpMax}</span>
-        <span className={css.spNum}>体力 {c.sp}</span>
-        <span className="muted">敏 {c.axes.敏捷度}</span>
-        {c.gear ? <span className={css.gearTag}>{GEAR_OF[c.gear]?.name}</span> : null}
-      </div>
-      <BuffTags c={c} />
-      {/* 被动：这个人一直带着的东西（数值已计入面板，此处只报名字） */}
-      {c.passive ? (
-        <span className={css.unitPas} data-passive={c.passive.name} title={c.passive.desc}>
-          〔{c.passive.name}〕
-        </span>
-      ) : null}
-      {c.gone > 0 ? <span className={css.goneMark}>合体中 · {c.gone} 拍</span> : null}
-      {/* 变身：借来的形与能力，面板上据实标注是「谁的样子」 */}
-      {c.morph ? <span className={css.morphMark} data-morph={c.morph.name}>化身 · {c.morph.name} · {c.morph.ticks} 拍</span> : null}
+
       {hit && fx.dmg ? <span key={fx.n} className={css.dmgNum}>{fx.dmg}</span> : null}
       {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
     </div>
