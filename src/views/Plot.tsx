@@ -40,6 +40,23 @@ import css from './Plot.module.css'
 
 const LOG_KEY = 'zts-plot:v1'
 
+/**
+ * 侧栏是否展出本段大纲。
+ * 默认关：还没发生的收束摆在观测者眼前就是剧透。
+ * 导演仍然照常拿到大纲（plot.ts 的【事件大纲 · 唯一事实来源】），
+ * 这里只是决定要不要把它摊在界面上；想恢复成旧样子把它改回 true 即可。
+ */
+const SHOW_OUTLINE = false
+
+/**
+ * 在线推演「自动生成正文」的截止事件（含）。
+ * 只有第一卷开头（序章与第 1 话）会由导演自动铺陈开场叙述；
+ * 读到这一段之后，每一段都不再自动生成——一律等操作员发话，
+ * 导演不抢在观测者之前把故事写掉。（原文开场白仍照常注入，那是原文、非生成。）
+ */
+const AUTO_OPEN_THRU = 'v1-3'
+const AUTO_OPEN_THRU_IDX = TIMELINE.findIndex((e) => e.id === AUTO_OPEN_THRU)
+
 /** 进入一个尚无会话的事件时，喂给导演的「开场请求」（不入历史） */
 const OPEN_PROMPT =
   '（开场）请依据「事件大纲」与在场角色，铺陈这一事件的开端：写清此时此地、在场者的状态与正悬而未决的局面，'
@@ -212,6 +229,8 @@ export function Plot() {
     [epDone, allDone],
   )
   const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
+  /* 本段是否由导演自动开篇（只有序章与第 1 话） */
+  const autoOpens = !!focusEv && TIMELINE.findIndex((e) => e.id === focusEv.id) <= AUTO_OPEN_THRU_IDX
 
   /* 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
   const castRows = useMemo(() => (focusEv ? rosterRowsOf(focusEv) : []), [focusEv])
@@ -343,6 +362,7 @@ export function Plot() {
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
+        epDone,
         flags: world.flags,
         needDirective: needDir.current,
         loreContext: loreBlock || undefined,
@@ -492,7 +512,7 @@ export function Plot() {
     const ctrl = new AbortController()
     draftAbortRef.current = ctrl
     try {
-      const system = buildDirectorSystem(ev, { operatorName, bondNow, flags: world.flags, needDirective: false })
+      const system = buildDirectorSystem(ev, { operatorName, bondNow, epDone, flags: world.flags, needDirective: false })
       const messages: ChatTurn[] = [
         { role: 'system', content: system },
         ...toTurns(logs[ev.id]),
@@ -625,7 +645,7 @@ export function Plot() {
     setBusy(true)
     setErr(null)
     const ev = focusEv
-    const system = buildDirectorSystem(ev, { operatorName, bondNow, flags: world.flags, needDirective: true })
+    const system = buildDirectorSystem(ev, { operatorName, bondNow, epDone, flags: world.flags, needDirective: true })
     const messages: ChatTurn[] = [
       { role: 'system', content: system },
       ...toTurns(logs[ev.id]),
@@ -669,13 +689,16 @@ export function Plot() {
     if (lastOpen.current === evId) return
     lastOpen.current = evId
 
+    // 序章与第 1 话之外，导演一律不自动开篇
+    const auto = TIMELINE.findIndex((e) => e.id === evId) <= AUTO_OPEN_THRU_IDX
+
     const scOpen = SCENES[evId]?.open?.trim()
     if (!openings.length && scOpen) {
       const opening: ChatMsg = { id: idFor(), from: 'them', text: scOpen, time: clock(), meta: { opening: true } }
       appendMsg(evId, opening)
       // 自足完整的开场（SagaScene.standby）注入后原地待命，等操作员回话，不再自动让导演续写
-      if (!skipAutoOpen.current && !SCENES[evId]?.standby) void pushTurn(evId, CONTINUE_PROMPT, [opening])
-    } else if (!skipAutoOpen.current) {
+      if (auto && !skipAutoOpen.current && !SCENES[evId]?.standby) void pushTurn(evId, CONTINUE_PROMPT, [opening])
+    } else if (auto && !skipAutoOpen.current) {
       // 已有开场白（此前只铺了原文）→ 接续；或本段无开场白 → 导演自拟
       void pushTurn(evId, openings.length ? CONTINUE_PROMPT : OPEN_PROMPT)
     }
@@ -812,10 +835,14 @@ export function Plot() {
             {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
           </div>
         </div>
-        <div>
-          <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>大纲 · 唯一事实来源</div>
-          <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.85, margin: 0, color: 'var(--ink-mute)' }}>{focusEv.summary}</p>
-        </div>
+        {/* 大纲默认不显示（尚未发生的收束摆在侧栏＝剧透），但代码留着：
+            把 SHOW_OUTLINE 改回 true 即可恢复。导演照常拿到它，见 plot.ts 的事件大纲。 */}
+        {SHOW_OUTLINE ? (
+          <div>
+            <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>大纲 · 唯一事实来源</div>
+            <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.85, margin: 0, color: 'var(--ink-mute)' }}>{focusEv.summary}</p>
+          </div>
+        ) : null}
         {focusEv.entities.some((x) => x !== '——') ? (
           <div>
             <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>关联实体</div>
@@ -938,6 +965,41 @@ export function Plot() {
       </div>
     )
   }
+
+  /* 往期正文的只读渲染：台词与叙述照旧，但不再挂「从此重来／接续选项」这些按钮——
+     那些只对当前这一段有意义。 */
+  const histMsg = (m: ChatMsg, key: Key) => {
+    if (m.from === 'user') {
+      return (
+        <div key={key} className={css.youRow} data-you="1">
+          <div className={`${css.frame} ${css.youFrame}`}>
+            <span className={css.dlgName}>{opName}</span>
+            <div className={css.frameRow}>
+              <span className={css.bubble}>
+                <Linkified text={m.text} />
+              </span>
+              <Portrait avatarId="operator" width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
+            </div>
+          </div>
+          <span className={`muted tiny ${css.youFoot}`}>{m.time}</span>
+        </div>
+      )
+    }
+    return (
+      <div key={key} className={m.meta?.opening ? `${css.narr} ${css.open}` : css.narr}>
+        <div className={css.narrMeta}>
+          <b>{m.meta?.opening ? '开场白 · 原文' : '导演叙述'}</b>
+          <span className="muted tiny">{m.time}</span>
+        </div>
+        {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
+      </div>
+    )
+  }
+
+  /* 往期正文：推过的事件不从版面上撤走，玩家要能一直往回翻（不缓存，代价可忽略） */
+  const pastBlocks = TIMELINE
+    .filter((e) => e.id !== focusEv?.id && (logs[e.id]?.length ?? 0) > 0)
+    .map((e) => ({ ev: e, msgs: logs[e.id] }))
 
   return (
     <div className="vpage">
@@ -1098,7 +1160,7 @@ export function Plot() {
                 </div>
               ) : null}
 
-              {showOnline && ready && !skipAutoOpen.current && activeLog.length === 0 && !busy ? (
+              {showOnline && ready && autoOpens && !skipAutoOpen.current && activeLog.length === 0 && !busy ? (
                 <div className={css.hintLine}>
                   <span className={css.typingDot} /> 正在读取事件大纲并铺陈开场叙述…
                 </div>
@@ -1122,12 +1184,29 @@ export function Plot() {
               ) : null}
 
               <div className={css.thread}>
+                {pastBlocks.map((b) => (
+                  <div key={b.ev.id} className={css.pastBlock} data-past={b.ev.id}>
+                    <div className={css.pastHead}>
+                      <b>{b.ev.title}</b>
+                      <span className="muted tiny">{b.ev.group} · {b.ev.phase}</span>
+                    </div>
+                    {b.msgs.map((m, i) => histMsg(m, `${b.ev.id}-${i}`))}
+                  </div>
+                ))}
+                {pastBlocks.length ? (
+                  <div className={css.pastHead} data-cur-head="1">
+                    <b>{focusEv?.title}</b>
+                    <span className="muted tiny">{focusEv?.group} · {focusEv?.phase}</span>
+                  </div>
+                ) : null}
                 {activeLog.length === 0 ? (
                   <div className={css.emptyHint}>
                     <b>{ready ? '从头推演这一事件' : '此段尚无会话'}</b>
                     <span>
                       {ready
-                        ? '输入任意消息，导演会依据大纲铺陈局势并由你接续行动；亦可点上方「既定行动」直接走关键抉择。'
+                        ? (pastBlocks.length
+                          ? '写下的都留在上面了。本段由你起头——输入任意消息开始这一事件。'
+                          : '输入任意消息，导演会依据大纲铺陈局势并由你接续行动；亦可点上方「既定行动」直接走关键抉择。')
                         : '配置主线通道后即可在线推演；当前可切「离线通读」阅读本段原文。'}
                     </span>
                   </div>

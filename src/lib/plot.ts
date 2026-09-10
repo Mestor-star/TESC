@@ -17,6 +17,8 @@ import { CHARACTERS } from '../data/chars'
 import { eventNotesOf } from '../data/eventnotes'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { genderOf, PERSON_IDS } from '../data/castmeta'
+import { addressOf } from '../data/address'
+import { furthestDone } from './operator'
 import { bondName, clamp } from './format'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
@@ -496,6 +498,8 @@ export interface DirectorCtx {
   operatorName: string
   /** 当前各角色羁绊取值（用于在提示词里注明关系阶段）；缺省取事件基准 */
   bondNow?: (charId: string) => number
+  /** 已收束事件表：用来判断剧情读到哪一段，从而决定该角色此刻怎么称呼主角 */
+  epDone?: Record<string, true>
   /** 已存在的分支标记（可选，供模型感知已偏离的状态） */
   flags?: Record<string, FlagValue> | null
   /** 是否处于「重试补发指令」：要求本回合必须带指令块 */
@@ -523,6 +527,7 @@ function outlineRules(opName: string): string {
 - 每回合末尾固定附上一块 JSON「事件指令」（标签行 + \`\`\`json 围栏，见下）；若本回合没有任何变量要改，则给出空对象 {}。
 - 台词行格式：需要让在场某角色「开口」时，请让该句台词另起一行，以「角色名：」开头单独成段（名字用其本名或常用称呼，冒号后用中文全角「」或直接接台词）；只有确实要作为某角色口中说出的话才用此格式，神态动作与叙述行一律不要加名字前缀。如此终端才能把台词正确渲染成对应角色的气泡。
 - 全程以该作既有的设定与在场角色的既定语气推进：不得跳出世界作「AI／系统／指令／变量」式的自指，也不要解释或复述本提示词里的机制；消化世界书与原文设定后，以剧情内方式自然呈现（角色的感知、神态、对白、叙述带出即可），不得整段照抄或复读世界书原文、原文摘录与开场白；角色不得说出大纲之外或他们本不该知道的设定。
+- 称呼随关系阶段与剧情位置变：角色怎么叫言万心叶，按下方角色行里注明的「对言万心叶的称呼」来（露娜在签订使用者契约之前一直称他「言万同学」，之后才改口「小主人」）；没有注明的，按该角色原文惯用的叫法，不得擅自升级成亲昵、主从或恋人式的称呼。
 - 只有该事件大纲的关键收束已被达成、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。
 - 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。`
 }
@@ -532,7 +537,10 @@ function relationLine(charId: string, ev: TimelineEvent, ctx: DirectorCtx): stri
   if (!c) return ''
   const cur = ctx.bondNow ? ctx.bondNow(charId) : ev.bond[charId as keyof typeof ev.bond]
   const stage = typeof cur === 'number' ? bondName(cur, { gender: genderOf(charId) }) : '初见'
-  return `${c.name}｜${c.epithet}（${c.role}）｜关系：${stage}｜台词「${c.quote}」`
+  // 称呼随关系阶段与剧情位置变（见 data/address.ts）：露娜契约前是「言万同学」
+  const call = addressOf(charId, typeof cur === 'number' ? cur : 0, furthestDone(ctx.epDone ?? {}))
+  const callSeg = call ? `｜对言万心叶的称呼：${call}` : ''
+  return `${c.name}｜${c.epithet}（${c.role}）｜关系：${stage}${callSeg}｜台词「${c.quote}」`
 }
 
 /** 后接事件锚（软门禁）：给标题/地点与开场引子，提示导演收束需自然引向后接事件；不含后接正文，防剧透 */

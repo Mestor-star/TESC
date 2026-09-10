@@ -610,7 +610,8 @@ try {
   // P6 气泡版式 + 关键词跳转：
   // 操作员消息已升级为「右头像」气泡（data-you，含头像 + 正文）；
   // 气泡内可点词 → 图鉴条目（requestCodex）应自动打开对应档案。
-  const youInfo = await ev(`(()=>{const el=document.querySelector('[data-you]');if(!el)return null;return {text:el.innerText, hasAvatar:!!el.querySelector('[role="img"]'), hasLink:!!el.querySelector('span[role="link"]')}})()`)
+  // 往期事件的气泡也留在版面上（data-past），故只取当前这一段里的最后一条操作员消息
+  const youInfo = await ev(`(()=>{const all=[...document.querySelectorAll('[data-you]')].filter(x=>!x.closest('[data-past]'));const el=all[all.length-1];if(!el)return null;return {text:el.innerText, hasAvatar:!!el.querySelector('[role="img"]'), hasLink:!!el.querySelector('span[role="link"]')}})()`)
   ok('EA5 操作员消息为右头像气泡（data-you 含头像+正文）', !!youInfo && youInfo.hasAvatar === true && (youInfo.text || '').includes('E-SLOW-ABORT'), JSON.stringify(youInfo))
   const hasLink = await ev(`!![...document.querySelectorAll('[data-you] span[role="link"]')].find(x=>x.textContent==='灵魂蓄积器TM')`)
   ok('EA6 气泡内图鉴名可点（Linkified 命中）', hasLink === true, 'hasLink=' + hasLink)
@@ -1091,6 +1092,10 @@ try {
         }
       }
       const clicked = await ev(`(async()=>{const menu=document.querySelector('[data-command-menu]');if(!menu)return false;
+        // 慢启动门还没观测到时，除恋兔光外一律防御：不然输出太快、敌人先死光，
+        // 这场就等不到「打满 5 次解封」的那一刻（本次测试要看的正是那一刻）。
+        const hold=${gateUnlocked ? 'false' : 'true'}&&${JSON.stringify(snap.actor)}!=='hikari';
+        if(hold){const g=menu.querySelector('[data-cmd="guard"]');if(g){g.click();return true}}
         const b=menu.querySelector('[data-cmd="skill"]');if(b)b.click();
         await new Promise(r=>setTimeout(r,150));
         const pick=(k)=>{const l=document.querySelector('[data-skill-list]');if(!l)return false;
