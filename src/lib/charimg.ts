@@ -1,31 +1,51 @@
 /**
  * lib/charimg.ts — 角色头像 / 立绘素材解析。
  *
- * 素材约定（后续把真图丢进来即点亮，无需改码）：
- *   public/charimg/<avatarId>.png   档案角色 = 其 id；操作员 = operator.png
- *   同目录允许少量异名（alias）作为备用候选。
- * 全部缺省时由 <Portrait> 回退到「hue 底 + sigil」占位纹章。
+ * 素材约定（把真图丢进 public/charimg/ 即点亮，无需改码）：
+ *   <avatarId>.webp|.png        立绘：竖构图整身（档案大图、剧情区人物框用）
+ *   <avatarId>-face.webp|.png   头像：方构图、脸居中偏上（小圆头像、行动表用）
+ *   档案角色 = 其 id；操作员 = operator。同目录允许少量异名（alias）作为备用候选。
+ *
+ * 取图规则：<变体名> 找不到就退回同名主名（只放了立绘也能用），再顺延 alias；
+ * 每个名字先试 webp 再试 png。全部 404 时由 <Portrait> 回退「hue 底 + sigil」占位纹章。
  */
 
 import { assetBase } from './assetbase'
 
-/** 每个 avatarId 的候选文件名（主名在前，alias 兜底） */
+/** 素材变体：face = 方构图头像（小圆位），full = 竖构图立绘（大图位） */
+export type CharImgVariant = 'face' | 'full'
+
+/**
+ * 候选扩展名（按序试）。webp 在前：同画质下体积约为 png 的 1/3。
+ * jpg 排最后，只作兜底 —— 它没有透明通道，透明区会露出深色底（见 Portrait.tsx）。
+ * 只备一种扩展名时，前面几种会让每个槽位各多几次 404；想省掉就把常用的那种挪到最前。
+ */
+const EXTS = ['webp', 'png', 'jpg'] as const
+
+/** 每个 avatarId 的候选主名（不含扩展名；主名在前，alias 兜底） */
 const ALIASES: Record<string, string[]> = {
   operator: ['operator', 'yanwan-xinye', 'yanwan', 'yan-wan-xinye'],
 }
 
-function urlOf(file: string): string {
-  return `${assetBase()}charimg/${encodeURIComponent(file)}.png`
+/** cover 槽位的缺省取景重心：官方立绘多是整身，脸在画面上部 */
+export const FACE_FOCUS = 'center 20%'
+
+function urlOf(file: string, ext: string): string {
+  return `${assetBase()}charimg/${encodeURIComponent(file)}.${ext}`
 }
 
-/** 头像候选 URL 列表（先试主名，404 后顺延 alias） */
-export function charImgCandidates(avatarId: string): string[] {
-  const base = [avatarId]
-  const alias = ALIASES[avatarId] ?? []
-  return [...base, ...alias.filter((a) => a !== avatarId)].map(urlOf)
+/** 候选 URL 列表：变体名 → 主名 → alias，各自先 webp 后 png；404 逐个顺延 */
+export function charImgCandidates(avatarId: string, variant: CharImgVariant = 'full'): string[] {
+  const alias = (ALIASES[avatarId] ?? []).filter((a) => a !== avatarId)
+  const names = [...new Set([
+    ...(variant === 'face' ? [`${avatarId}-face`] : []),
+    avatarId,
+    ...alias,
+  ])]
+  return names.flatMap((n) => EXTS.map((e) => urlOf(n, e)))
 }
 
 /** 主候选 URL（快速预加载用） */
-export function charImgUrl(avatarId: string): string {
-  return urlOf(avatarId)
+export function charImgUrl(avatarId: string, variant: CharImgVariant = 'full'): string {
+  return urlOf(variant === 'face' ? `${avatarId}-face` : avatarId, EXTS[0])
 }

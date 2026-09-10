@@ -1,7 +1,8 @@
 /**
  * components/Portrait.tsx — 角色头像 / 立绘统一渲染。
  *
- * 素材即插即用：public/charimg/<avatarId>.png（operator → operator.png）。
+ * 素材即插即用：public/charimg/<avatarId>.webp|.png 为立绘，<avatarId>-face.* 为头像
+ * （变体约定见 lib/charimg.ts；operator → operator）。
  * 全部候选 404 / 尚无真图时，自动回退「主题色底 + sigil」纹章占位，
  * 因此无论有没有素材，本组件都可以直接投入聊天头像、气泡、档案卡与立绘位。
  */
@@ -9,11 +10,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 
-import { charImgCandidates } from '../lib/charimg'
+import { charImgCandidates, FACE_FOCUS } from '../lib/charimg'
+import type { CharImgVariant } from '../lib/charimg'
 import { personOf } from '../data/castmeta'
 
 export interface PortraitProps {
-  /** 素材 id（= public/charimg/<id>.png 的 <id>；操作员传 'operator'） */
+  /** 素材 id（= public/charimg/<id>.* 的 <id>；操作员传 'operator'） */
   avatarId: string
   /** 回退占位用的显示名（缺省按 avatarId 查 castmeta） */
   name?: string
@@ -29,8 +31,13 @@ export interface PortraitProps {
   size?: number
   /** 圆形头像（聊天用）；缺省方形小圆角 */
   round?: boolean
-  /** 图像裁切：cover 填满裁剪 · contain 完整可见（立绘用） */
+  /**
+   * 图像裁切：cover 填满裁剪 · contain 完整可见（立绘用）。
+   * 同时决定取哪套素材：cover（小头像 / 人物框）优先 <id>-face，contain（档案大立绘）取 <id>。
+   */
   fit?: 'cover' | 'contain'
+  /** cover 裁切的取景重心（CSS object-position）；缺省偏上取脸，官方整身立绘才切得对 */
+  focus?: string
   eager?: boolean
   className?: string
   style?: CSSProperties
@@ -47,9 +54,11 @@ function metaOf(props: PortraitProps) {
 }
 
 export function Portrait(props: PortraitProps) {
-  const { avatarId, size = 44, width, height, round, fit = 'cover', className, style, eager } = props
+  const { avatarId, size = 44, width, height, round, fit = 'cover', focus, className, style, eager } = props
 
-  const candidates = useMemo(() => charImgCandidates(avatarId), [avatarId])
+  // cover 的槽位都是小头像 / 人物框 → 取头像变体；contain 只有档案大立绘 → 取立绘
+  const variant: CharImgVariant = fit === 'cover' ? 'face' : 'full'
+  const candidates = useMemo(() => charImgCandidates(avatarId, variant), [avatarId, variant])
   const meta = useMemo(() => metaOf(props), [avatarId, props.name, props.hue, props.sigil])
 
   const w = width ?? size
@@ -86,6 +95,7 @@ export function Portrait(props: PortraitProps) {
             width: '100%',
             height: '100%',
             objectFit: fit,
+            objectPosition: fit === 'cover' ? (focus ?? FACE_FOCUS) : undefined,
             display: 'block',
             background: '#0b0e14',
           }}
