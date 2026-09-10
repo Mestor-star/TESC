@@ -3,8 +3,9 @@ import { Lock, PaperPlaneTilt, Stop, Eraser, Plus, Check, Trash, UsersThree, Lis
 
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
-import { genderOf } from '../data/castmeta'
+import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
 import { Linkified } from '../components/Linkified'
+import { Portrait } from '../components/Portrait'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
@@ -150,6 +151,23 @@ export function Tavern() {
     (m: ChatMsg): string => m.meta?.who ?? activeChar?.name ?? '群聊',
     [activeChar],
   )
+  /** 显示名 → 角色 id：群聊里 meta.who 是名字，而头像要的是素材 id */
+  const idOfName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const v of speakerVariants()) if (!m.has(v.text)) m.set(v.text, v.id)
+    return m
+  }, [])
+  /** 该条消息挂谁的头像；解析不出就空串（未登记的说话人不硬凑一张脸） */
+  const avatarOf = useCallback(
+    (m: ChatMsg): string => {
+      if (m.from === 'user') return OPERATOR_ID
+      if (m.meta?.who) return idOfName.get(m.meta.who) ?? ''
+      return activeChar ? activeId ?? '' : ''
+    },
+    [activeChar, activeId, idOfName],
+  )
+  /** 流式气泡的头像：一对一才是此人；群聊是多说话人剧本，落定前不知道谁在说，故留白 */
+  const liveAvatarId = activeGroup ? '' : activeId ?? ''
 
   /**
    * 发送核心：对某联系人用给定历史跑一次回复（历史末端需为操作员发言）。
@@ -724,7 +742,10 @@ ${preset.post}` : '')
                 {activeLog.map((m, i) => (
                   <Fragment key={m.id}>
                     <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`}>
-                      <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
+                      <span className={comm.msgHead}>
+                        {avatarOf(m) ? <Portrait avatarId={avatarOf(m)} size={26} round /> : null}
+                        <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
+                      </span>
                       <span className={comm.bubble}><Linkified text={m.text} /></span>
                       <span className={comm.msgTime}>{m.time}</span>
                     </div>
@@ -773,7 +794,10 @@ ${preset.post}` : '')
                 ))}
                 {live && live.charId === activeId && live.text ? (
                   <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
-                    <span className={comm.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
+                    <span className={comm.msgHead}>
+                      {liveAvatarId ? <Portrait avatarId={liveAvatarId} size={26} round /> : null}
+                      <span className={comm.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
+                    </span>
                     <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
                     <span className={comm.msgTime}>生成中…</span>
                   </div>

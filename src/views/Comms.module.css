@@ -78,6 +78,10 @@
 .msg--them { align-self: flex-start; align-items: flex-start; }
 .msg--user { align-self: flex-end; align-items: flex-end; }
 .msgAuthor { font-size: 10.5px; color: var(--ink-faint); margin: 0 4px 4px; letter-spacing: 0.05em; }
+/* 署名行：头像挂在名字旁边；操作员自己那条镜像到右侧，名字的外边距交给这一行管 */
+.msgHead { display: flex; align-items: center; gap: 7px; margin: 0 4px 5px; }
+.msgHead .msgAuthor { margin: 0; }
+.msg--user .msgHead { flex-direction: row-reverse; }
 .bubble {
   position: relative;
   padding: 9px 13px;

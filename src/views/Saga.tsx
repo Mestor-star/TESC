@@ -4,6 +4,7 @@ import { ArrowRight, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/rea
 
 import { useTerminal } from '../terminal/Terminal'
 import { Linkified } from '../components/Linkified'
+import { Portrait } from '../components/Portrait'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
 import { rosterRowOf, rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
@@ -156,9 +157,14 @@ export function Saga() {
                         onClick={() => openProfile(id)}
                         title={met ? `调阅 ${c.name} 的档案` : `${c.name} 的档案尚未显影`}
                       >
-                        <span className="glyph" style={{ '--g': c.hue, width: 30, height: 30 }}>
-                          <span>{c.sigil}</span>
-                        </span>
+                        {met ? (
+                          <Portrait avatarId={id} size={30} style={{ borderRadius: 4 }} />
+                        ) : (
+                          /* 未遇见的人不露脸，与「？？？」同口径 */
+                          <span className="glyph" style={{ '--g': c.hue, width: 30, height: 30 }}>
+                            <span>{c.sigil}</span>
+                          </span>
+                        )}
                         <div className={css.charMain}>
                           <b>{met ? c.name : '？？？'}</b>
                           <div className="meter" style={{ height: 5, marginTop: 4 }}>
