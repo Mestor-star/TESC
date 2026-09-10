@@ -1155,6 +1155,41 @@ try {
   ok('N9 作战记录里留档逐手底稿（本场编号 + 我方编成 + 出手动作，成文即据它而写）',
     !!nDig && nDig.hasTurn === true && nDig.hasNo === true && nDig.hasTeam === true && nDig.hasUnseal === true, JSON.stringify(nDig))
 
+  // N10：旧版本留下的作战记录（缺 loot / coin / ticks）不能把整个任务简报板掀翻
+  //      ——曾因此整棵树被卸载，屏幕一片黑
+  const seeded = await ev(`new Promise((res)=>{
+    const req = indexedDB.open('zts-battle');
+    req.onerror = () => res('open-fail');
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('records','readwrite');
+      tx.objectStore('records').put({
+        id:'legacy-rec', missionId:'MST-OLD', no:'MST-000', title:'旧版遗留作战',
+        place:'第 12 区', stage:3, outcome:'胜', rounds:5, at:Date.now()-86400000,
+        squad:['hikari'], mvp:'恋兔光', digest:'（旧版底稿）', turns:[], narrative:'旧版成文。'
+      });
+      tx.oncomplete = () => res('ok');
+      tx.onerror = () => res('put-fail');
+    };
+  })`)
+  await goto('终端总览')
+  await goto('任务简报')
+  await sleep(900)
+  const nLegacy = await ev(`(()=>{
+    const cards=[...document.querySelectorAll('[data-battle-record]')];
+    const hit=cards.find(c=>c.getAttribute('data-battle-record')==='legacy-rec');
+    return {
+      seeded:${JSON.stringify(seeded)},
+      boundary:!!document.querySelector('[data-error-boundary]'),
+      alive:document.body.innerText.length,
+      cards:cards.length,
+      ok:!!hit,
+      txt:hit?hit.innerText.slice(0,90):'-'
+    }})()`)
+  ok('N10 旧版作战记录（缺 loot / coin / ticks）不再掀翻任务简报板（无兜底屏 · 界面仍在 · 该条照常列出）',
+    nLegacy.seeded === 'ok' && nLegacy.boundary === false && nLegacy.alive > 500 && nLegacy.ok === true,
+    JSON.stringify(nLegacy))
+
   /* ============ Phase O：主角专档（角色档案 + 世界书） ============ */
   console.log('\n[Phase O] 主角专档：角色档案分期面板 + 「主角专档 · 言万心叶」世界书')
   await goto('角色档案')

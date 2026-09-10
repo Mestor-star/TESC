@@ -11,6 +11,7 @@ import { personOf } from '../data/castmeta'
 import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
 import { opSituation } from '../lib/operator'
+import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { AXIS_KEYS, OP_PERIODS, opPeriodAt } from '../lib/operator-arc'
 import { AXIS_MAX } from '../data/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
@@ -222,6 +223,12 @@ function placeDialog(
   return { left, top }
 }
 
+/** 技能图标：与作战面板同一套分配，档案里看到的和下场时看到的是同一枚 */
+function SkillIcon({ id }: { id: string }) {
+  const Ico = iconOf(id)
+  return <Ico size={14} weight="bold" className={css.opAbilIco} data-skill-ico={iconNameOf(id)} />
+}
+
 export function Archive() {
   const { operatorName, epDone, bondNow, push, profileRequest, clearProfileRequest, isMet } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
@@ -401,8 +408,9 @@ export function Archive() {
               <p>{opArc.armNote}</p>
             </div>
             <div className={css.opAbil}>
-              {opArc.abilities.map((a) => (
+              {opArc.abilities.map((a, i) => (
                 <div key={a.name} className={css.opAbilRow} data-op-abil={a.name}>
+                  <SkillIcon id={`op-${opArc.at}-${i}`} />
                   <span className={css.opAbilKind} data-kind={a.kind}>{a.kind}</span>
                   <b>{a.name}</b>
                   <span className="tiny muted">{a.desc}</span>

@@ -8,6 +8,7 @@ import {
   act, createBattle, digestOf, legalSkills, lootOddsOf, rewardOf,
 } from '../lib/battle/engine'
 import type { Command } from '../lib/battle/engine'
+import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import { TUNING } from '../lib/battle/tuning'
@@ -387,6 +388,7 @@ export function Battle({
                           title={it.desc}
                           onClick={() => issue({ t: 'item', itemId: it.id })}
                         >
+                          <SkillIcon id={`item-${it.id}`} />
                           <span className={css.rowName}>{it.name}</span>
                           <span className={css.rowCost}>×{n}</span>
                         </button>
@@ -422,6 +424,7 @@ export function Battle({
                             title={g.desc}
                             onClick={() => doEquip(gid)}
                           >
+                            <SkillIcon id={`gear-${gid}`} />
                             <span className={css.rowName}>
                               {g.name}
                               <i className={css.rowSub}>{g.sub}</i>
@@ -497,6 +500,12 @@ function SubPanel({
   )
 }
 
+/** 技能图标：由技能 id 确定性分配（见 lib/battle/icons），同一技能永远同一枚 */
+function SkillIcon({ id, size = 15 }: { id: string; size?: number }) {
+  const Ico = iconOf(id)
+  return <Ico size={size} weight="bold" className={css.rowIco} data-skill-ico={iconNameOf(id)} />
+}
+
 function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number; onClick: () => void }) {
   const poor = k.cost > sp
   const cooling = cd > 0
@@ -511,6 +520,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       title={k.desc + (cooling ? `（冷却中 · 还需 ${cd} 拍）` : poor ? '（体力不足）' : k.cd ? `（冷却 ${k.cd} 拍）` : '')}
       onClick={onClick}
     >
+      <SkillIcon id={k.id} />
       <span className={css.rowName}>
         {k.name}
         {k.kind !== '普攻' ? <i className={css.rowSub}>{k.kind}</i> : null}

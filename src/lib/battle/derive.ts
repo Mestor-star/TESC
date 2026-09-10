@@ -20,7 +20,7 @@ import { furthestDone } from '../operator'
 import { ROSTER } from './roster'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
-import type { AxisKey, AxisSheet, Combatant, FxKind, SkillSpec } from './types'
+import type { AxisKey, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target } from './types'
 
 const AXES: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
 
@@ -309,14 +309,192 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
 
 /* ---------- 任务 → 敌阵 ---------- */
 
-const ENEMY_PROFILE: { match: RegExp; name: string; cls: string; fx: FxKind; tags: string[] }[] = [
-  { match: /魔王/, name: '漆黑的影', cls: '魔王之影', fx: 'noise', tags: ['反现实', '异端', '魔王'] },
-  { match: /异端/, name: '异端显形', cls: '异端', fx: 'noise', tags: ['反现实', '异端'] },
-  { match: /机械|工学|制品/, name: '反现实制成品', cls: '造物', fx: 'drone', tags: ['反现实', '机械'] },
-  { match: /残渣|残留|清点|清缴|旧物/, name: '反现实残渣', cls: '残渣', fx: 'seal', tags: ['反现实', '残渣'] },
-  { match: /低语/, name: '低语聚合体', cls: '低语', fx: 'seal', tags: ['反现实', '残渣'] },
+/**
+ * 敌方型别：任务性质 → 敌方身份与它自己的一套打法。
+ * 每一型都有自己的普攻与两门看家技能，各自带冷却 —— 现场打起来
+ * 该型该做什么是可预期的，而不是所有敌人共用同一招。
+ */
+interface FoeSkill {
+  id: string
+  name: string
+  kind: '普攻' | '技能'
+  desc: string
+  cost: number
+  power: number
+  axis: AxisKey
+  target: Target
+  effect?: SkillEffect
+  turns?: number
+  cd?: number
+}
+
+interface FoeProfile {
+  match: RegExp
+  name: string
+  cls: string
+  fx: FxKind
+  tags: string[]
+  sigil: string
+  hue: string
+  /** 出手时的一句话（原文语气） */
+  line: string
+  skills: FoeSkill[]
+}
+
+/** 普攻公用形态：每型的普攻名字与轴不同，其余口径一致 */
+const foeAtk = (id: string, name: string, desc: string, axis: AxisKey, power = 1): FoeSkill =>
+  ({ id, name, kind: '普攻', desc, cost: 0, power, axis, target: 'one', cd: 0 })
+
+const ENEMY_PROFILE: FoeProfile[] = [
+  {
+    match: /魔王/,
+    name: '漆黑的影', cls: '魔王之影', fx: 'noise', tags: ['反现实', '异端', '魔王'],
+    sigil: '王', hue: '#7a4de0',
+    line: '「——」黑金的狮子低下来，那不是咆哮，是重量。',
+    skills: [
+      foeAtk('foe-maou-bite', '狮子 · 咬碎', '终末化之后仍在咬的那张嘴。', '破坏力', 1.1),
+      {
+        id: 'foe-maou-roar', name: '终末化 · 咆哮', kind: '技能',
+        desc: '把这一带的现实密度整体压下去：全场受伤，且所有人的行动条被推后。',
+        cost: 4, power: 1.4, axis: '反现实亲和', target: 'all', cd: 3,
+        effect: { pushBack: 0.35, mark: 0.2 }, turns: 2,
+      },
+      {
+        id: 'foe-maou-crown', name: '黑金的重量', kind: '技能',
+        desc: '黑金化的躯体砸落：单体重击，且这个人此后更容易被咬。',
+        cost: 3, power: 2.2, axis: '破坏力', target: 'one', cd: 2,
+        effect: { mark: 0.35, pushBack: 0.5 }, turns: 2,
+      },
+    ],
+  },
+  {
+    match: /异端/,
+    name: '异端显形', cls: '异端', fx: 'noise', tags: ['反现实', '异端'],
+    sigil: '异', hue: '#c8554e',
+    line: '「它没有脸，但它在看你。」',
+    skills: [
+      foeAtk('foe-hetan-hold', '触须 · 掼', '不成形的手抡过来。', '破坏力'),
+      {
+        id: 'foe-hetan-gaze', name: '异端的注视', kind: '技能',
+        desc: '被它盯上的人会一直被盯着：标记一名我方，并让其充能变慢。',
+        cost: 3, power: 0.9, axis: '反现实亲和', target: 'one', cd: 3,
+        effect: { mark: 0.4, slow: 0.3 }, turns: 2,
+      },
+      {
+        id: 'foe-hetan-swarm', name: '显形 · 增殖', kind: '技能',
+        desc: '越打越多：它自己的攻击与充能一并抬高。',
+        cost: 4, power: 0, axis: '反现实亲和', target: 'self', cd: 4,
+        effect: { atkUp: 0.4, spdUp: 0.35 }, turns: 3,
+      },
+    ],
+  },
+  {
+    match: /机械|工学|制品/,
+    name: '反现实制成品', cls: '造物', fx: 'drone', tags: ['反现实', '机械'],
+    sigil: '械', hue: '#4ea6c8',
+    line: '「它按着图纸办事，图纸上没有『停』。」',
+    skills: [
+      foeAtk('foe-mech-arm', '机械臂 · 碾压', '工学制品的标准出力。', '破坏力', 1.05),
+      {
+        id: 'foe-mech-drain', name: '灵魂保存 · 抽离', kind: '技能',
+        desc: '工学装置对着人抽一口：单体高伤并直接抹掉一部分行动条。',
+        cost: 4, power: 1.8, axis: '反现实亲和', target: 'one', cd: 3,
+        effect: { clearBar: true, pierce: true },
+      },
+      {
+        id: 'foe-mech-overload', name: '工学 · 过载放电', kind: '技能',
+        desc: '过载一瞬，全场吃电。',
+        cost: 4, power: 1.5, axis: '破坏力', target: 'all', cd: 4,
+      },
+    ],
+  },
+  {
+    match: /残渣|残留|清点|清缴|旧物/,
+    name: '反现实残渣', cls: '残渣', fx: 'seal', tags: ['反现实', '残渣'],
+    sigil: '末', hue: '#c8a04e',
+    line: '「扫不干净的那种东西。」',
+    skills: [
+      foeAtk('foe-dregs-wear', '残渣 · 磨蚀', '蹭上来的一下，不重，但一直在。', '破坏力', 0.9),
+      {
+        id: 'foe-dregs-regather', name: '再聚拢', kind: '技能',
+        desc: '被打散的部分重新聚回来：它给自己回一口气，并架起一重减伤。',
+        cost: 3, power: 0, axis: '意志力', target: 'self', cd: 3,
+        effect: { heal: 0.5, shield: 0.35 }, turns: 2,
+      },
+      {
+        id: 'foe-dregs-crush', name: '高密度 · 压覆', kind: '技能',
+        desc: '密度堆到一定程度就会压下来：全场受伤并减速。',
+        cost: 4, power: 1.4, axis: '反现实亲和', target: 'all', cd: 3,
+        effect: { slow: 0.3 }, turns: 2,
+      },
+    ],
+  },
+  {
+    match: /低语/,
+    name: '低语聚合体', cls: '低语', fx: 'seal', tags: ['反现实', '低语', '残渣'],
+    sigil: '语', hue: '#3f9c86',
+    line: '「很多人同时在你耳朵里说话，但你听得清每一句。」',
+    skills: [
+      foeAtk('foe-whisper-din', '低语 · 灌耳', '把杂音直接倒进脑子里。', '反现实亲和', 1),
+      {
+        id: 'foe-whisper-chorus', name: '杂音 · 共鸣', kind: '技能',
+        desc: '全场一起响：我方全体充能变慢，且更容易被听见（易伤）。',
+        cost: 4, power: 0.8, axis: '反现实亲和', target: 'all', cd: 3,
+        effect: { slow: 0.3, mark: 0.25 }, turns: 3,
+      },
+      {
+        id: 'foe-whisper-refold', name: '再聚合 · 齐声', kind: '技能',
+        desc: '所有低语合到一处喊出来：全场重击。',
+        cost: 4, power: 1.6, axis: '反现实亲和', target: 'all', cd: 4,
+      },
+    ],
+  },
+  {
+    match: /龙花|异界/,
+    name: '异界龙花', cls: '异界龙花', fx: 'slash', tags: ['反现实', '异界', '龙花'],
+    sigil: '龙', hue: '#c86a9a',
+    line: '「异界开了口，从里面开出来的是花。」',
+    skills: [
+      foeAtk('foe-ryuka-bloom', '龙花 · 绽', '花瓣边缘是割人的。', '破坏力', 1.05),
+      {
+        id: 'foe-ryuka-vine', name: '异界 · 蔓生', kind: '技能',
+        desc: '异界的藤从地面铺开：全场受伤，并被缠住慢下来。',
+        cost: 4, power: 1.3, axis: '反现实亲和', target: 'all', cd: 3,
+        effect: { slow: 0.35 }, turns: 2,
+      },
+      {
+        id: 'foe-ryuka-scale', name: '龙鳞 · 硬质化', kind: '技能',
+        desc: '花瓣收拢成龙鳞的硬度：大幅减伤，并回一口气。',
+        cost: 3, power: 0, axis: '物理抗性', target: 'self', cd: 4,
+        effect: { shield: 0.5, heal: 0.3 }, turns: 3,
+      },
+    ],
+  },
+  {
+    match: /未分类|观测记录/,
+    name: '未分类观测体', cls: '未分类', fx: 'noise', tags: ['反现实', '未分类'],
+    sigil: '未', hue: '#8a8f9c',
+    line: '「图鉴上没有它。它也没有等你登记。」',
+    skills: [
+      foeAtk('foe-unk-touch', '记录外 · 触碰', '没被登记过的一次接触。', '反现实亲和', 1),
+      {
+        id: 'foe-unk-warp', name: '未分类 · 扭曲', kind: '技能',
+        desc: '把观测到的事实扭一下：全场受伤，行动条一并被推后。',
+        cost: 4, power: 1.4, axis: '反现实亲和', target: 'all', cd: 3,
+        effect: { pushBack: 0.3, mark: 0.2 }, turns: 2,
+      },
+      {
+        id: 'foe-unk-paradox', name: '观测悖论', kind: '技能',
+        desc: '「它被观测到」这件事本身就是它的力量：自抬充能，并抹掉自己身上的负面。',
+        cost: 3, power: 0, axis: '意志力', target: 'self', cd: 4,
+        effect: { spdUp: 0.5, cleanse: true }, turns: 3,
+      },
+    ],
+  },
 ]
-const FALLBACK_PROFILE = { name: '反现实实体', cls: '实体', fx: 'noise' as FxKind, tags: ['反现实'] }
+
+/** 兜底：性质对不上任何型别时，按「未分类观测体」处理 */
+const FALLBACK_PROFILE = ENEMY_PROFILE[ENEMY_PROFILE.length - 1]
 
 const SUFFIX = ['甲', '乙', '丙', '丁']
 
@@ -335,27 +513,25 @@ export function enemiesOf(m: Mission): Combatant[] {
       意志力: Math.round(10 + m.stage * TUNING.enemyWillPerStage),
     }
     const ename = count > 1 ? `${prof.name} ${SUFFIX[i]}` : prof.name
+    // 敌方体力随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
+    const spMax = chSpMax(axes.意志力)
     out.push({
       id: `foe-${m.id}-${i}`,
       side: 'enemy',
       name: ename,
-      sigil: prof.tags.includes('魔王') ? '王' : prof.tags.includes('机械') ? '械' : '末',
-      hue: prof.tags.includes('魔王') ? '#7a4de0' : prof.tags.includes('机械') ? '#4ea6c8' : '#c8554e',
+      sigil: prof.sigil,
+      hue: prof.hue,
       cls: prof.cls,
       trait: m.nature,
       hp: hpMax,
       hpMax,
       axes,
-      skills: [
-        {
-          id: 'foe-atk', name: '侵袭', kind: '普攻', desc: '反现实的一击。',
-          cost: 0, power: 1, axis: '破坏力', fx: prof.fx, line: '', target: 'one',
-        },
-        {
-          id: 'foe-heavy', name: '反现实的重量', kind: '技能', desc: '把这一带的现实密度压下来。',
-          cost: 3, power: 1.5, axis: '反现实亲和', fx: prof.fx, line: '', target: 'all',
-        },
-      ],
+      skills: prof.skills.map((k) => ({
+        id: k.id, name: k.name, kind: k.kind, desc: k.desc,
+        cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
+        line: k.kind === '普攻' ? '' : prof.line,
+        target: k.target, effect: k.effect, turns: k.turns, cd: k.cd ?? 0,
+      })),
       fx: prof.fx,
       rated: true,
       bar: 0,
@@ -366,8 +542,8 @@ export function enemiesOf(m: Mission): Combatant[] {
       taunt: 0,
       down: false,
       startUsed: 0,
-      sp: chSpMax(60),
-      spMax: chSpMax(60),
+      sp: spMax,
+      spMax,
       startNeed: 0,
       stack: 0,
       cds: {},

@@ -170,7 +170,7 @@ export function rollLoot(stage: number, rnd: () => number = Math.random): GearDe
 }
 
 /** 装具附带技能 → 统一成一手可入菜单的技能（由 derive.ts 组装） */
-export function gearSkillOf(gearId: string, charId: string): {
+export function gearSkillOf(gearId: string, _charId?: string): {
   id: string; name: string; kind: '技能'; desc: string; cost: number; power: number
   axis: AxisKey; fx: FxKind; line: string; target: 'one' | 'allyAll'; effect?: SkillEffect; turns?: number
 } | null {
@@ -178,8 +178,9 @@ export function gearSkillOf(gearId: string, charId: string): {
   if (!g?.skill) return null
   const s = g.skill
   const ally = !!s.effect?.cleanse || (s.effect?.shield ?? 0) > 0
+  // id 只挂在装备上、不掺角色：同一件装的技能图标与冷却口径前后一致
   return {
-    id: `${charId}-gear-${gearId}`,
+    id: `gear-${gearId}`,
     name: s.name,
     kind: '技能',
     desc: s.desc,

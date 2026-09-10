@@ -21,6 +21,7 @@ import { Codex } from './views/Codex'
 import { Tavern } from './views/Tavern'
 import { Plot } from './views/Plot'
 import { Settings } from './views/Settings'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { VariablePanel } from './components/VariablePanel'
 import { SaveDialog } from './components/SaveDialog'
 
@@ -360,5 +361,10 @@ function Root() {
 }
 
 export default function App() {
-  return <Root />
+  // 兜底放在最外层：任何一处渲染抛错都摊成可读的一屏，而不是黑屏
+  return (
+    <ErrorBoundary>
+      <Root />
+    </ErrorBoundary>
+  )
 }

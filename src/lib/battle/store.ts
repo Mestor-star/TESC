@@ -57,10 +57,35 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 /* ---------- 作战记录 ---------- */
 
+/**
+ * 旧档补齐：作战记录是跨版本留下来的东西，早先写下的条目可能缺后加的字段
+ * （outcome / loot / turns 一类）。这里一律补成可安全渲染的形状，
+ * 免得一条老记录把整个任务简报板掀翻。
+ */
+function fixRecord(r: BattleRecord): BattleRecord {
+  return {
+    ...r,
+    no: r.no ?? '—',
+    title: r.title ?? '（未命名作战）',
+    place: r.place ?? '未知',
+    outcome: r.outcome ?? '胜',
+    rounds: r.rounds ?? 0,
+    ticks: r.ticks ?? 0,
+    squad: r.squad ?? [],
+    mvp: r.mvp ?? '—',
+    digest: r.digest ?? '',
+    turns: r.turns ?? [],
+    narrative: r.narrative ?? '',
+    narrativeBy: r.narrativeBy ?? '模板',
+    loot: r.loot ?? [],
+    coin: r.coin ?? 0,
+  }
+}
+
 export async function listRecords(): Promise<BattleRecord[]> {
   return safe(async () => {
     const rows = await db().records.toArray()
-    return rows.sort((a, b) => b.at - a.at)
+    return rows.map(fixRecord).sort((a, b) => b.at - a.at)
   }, [])
 }
 

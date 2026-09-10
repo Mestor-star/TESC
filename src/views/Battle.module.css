@@ -585,6 +585,14 @@
   border-color: color-mix(in srgb, var(--amber) 70%, transparent);
   background: color-mix(in srgb, var(--amber) 9%, transparent);
 }
+/* 技能图标：每门技能一枚，由技能 id 恒定分配 */
+.rowIco {
+  flex-shrink: 0;
+  color: var(--amber);
+  opacity: 0.85;
+}
+.rowPoor .rowIco { color: var(--ink-faint); }
+
 .rowName {
   flex: 1;
   min-width: 0;
