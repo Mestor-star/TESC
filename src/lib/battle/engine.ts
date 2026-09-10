@@ -147,6 +147,8 @@ export interface CreateOpts {
   bag?: Record<string, number>
   /** 军需点（胜利结算时追加） */
   coin?: number
+  /** 变身可借的档案池（已解锁、且不在本场队伍里的角色 id） */
+  morphPool?: string[]
 }
 
 export function createBattle(opts: CreateOpts): BattleState {
@@ -173,6 +175,7 @@ export function createBattle(opts: CreateOpts): BattleState {
     coin: opts.coin ?? 0,
     loot: [],
     fleeOdds: 0,
+    morphPool: opts.morphPool ?? [],
     progress,
     growth,
     mainline: mission.mainline,
@@ -298,7 +301,8 @@ function applyEffect(
 function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogEntry {
   const pierce = k.effect?.pierce === true
   // 命中 = 对方的闪避减去出手者这一手的命中（被动常驻 + 本手加成）
-  const miss = Math.max(0, evadeOf(def) - accOf(atk))
+  // 低语者「听得见往哪躲」：攻击必中，闪避再高也躲不掉
+  const miss = atk.passive?.sureHit ? 0 : Math.max(0, evadeOf(def) - accOf(atk))
   if (!pierce && Math.random() < miss) {
     return {
       round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
@@ -430,6 +434,30 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     }
   }
 
+  // 变身（noapusa「变成他人」）：只借敌阵的形与能力；队伍里的人复制不了。
+  // 解除时才起算冷却，那几拍里手感发虚（见 advance 的拍子循环）。
+  if (k.morph) {
+    const src = targetId && s.morphPool.includes(targetId) ? targetId : undefined
+    const t = src ? combatantOf(src, s.progress, s.growth[src] ?? 0) : undefined
+    if (t) {
+      const ticks = Math.max(1, k.morphTicks ?? 3)
+      atk.morph = {
+        name: t.name,
+        base: { axes: { ...atk.axes }, spd: atk.spd, skills: atk.skills.map((x) => ({ ...x })) },
+        ticks, skillId: k.id, cd: k.morphCd ?? 3,
+      }
+      // 「复制所有能力」= 五轴、速度与整份技能表一并借来
+      atk.axes = { ...t.axes }
+      atk.spd = t.spd
+      atk.skills = t.skills.map((x) => ({ ...x }))
+      pushLog(s, {
+        round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
+        skillId: 'morph-on', skill: '变成他人', kind: '指令', fx: 'guitar',
+        note: `${atk.name} 化作了 ${t.name} 的样子 —— 连能力一并借来用，${ticks} 拍后归还。`,
+      })
+    }
+  }
+
   // 冷却：出手即上表，按「自身行动次数」递减（见 beginAction）
   if (k.cd && k.cd > 0) atk.cds[k.id] = k.cd
 
@@ -513,6 +541,25 @@ export function advance(s: BattleState): BattleState {
         }
         if (p?.spRegen && c.sp < c.spMax) {
           c.sp = Math.min(c.spMax, c.sp + p.spRegen)
+        }
+        // 变身的拍子：数满即解除，把借来的能力还回去，冷却从这一刻才起算
+        if (c.morph) {
+          c.morph.ticks -= 1
+          if (c.morph.ticks <= 0) {
+            const m = c.morph
+            c.axes = { ...m.base.axes }
+            c.spd = m.base.spd
+            c.skills = m.base.skills
+            c.cds[m.skillId] = m.cd
+            c.buffs.push({ k: 'atk', v: -0.12, t: m.cd })
+            c.buffs.push({ k: 'slow', v: 0.12, t: m.cd })
+            pushLog(s, {
+              round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+              skillId: 'morph-off', skill: '变身 · 解除', kind: '指令', fx: 'seal',
+              note: `${c.name} 变回自己 —— 借来的东西还了回去，接下来 ${m.cd} 拍手感发虚。`,
+            })
+            c.morph = null
+          }
         }
       }
       continue

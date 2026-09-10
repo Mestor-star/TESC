@@ -4,7 +4,7 @@ import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, Slide
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
-import { PERSON_IDS, personOf } from '../data/castmeta'
+import { OPERATOR_ID, PERSON_IDS, personOf } from '../data/castmeta'
 import { rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
@@ -1449,6 +1449,8 @@ export function Plot() {
           key={plotBattle.mission.id}
           mission={plotBattle.mission}
           squad={plotBattle.squad}
+          /* 「变成他人」可借的档案：已遇见、且不在这支队伍里 */
+          morphPool={PERSON_IDS.filter((id) => id !== OPERATOR_ID && isMet(id) && !plotBattle.squad.includes(id))}
           progress={periodProgress(epDone)}
           growth={growth}
           stamina={stamina}

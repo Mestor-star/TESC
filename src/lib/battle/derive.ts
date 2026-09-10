@@ -159,8 +159,14 @@ function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
  * 慢启动门（START_GATE）由引擎按 kind === '启动' 的次数把关，此处只负责出表。
  */
 /** 言万心叶的技能表 = 该时期的「所能做的事」（原文原名） */
-function opSkillsOf(per: OpPeriod): SkillSpec[] {
-  return per.abilities.map((a, i) => ({
+function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
+  // 解锁点：还没读到那一段的，这一手此刻不列出来（如「黄金狮子」契约 v1-9）
+  const open = per.abilities.filter((a) => {
+    if (!a.unlockAt) return true
+    const i = TIMELINE.findIndex((e) => e.id === a.unlockAt)
+    return i < 0 || progress + 1e-6 >= i / Math.max(1, TIMELINE.length - 1)
+  })
+  return open.map((a, i) => ({
     id: `op-${per.at}-${i}`,
     name: a.name,
     kind: a.kind,
@@ -180,12 +186,15 @@ function opSkillsOf(per: OpPeriod): SkillSpec[] {
     requireAlly: a.requireAlly,
     mergeAlly: a.mergeAlly,
     mergeTicks: a.mergeTicks,
+    morph: a.morph,
+    morphTicks: a.morphTicks,
+    morphCd: a.morphCd,
   }))
 }
 
 export function skillsOf(id: string, gearId?: string): SkillSpec[] {
   if (id === OPERATOR_ID) {
-    const list = opSkillsOf(opPeriodAtProgress(0))
+    const list = opSkillsOf(opPeriodAtProgress(0), 1)
     return list
   }
   const arm = armOf(id)
@@ -229,7 +238,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
       * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
     )
-    const skills = opSkillsOf(per)
+    const skills = opSkillsOf(per, progress)
     const gs = gid ? gearSkillOf(gid, id) : null
     // 装具技的 id 不掺角色：与名册那边同一件装通用一枚图标、一份冷却
     if (gs) skills.push(gs as SkillSpec)
@@ -258,6 +267,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       passive: per.passive,
       endured: 0,
       gone: 0,
+      morph: null,
       sp: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
       spMax: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
       startUsed: 0,
@@ -308,6 +318,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     passive: role?.passive,
     endured: 0,
     gone: 0,
+    morph: null,
     sp: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
     spMax: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
     startUsed: 0,
@@ -560,6 +571,7 @@ export function enemiesOf(m: Mission): Combatant[] {
       down: false,
       endured: 0,
       gone: 0,
+      morph: null,
       startUsed: 0,
       sp: spMax,
       spMax,

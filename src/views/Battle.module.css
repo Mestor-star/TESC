@@ -480,6 +480,17 @@
   color: var(--violet);
 }
 
+/* 变身：借来的形（noapusa）——与「合体中」同格，换一种颜色以示不是同一回事 */
+.morphMark {
+  position: absolute;
+  inset: auto 0 20px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--amber);
+}
+
 /* ============================================================
    控制台：左日志 / 右指令
    ============================================================ */
@@ -745,3 +756,24 @@
   18% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, -6px); }
 }
+
+/* 「变成他人」：可借的档案一排 —— 与选目标同格，但选的是人不是阵位 */
+.morphRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.morphChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 5px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--c, var(--line-2));
+  background: var(--bg-1);
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.morphChip:hover { background: var(--bg-2); border-color: var(--c, var(--line)); }

@@ -36,6 +36,12 @@ export interface OpAbility {
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，mergeTicks 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
+  /** 解锁点：读到这一段时间线事件（含）之后，这一手才进他的技能组 */
+  unlockAt?: string
+  /** 变身（noapusa「变成他人」）：照一份已解锁的档案角色变身，复制其全部能力 */
+  morph?: boolean
+  morphTicks?: number
+  morphCd?: number
 }
 
 export interface OpPeriod {
@@ -102,117 +108,85 @@ const GOLDEN_LION = (pow: number): OpAbility => ab(
 export const OP_PERIODS: OpPeriod[] = [
   {
     at: 'v1-1',
-    vol: '第 1 卷 · 序章「船与影」',
-    title: '落海的留学生',
-    cls: '读心者',
-    note: '被拘束服捆在货船甲板上、连游泳都不会的普通人。他唯一做对的事，是在落海时先救了别人'
-      + '——那时他还不知道，自己心里那台收音机就没关过。',
-    axes: A(8, 22, 12, 0, 40),
-    arm: '无',
-    armSub: '—',
-    armNote: '此刻他还没有任何武装。弹痕、斩击、片羽皆与他无关——能站住脚的东西只有两样：'
-      + '一双拳头，与那道还没被测定、也还没有名字的「低语」。',
+    vol: '第 1—2 卷 · 从落海到「低语者」',
+    title: '言万心叶 · 低语者',
+    cls: '低语者',
+    note: '他不会游泳、也不穿武装，一身本事都长在一双拳头与那台关不掉的收音机上。'
+      + '低语者不是武器，是一种反现实体质——听得见别人心里最响的那一句，'
+      + '所以他的拳总比对方先到半步，也总先挪开半步。',
+    axes: A(12, 26, 14, 20, 46),
+    builtin: 'luna-thread', builtinFrom: VOL1_END,
+    arm: '低语者（Susurrador）',
+    armSub: 'SUSURRADOR · STAGE4「活性化」',
+    armNote: '读取半径约 500 米内的心声，并把读到的剧烈噪音反过来当作护身的杂音。'
+      + '面具以坐标心声向他呼救、差点把他吞掉的那一次，正是这份噪音救了他。',
     passive: {
-      name: '低语 · 常在',
-      desc: '别人要做什么，他先听到半句。所以他的拳总在对方动之前半步落下，也总能先挪开半步。',
-      acc: 0.12, evade: 0.08,
+      name: '低语者',
+      desc: '他出手之前，对方心里那句「往左躲」已经先到了——攻击必中，闪避率提升 40%。',
+      sureHit: true, evade: 0.4,
     },
     abilities: [
       ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
         1, '破坏力', 'slash'),
+      ab('拳法 · 狮子', '普攻',
+        '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
+        + '（需已解锁「黄金狮子」，且露娜在场）',
+        2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
       ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
         + '他要喊的东西总在出手之前就到。',
         0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
       ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
-    ],
-  },
-  {
-    at: 'v1-9',
-    vol: '第 1 卷 · 第 11 话「低语者」',
-    title: '低语者（Susurrador）· Stage4『活性化』',
-    cls: '低语者',
-    note: '灵魂深处的噪音被测定为「低语者」。他能听见别人心里最响的那一句，也被别人听见——委员会因此把他登记在册。',
-    axes: A(14, 28, 18, 35, 58),
-    builtin: 'luna-thread', builtinFrom: VOL1_END,
-    arm: '低语者（Susurrador）',
-    armSub: 'SUSURRADOR · STAGE4「活性化」',
-    armNote: '不是武装，而是一种反现实体质：读取半径约 500 米内的心声，并把读到的剧烈噪音反过来当作护身的杂音。'
-      + '面具以坐标心声向他呼救、差点把他吞掉的那一次，正是这份噪音救了他。',
-    passive: {
-      name: '低语者的噪音',
-      desc: '半径约 500 米的心声里，最剧烈的那一段反过来裹住他：别人听见的是杂音，他听见的是下一步。',
-      acc: 0.18, evade: 0.12, spRegen: 2,
-    },
-    abilities: [
-      ab('低语 · 噪音', '普攻', '把灌进来的杂音丢回去。听者头痛欲裂。', 1, '反现实亲和', 'seal'),
-      ab('读心 · 辨伪', '技能', '听见对方心里最响的那一句：全队闪避提升——他要喊的东西总在出手之前就到。',
-        0, '反现实亲和', 'seal', { target: 'allyAll', turns: 3, effect: { evade: 0.3, accUp: 0.15 } }),
-      ab('Stage4 · 活性化', '技能', '把低语者的活性推上去：全队充能提速，代价是他自己会被听得更清楚。',
-        0, '意志力', 'noise', { target: 'allyAll', turns: 3, effect: { spdUp: 0.35, mark: 0.1 } }),
       GOLDEN_LION(2.6),
     ],
   },
   {
     at: 'v2-2',
-    vol: '第 2 卷 · 第 2 话「noapusa」',
-    title: 'noapusa · 化身之戒',
-    cls: '拟态者',
-    note: '夜梦之后枕边多了一把手枪。它能让他变成任何人——曾被指为「会化作怪物的能力」。使用期间，他本人的意志不会反映出来。',
+    vol: '第 2—3 卷 · 弹痕「noapusa」',
+    title: '言万心叶 · noapusa · 化身之枪',
+    cls: '化身之枪',
+    note: '夜梦之后枕边多了一把手枪。它能让他变成任何人——曾被指为「会化作怪物的能力」。'
+      + '使用期间，他本人的意志不会反映出来；而借来的东西总要还，还得缓一缓。',
     axes: A(26, 34, 24, 62, 70),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'noapusa',
-    armSub: 'NOAPUSA · 弹痕',
+    armSub: 'NOAPUSA · 弹痕 · 化身之枪',
     armNote: '弹痕「noapusa」：化为与目标完全一致之人的复制体——外貌、声音到能力皆为一致，'
       + '并获得「无论是谁也无法分辨真正的本人」这一反现实性质。觉醒于 v2-2 的夜梦。',
     passive: {
-      name: '无从分辨真假',
-      desc: '连「哪个才是本人」都变得无法分辨：打向他的手，落下的地方总是复制体的位置。',
-      acc: 0.16, evade: 0.18, spRegen: 2,
+      name: '低语者',
+      desc: '他出手之前，对方心里那句「往左躲」已经先到了——攻击必中，闪避率提升 40%。',
+      sureHit: true, evade: 0.4,
     },
     abilities: [
-      ab('noapusa · 借形', '普攻', '把对方的手借来用一次：照着他的战法打回去。', 1.05, '反现实亲和', 'guitar'),
-      ab('noapusa · 同貌', '技能', '化为与目标一致之人的复制体。命中之外，还把自己的行动条抢回来。',
-        1.7, '反现实亲和', 'guitar', { effect: { pushBar: 0.3 } }),
-      ab('noapusa · 无从分辨', '技能', '连同全队一起变得「无法分辨真假」：全队闪避大幅提升。',
-        0, '反现实亲和', 'guitar', { target: 'allyAll', turns: 3, effect: { evade: 0.4 } }),
-      ab('夜梦 · 觉醒', '启动', '那一夜梦里的东西先要认他。需先后打出 2 次，复制的门才会打开。',
-        0, '反现实亲和', 'seal'),
+      ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
+        1, '破坏力', 'slash'),
+      ab('拳法 · 狮子', '普攻',
+        '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
+        + '（需已解锁「黄金狮子」，且露娜在场）',
+        2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
+      ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
+        + '他要喊的东西总在出手之前就到。',
+        0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
+      ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
+        0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
+      ab('变成他人', '技能',
+        '照着一份已解锁的档案变成对方：外貌、声音到能力（五轴与技能表）全部借来用。'
+        + '队伍里的人复制不了——那是他还不肯弄丢的东西。'
+        + '解除之后的三拍里手感发虚，出力与充能略降。',
+        0, '反现实亲和', 'guitar',
+        // 出手当时不上冷却：冷却从「变身解除」那一刻才起算（见 engine 的拍子循环）
+        { cost: 3, cd: 0, target: 'one', morph: true, morphTicks: 3, morphCd: 3 }),
       GOLDEN_LION(2.8),
     ],
   },
   {
-    at: 'v3-9',
-    vol: '第 3 卷 · 第 9 话「星鲸」',
-    title: '失却 · 不再复制的普通人',
-    cls: '普通人',
-    note: '为守护露娜他再冲阵、被万针刺穿濒死；露娜以己命为他缝伤输血，缔结使用者契约。星鲸之战后，noapusa 损坏、再也无法使用，与之相关的一段记忆也随之丢失。',
-    axes: A(20, 36, 30, 48, 78),
-    builtin: 'luna-thread', builtinFrom: VOL1_END,
-    arm: 'noapusa（损坏）',
-    armSub: 'NOAPUSA · BROKEN',
-    armNote: '弹痕已碎，再也无法使用。他失去了那段与之相关的记忆——连自己曾变成过谁都不记得了。'
-      + '能依仗的只剩下低语者，与「黄金狮子」契约留下的余温。',
-    passive: {
-      name: '被缝回来的人',
-      desc: '万针刺穿、濒死，是露娜以己命为他缝伤输血。那一场之后，他身上留着她的一缕丝线。',
-      regen: 0.05, spRegen: 3, endure: 1,
-    },
-    abilities: [
-      ab('拳头 · 硬撑', '普攻', '没有武装的人，只能用身体挡在最前面。', 1, '物理抗性', 'blast'),
-      ab('旁听 · 低语', '技能', '读到的不是敌意，而是恐惧：把目标的破绽标记给全队。',
-        0, '反现实亲和', 'seal', { turns: 3, effect: { mark: 0.3, slow: 0.2 } }),
-      ab('普通人的选择', '技能', '他只想做个普通的善良的人——全队减伤并回复。',
-        0, '意志力', 'heal', { target: 'allyAll', effect: { shield: 0.3, heal: 0.3, cleanse: true } }),
-      GOLDEN_LION(3.0),
-    ],
-  },
-  {
     at: 'v4-5',
-    vol: '第 4 卷 · 第 4 话「火之试炼」',
-    title: 'a Session. · 灵魂共奏',
-    cls: '共奏者',
-    note: '篝火之国坠落后那一夜，他梦见满身伤痕的「斩击的天使」；醒来枕边多了一枚极其简朴的白金戒指——「a Session.」。他第一次明白，自己「被篝火喜欢着」。',
+    vol: '第 4 卷起 · 斩击之戒「a Session.」',
+    title: '言万心叶 · a Session. · 灵魂共奏',
+    cls: '灵魂共奏',
+    note: '篝火之国坠落后那一夜，他梦见满身伤痕的「斩击的天使」；醒来枕边多了一枚极其简朴的白金戒指。'
+      + '「变成他人」已经随 noapusa 一起碎掉了——现在他要做的是合而为一，不是变成别人。',
     axes: A(48, 46, 44, 84, 96),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'a Session.',
@@ -220,46 +194,25 @@ export const OP_PERIODS: OpPeriod[] = [
     armNote: '两枚成对的戒指相互共鸣，能让佩戴者灵魂共奏、合而为一。它酷似 noapusa「实现渴望」的本质，'
       + '却不再是那把把人复制成他人的可悲小手枪。（第 5 卷经胡道乃梦鉴定：密度 29g/cc，为地球上从未存在过的超重物质所制。）',
     passive: {
-      name: '被篝火喜欢着',
-      desc: '两枚戒指随时可以续上共鸣：他出手更重，也始终被谁拽着，不让倒下。',
-      atk: 0.18, regen: 0.05, spRegen: 3, endure: 1,
+      name: '低语者',
+      desc: '他出手之前，对方心里那句「往左躲」已经先到了——攻击必中，闪避率提升 40%。',
+      sureHit: true, evade: 0.4,
     },
     abilities: [
-      ab('a Session. · 共奏', '普攻', '戒指一响，两个人的动作合上拍子。', 1.1, '破坏力', 'slash'),
+      ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
+        1, '破坏力', 'slash'),
+      ab('拳法 · 狮子', '普攻',
+        '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
+        + '（需已解锁「黄金狮子」，且露娜在场）',
+        2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
+      ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
+        + '他要喊的东西总在出手之前就到。',
+        0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
+      ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
+        0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
       ab('a Session. · 合而为一', '技能', '与同伴灵魂共奏：全队攻击与充能一并上扬。',
         0, '意志力', 'slash', { target: 'allyAll', turns: 3, effect: { atkUp: 0.35, spdUp: 0.3 } }),
-      ab('戒指 · 共鸣', '技能', '两枚戒指共振，替全队卸掉一重负面。',
-        0, '意志力', 'seal', { target: 'allyAll', effect: { cleanse: true, heal: 0.25 } }),
-      ab('a Session. · 终曲', '技能', '到达点：把「两个人的渴望」合起来献出去。',
-        2.6, '反现实亲和', 'slash', { needsStack: 3, target: 'all' }),
       GOLDEN_LION(3.2),
-    ],
-  },
-  {
-    at: 'v6-7',
-    vol: '第 6 卷 · 第 10 话「死斗」',
-    title: '心蕾雅 · 巴别塔顶',
-    cls: '共奏者 · 心蕾雅',
-    note: '与蕾雅合体为「心蕾雅」，在巴别塔顶击破终末化的黑金狮子；此后亦以共奏深入世界根源——那是「两个人的渴望」合在一起、献给彼此的赞歌。',
-    axes: A(92, 60, 58, 120, 112),
-    builtin: 'luna-thread', builtinFrom: VOL1_END,
-    arm: 'a Session.（共奏态）',
-    armSub: 'A SESSION. · 心蕾雅',
-    armNote: '共奏态：与热沃当的少女合而为一。两个人都不是最强，但「两个人的渴望」合在一起时，连世界的根源都进得去。',
-    passive: {
-      name: '两个人的渴望',
-      desc: '与蕾雅共奏之后，他不再是「一个人」在打：出力、续行、回复，都按两个人的份算。',
-      atk: 0.25, regen: 0.08, spRegen: 4, endure: 2,
-    },
-    abilities: [
-      ab('心蕾雅 · 斩', '普攻', '同一把锯子，由两个人的手一起挥。', 1.15, '破坏力', 'slash'),
-      ab('灵魂共奏 · 合体', '技能', '与同伴合而为一：全场我方攻击大幅上扬。',
-        0, '意志力', 'slash', { target: 'allyAll', turns: 3, effect: { atkUp: 0.5, spdUp: 0.25 } }),
-      ab('献给彼此的赞歌', '技能', '深入世界根源的那一支歌：全队回复并解除全部负面。',
-        0, '意志力', 'heal', { target: 'allyAll', effect: { heal: 0.55, cleanse: true } }),
-      ab('巴别塔顶', '技能', '到达点：终末化的黑金狮子，在此处被击破。',
-        2.8, '反现实亲和', 'slash', { needsStack: 3, target: 'all' }),
-      GOLDEN_LION(3.4),
     ],
   },
 ]

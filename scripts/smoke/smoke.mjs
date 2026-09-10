@@ -489,13 +489,16 @@ try {
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'E dash')
-  // E1 播种幂等：A–D 已多次重载，canon 仍为 5 库、无重复累积（「登场者登记」已并入「角色档案」）
-  await poll(`${loreCountSrc()}.then(n=>n===6)`, 10000, 'E canon=6 (char/codex/lore/events/ops/operator)')
-  ok('E1 播种幂等：多轮重载后 canon 仍为 5 库', true)
+  // E1 播种幂等：A–D 已多次重载，canon 仍为 7 库、无重复累积（「登场者登记」已并入「角色档案」）
+  await poll(`${loreCountSrc()}.then(n=>n===7)`, 10000, 'E canon=7 (char/codex/lore/events/ops/operator/style)')
+  ok('E1 播种幂等：多轮重载后 canon 仍为 7 库', true)
   const canonChar = await loreBook('book-canon-char')
   ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
   ok('E2b 角色档案世界书已并入全员 25 词条', !!canonChar && canonChar.count === 25, 'count=' + (canonChar && canonChar.count))
   ok('E2c 旧「登场者登记」世界书已迁移移除', (await loreBook('book-canon-sidecast')) === null, '')
+  // E2d 文风库：三条常驻词条（底色 / 句法 / 术语与称呼）
+  const styBook = await loreBook('book-canon-style')
+  ok('E2d 文风世界书已播种（3 条常驻词条）', !!styBook && styBook.count === 3, 'count=' + (styBook && styBook.count))
 
   // 进入剧情推进：v1-1 开场自足完整（standby）→ 注入原文后原地待命；
   // 操作员手动回话 → 标签回执（<maintext>+<vars>）驱动 v1-1 收束：正文停留、不自动归档
@@ -621,9 +624,9 @@ try {
   ok('E22 外插用户库并清除种子标记', insUser === true, 'ins=' + insUser)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
-  await poll(`${loreCountSrc()}.then(n=>n===7)`, 15000, 'E user book preserved (6 canon + 1 user)')
+  await poll(`${loreCountSrc()}.then(n=>n===8)`, 15000, 'E user book preserved (7 canon + 1 user)')
   const ub = await loreBook('user-book-test-1')
-  ok('E23 重播 canon 非破坏：4+用户1（无重复）', true)
+  ok('E23 重播 canon 非破坏：7+用户1（无重复）', true)
   ok('E24 用户自建库在重播后保留', !!ub && ub.name === 'E测试库' && ub.description === 'user-sentinel-7', JSON.stringify(ub))
   ok('E25 重播未吞并激活标记/主库', (await loreEntry('book-canon-char', '露娜')) !== null, '')
 
@@ -1223,7 +1226,7 @@ try {
       sealed:[...document.querySelectorAll('[data-op-period]')].filter(l=>l.innerText.includes('？？？')).length,
       alive:t.includes('战斗人员')}})()`)
   ok('O2 专档含档案信息 + 五轴 + 武装 + 技能 + 时期分页（未观测时期仍是 ？？？）',
-    o2.kv === true && o2.abil >= 2 && o2.per === 6 && o2.sealed >= 1, JSON.stringify(o2))
+    o2.kv === true && o2.abil >= 2 && o2.per === 3 && o2.sealed >= 1, JSON.stringify(o2))
   const o3 = await ev(`(async()=>{const q=async(n)=>{const db=await new Promise(res=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result)});
       return await new Promise(res=>{const t=db.transaction('lorebooks');const g=t.objectStore('lorebooks').get(n);g.onsuccess=()=>res(g.result);g.onerror=()=>res(null)})};
     const b=await q('book-canon-operator');
@@ -1231,10 +1234,10 @@ try {
     const ids=(b.entries||[]).map(e=>e.id);
     return {book:true,name:b.name,entries:ids.length,self:ids.includes('op-self'),
       pages:ids.filter(i=>i.startsWith('op-p-')).length,open:(b.entries||[]).filter(e=>!e.meta||!e.meta.eventId).length}})()`)
-  ok('O3 世界书「主角专档 · 言万心叶」已播种：总档 + 6 个时期分页且逐段设闸',
-    o3.book === true && o3.self === true && o3.pages === 6, JSON.stringify(o3))
+  ok('O3 世界书「主角专档 · 言万心叶」已播种：总档 + 3 个时期分页且逐段设闸',
+    o3.book === true && o3.self === true && o3.pages === 3, JSON.stringify(o3))
   const o4 = await ev(`(()=>{const k=document.querySelector('[data-op-kv]');const t=k?k.innerText:'';
-    return {standing:/苍之学园|临时访问/.test(t),pos:/战斗定位|拟态者|落难者|读心者|共奏者|普通人/.test(t),pot:/Stage4|未测定/.test(t),txt:t.slice(0,180)}})()`)
+    return {standing:/苍之学园|临时访问/.test(t),pos:/低语者|化身之枪|灵魂共奏/.test(t),pot:/Stage4|未测定/.test(t),txt:t.slice(0,180)}})()`)
   ok('O4 专档口径随观测进度（学园身份 · 战斗定位 · 终末潜力）', o4.standing === true && o4.pos === true && o4.pot === true, JSON.stringify(o4))
 } catch (e) {
   passAll = false

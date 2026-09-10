@@ -53,6 +53,8 @@ export interface PassiveSpec {
   evade?: number
   /** 常驻命中：抵消对方闪避（绝对值） */
   acc?: number
+  /** 攻击必中：出手不打空（低语者听得见对方往哪躲） */
+  sureHit?: boolean
   /** 常驻减伤 */
   shield?: number
   /** 常驻攻击加成（比例） */
@@ -135,6 +137,15 @@ export interface SkillSpec {
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
+  /**
+   * 变身（noapusa「变成他人」）：照着一份「已解锁的档案角色」变成对方，
+   * 连能力（五轴与技能表）一并复制过来；队伍里的人复制不了。
+   * morphTicks 拍后自行解除，解除当时才起算冷却 morphCd 拍，
+   * 且这几拍里自身出力与充能略降——借来的东西还回去，总要缓一缓。
+   */
+  morph?: boolean
+  morphTicks?: number
+  morphCd?: number
 }
 
 /** 增益 / 减益：k = 类别，v = 量（比例或绝对值），t = 剩余行动次数 */
@@ -183,6 +194,19 @@ export interface Combatant {
   endured: number
   /** 合体蛰伏：>0 表示此人暂时不在场上（不充能、不可选、不算失能），归零即归位 */
   gone: number
+  /**
+   * 变身（noapusa）：借来的五轴 / 借来的名字 / 还剩几拍 / 变回来时该还到哪里。
+   * 解除时把 base 还回 axes，并把 morphCd 记到 skillId 的冷却上。
+   */
+  morph?: {
+    /** 借来的名字（界面上标「化身 · X · N 拍」） */
+    name: string
+    /** 变回来要还到哪里：自己的五轴、速度与技能表 */
+    base: { axes: AxisSheet; spd: number; skills: SkillSpec[] }
+    ticks: number
+    skillId: string
+    cd: number
+  } | null
   /** 已使用的「启动技」次数 */
   startUsed: number
   /** 需要几次启动技才解禁普攻/技能（0 = 无门） */
@@ -259,6 +283,8 @@ export interface BattleState {
   loot: string[]
   /** 当前撤退成功率（供 UI 展示） */
   fleeOdds: number
+  /** 变身可借的档案池（已解锁、且不在本场队伍里的角色 id） */
+  morphPool: string[]
   /** 时期进度与成长（换装时重算面板要用） */
   progress: number
   growth: Record<string, number>

@@ -47,6 +47,8 @@ function entry(
   order: number,
   comment?: string,
   meta?: Record<string, unknown>,
+  /** 常驻：不看关键词，命中即注入（文风一类「每一段都该带着」的词条走这条） */
+  constant = false,
 ): LorebookEntry {
   const uniq: string[] = []
   for (const k of keys) {
@@ -63,7 +65,7 @@ function entry(
     position: 'after_char',
     selective: false,
     selectiveLogic: 'and_any',
-    constant: false,
+    constant,
     probability: 100,
     useProbability: false,
     addMemo: false,
@@ -263,32 +265,42 @@ function buildOpsBook(): Lorebook {
   )
 }
 
-/* ---------- 世界书：主角专档（言万心叶本人 —— 时期分页，逐段放行） ---------- */
+/* ---------- 世界书：主角专档（言万心叶本人 —— 与角色档案同一副面孔，逐段放行） ---------- */
 
 function buildOperatorBook(): Lorebook {
+  // 行文与 charEntry 同一口径：姓名（别称 · 身份）／所属／终末／终末潜力／本人自述。
+  // 他不是另一个物种的条目 —— 只是把「所属」写成本终端、把面板写成随时期换页。
   const head = entry(
     'op-self',
     ['言万心叶', '心叶', '操作员', '观测员', '主角', '低语者', 'Susurrador', '读心者'],
-    '言万心叶 —— 本终端的操作员，也是战斗人员。'
-      + '落海的留学生出身：墨西哥黑手党「卡特尔」曾把他当作读心工具役使三年，'
-      + '那段过去是他日后被登记为「低语者（Susurrador）」的由来。'
-      + '他不会游泳，却在落海时先救了别人；他想做的始终是一个普通的、善良的人。'
-      + '与露娜相遇、被艾莉芙担保入学苍之学园之后，他的终末潜力经测定为 Stage4『活性化』并登记在册。'
-      + '他的面板不固定：随观测推进的每一段时期，武装、五轴与技能都换一页 —— 详见分期词条。',
+    [
+      '言万心叶（心叶 · 操作员 · 观测终端）',
+      '所属：终末停滞委员会 · 观测终端（本终端的使用者；本人也是战斗人员）',
+      '终末：低语者（Susurrador）· Stage4「活性化」',
+      '终末潜力：Stage4「活性化」',
+      '落海的留学生出身：墨西哥黑手党「卡特尔」曾把他当作读心工具役使三年，'
+        + '那段过去是他日后被登记为「低语者」的由来。'
+        + '他不会游泳，却在落海时先救了别人；他想做的始终是一个普通的、善良的人。',
+      '与露娜相遇、被艾莉芙担保入学苍之学园之后，他的终末潜力经测定并登记在册。',
+      '他出手之前，对方心里那句「往左躲」已经先到了 —— 攻击必中，闪避率提升 40%。'
+        + '他的面板不固定：随观测推进的每一段时期，武装、五轴与技能都换一页 —— 详见分期词条。',
+    ].join('\n'),
     5,
-    '言万心叶 · 总档',
+    '言万心叶',
     { ops: true },
   )
   const pages = OP_PERIODS.map((p, i) => entry(
     `op-p-${p.at}`,
     ['言万心叶', '心叶', p.title, p.arm, p.cls].filter((k) => k && k !== '无'),
     [
-      `${p.vol} · ${p.title}`,
-      `战斗定位：${p.cls}`,
+      `${p.title}（${p.cls}）`,
+      '所属：终末停滞委员会 · 观测终端',
+      `所处时期：${p.vol}`,
       `处境：${p.note}`,
       `武装：${p.arm}${p.armSub && p.armSub !== '—' ? `（${p.armSub}）` : ''} —— ${p.armNote}`,
+      p.passive ? `被动 · ${p.passive.name}：${p.passive.desc}` : '',
       `此刻所能做的事：${p.abilities.map((a) => `${a.name}（${a.kind}）`).join('、')}`,
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
     6 + i,
     `言万心叶 · ${p.title}`,
     { ops: true, eventId: p.at },
@@ -302,14 +314,71 @@ function buildOperatorBook(): Lorebook {
   )
 }
 
+/* ---------- 世界书：文风（原作腔调 —— 三条常驻，改的是「怎么写」，不涉设定） ---------- */
+
+/**
+ * 文风条目一律常驻：它们不靠关键词命中，而是每一段正文都该带着的那支笔。
+ * 内容只谈笔法（怎么下笔、怎么收），不新增任何设定，也不改写任何角色的语气。
+ */
+function buildStyleBook(): Lorebook {
+  const voices = [
+    entry(
+      'sty-voice',
+      ['文风', '写法', '叙述口吻'],
+      [
+        '底色是「公文式的冷 × 少年人的日常」。终末、观测、沉降、收束——这些足以让世界停摆的事，'
+          + '在这部作品里一律按事务处理：像填表、像排班、像有人把一张写满编号的纸推到你面前。',
+        '越是天塌下来的场面，叙述越不激动：不呐喊、不替读者感慨、不写「仿佛世界都在颤抖」这类抬价句。'
+          + '委员会在讨论一处 Stage4 的沉降，隔壁还在为便当里少了一颗梅子吵架 —— 反差是这支笔的要害，'
+          + '写日常不刻意往轻松里调，写灾难不加形容词渲染，两边用同一副嗓子说话。',
+      ].join('\n'),
+      1, '文风 · 底色', undefined, true,
+    ),
+    entry(
+      'sty-syntax',
+      ['文风', '写法', '句法'],
+      [
+        '短句为主，一段一个动作、一个观察。留白比说明重要：该说三分就说三分，'
+          + '剩下的交给对方的表情、手里那件东西、窗外的声音去补。',
+        '少用形容词与副词，尤其不用「非常／极其／无比」这类加码词；比喻一段至多一处，'
+          + '而且取身边之物（器材、便当、绷带、雨），不取宏大意象。',
+        '推进靠动作与对白，不靠旁白解释。心里那句话可以直接写出来，但不要替角色总结自己的心情'
+          + '（「他忽然明白，原来这就是孤独」——这种句子不要写）。',
+      ].join('\n'),
+      2, '文风 · 句法', undefined, true,
+    ),
+    entry(
+      'sty-register',
+      ['文风', '写法', '术语口径'],
+      [
+        '术语照档案口径用：终末、Stage、终末潜力、沉降、观测、收束、压制。'
+          + '角色说起这些词时，语气跟报一个班次、念一条规章没有区别——不惊呼、不科普、不互相解释'
+          + '（在场的人本来就懂，读者从情境里读得出来）。',
+        '战斗与伤情只写发生了什么的实感：衣服破了、他退了半步、耳朵里嗡的一声。'
+          + '不出现血量、伤害、回合、数值、技能冷却这类界面口径，也不要让角色议论自己或别人「有多强」。',
+        '称呼按档案：谁怎么叫言万心叶是有规矩的（如露娜在立契之前只叫「言万同学」），'
+          + '不要为了亲昵擅自改口，也不要让角色用他没有理由知道的名字。',
+      ].join('\n'),
+      3, '文风 · 术语与称呼', undefined, true,
+    ),
+  ]
+  return book(
+    'book-canon-style',
+    '文风 · 终末停滞委员会',
+    '原作腔调：底色、句法、术语口径。三条常驻词条，改的是「怎么写」，不含任何设定，也不改角色语气。'
+      + '嫌笔调太重时，把其中任意一条关掉即可。',
+    voices,
+  )
+}
+
 export function buildCanonLorebooks(): Lorebook[] {
   return [
     buildCharBook(), buildCodexBook(), buildLoreBook(), buildEventBook(),
-    buildOpsBook(), buildOperatorBook(),
+    buildOpsBook(), buildOperatorBook(), buildStyleBook(),
   ]
 }
 
-/** 默认激活的 canon 库 id（全 6 本默认激活） */
+/** 默认激活的 canon 库 id（全 7 本默认激活） */
 export const CANON_BOOK_ACTIVE_IDS = [
   'book-canon-char',
   'book-canon-codex',
@@ -317,13 +386,19 @@ export const CANON_BOOK_ACTIVE_IDS = [
   'book-canon-events',
   'book-canon-ops',
   'book-canon-operator',
+  'book-canon-style',
 ]
 
 /** 旧版种子里的废弃库 id（迁移时删除：v1 的独立「登场者登记」） */
 export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
 
-/** 种子内容版本：v4 → v5 = 新增「主角专档 · 言万心叶」canon 库（总档 + 时期分页），并改正操作员条目口径（他也是战斗人员） */
-export const CANON_SEED_VERSION = 5
+/**
+ * 种子内容版本：
+ *   v4 → v5 = 新增「主角专档 · 言万心叶」canon 库（总档 + 时期分页），并改正操作员条目口径（他也是战斗人员）
+ *   v5 → v6 = 主角档案收成三段（低语者 / 化身之枪 / 灵魂共奏），并把 canon 库的激活集整份并回（全开）
+ *   v6 → v7 = 新增「文风 · 终末停滞委员会」canon 库（三条常驻词条），并把主角专档改成与角色档案同一副面孔
+ */
+export const CANON_SEED_VERSION = 7
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'

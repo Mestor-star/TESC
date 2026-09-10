@@ -43,10 +43,14 @@ export async function ensureSeeded(): Promise<void> {
     : 0
   if (ver >= CANON_SEED_VERSION) return
   await db.bulkPutLorebooks(buildCanonLorebooks())
+  // canon 库一律全开：既有的激活集保留（用户自建库的选择不动），
+  // 但每次重播都把 canon 全集并进来 —— 否则新加的 canon 库
+  // （如 v5 的「主角专档」）在旧安装上永远停在未激活。
   const existing = await db.metaGet(ACTIVE_META_KEY)
-  if (!Array.isArray(existing) || !(existing as unknown[]).length) {
-    await db.metaSet(ACTIVE_META_KEY, CANON_BOOK_ACTIVE_IDS)
-  }
+  const kept = Array.isArray(existing)
+    ? (existing as unknown[]).filter((x): x is string => typeof x === 'string' && !obsolete.has(x))
+    : []
+  await db.metaSet(ACTIVE_META_KEY, [...new Set([...kept, ...CANON_BOOK_ACTIVE_IDS])])
   await db.metaSet(CANON_SEED_KEY, { v: CANON_SEED_VERSION, at: Date.now() })
   activeCache = null
 }

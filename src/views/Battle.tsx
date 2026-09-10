@@ -14,6 +14,8 @@ import { GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import { TUNING } from '../lib/battle/tuning'
 import type { BattleRecord, BattleState, Combatant, FxKind, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
+import { personOf } from '../data/castmeta'
+import { Portrait } from '../components/Portrait'
 
 import css from './Battle.module.css'
 
@@ -29,6 +31,8 @@ interface Props {
   owned: Record<string, number>
   /** 携带的道具余量 */
   bag: Record<string, number>
+  /** 「变成他人」可借的档案池（已解锁、且不在本场队伍里的角色 id） */
+  morphPool?: string[]
   /** 军需点（结算后写回） */
   coin: number
   /** 撤出：消耗已扣，不结算任务 */
@@ -63,7 +67,7 @@ function fxSeed(skillId: string): { hue: number; variant: number; dir: number } 
 }
 
 /** 指令菜单 —— 顺序即固定顺序：攻击 / 技能 / 道具 / 防御 / 更换装备 / 战略撤退 */
-type Panel = 'root' | 'skill' | 'item' | 'gear' | 'flee' | 'aim'
+type Panel = 'root' | 'skill' | 'item' | 'gear' | 'flee' | 'aim' | 'morph'
 
 const SEQ = [
   { id: 'atk', label: '攻击', Icon: CaretRight },
@@ -75,12 +79,12 @@ const SEQ = [
 ] as const
 
 export function Battle({
-  mission, squad, progress, growth, stamina, equip, owned, bag, coin, onExit, onSettled,
+  mission, squad, progress, growth, stamina, equip, owned, bag, coin, morphPool, onExit, onSettled,
 }: Props) {
   const [st, setSt] = useState<BattleState>(() =>
     createBattle({
       mission, squad, progress, growth, gear: equip,
-      sp: stamina.cur, spMax: stamina.max, bag, coin,
+      sp: stamina.cur, spMax: stamina.max, bag, coin, morphPool,
     }),
   )
   const [shown, setShown] = useState(0)
@@ -163,8 +167,19 @@ export function Battle({
     return false
   }
 
+  /** 「变成他人」不点战场单位，而是从可借的档案里挑一个人 */
+  const morphOf = (cmd: Command | null) => {
+    if (!cmd || cmd.t !== 'skill' || !actor) return undefined
+    return legalSkills(actor, st).find((x) => x.id === cmd.skillId)?.morph ? cmd : undefined
+  }
+
   const issue = (cmd: Command) => {
     if (playing || over) return
+    if (morphOf(cmd)) {
+      setPending(cmd)
+      setPanel('morph')
+      return
+    }
     if (needsTarget(cmd)) {
       setPending(cmd)
       setPanel('aim')
@@ -451,6 +466,44 @@ export function Battle({
                 </SubPanel>
               ) : null}
 
+              {panel === 'morph' ? (
+                <div className={css.aimBox} data-battle-morph>
+                  <div className={css.aimHead}>
+                    <Crosshair size={14} weight="bold" />
+                    <b>变成他人 · 选择要借的档案</b>
+                    <button className={css.x} type="button" onClick={() => { setPending(null); setPanel('root') }}>
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <span className="tiny muted">
+                    只借已经解锁、且此刻不在队伍里的档案。变身期间连能力一并复制，三拍后归还。
+                  </span>
+                  <div className={css.morphRow}>
+                    {st.morphPool.length === 0 ? (
+                      <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>
+                        此刻没有可借的档案 —— 已解锁的人都在这支队伍里。
+                      </span>
+                    ) : null}
+                    {st.morphPool.map((id) => {
+                      const p = personOf(id)
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          data-morph-pick={id}
+                          className={css.morphChip}
+                          style={{ '--c': p?.hue ?? 'var(--line)' } as CSSProperties}
+                          onClick={() => { setPending(null); setPanel('root'); play({ ...(pending as Command), targetId: id } as Command) }}
+                        >
+                          <Portrait avatarId={id} width={28} style={{ width: 28, height: 28, borderRadius: 2 }} />
+                          <span>{p?.name ?? id}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
               {panel === 'aim' ? (
                 <div className={css.aimBox} data-battle-aim>
                   <div className={css.aimHead}>
@@ -623,6 +676,8 @@ function Unit({
         </span>
       ) : null}
       {c.gone > 0 ? <span className={css.goneMark}>合体中 · {c.gone} 拍</span> : null}
+      {/* 变身：借来的形与能力，面板上据实标注是「谁的样子」 */}
+      {c.morph ? <span className={css.morphMark} data-morph={c.morph.name}>化身 · {c.morph.name} · {c.morph.ticks} 拍</span> : null}
       {hit && fx.dmg ? <span key={fx.n} className={css.dmgNum}>{fx.dmg}</span> : null}
       {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
     </div>

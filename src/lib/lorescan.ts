@@ -66,7 +66,8 @@ const LABEL_TAIL = '（仅作延续性背景，与本段事件大纲冲突时以
 
 /**
  * 对激活世界书做一次有界扫描 → 命中块文本（或 ''）。
- * 排序：关键词命中的按 order 升序在前；constant 词条排最后（最多补位）。
+ * 排序：关键词命中的按 order 升序在前；constant 词条（文风一类，本就该每段都带着）
+ * 先占住名额，余下的才轮到关键词命中。
  */
 export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): string {
   const maxEntries = opts.maxEntries ?? 8
@@ -104,7 +105,14 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
     return a.entry.order - b.entry.order
   })
 
-  const chosen = hits.slice(0, maxEntries)
+  // 常驻词条先占名额，余下的再给关键词命中 ——
+  // 否则命中一多，最该一直带着的那几条反而被挤出去。
+  const holds = hits.filter((h) => h.entry.constant)
+  const keyed = hits.filter((h) => !h.entry.constant)
+  const chosen = [
+    ...keyed.slice(0, Math.max(0, maxEntries - holds.length)),
+    ...holds,
+  ].slice(0, maxEntries)
   const PER_ENTRY = Math.max(160, Math.floor(maxChars / Math.max(chosen.length, 1)))
 
   const parts: string[] = [`${LABEL_HEAD}${LABEL_TAIL}`]

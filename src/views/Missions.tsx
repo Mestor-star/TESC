@@ -474,6 +474,8 @@ export function Missions() {
         <Battle
           mission={live.mission}
           squad={live.squad}
+          /* 「变成他人」可借的档案：已遇见、且不在这支队伍里 */
+          morphPool={PERSON_IDS.filter((id) => id !== OPERATOR_ID && isMet(id) && !live.squad.includes(id))}
           progress={periodProgress(epDone)}
           growth={growth}
           stamina={stamina}
