@@ -336,11 +336,13 @@ try {
   /* ============ Phase A：离线通读 1→2→3 → 解锁 + 记录 ============ */
   console.log('\n[Phase A] 离线通读 原文 → 归档 → 记录流 / 解锁')
   await boot()
-  // A0：P2 角色档案自始开放——此时仍是全新世界、unlocked=false，档案即已可查
+  // A0：P9 角色档案受门禁保护——此时仍是全新世界、unlocked=false，档案不可调阅
   await goto('角色档案')
-  await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 15000, 'A0 archive pre-unlock')
+  await sleep(700)
+  const a0 = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色档案'));const v=document.querySelector('.vpage');return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length,toast:document.body.innerText.includes('权限未解锁'),sub:v?v.innerText.slice(0,300):''}})()`)
   const preUnlock = await ev(`(${wState}).unlocked`)
-  ok('A0 未解锁时角色档案已开放（24 卡）', preUnlock === false && (await ev(`document.querySelectorAll('[data-archive-card]').length`)) === 24, 'unlocked=' + preUnlock)
+  ok('A0 未解锁时角色档案被拦下（导航 LOCKED · 无档案卡 · 提示权限未解锁）',
+    preUnlock === false && a0.navLock === true && a0.cards === 0 && a0.toast === true, 'unlocked=' + preUnlock + ' ' + JSON.stringify(a0))
   await goto('剧情推进')
   await poll(`document.body.innerText.includes('剧情推进')`, 20000, 'A plot h1')
   // 未配主线 → 自动离线；读到 v1-1 原文
@@ -361,6 +363,11 @@ try {
   st = await state()
   ok('A4 归档三段 → 记录3', st.rec.length === 3 && st.rec.every((r) => r.mode === 'offline'), JSON.stringify(st.rec))
   ok('A5 v1-3 完成 → 已解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
+  // A5b：门禁既开，角色档案随之可调阅
+  await goto('角色档案')
+  await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'A5b archive after unlock')
+  const a5b = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色档案'));return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length}})()`)
+  ok('A5b 解锁后角色档案开放（导航脱锁 · 24 卡）', a5b.navLock === false && a5b.cards === 24, JSON.stringify(a5b))
   // 低语者日志
   await goto('低语者日志')
   await poll(`document.body.innerText.includes('记录流')`, 20000, 'A saga')
@@ -635,9 +642,14 @@ try {
 
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
   console.log('\n[Phase G] P2 Archive：24卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
+  // 档案页已在门禁之后（Phase E 清过 localStorage，此处重新置位），本相聚焦档案本体
+  await ev(`(()=>{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');s.unlocked=true;localStorage.setItem(k,JSON.stringify(s));return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await poll(`document.body.innerText.includes('终端总览')`, 20000, 'G dash after unlock')
   await goto('角色档案')
   await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'G archive 24 cards')
-  ok('G1 全员 24 张档案卡（自始开放 · 无需解锁）', true)
+  ok('G1 全员 24 张档案卡（解锁后开放）', true)
   // P3b：未遇见 → 锁定保密。封存卡不得泄露姓名 / 武装 / 五轴 / 羁绊
   const lockProbe = await ev(`(()=>{const all=[...document.querySelectorAll('[data-archive-card]')];const lock=all.filter(c=>c.hasAttribute('data-locked-id'));return {all:all.length,lock:lock.length,named:lock.filter(c=>!c.innerText.includes('？？？')).length,axis:lock.filter(c=>c.querySelector('[data-axis-num],[data-axis-normal],[data-axis-limit]')).length,bond:lock.filter(c=>c.innerText.includes('当前羁绊')).length}})()`)
   ok('G1b 未遇见者一律封存（且封存卡不显姓名/五轴/羁绊）',

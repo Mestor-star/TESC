@@ -202,7 +202,7 @@ export interface TimelineEvent {
   cast?: string[];
   bond: BondSnap;        // 本段好感快照
   script?: ScriptLine[]; // 正文（逐字）
-  unlock?: boolean;      // 完成本段即解锁四大视图（第1卷「欢迎来到」收束事件）
+  unlock?: boolean;      // 完成本段即解锁受门禁保护的五个视图（第1卷「欢迎来到」收束事件）
 }
 
 /** 低语者日志「段」的动态补充：开场白 + 抉择点 */

@@ -310,7 +310,7 @@ export function Archive() {
           <div className="vhead__right">
             <span className="chip chip--warn">五轴以 RANK 与正文为参照</span>
             <span className="chip">全员 24 · 含羁绊</span>
-            <span className="chip">自始开放 · 无需解锁</span>
+            <span className="chip">入学后开放 · 逐人解封</span>
           </div>
         </div>
 

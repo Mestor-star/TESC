@@ -27,9 +27,9 @@ export type ViewId = 'dashboard' | 'plot' | 'saga' | 'lore' | 'arms' | 'archive'
 
 /**
  * 需完成「欢迎来到，终末停滞委员会」事件才能解锁的视图。
- * 角色档案自始开放（全员档案 + 羁绊照常显示），故不在锁定之列。
+ * 角色档案亦在其列：名册与羁绊是入学之后的凭据，先读剧情才准调阅。
  */
-export const LOCKED_VIEWS: ViewId[] = ['arms', 'missions', 'codex', 'tavern']
+export const LOCKED_VIEWS: ViewId[] = ['arms', 'archive', 'missions', 'codex', 'tavern']
 const LOCKED_SET = new Set<ViewId>(LOCKED_VIEWS)
 
 interface Saved {
@@ -610,7 +610,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setWorld((prev) => ({ ...prev, pick: { ...prev.pick, [id]: key } }))
   }, [])
 
-  /** 请求打开某角色档案（自动切到档案页；角色档案自始开放，无需解锁） */
+  /** 请求打开某角色档案（自动切到档案页；档案页受门禁保护，未解锁时 navigate 会被拦下） */
   const requestProfile = useCallback(
     (id: string) => {
       if (!PERSON_IDS.includes(id)) return
@@ -745,7 +745,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [resolveEvent],
   )
 
-  // 完成目标事件 → 自动解锁四大视图
+  // 完成目标事件 → 自动解锁受门禁保护的视图（含角色档案）
   const unlockReady = !unlocked && unlockEventId !== null && !!epDone[unlockEventId]
 
   useEffect(() => {
