@@ -5,7 +5,8 @@
      · 与弹痕 / 斩击 / 片羽**无关**——它们是被造出来的物件，不改持有者的本相
      · 只改数值，或给「特殊武器」补一手额外的用法
      · 每人至多装配一件；更换装备**不消耗回合**
-     · 来源两条：军需处购买（军需点）／交战后从敌人身上搜刮
+     · 来源两条：军需处购买（终末点数）／交战后从敌人身上搜刮；
+       其中「特殊装备」另加一道门 —— 须先完成对应的主线才上架
    道具是消耗品，出击时按补给池携带。
    ============================================================ */
 
@@ -140,6 +141,8 @@ export const GEARS: GearDef[] = [
     mods: { evade: 0.15, 敏捷度: 6 },
     price: 380,
     rank: 3,
+    // 脏器公寓那一案的现场缴获被复刻成了制式件：正史走到那里才配发
+    unlockMain: 'v1-5',
   },
   {
     id: 'printer',
@@ -149,6 +152,8 @@ export const GEARS: GearDef[] = [
     mods: { 反现实亲和: 8 },
     price: 560,
     rank: 3,
+    // 商会的制品：天空要塞一役之后，委员会才拿到可供拆解的同源件
+    unlockMain: 'v2-8',
     skill: {
       name: '塑形 · 屏障',
       desc: '当场塑出一面墙：全队减伤。',
@@ -164,12 +169,14 @@ export const GEARS: GearDef[] = [
     mods: { 破坏力: 12, atk: 0.22, 反现实亲和: 6 },
     price: 620,
     rank: 3,
+    // 斩击的天使落下的那一片：直到戴上 a Session. 才有人看懂它是什么
+    unlockMain: 'v4-5',
   },
 ]
 
 export const GEAR_OF: Record<string, GearDef> = Object.fromEntries(GEARS.map((g) => [g.id, g]))
 
-/** 军需处货架（可购买的装具；非卖品 price=0 不在此列） */
+/** 军需处货架（可购买的装具；非卖品 price=0 不在此列 —— 含须主线解锁的特殊装备） */
 export const GEAR_SHOP: GearDef[] = GEARS.filter((g) => g.price > 0).sort((a, b) => a.price - b.price)
 
 /** 交战后可搜刮的装具（按稀有度加权；阶段越高越容易出好东西） */
@@ -178,7 +185,8 @@ export function rollLoot(stage: number, rnd: () => number = Math.random): GearDe
   const w2 = Math.min(0.55, 0.18 + stage * 0.045)
   const r = rnd()
   const rank: 1 | 2 | 3 = r < w3 ? 3 : r < w3 + w2 ? 2 : 1
-  const pool = GEARS.filter((g) => g.rank === rank && !g.noDrop)
+  // 特殊装备不进掉落池：它是拿正史换的，不该从杂兵身上滚出来
+  const pool = GEARS.filter((g) => g.rank === rank && !g.noDrop && !g.unlockMain)
   return pool[Math.floor(rnd() * pool.length)] ?? GEARS[0]
 }
 

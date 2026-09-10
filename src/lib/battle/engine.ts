@@ -11,6 +11,8 @@
      其中「更换装备」不消耗回合（执行委员长口径）。
    ============================================================ */
 
+import { applySynergies, bondsOf } from './synergy'
+import { lineFor, poolFor } from './banter'
 import { TUNING } from './tuning'
 import { combatantOf, enemiesOf } from './derive'
 import { GEAR_OF, ITEM_OF } from './gear'
@@ -109,16 +111,24 @@ export function legalSkills(c: Combatant, s?: BattleState): SkillSpec[] {
   const key = (k: SkillSpec) => KIND_ORDER[k.kind] ?? 9
   // 「需与某人同在」的一手：那人不在场上（或已失能 / 蛰伏），这一手就不列出来
   const together = (k: SkillSpec) => {
-    if (!k.requireAlly) return true
+    if (!k.requireAlly && !k.requireAll?.length) return true
     if (!s) return true
-    const a = find(s, k.requireAlly)
-    return !!a && !a.down && a.gone <= 0
+    if (k.requireAlly) {
+      const a = find(s, k.requireAlly)
+      if (!a || a.down || a.gone > 0) return false
+    }
+    // 连携技：参加者一个都不能少 —— 少一个（倒了、蛰伏了、根本没来）就不列出来
+    for (const id of k.requireAll ?? []) {
+      const m = find(s, id)
+      if (!m || m.down || m.gone > 0) return false
+    }
+    return true
   }
   if (c.startUsed < c.startNeed) {
     return c.skills.filter((k) => k.kind === '启动').sort((a, b) => key(a) - key(b))
   }
   return c.skills
-    .filter((k) => k.kind !== '启动' && (!k.needsStack || c.stack >= k.needsStack) && together(k))
+    .filter((k) => k.kind !== '启动' && !k.ult && (!k.needsStack || c.stack >= k.needsStack) && together(k))
     .sort((a, b) => key(a) - key(b))
 }
 
@@ -154,6 +164,8 @@ export interface CreateOpts {
 export function createBattle(opts: CreateOpts): BattleState {
   const { mission, squad, progress, growth, gear = {}, sp, spMax } = opts
   const allies = squad.map((id) => combatantOf(id, progress, growth[id] ?? 0, gear[id]))
+  // 羁绊（队伍协同 + 双人）与连携技：只看这一场谁站在场上
+  applySynergies(allies)
   const enemies = enemiesOf(mission)
   const base: BattleState = {
     missionId: mission.id,
@@ -176,6 +188,7 @@ export function createBattle(opts: CreateOpts): BattleState {
     loot: [],
     fleeOdds: 0,
     morphPool: opts.morphPool ?? [],
+    link: {},
     progress,
     growth,
     mainline: mission.mainline,
@@ -213,7 +226,19 @@ function rollJitter(): number {
 function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): number {
   // 普攻倍率提升只认普攻：那一门「打起来更重」是说它自己，不是说每一手
   const basic = k.kind === '普攻' ? atk.gearBasic : 0
-  const raw = atk.axes[k.axis] * k.power * (1 + basic) * atkMulOf(atk)
+  // 连携技：参加者各自按同一轴补一份出力 —— 少一个人，这一手就轻一截
+  let mate = 0
+  if (k.linkUnits?.length && k.linkPow) {
+    for (const id of k.linkUnits) {
+      const m = find(s, id)
+      if (m && !m.down && m.gone <= 0) mate += m.axes[k.axis] * k.linkPow * atkMulOf(m)
+    }
+  }
+  // 终结技能：咏唱期间被挂上的减益，一层削它一截 —— 不打不断，也能打软
+  const ultCut = k.ult
+    ? Math.max(TUNING.ultMulFloor, 1 - ultDebuffs(atk) * TUNING.ultDebuffCut)
+    : 1
+  const raw = atk.axes[k.axis] * k.power * (1 + basic) * atkMulOf(atk) * ultCut + mate
   let mult = 1
   const anti = def.tags.includes('反现实')
   if (atk.scar) {
@@ -235,7 +260,29 @@ function healAmount(src: Combatant, t: Combatant, ratio: number): number {
   return Math.round((t.hpMax * 0.5 + src.axes.意志力 * 1.2) * ratio)
 }
 
+/**
+ * 记一条日志。
+ * 出手类条目在这里把台词补上：先按「同一个技能多说几句」换一句，
+ * 再看上一个出手的是不是熟人 —— 是的话改成两人之间才有的接话。
+ * （台词只影响观感，不改任何数值；见 banter.ts）
+ */
 function pushLog(s: BattleState, e: LogEntry) {
+  // 连携技有自己的那句（写在羁绊里），不参与日常台词轮换
+  if (!e.skillId.startsWith('link-') && e.kind !== '指令') {
+    const base = poolFor(e.actorId, e.skillId, e.line ?? '')
+    // 刚才出手的队友（同阵营、新的在前）：接话顺着的对象
+    const recent: Array<{ id: string; skill: string }> = []
+    for (let i = s.log.length - 1; i >= 0 && recent.length < 4; i--) {
+      const p = s.log[i]
+      if (p.actorId === e.actorId || p.kind === '指令' || p.side !== e.side) continue
+      if (recent.some((x) => x.id === p.actorId)) continue
+      recent.push({ id: p.actorId, skill: p.skill })
+    }
+    e.line = lineFor(
+      { actorId: e.actorId, recent, dmg: e.dmg, down: e.down, miss: e.miss },
+      base,
+    ) || undefined
+  }
   s.log.push(e)
 }
 
@@ -289,7 +336,11 @@ function applyEffect(
   }
   for (const t of hostileTargets) {
     if (t.down) continue
-    if (eff.clearBar) t.bar = 0
+    if (eff.clearBar) {
+      t.bar = 0
+      // 「镇静剂」压住的不只是行动条：正在咏唱的大招也一并哑掉
+      if (resetChant(s, t, '镇静')) { /* 已入日志 */ }
+    }
     if (eff.mark) addBuff(t, 'mark', eff.mark, turns)
     if (eff.slow) addBuff(t, 'slow', eff.slow, turns)
     if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * eff.pushBack)
@@ -312,6 +363,7 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   }
   const dmg = damageOf(s, atk, def, k)
   def.hp = Math.max(0, def.hp - dmg)
+  breakChant(s, def, dmg)
   let down = false
   if (def.hp === 0 && !def.down && def.gone <= 0) {
     // 战斗续行：原文里「心脏破了也照样站着」的人，致命伤只留一口气
@@ -350,6 +402,47 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
     skillId: k.id, skill: k.name, kind: k.kind, fx: k.fx,
     targetId: def.id, target: def.name, dmg, down, line: k.line || undefined,
   }
+}
+
+/* ---------- 终结技能（boss 大招）的咏唱 ---------- */
+
+/** 咏唱期间身上挂了几层减益（破绽 / 减速 / 被标记） */
+function ultDebuffs(c: Combatant): number {
+  return c.buffs.filter((b) => b.k === 'mark' || b.k === 'slow').length
+}
+
+/** 该单位身上那记终结技能（没有则 undefined） */
+function ultOf(c: Combatant): SkillSpec | undefined {
+  return c.skills.find((k) => k.ult)
+}
+
+/** 一次挨打够重就打断咏唱，并留下日志（返回是否打断） */
+function breakChant(s: BattleState, def: Combatant, dmg: number): boolean {
+  const u = ultOf(def)
+  if (!u || def.side !== 'enemy') return false
+  const need = (u.ultBreak ?? TUNING.ultBreak) * def.hpMax
+  if (dmg < need) return false
+  if ((def.chant[u.id] ?? 0) <= 0) return false
+  def.chant[u.id] = 0
+  pushLog(s, {
+    round: s.hand, actorId: def.id, actor: def.name, side: def.side,
+    skillId: 'chant-break', skill: '咏唱被打断', kind: '指令', fx: 'seal',
+    note: `这一下打掉了 ${dmg}（阈值 ${Math.round(need)}）—— 「${u.name}」的咏唱被压了回去。`,
+  })
+  return true
+}
+
+/** 主动清零咏唱（镇静剂一类），返回是否真的清掉了什么 */
+function resetChant(s: BattleState, t: Combatant, how: string): boolean {
+  const u = ultOf(t)
+  if (!u || (t.chant[u.id] ?? 0) <= 0) return false
+  t.chant[u.id] = 0
+  pushLog(s, {
+    round: s.hand, actorId: t.id, actor: t.name, side: t.side,
+    skillId: 'chant-seal', skill: '咏唱中止', kind: '指令', fx: 'seal',
+    note: `${how}起效 —— 「${u.name}」的咏唱归零。`,
+  })
+  return true
 }
 
 /* ---------- 一手技能 ---------- */
@@ -608,6 +701,8 @@ export function act(s: BattleState, cmd: Command): BattleState {
       hp: me.hp, bar: me.bar, buffs: me.buffs, taunt: me.taunt,
       down: me.down, startUsed: me.startUsed, stack: me.stack, cds: me.cds, sp: me.sp, note: me.note,
     })
+    // 羁绊是队伍层的东西：重建后要按全队名单重新落一遍，不然换件装备就掉了
+    applySynergies([me], s.allies.map((c) => c.id))
     cmdLog(s, me, '更换装备', g ? `${g.name} 装配完毕 · 不消耗回合` : '已卸下装具', 'gear')
     return s
   }
@@ -676,12 +771,73 @@ export function act(s: BattleState, cmd: Command): BattleState {
       + `，喘息回了一口气（体力 +${got}）`, 'guard')
   }
 
+  // 连携：这一手算进羁绊的共鸣槽；槽满就自己接上（不由玩家点）
+  chargeLinks(s, me.id)
+  fireLinks(s, me.id)
+
   checkEnd(s)
   if (s.phase !== 'select') {
     s.actor = null
     return s
   }
   return advance(s)
+}
+
+/* ---------- 连携 · 自动触发 ---------- */
+
+/**
+ * 共鸣槽：羁绊里每有人出一手就 +1（满则封顶）。
+ * 「恋兔队必须全员都在才能触发」不是提示文案 —— 是槽要四个人一人添一笔才满。
+ */
+function chargeLinks(s: BattleState, actorId: string) {
+  const bonds = bondsOf(s.allies.map((c) => c.id))
+  if (!bonds.length) return
+  s.link = s.link ?? {}
+  for (const b of bonds) {
+    if (!b.members.includes(actorId)) continue
+    s.link[b.id] = Math.min(b.need, (s.link[b.id] ?? 0) + 1)
+  }
+}
+
+/**
+ * 槽满即接：出手者执手，其余参加者一起出力（linkPow），打最薄的那个。
+ * 不占出手者的回合、不耗体力 —— 打熟了自然接得上，这一下是羁绊给的。
+ */
+function fireLinks(s: BattleState, actorId: string) {
+  const bonds = bondsOf(s.allies.map((c) => c.id))
+  if (!bonds.length) return
+  s.link = s.link ?? {}
+  for (const b of bonds) {
+    if ((s.link[b.id] ?? 0) < b.need) continue
+    const live = b.members
+      .map((id) => find(s, id))
+      .filter((c): c is Combatant => !!c && !c.down && c.gone <= 0)
+    if (live.length < b.members.length) continue
+    const foes = aliveOf(s.enemies)
+    if (!foes.length) continue
+    const actor = live.find((c) => c.id === actorId) ?? live[0]
+    const target = [...foes].sort((a, c) => a.hp - c.hp)[0]
+    s.link[b.id] = 0
+    pushLog(s, {
+      round: s.hand, actorId: actor.id, actor: actor.name, side: actor.side,
+      skillId: `link-${b.id}`, skill: `连携 · ${b.name}`, kind: '技能', fx: b.link.fx,
+      note: `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。`,
+    })
+    resolve(s, actor, {
+      id: `link-${b.id}`,
+      name: b.link.name,
+      kind: '技能',
+      desc: b.link.desc,
+      cost: 0,
+      power: b.link.power,
+      axis: b.link.axis,
+      fx: b.link.fx,
+      line: b.link.line,
+      target: 'one',
+      linkUnits: live.filter((c) => c.id !== actor.id).map((c) => c.id),
+      linkPow: b.link.linkPow,
+    }, target.id)
+  }
 }
 
 /* ---------- 敌方 AI ---------- */
@@ -701,7 +857,24 @@ function pickTarget(s: BattleState, foe: Combatant): Combatant | undefined {
 function enemyAct(s: BattleState, foe: Combatant) {
   const t = pickTarget(s, foe)
   if (!t) return
-  const heavy = foe.skills.find((k) => k.kind === '技能')
+  const u = ultOf(foe)
+  if (u) {
+    // 蓄满了：这一手不放别的，放它
+    if ((foe.chant[u.id] ?? 0) >= (u.ult ?? 1)) {
+      foe.chant[u.id] = 0
+      pushLog(s, {
+        round: s.hand, actorId: foe.id, actor: foe.name, side: foe.side,
+        skillId: 'chant-fire', skill: `终结技能 · ${u.name}`, kind: '技能', fx: u.fx,
+        note: `咏唱完毕 —— 它把攒下的一切一次放了出来。`
+          + (ultDebuffs(foe) ? `（身上 ${ultDebuffs(foe)} 层减益已把这一击削去一截）` : ''),
+      })
+      resolve(s, foe, u, t.id)
+      return
+    }
+    // 还没蓄满：这手照常打，同时给咏唱添一拍
+    foe.chant[u.id] = Math.min(u.ult ?? 1, (foe.chant[u.id] ?? 0) + 1)
+  }
+  const heavy = foe.skills.find((k) => k.kind === '技能' && !k.ult)
   const k = heavy && Math.random() < 0.35 ? heavy : foe.skills[0]
   resolve(s, foe, k, t.id)
 }
@@ -750,9 +923,18 @@ export function lootOddsOf(stage: number): number {
   return clamp(TUNING.lootBase + stage * TUNING.lootPerStage, 0, TUNING.lootCap)
 }
 
-/** 胜利可得：军需点（必得）+ 装具（掷骰，不是一定出） */
+/**
+ * 胜利可得：终末点数（必得）+ 装具（掷骰，不是一定出）。
+ * ------------------------------------------------------------
+ * 点数主要来自剧情任务：正史复盘按阶段加倍、另加一笔固定份量；
+ * 巡逻任务只是维持观测，给得少 —— 想攒装备，就得往正史里走。
+ */
 export function rewardOf(s: BattleState): { coin: number; loot: boolean } {
-  const coin = Math.round(s.stage * TUNING.coinPerStage * (1 + TUNING.coinDropBonus))
+  const base = s.stage * TUNING.coinPerStage
+  const raw = s.mainline
+    ? base * TUNING.coinMainlineMul + TUNING.coinMainlineBase
+    : base * TUNING.coinPatrolMul
+  const coin = Math.max(1, Math.round(raw * (1 + TUNING.coinDropBonus)))
   return { coin, loot: Math.random() < lootOddsOf(s.stage) }
 }
 

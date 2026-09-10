@@ -3,6 +3,8 @@ import { ArrowRight, Check, Crosshair, PaperPlaneTilt, Trash, Users } from '@pho
 
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
+import { TIMELINE } from '../data/timeline'
+import { rBadgeOf } from '../lib/battle/rvalue'
 import { OPERATOR_ID, OPERATOR_PERSON, PERSON_IDS, personOf } from '../data/castmeta'
 import { opPeriodAt } from '../lib/operator-arc'
 import type { Mission } from '../data/types'
@@ -26,6 +28,12 @@ type FilterKey = '全部' | '待接取' | '已派遣' | '压制中' | '完成' |
 type LocalStatus = Mission['status']
 
 const FILTERS: FilterKey[] = ['全部', '待接取', '已派遣', '压制中', '完成', '高威胁']
+
+/**
+ * 巡逻任务的放行点：脏器公寓（第 4 话）一案结清之前，可刷新的看板一律不派单——
+ * 那时委员会还没把巡逻区交到他手上。正史主线不受此限：走到哪一段，就能复盘哪一段。
+ */
+const PATROL_OPEN_AT = 'v1-5'
 
 const STATUS_META: Record<LocalStatus, { cls: string; color: string; label: string }> = {
   待接取: { cls: 'chip', color: 'var(--steel)', label: '待接取' },
@@ -61,13 +69,17 @@ export function Missions() {
   const [bag, setBag] = useState<Record<string, number>>({ ...TUNING.bagDefault })
   const [shopTab, setShopTab] = useState<'装具' | '补给'>('装具')
 
-  /* —— 看板：随观测进度自动重掷，也可手动刷新 —— */
+  /* —— 看板：放行之后随观测进度自动重掷，也可手动刷新 —— */
   const [reroll, setReroll] = useState(0)
+
+  const patrolOpen = !!epDone[PATROL_OPEN_AT]
+  /** 放行点那一段主线的标题（未放行时挂牌用） */
+  const patrolOpenTitle = TIMELINE.find((e) => e.id === PATROL_OPEN_AT)?.title ?? PATROL_OPEN_AT
 
   const eventsDone = Object.keys(epDone).length
   /** 看板种子 = 观测进度 + 手动重掷计数（同一 seed 必得同一批任务） */
   const seed = eventsDone * 101 + reroll * 17 + 1
-  const board = useMemo(() => genBoard(seed), [seed])
+  const board = useMemo(() => (patrolOpen ? genBoard(seed) : []), [patrolOpen, seed])
 
   const reload = useCallback(async () => {
     const [sp, g, rs, c, gb, eq, bg] = await Promise.all([
@@ -154,7 +166,7 @@ export function Missions() {
     setBriefing(null)
   }
 
-  /* —— 结算：只有胜仗落库；装备按概率搜刮，军需点必得 —— */
+  /* —— 结算：只有胜仗落库；装备按概率搜刮，终末点数必得 —— */
   const settle = async (
     rec: BattleRecord, spLeft: number, eq: Record<string, string>, bagLeft: Record<string, number>,
   ) => {
@@ -171,6 +183,10 @@ export function Missions() {
     await reload()
   }
 
+  /* —— 军需处：特殊装备须先完成对应主线才上架（未完成只挂牌） —— */
+  const mainTitle = (id?: string) => (id ? TIMELINE.find((e) => e.id === id)?.title ?? id : '')
+  const gearOpen = (g: { unlockMain?: string }) => !g.unlockMain || !!epDone[g.unlockMain]
+
   return (
     <div className="vpage">
       <div className="vhead">
@@ -186,7 +202,13 @@ export function Missions() {
               {f !== '全部' && f !== '高威胁' ? <span className="muted" style={{ marginLeft: 5 }}>{counts[f] ?? 0}</span> : null}
             </button>
           ))}
-          <button className={css.filterBtn} data-board-refresh onClick={() => setReroll((n) => n + 1)} title="按当前观测进度重掷整块看板">
+          <button
+            className={css.filterBtn}
+            data-board-refresh
+            disabled={!patrolOpen}
+            onClick={() => setReroll((n) => n + 1)}
+            title={patrolOpen ? '按当前观测进度重掷整块看板' : `主线「${patrolOpenTitle}」结清后才放行巡逻任务`}
+          >
             ⟳ 刷新看板
           </button>
         </div>
@@ -205,11 +227,11 @@ export function Missions() {
         <span className="tiny muted">出击扣除，观测推进时回补</span>
       </div>
 
-      {/* 军需处：军需点购买补给与反现实辅助装备（装具不涉弹痕，每人至多一件） */}
+      {/* 军需处：终末点数购买补给与反现实辅助装备（装具不涉弹痕，每人至多一件） */}
       <section className={css.shop} data-gear-shop>
         <div className={css.shopHead}>
           <b>军需处</b>
-          <span className={css.coin} data-coin title="作战结算累积">军需点 <b>{coin}</b></span>
+          <span className={css.coin} data-coin title="作战结算累积">终末点数 <b>{coin}</b></span>
           <div className={css.shopTabs}>
             <button className={`${css.shopTab} ${shopTab === '装具' ? css.isOn : ''}`} onClick={() => setShopTab('装具')}>反现实辅助装备</button>
             <button className={`${css.shopTab} ${shopTab === '补给' ? css.isOn : ''}`} onClick={() => setShopTab('补给')}>道具补给</button>
@@ -227,20 +249,32 @@ export function Missions() {
                 <p className={css.shopDesc}>{g.desc}</p>
                 <div className={css.shopFoot}>
                   <span className="tiny muted">持有 {gearBag[g.id] ?? 0}</span>
-                  <button
-                    className="btn btn--ghost"
-                    style={{ fontSize: 11 }}
-                    data-buy={g.id}
-                    disabled={coin < g.price}
-                    onClick={async () => {
-                      const r = await buyGear(g.id, g.price)
-                      setCoin(r.coin)
-                      setGearBag(r.bag)
-                      push('success', '军需处', `${g.name} 已入库（余 ${r.coin} 军需点）`, false)
-                    }}
-                  >
-                    {g.price} 军需点
-                  </button>
+                  {gearOpen(g) ? (
+                    <button
+                      className="btn btn--ghost"
+                      style={{ fontSize: 11 }}
+                      data-buy={g.id}
+                      disabled={coin < g.price}
+                      onClick={async () => {
+                        const r = await buyGear(g.id, g.price)
+                        setCoin(r.coin)
+                        setGearBag(r.bag)
+                        push('success', '军需处', `${g.name} 已入库（余 ${r.coin} 终末点数）`, false)
+                      }}
+                    >
+                      {g.price} 终末点数
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn--ghost"
+                      style={{ fontSize: 11, opacity: 0.72 }}
+                      data-gear-locked={g.id}
+                      disabled
+                      title={`完成主线「${mainTitle(g.unlockMain)}」后上架`}
+                    >
+                      需完成主线 · {mainTitle(g.unlockMain)}
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -262,16 +296,26 @@ export function Missions() {
                       const r = await buyItem(it.id, it.price)
                       setCoin(r.coin)
                       setBag(r.bag)
-                      push('success', '军需处', `${it.name} 已入库（余 ${r.coin} 军需点）`, false)
+                      push('success', '军需处', `${it.name} 已入库（余 ${r.coin} 终末点数）`, false)
                     }}
                   >
-                    {it.price} 军需点
+                    {it.price} 终末点数
                   </button>
                 </div>
               </div>
             ))}
         </div>
       </section>
+
+      {/* 巡逻任务未放行：先走正史，脏器公寓一案结清后才派单 */}
+      {!patrolOpen ? (
+        <div className={css.empty} data-patrol-locked>
+          <div style={{ fontSize: 15, letterSpacing: '0.14em', color: 'var(--amber)' }}>巡逻区尚未放行</div>
+          <div className="mono tiny" style={{ letterSpacing: '0.2em', marginTop: 8 }}>
+            可刷新任务将在主线「{patrolOpenTitle}」结清后开放 · 眼下只走正史
+          </div>
+        </div>
+      ) : null}
 
       {list.length === 0 ? (
         <div className={css.empty}>
@@ -285,6 +329,9 @@ export function Missions() {
             const sm = STATUS_META[m2.status]
             const done = m2.status === '完成'
             const ribbonCls = m2.status === '完成' ? css.done : m2.status === '压制中' ? css.danger : m2.status === '锁定' ? css.warn : m2.stage >= 6 ? css.danger : m2.stage >= 3 ? css.warn : css.ok
+            /* 该地 R 值 → 敌人成色：出击前就该看得见，好让人决定带谁去 */
+            const rb = rBadgeOf(m2.place, m2.stage)
+            const amp = Math.round((rb.f.mul - 1) * 100)
             return (
               <article key={m2.id} className={`${css.card} ${m2.mainline ? css.cardMain2 : ''}`} data-mission={m2.mainline ? undefined : m2.id} data-mainline-mission={m2.mainline ? m2.id : undefined} style={{ '--s': m2.mainline ? 'var(--violet)' : m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
                 <div className={`${css.cardRibbon} ${ribbonCls}`} />
@@ -301,6 +348,19 @@ export function Missions() {
                   <h3 className={css.cardTitle} style={{ marginTop: 6 }}>{m2.title}</h3>
                   <div className={css.cardSub}>
                     <span>地点 {m2.place}</span>
+                    <span className={css.sep}>/</span>
+                    <span
+                      className={css.rChip}
+                      data-mission-r={m2.id}
+                      data-r-known={rb.reading.known ? '1' : undefined}
+                      data-r-amp={amp}
+                      title={`${rb.reading.note}
+${rb.f.word}`}
+                    >
+                      R {rb.reading.r.toFixed(3)}
+                      {amp ? ` · 敌 +${amp}%` : ' · 常规'}
+                      {rb.reading.known ? '' : '（推算）'}
+                    </span>
                     <span className={css.sep}>/</span>
                     <span className={css.deadline}>期限 · {m2.deadline}</span>
                     <span className={css.sep}>/</span>
@@ -376,7 +436,7 @@ export function Missions() {
                   {r.mainline ? <span className={css.mainTag} data-rec-main="1">主线</span> : null}
                   <b className={css.recTitle}>{r.no}「{r.title}」</b>
                   <span className="tiny muted">
-                    {r.rounds} 手 / {r.ticks} 拍 · MVP {r.mvp} · 军需点 +{r.coin}
+                    {r.rounds} 手 / {r.ticks} 拍 · MVP {r.mvp} · 终末点数 +{r.coin}
                     {r.loot.length ? ` · ${r.loot.map((g) => GEAR_OF[g]?.name ?? g).join('、')}` : ''} · {r.narrativeBy}
                   </span>
                   <span className={css.recChev} data-open={openRec === r.id ? '1' : undefined}>›</span>

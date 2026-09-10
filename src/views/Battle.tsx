@@ -5,12 +5,14 @@ import {
 } from '@phosphor-icons/react'
 
 import {
-  act, createBattle, digestOf, legalSkills, lootOddsOf, rewardOf,
+  act, chargeOf, createBattle, digestOf, legalSkills, lootOddsOf, rewardOf,
 } from '../lib/battle/engine'
 import type { Command } from '../lib/battle/engine'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
+import { bondsOf, synergiesOf } from '../lib/battle/synergy'
+import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
 import type { BattleRecord, BattleState, Combatant, FxKind, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
@@ -33,7 +35,7 @@ interface Props {
   bag: Record<string, number>
   /** 「变成他人」可借的档案池（已解锁、且不在本场队伍里的角色 id） */
   morphPool?: string[]
-  /** 军需点（结算后写回） */
+  /** 终末点数（结算后写回） */
   coin: number
   /** 撤出：消耗已扣，不结算任务 */
   onExit: (spLeft: number, equip: Record<string, string>) => void
@@ -99,12 +101,47 @@ export function Battle({
   /** 结算只走一次（严格模式下 effect 会被重放） */
   const settled = useRef(false)
 
+  /* 战场所在的 R 值（与任务简报同一口径）：出招前知道这地方把敌人抬了多少 */
+  const siteR = useMemo(() => rBadgeOf(st.place, st.stage), [st.place, st.stage])
   const playing = shown < st.log.length
   const over = st.phase !== 'select'
   const actor = useMemo(
     () => (st.actor ? [...st.allies, ...st.enemies].find((c) => c.id === st.actor) : undefined),
     [st],
   )
+
+  /* ---- 羁绊挂牌：本场成立了哪几条，连携的共鸣槽蓄到几拍 ---- */
+  const synergyRow = useMemo(() => {
+    const ids = st.allies.map((c) => c.id)
+    const bonds = new Map<string, ReturnType<typeof bondsOf>[number]>()
+    for (const b of bondsOf(ids)) {
+      bonds.set(b.id, b)
+      // 整队连携（xxx-full）挂在同一条羁绊名下
+      if (b.id.endsWith('-full')) bonds.set(b.id.slice(0, -5), b)
+    }
+    return synergiesOf(ids).map((s) => {
+      const b = bonds.get(s.id)
+      return {
+        id: s.id, name: s.name, desc: s.desc, mark: s.mark,
+        link: b
+          ? { name: b.link.name, desc: b.link.desc, need: b.need, cur: Math.min(b.need, st.link?.[b.id] ?? 0) }
+          : null,
+      }
+    })
+  }, [st])
+
+  /* ---- 行动顺位：还差几拍轮到自己 ---- */
+  const order = useMemo(() => {
+    return [...st.allies, ...st.enemies]
+      .filter((c) => !c.down && c.gone <= 0)
+      .map((c) => {
+        const pct = Math.min(100, (c.bar / TUNING.barMax) * 100)
+        const ready = c.bar >= TUNING.barMax
+        const eta = ready ? 0 : Math.max(1, Math.ceil((TUNING.barMax - c.bar) / Math.max(0.5, chargeOf(c))))
+        return { c, pct, ready, eta }
+      })
+      .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
+  }, [st])
 
   /* ---- 逐条回放战斗日志（每条配一次演出） ---- */
   useEffect(() => {
@@ -234,8 +271,35 @@ export function Battle({
           <span className={`${css.no} mono`}>{st.no} / S{st.stage}</span>
           <b className={css.title}>{st.title}</b>
           <span className="tiny muted">{st.place}</span>
+          <span className={css.siteR} data-r-badge title={`${siteR.reading.note}
+${siteR.f.word}`}>
+            R {siteR.reading.r.toFixed(3)}
+            {siteR.f.out ? ` · 敌 +${Math.round((siteR.f.mul - 1) * 100)}%` : ' · 常规'}
+          </span>
         </div>
         <div className={css.hudR}>
+          {/* 羁绊：谁跟谁一起上阵、连携的共鸣槽还差几拍（连携不由玩家点，槽满自己接上） */}
+          {synergyRow ? (
+            <div className={css.traitRow} data-synergy-row>
+              {synergyRow.map((t) => (
+                <span
+                  key={t.id}
+                  className={css.traitChip}
+                  data-synergy={t.id}
+                  title={`${t.desc}${t.link ? `　连携：${t.link.name} —— ${t.link.desc}` : ''}`}
+                >
+                  <b>{t.name}</b>
+                  {t.link ? (
+                    <i className={css.linkGauge} data-link-gauge={t.id} data-full={t.link.cur >= t.link.need ? '1' : undefined}>
+                      {t.link.cur}/{t.link.need}
+                    </i>
+                  ) : (
+                    <i className={css.traitMark}>{t.mark}</i>
+                  )}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <span className={css.round} data-hand={st.hand}>
             第 <b>{st.hand}</b> 手 <span className="tiny muted">/ {st.tick} 拍</span>
           </span>
@@ -253,6 +317,34 @@ export function Battle({
           )}
         </div>
       </header>
+
+      {/* 行动顺位 —— 把每个人的行动条摊开排一行：谁先动、还差几拍，出招前一眼看得清 */}
+      <div className={css.orderStrip} data-order-strip>
+        <span className={`${css.orderCap} tiny mono`}>
+          <Sneaker size={13} /> 行动顺位
+        </span>
+        <div className={css.orderCards}>
+          {order.map(({ c, pct, ready, eta }, i) => (
+            <span
+              key={c.id}
+              className={css.orderCard}
+              data-order={c.id}
+              data-side={c.side}
+              data-ready={ready ? '1' : undefined}
+              data-next={i === 0 && !ready ? '1' : undefined}
+              style={{ '--u': c.hue } as CSSProperties}
+              title={`${c.name} · 行动条 ${Math.round(pct)}%${ready ? ' · 已待命' : ` · 约 ${eta} 拍后出手`}`}
+            >
+              <i className={css.orderSigil}>{c.sigil}</i>
+              <b>{c.name}</b>
+              <span className={css.orderBar}>
+                <i style={{ width: `${pct}%` }} />
+              </span>
+              <em className="mono">{ready ? '待命' : `${eta} 拍`}</em>
+            </span>
+          ))}
+        </div>
+      </div>
 
       {/* 敌阵 —— 居中、放大；名字在头顶，数值与状态在脚下 */}
       <div className={css.arena} data-enemy-field>
@@ -293,8 +385,13 @@ export function Battle({
             <div className="tiny muted">观测频道静默。</div>
           ) : (
             recent.map((e, i) => (
-              <div key={`${e.actorId}-${e.skillId}-${i}`} className={css.logLine} data-log-side={e.side}>
-                {e.line ? <span className={css.line}>{e.line}</span> : null}
+              <div
+                key={`${e.actorId}-${e.skillId}-${i}`}
+                className={`${css.logLine} ${e.skillId.startsWith('link-') ? css.logLink : ''}`}
+                data-log-side={e.side}
+                data-log-link={e.skillId.startsWith('link-') ? '1' : undefined}
+              >
+                {e.line ? <span className={css.line} data-log-line>{e.line}</span> : null}
                 <span className={css.logTxt}>
                   <b>{e.actor}</b> · {e.skill}
                   {e.target ? <span className="muted"> → {e.target}</span> : null}
@@ -569,6 +666,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       data-kind={k.kind}
       data-power={k.power}
       data-cd={cooling ? cd : undefined}
+      data-cdmax={k.cd ?? 0}
       className={`${css.row} ${k.kind === '启动' ? css.rowStart : ''} ${poor || cooling ? css.rowPoor : ''}`}
       disabled={poor || cooling}
       title={k.desc + (cooling ? `（冷却中 · 还需 ${cd} 拍）` : poor ? '（体力不足）' : k.cd ? `（冷却 ${k.cd} 拍）` : '')}
@@ -735,8 +833,45 @@ function Foe({
         <div className={css.atb} data-atb={c.id} data-ready={ready ? '1' : undefined}>
           <i style={{ width: `${Math.min(100, (c.bar / TUNING.barMax) * 100)}%` }} />
         </div>
+        <UltChant c={c} />
         <BuffTags c={c} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * 终结技能的咏唱槽（boss 专用）。
+ * 玩家要判断的两件事都写在这里：还差几拍放出来，以及打断它得打掉多少。
+ */
+function UltChant({ c }: { c: Combatant }) {
+  const u = c.skills.find((k) => k.ult)
+  if (!u) return null
+  const need = u.ult ?? 1
+  const cur = Math.min(need, c.chant?.[u.id] ?? 0)
+  const full = cur >= need
+  const brk = Math.round((u.ultBreak ?? TUNING.ultBreak) * c.hpMax)
+  const soft = c.buffs.filter((b) => b.k === 'mark' || b.k === 'slow').length
+  return (
+    <div
+      className={css.chant}
+      data-chant={c.id}
+      data-full={full ? '1' : undefined}
+      title={`终结技能「${u.name}」：${u.desc}
+还差 ${need - cur} 拍放出；咏唱期间一次打掉 ${brk} 点即打断；它身上每层减益削弱这一击 ${Math.round(
+        TUNING.ultDebuffCut * 100,
+      )}%`}
+    >
+      <span className={css.chantName}>
+        <Lightning size={11} weight="fill" /> {full ? '终结技能 · 待放' : `咏唱 ${cur}/${need}`}
+      </span>
+      <span className={css.chantBar}>
+        <i style={{ width: `${(cur / need) * 100}%` }} />
+      </span>
+      <span className={css.chantHint}>
+        打断 {brk}
+        {soft ? ` · 已软 ${soft}` : ''}
+      </span>
     </div>
   )
 }
@@ -772,7 +907,7 @@ function Result({
       </div>
       {win ? (
         <div className={css.resultGain} data-battle-gain>
-          <span>军需点 <b>+{rec.coin}</b></span>
+          <span>终末点数 <b>+{rec.coin}</b></span>
           <span>
             搜刮：
             {loot.length ? <b>{loot.join('、')}</b> : <span className="muted">未搜到装具（掉落率 {Math.round(lootOddsOf(rec.stage) * 100)}%）</span>}

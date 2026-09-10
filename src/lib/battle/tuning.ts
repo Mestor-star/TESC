@@ -49,9 +49,12 @@ export const TUNING = {
   fleeMax: 0.92,
   fleeSpeedWeight: 0.012, // 双方平均速度差每 1 点的权重
 
-  /* —— 军需 —— */
-  coinPerStage: 14,      // 每胜一场的军需点 = 阶段 × 此值
-  coinDropBonus: 0.5,    // 掉落装具时附带的军需点比例
+  /* —— 终末点数（货币；主要来自剧情任务的战果） —— */
+  coinPerStage: 14,        // 阶段基数：阶段 × 此值
+  coinMainlineMul: 2,      // 剧情任务（正史复盘）按基数加倍
+  coinMainlineBase: 60,    // 剧情任务另加的固定份量 —— 一份正史换一笔点数
+  coinPatrolMul: 0.35,     // 巡逻任务只是维持观测，给得少
+  coinDropBonus: 0.5,      // 掉落装具时附带的点数比例
   lootBase: 0.28,        // 战后搜刮到装具的基础概率
   lootPerStage: 0.045,   // 阶段每高一级的追加概率
   lootCap: 0.85,         // 再高也不会必出
@@ -81,6 +84,21 @@ export const TUNING = {
   enemySpdBase: 18,
   enemySpdPerStage: 3.4,
   enemyWillPerStage: 2.0,
+
+  /* —— 地点 R 值（反现实干涉指数）对敌方的影响 ——
+     只抬血量与「反现实亲和」：现实变薄是让实体「打不死、更抽象」，
+     不改它的攻击与充能，好让这条设定不掀翻攻防平衡。 */
+  rGain: 3.2,            // 每偏离正常区间 0.100 的增幅（×0.32）
+  rMulMin: 0.85,         // 增幅下限（现实密实到反常时也不至于把它削没）
+  rMulMax: 1.40,         // 增幅上限（不给低 R 地带叠出无解的血墙）
+  rEstPerStage: 0.008,   // 未标定地点按危险度推算 R 值：每级 −0.008
+
+  /* —— boss 的终结技能（大招）与其反制 —— */
+  ultStage: 6,           // 危险度自此起视为 boss 级（配一记终结技能）
+  ultCharge: 4,          // 终结技能的咏唱拍数（每次自身出手 +1）
+  ultBreak: 0.14,        // 咏唱期间一次被打掉最大生命的 14% 即打断
+  ultDebuffCut: 0.12,    // 咏唱期间身上每层减益，大招威力 −12%
+  ultMulFloor: 0.5,      // 削弱到最狠也只减半（大招不至于被挂成挠痒）
 
   /* —— 结算 —— */
   growthHpWeight: 0.8,   // 成长点数对生命的追加权重

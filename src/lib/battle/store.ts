@@ -153,14 +153,14 @@ export async function addGrowth(patch: Record<string, number>): Promise<Record<s
   return cur
 }
 
-/* ---------- 军需：军需点 / 道具补给池 / 反现实辅助装备 ---------- */
+/* ---------- 军需：终末点数 / 道具补给池 / 反现实辅助装备 ---------- */
 
 const COIN_KEY = 'coin'
 const BAG_KEY = 'bag'
 const GEAR_KEY = 'gear'
 const EQUIP_KEY = 'equip'
 
-/** 军需点（胜利结算累积；商店消费） */
+/** 终末点数（胜利结算累积；商店消费） */
 export async function readCoin(): Promise<number> {
   return safe(async () => {
     const row = await db().meta.get(COIN_KEY)

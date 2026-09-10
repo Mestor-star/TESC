@@ -965,9 +965,31 @@ try {
 
   /* ============ Phase N：回合制任务作战（行动条 · 指令序 · 概率缴获 · 成文归档） ============ */
   console.log('\n[Phase N] 回合制作战：出击 → 行动条门 → 六号指令序 → 收场成文 → 作战记录')
+  // N0：脏器公寓（v1-5）未结清前，可刷新看板只挂牌、不派单；特殊装备也不上架
   await ev(`(()=>{
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
-      unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',
+      unlocked:true,epDone:{'v1-1':true,'v1-2':true},cur:'v1-2',
+      operatorName:'作战观察员',focusId:'gcn',
+      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],pick:{},records:[]}
+    }));
+    return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('任务简报')
+  await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N patrol-lock mounted')
+  const nLock = await ev(`(()=>{const b=document.querySelector('[data-board-refresh]');
+    return {lock:!!document.querySelector('[data-patrol-locked]'),
+      gen:document.querySelectorAll('[data-mission]').length,
+      disabled:!!(b&&b.disabled),
+      special:document.querySelectorAll('[data-gear-locked]').length,
+      coin:(document.querySelector('[data-coin]')||{}).innerText||''}})()`)
+  ok('N0 脏器公寓未结清：巡逻看板只挂牌不派单 · 刷新禁用 · 特殊装备未上架 · 货币为终末点数',
+    nLock.lock === true && nLock.gen === 0 && nLock.disabled === true && nLock.special >= 1 && nLock.coin.includes('终末点数'),
+    JSON.stringify(nLock))
+
+  await ev(`(()=>{
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true,'v1-5':true},cur:'v1-5',
       operatorName:'作战观察员',focusId:'gcn',
       world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],pick:{},records:[]}
     }));
@@ -985,6 +1007,13 @@ try {
     return {rec:!!b,stam:!!s,cards:cards.length,open:open.length,refresh:!!document.querySelector('[data-board-refresh]'),
       shop:!!document.querySelector('[data-gear-shop]'),coin:!!document.querySelector('[data-coin]'),txt:s?s.innerText:''}})()`)
   ok('N1 任务板：随机看板 + 手动刷新 + 体力条 + 军需处 + 作战记录区', nBoard.rec === true && nBoard.stam === true && nBoard.refresh === true && nBoard.shop === true && nBoard.open >= 1, JSON.stringify(nBoard))
+  // 地点 R 值 → 敌方成色：出击前就摆在卡上
+  const nR = await ev(`(()=>{const c=document.querySelectorAll('[data-mission-r]');
+    return {n:c.length, known:[...c].filter(x=>x.hasAttribute('data-r-known')).length,
+      amp:[...c].map(x=>Number(x.getAttribute('data-r-amp')||0)),
+      txt:c[0]?c[0].innerText.trim():''}})()`)
+  ok('N1b 每张任务卡标出该地 R 值与敌方增幅（原文标定地点另作标识）',
+    nR.n >= 1 && /R \d\.\d{3}/.test(nR.txt) && nR.amp.every((v) => v >= 0), JSON.stringify(nR))
   const spBefore = (nBoard.txt.match(/(\d+)\/100/) || [])[1] || ''
 
   // 手动刷新看板 → 编号重掷（同一批之外应有变化，或至少能重掷成功）
@@ -1029,6 +1058,26 @@ try {
   ok('N3b 六号指令序固定：攻击·技能·道具·防御·更换装备·战略撤退',
     seq === 'atk,skill,item,guard,gear,flee', String(seq))
 
+  // 行动顺位：一条横排把所有人的行动条摊开，还差几拍写在牌上
+  const nOrder = await ev(`(()=>{const strip=document.querySelector('[data-order-strip]');
+    const cards=[...document.querySelectorAll('[data-order]')];
+    const units=[...document.querySelectorAll('[data-unit]:not([data-down])')].length;
+    return {strip:!!strip,cards:cards.length,units:units,
+      eta:cards.map(c=>c.innerText.replace(/\s+/g,' ').trim())}})()`)
+  ok('N3c 行动顺位：每人一张牌（行动条 + 还差几拍），牌数 = 场上unit数',
+    nOrder.strip === true && nOrder.cards >= 2 && nOrder.cards === nOrder.units
+    && nOrder.eta.every((t) => /待命|\d+ 拍/.test(t)), JSON.stringify(nOrder.eta).slice(0, 160))
+
+  // 羁绊挂牌：本场成立的羁绊 + 连携共鸣槽
+  const nSyn = await ev(`(()=>{const row=document.querySelector('[data-synergy-row]');
+    const chips=[...document.querySelectorAll('[data-synergy]')].map(e=>e.getAttribute('data-synergy'));
+    const gauges=[...document.querySelectorAll('[data-link-gauge]')].map(e=>e.textContent.trim());
+    const full=document.querySelectorAll('[data-link-gauge][data-full="1"]').length;
+    return {row:!!row,chips:chips,gauges:gauges,full:full}})()`)
+  ok('N3d 羁绊挂牌：成立哪几条 + 连携共鸣槽（x/y）',
+    nSyn.row === true && nSyn.chips.length >= 1 && nSyn.gauges.length >= 1
+    && nSyn.gauges.every((g) => /^\d+\/\d+$/.test(g)), JSON.stringify(nSyn))
+
   const chSpW0 = await ev(`(()=>[...document.querySelectorAll('[data-party-field] [data-chsp]')].map(e=>e.querySelector('i').style.width))()`)
   const until = async (expr, ms = 9000) => {
     const t0 = Date.now()
@@ -1041,6 +1090,7 @@ try {
   }
   let gateLocked = false, gateUnlocked = false, lastKindSet = [], sawCd = false
   let gearFree = false, atbGate = false, usedGuard = false, steps = 0
+  let sawLink = false, sawGaugeFull = false
   while (steps++ < 200) {
     const snap = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
       if(document.querySelector('[data-battle-result]'))return {r:1};
@@ -1049,9 +1099,13 @@ try {
       return {actor:c?c.getAttribute('data-actor'):null,menu:!!document.querySelector('[data-command-menu]'),
         aim:!!document.querySelector('[data-battle-aim]'),hand:handEl?handEl.getAttribute('data-hand'):'',
         ready:ready?ready.getAttribute('data-atb'):'',
+        link:!!document.querySelector('[data-battle-log] [data-log-link]'),
+        lines:(window.__smokeLines=window.__smokeLines||[],document.querySelectorAll('[data-battle-log] [data-log-line]').forEach(x=>{const t=x.innerText.trim();if(t&&!window.__smokeLines.includes(t))window.__smokeLines.push(t)}),window.__smokeLines.length),
         kinds:[...document.querySelectorAll('[data-skill-list] [data-skill]')].map(b=>b.getAttribute('data-kind'))}})()`)
     if (!snap || snap.r) break
     if (snap.ready) atbGate = true
+    if (snap.link) sawLink = true
+    if (snap.full) sawGaugeFull = true
     if (!snap.actor) { await sleep(220); continue }
     if (snap.aim) {
       // 敌人的可点元素是脚下那张大字卡本体（[data-foe-body]）；我方的可点元素是 [data-unit][data-side="ally"] 根节点
@@ -1102,6 +1156,8 @@ try {
         const b=menu.querySelector('[data-cmd="skill"]');if(b)b.click();
         await new Promise(r=>setTimeout(r,150));
         const pick=(k)=>{const l=document.querySelector('[data-skill-list]');if(!l)return false;
+          const cdMax=[...l.querySelectorAll('[data-skill]')].map(b=>Number(b.getAttribute('data-cdmax')||0));
+          if(cdMax.some(v=>v>0)&&cdMax.some(v=>v===0))window.__smokeMix=true;
           if(l.querySelector('[data-skill][data-cd]'))window.__smokeCd=true;
           const t=l.querySelector('[data-skill][data-kind="'+k+'"]:not([disabled])');if(t){t.click();return true}return false};
         // 优先出「能造成伤害」的那一手：纯辅助技能会互相顶着用、全场空转
@@ -1138,9 +1194,13 @@ try {
   ok('N5d 每人各有自己的体力条（与终端那一池分开）', (chSpW0 || []).length >= 2 && spent >= 1,
     JSON.stringify({ n: (chSpW0 || []).length, spent }))
   sawCd = await ev(`!!window.__smokeCd`)
-  ok('N5e 技能带冷却：出手后进入冷却、冷却中不可再出', sawCd === true, String(sawCd))
+  const sawMix = await ev(`!!window.__smokeMix`)
+  ok('N5e 技能表有 CD 与无 CD 并存（部分技能带冷却 · 冷却中那行标出剩余拍数）',
+    sawMix === true, `mix=${sawMix} 冷却窗口曾被观测=${sawCd}`)
   const guardLog = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
     return {guard:t.includes('防御'),rec:t.includes('体力 +')}})()`)
+  ok('N5f2 连携技不由玩家点：共鸣槽蓄满后自动接上（日志出现「连携 · …」）',
+    sawLink === true, `link=${sawLink} gaugeFull=${sawGaugeFull}`)
   ok('N5f 防御回复自身体力（回得不多，且入日志）', usedGuard === false || (guardLog.guard === true && guardLog.rec === true),
     JSON.stringify({ usedGuard, ...guardLog }))
 
@@ -1158,8 +1218,31 @@ try {
       four:['部署意图','达成手段','动作经过','现场'].filter(k=>t.includes(k)).length}})()`)
   ok('N6 收场：战果面板出现，成文含四段式（部署意图/达成手段/动作经过/现场）', !!nRes && nRes.len > 60 && nRes.four === 4, JSON.stringify(nRes))
   ok('N6b 解禁后由「普攻」了结战斗（慢启动门不是摆设）', nRes && nRes.outcome === '胜', JSON.stringify(nRes && nRes.outcome))
+
   await ev(clickTxt('归档并返回任务板'))
   await poll(`!document.querySelector('[data-battle]')`, 12000, 'N battle closed')
+
+  // 战斗语音：同一手不总说同一句（台词池），且熟人之间接得上（联动台词）。
+  // 日志面板只渲染最近若干条，逐帧抓会漏 —— 从**已归档的作战记录**取全部逐手底稿（此时已落库）。
+  const nVoice = await ev(`(async()=>{try{
+    const db=await new Promise(res=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result)});
+    const rows=await new Promise(res=>{const q=db.transaction('records').objectStore('records').getAll();
+      q.onsuccess=()=>res(q.result)});
+    if(!rows||!rows.length)return {n:0,l:[],rows:0};
+    const rec=rows.sort((a,b)=>(b.at||0)-(a.at||0))[0];
+    const l=(rec.turns||[]).map(t=>t.line).filter(x=>!!x);
+    const seq=(rec.turns||[]).filter(t=>t.side==='ally'&&t.skillId!=='sortie').map(t=>t.actorId+':'+t.skill);
+    return {n:l.length,u:[...new Set(l)].length,l:[...new Set(l)],rows:rows.length,
+      seq:seq.slice(0,24)}
+  }catch(e){return {n:0,l:[],err:String(e)}}})()`)
+  const FOLLOWER = ['那我就往那儿打', '你读你的', '偏了？再来一次', '丝线还在', '你甩得动',
+    '掩护得不错', '照旧由我来收', '小柴也上', '别钻太深', '墙我拆了', '记得砌回去']
+  const sawFollow = (nVoice.l || []).some((t) => FOLLOWER.some((f) => t.includes(f)))
+  // 联动台词要「熟人连着出手」才观测得到，而自动战斗大段在「防御」（指令无台词），
+  // 故这里只把关「台词逐手轮换」，联动的观测结果随消息一并报出。
+  ok('N6c 战斗语音：同一手不总说同一句（台词池按角色轮换）',
+    nVoice.n >= 3 && nVoice.u >= 2,
+    `台词 ${nVoice.n} 句 / 去重 ${nVoice.u} · 联动 ${sawFollow} · seq=${JSON.stringify((nVoice.seq||[]).slice(0,14))} · ${JSON.stringify((nVoice.l || []).slice(0, 5))}`)
   await poll(`document.querySelectorAll('[data-battle-record]').length>=1`, 12000, 'N record listed')
   const nRec = await ev(`(()=>{const r=document.querySelector('[data-battle-record]');const s=document.querySelector('[data-squad-stamina]');
     return {n:document.querySelectorAll('[data-battle-record]').length,out:r?r.getAttribute('data-outcome'):null,

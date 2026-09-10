@@ -381,3 +381,13 @@
 /* 主线作战的记录单独描一道边：一眼能从巡逻任务里挑出来 */
 .recMain { border-left: 3px solid var(--violet); }
 .recMain .recNarr { border-color: color-mix(in srgb, var(--violet) 28%, var(--line)); }
+
+/* 该地 R 值 → 敌方成色（出击前看得见，好决定带谁去） */
+.rChip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--steel) 75%, var(--ink));
+  border-bottom: 1px dashed color-mix(in srgb, var(--steel) 45%, transparent);
+  cursor: help;
+}
+.rChip[data-r-known] { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); }

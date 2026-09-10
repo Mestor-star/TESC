@@ -134,9 +134,31 @@ export interface SkillSpec {
   cd?: number
   /** 需场上同在者（角色 id）：此人不在场或已失能，这一手就不可用 */
   requireAlly?: string
+  /**
+   * 连携技：参加者名单（角色 id）—— 一个都不能少，少一个这一手就不列出来。
+   * 出手时参加者各自按同一轴再补一份出力（见 linkPow），事后把先手让出去。
+   */
+  requireAll?: string[]
+  /** 连携技：参与合击的人（不含出手者本人） */
+  linkUnits?: string[]
+  /**
+   * 连携技里「别人替我出多少」：每位参加者按本手同一轴 × 此比例补进伤害。
+   * 缺省 0 —— 只有出手者出力的「连携」不算连携。
+   */
+  linkPow?: number
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
+  /**
+   * 终结技能（boss 级的大招）：不占常规出手、也不由玩家点 ——
+   * 持有者每出一手给咏唱 +1，蓄满 `ult` 拍的那一手改成放它。
+   * 反制有三条：① 咏唱期间一次打掉最大生命 ultBreak 的比例即打断；
+   * ② 咏唱期间它身上每挂一层减益，威力少一截（见 TUNING.ultDebuffCut）；
+   * ③ 「镇静剂」一类能清行动条的效果同时把咏唱清零。
+   */
+  ult?: number
+  /** 打断阈值：咏唱期间一次被打掉自身最大生命的这个比例（0.14 = 14%） */
+  ultBreak?: number
   /**
    * 变身（noapusa「变成他人」）：照着一份「已解锁的档案角色」变成对方，
    * 连能力（五轴与技能表）一并复制过来；队伍里的人复制不了。
@@ -207,6 +229,8 @@ export interface Combatant {
     skillId: string
     cd: number
   } | null
+  /** 本场生效的羁绊名（队伍羁绊与双人羁绊；供界面挂牌，不改数值） */
+  synergy?: string[]
   /** 已使用的「启动技」次数 */
   startUsed: number
   /** 需要几次启动技才解禁普攻/技能（0 = 无门） */
@@ -216,6 +240,8 @@ export interface Combatant {
   spMax: number
   /** 已蓄印记层数（弹痕持有者 = 樱印） */
   stack: number
+  /** 终结技能的咏唱进度（大招技能 id → 已蓄拍数）；蓄满即当手放出 */
+  chant: Record<string, number>
   /** 各技能剩余冷却（技能 id → 还需几次自身行动） */
   cds: Record<string, number>
   /** 持有「弹痕」类武装（决定对反现实实体的克制） */
@@ -285,6 +311,12 @@ export interface BattleState {
   fleeOdds: number
   /** 变身可借的档案池（已解锁、且不在本场队伍里的角色 id） */
   morphPool: string[]
+  /**
+   * 连携共鸣槽（羁绊 id → 已蓄拍数）：羁绊里每有人出一手 +1，
+   * 满槽且全员在场即自动接一记连携技，打完清零（见 engine 的 chargeLinks / fireLinks）。
+   * 不由玩家主动点 —— 打熟了自然接得上。
+   */
+  link: Record<string, number>
   /** 时期进度与成长（换装时重算面板要用） */
   progress: number
   growth: Record<string, number>
@@ -383,4 +415,9 @@ export interface GearDef {
   rank: 1 | 2 | 3
   /** 不入掉落池：某个人身上的私物，别人捡到也没用 */
   noDrop?: boolean
+  /**
+   * 特殊装备：须先完成这一段主线（时间线事件 id）才在军需处上架。
+   * 未完成时只挂牌、不出货，也不进交战的掉落池 —— 它不是捡来的，是拿正史换的。
+   */
+  unlockMain?: string
 }

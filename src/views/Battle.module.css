@@ -777,3 +777,166 @@
   cursor: pointer;
 }
 .morphChip:hover { background: var(--bg-2); border-color: var(--c, var(--line)); }
+
+/* ============================================================
+   羁绊挂牌 —— 挂在 HUD 右上：本场成立了哪几条，连携槽蓄到几拍
+   ============================================================ */
+
+.traitRow { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; max-width: 340px; }
+.traitChip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--violet) 8%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: help;
+}
+.traitChip b { color: var(--violet); font-weight: 600; letter-spacing: 0.02em; }
+.traitMark { font-family: var(--font-mono); font-style: normal; font-size: 10px; color: var(--ink-mute); }
+/* 连携共鸣槽：满则自己接上（琥珀高亮即「下一手就出」） */
+.linkGauge {
+  font-family: var(--font-mono); font-style: normal; font-size: 10px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-mute);
+  border: 1px solid var(--line);
+}
+.linkGauge[data-full='1'] {
+  background: color-mix(in srgb, var(--amber) 22%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  color: var(--amber);
+}
+
+/* ============================================================
+   行动顺位 —— 一条横排：行动条 + 还差几拍，出招前先看这里
+   ============================================================ */
+
+.orderStrip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-2) 55%, transparent);
+  overflow-x: auto;
+  position: relative;
+  z-index: 7;
+}
+.orderCap {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--ink-mute); letter-spacing: 0.14em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.orderCards { display: flex; gap: 6px; }
+.orderCard {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 6px;
+  padding: 3px 8px;
+  min-width: 96px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--u, var(--line-2));
+  border-radius: 4px;
+  background: var(--bg-1);
+  font-size: 11px;
+  cursor: help;
+}
+.orderSigil { grid-row: 1 / 3; font-style: normal; font-size: 14px; color: var(--u); }
+.orderCard b {
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 84px;
+}
+.orderBar {
+  grid-column: 2;
+  display: block; height: 4px; border-radius: 999px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  overflow: hidden;
+}
+.orderBar i {
+  display: block; height: 100%;
+  background: var(--u, var(--amber));
+  transition: width 0.28s ease;
+}
+.orderCard em { grid-column: 1 / 3; font-style: normal; font-size: 10px; color: var(--ink-mute); }
+/* 下一个出手的人：左边一条琥珀竖线 + 名字提亮 */
+.orderCard[data-next='1'] { border-left-color: var(--amber); }
+.orderCard[data-next='1'] b { color: var(--amber); }
+.orderCard[data-ready='1'] { border-left-color: var(--jade); }
+.orderCard[data-ready='1'] em { color: var(--jade); }
+.orderCard[data-side='enemy'] { background: color-mix(in srgb, var(--red) 7%, var(--bg-1)); }
+.orderCard[data-side='enemy'] b { color: color-mix(in srgb, var(--red) 70%, var(--ink)); }
+
+/* 连携技那一行：徽记旁边点一颗琥珀，日志里一眼看得见「这一手是羁绊给的」 */
+.logLink {
+  border-left: 2px solid var(--amber);
+  padding-left: 6px;
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+.logLink .logTxt b { color: var(--amber); }
+
+/* ============================================================
+   boss 的终结技能 · 咏唱槽
+   ------------------------------------------------------------
+   摆两件事：还差几拍放出来、打断它得打掉多少点。
+   ============================================================ */
+
+.chant {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line-2));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  cursor: help;
+}
+.chantName {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--red) 80%, var(--ink));
+  white-space: nowrap;
+}
+.chantBar {
+  flex: 1; min-width: 40px; height: 4px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.chantBar i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 60%, var(--amber)), var(--red));
+  transition: width 0.28s ease;
+}
+.chantHint { font-family: var(--font-mono); font-size: 9px; color: var(--ink-mute); white-space: nowrap; }
+/* 蓄满：整条转琥珀 + 呼吸，摆明「下一手它就放了」 */
+.chant[data-full='1'] {
+  border-color: color-mix(in srgb, var(--amber) 65%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  animation: chantPulse 1.1s ease-in-out infinite;
+}
+.chant[data-full='1'] .chantName { color: var(--amber); }
+.chant[data-full='1'] .chantBar i { background: linear-gradient(90deg, var(--amber), #fff8e1); }
+@keyframes chantPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--amber) 35%, transparent); }
+  50% { box-shadow: 0 0 8px 1px color-mix(in srgb, var(--amber) 45%, transparent); }
+}
+
+/* 战场 R 值：与任务简报同一口径，出招前知道这地方把敌人抬了多少 */
+.siteR {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--steel) 40%, var(--line-2));
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--steel) 80%, var(--ink));
+  cursor: help;
+}

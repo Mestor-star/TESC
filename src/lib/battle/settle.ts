@@ -2,7 +2,7 @@
    作战结算 · 一处收口
    ------------------------------------------------------------
    任务板与剧情交战两条入口共用这一段：只有胜仗落库，
-   成长 / 羁绊 / 体力 / 装具 / 补给 / 军需点一并写回隐藏存档。
+   成长 / 羁绊 / 体力 / 装具 / 补给 / 终末点数一并写回隐藏存档。
    败与撤不写记录、不推进剧情（执行委员长口径）。
    ============================================================ */
 
@@ -40,7 +40,7 @@ export async function settleWin(a: SettleArgs): Promise<string> {
   for (const g of rec.loot) await addGear(g)
   await addCoin(rec.coin)
   return `${rec.no}「${rec.title}」· ${rec.rounds} 手 / ${rec.ticks} 拍 · 出力最重 ${rec.mvp}`
-    + ` · 军需点 +${rec.coin}`
+    + ` · 终末点数 +${rec.coin}`
 }
 
 /** 撤出 / 未打过：只把消耗与装配写回，不落档 */

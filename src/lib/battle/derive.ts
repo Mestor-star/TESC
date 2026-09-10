@@ -20,6 +20,7 @@ import { furthestDone } from '../operator'
 import { POWER_SCALE, ROSTER } from './roster'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
+import { rFactor, rOfPlace } from './rvalue'
 import type { AxisKey, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target } from './types'
 
 const AXES: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
@@ -273,6 +274,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       startUsed: 0,
       startNeed: START_GATE[id] ?? 0,
       stack: 0,
+    chant: {},
       cds: {},
       // 弹痕持有者才蓄印记：主角身上是不是弹痕，看他这一段时期拿的是什么
       scar: /弹痕/.test(per.armSub),
@@ -324,6 +326,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     startUsed: 0,
     startNeed: START_GATE[id] ?? 0,
     stack: 0,
+    chant: {},
     cds: {},
     scar: isScar(id),
     gear: gearId,
@@ -367,6 +370,11 @@ interface FoeProfile {
   /** 出手时的一句话（原文语气） */
   line: string
   skills: FoeSkill[]
+  /**
+   * 终结技能（大招）：只在 boss 级任务（危险度 ≥ TUNING.ultStage）配发。
+   * 详见 types.ts 的 SkillSpec.ult 与 engine 的咏唱 / 打断 / 削弱三段反制。
+   */
+  ult?: { name: string; desc: string; power: number; axis: AxisKey; target: Target; line: string; effect?: SkillEffect; turns?: number }
 }
 
 /** 普攻公用形态：每型的普攻名字与轴不同，其余口径一致 */
@@ -521,23 +529,71 @@ const ENEMY_PROFILE: FoeProfile[] = [
   },
 ]
 
+/**
+ * 各型敌体的**终结技能**（大招）。按档案名索引，只在 boss 级任务配发。
+ * 名字与语气一律取该型在原文里的最高光那一手，不另立设定。
+ */
+const FOE_ULT: Record<string, NonNullable<FoeProfile['ult']>> = {
+  漆黑的影: {
+    name: '终末降临 · 黑金的黄昏', desc: '它把这一带的现实整体压低：全场重创，行动条一并被推后。',
+    power: 2.6, axis: '反现实亲和', target: 'all',
+    line: '「——看好了。这就是终末的样子。」', effect: { pushBack: 0.45, mark: 0.25 }, turns: 3,
+  },
+  异端显形: {
+    name: '异端审问 · 万目', desc: '无数只眼睛同时睁开：单体审判，无视减伤与闪避。',
+    power: 3.2, axis: '反现实亲和', target: 'one',
+    line: '「它没有脸 —— 可它把你看完了。」', effect: { pierce: true, mark: 0.3 }, turns: 2,
+  },
+  反现实制成品: {
+    name: '灵魂蓄积器TM · 全功率', desc: '装置开到顶：全场抽离，行动条一并被抹掉。',
+    power: 2.4, axis: '反现实亲和', target: 'all',
+    line: '「——抽离进度：百分之一百。」', effect: { clearBar: true, pierce: true }, turns: 2,
+  },
+  反现实残渣: {
+    name: '残余再聚拢 · 结晶', desc: '碎屑在同一瞬间重新长成一样东西：全场重创。',
+    power: 2.2, axis: '反现实亲和', target: 'all',
+    line: '「散了一地的东西，又自己站起来了。」', effect: { mark: 0.3 }, turns: 3,
+  },
+  低语聚合体: {
+    name: '万声齐鸣', desc: '所有低语同时开口：全场受创，充能一并被拖慢。',
+    power: 2.3, axis: '反现实亲和', target: 'all',
+    line: '「你听见的每一句，都是它说的。」', effect: { slow: 0.4, mark: 0.25 }, turns: 3,
+  },
+  异界龙花: {
+    name: '异界龙花 · 满开', desc: '花在同一瞬开满整片地：全场斩击，护罩被一并抹去。',
+    power: 2.5, axis: '破坏力', target: 'all',
+    line: '「开花的动静，比雷还大。」', effect: { pierce: true }, turns: 2,
+  },
+  未分类观测体: {
+    name: '观测终止 · 悖论坍缩', desc: '它把「自己被观测到」这件事结算掉：全场重创，并抹掉自身的负面。',
+    power: 2.4, axis: '意志力', target: 'all',
+    line: '「记录到这里为止。」', effect: { cleanse: true, mark: 0.25 }, turns: 3,
+  },
+}
+
 /** 兜底：性质对不上任何型别时，按「未分类观测体」处理 */
 const FALLBACK_PROFILE = ENEMY_PROFILE[ENEMY_PROFILE.length - 1]
 
 const SUFFIX = ['甲', '乙', '丙', '丁']
 
-/** 按任务阶段生成敌阵（阶段越高，数量与数值越强） */
+/**
+ * 按任务阶段生成敌阵（阶段越高，数量与数值越强）。
+ * 再按**该地 R 值**加一层：偏离正常区间越远，实体越凝实 ——
+ * 只抬血量与「反现实亲和」，不动攻击与充能（理由见 rvalue.ts 文件头）。
+ */
 export function enemiesOf(m: Mission): Combatant[] {
   const prof = ENEMY_PROFILE.find((p) => p.match.test(m.nature)) ?? FALLBACK_PROFILE
   const count = m.stage >= 8 ? 3 : m.stage >= 5 ? 2 : 1
+  const r = rOfPlace(m.place, m.stage)
+  const rf = rFactor(r.r)
   const out: Combatant[] = []
   for (let i = 0; i < count; i++) {
-    const hpMax = Math.round(TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage)
+    const hpMax = Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul)
     const axes: AxisSheet = {
       破坏力: Math.round(TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage),
       敏捷度: Math.round(TUNING.enemySpdBase + m.stage * TUNING.enemySpdPerStage),
       物理抗性: Math.round(TUNING.enemyResistBase + m.stage * TUNING.enemyResistPerStage),
-      反现实亲和: Math.round(10 + m.stage * 4),
+      反现实亲和: Math.round((10 + m.stage * 4) * rf.mul),
       意志力: Math.round(10 + m.stage * TUNING.enemyWillPerStage),
     }
     const ename = count > 1 ? `${prof.name} ${SUFFIX[i]}` : prof.name
@@ -554,12 +610,34 @@ export function enemiesOf(m: Mission): Combatant[] {
       hp: hpMax,
       hpMax,
       axes,
-      skills: prof.skills.map((k) => ({
-        id: k.id, name: k.name, kind: k.kind, desc: k.desc,
-        cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
-        line: k.kind === '普攻' ? '' : prof.line,
-        target: k.target, effect: k.effect, turns: k.turns, cd: k.cd ?? 0,
-      })),
+      skills: [
+        ...prof.skills.map((k) => ({
+          id: k.id, name: k.name, kind: k.kind, desc: k.desc,
+          cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
+          line: k.kind === '普攻' ? '' : prof.line,
+          target: k.target, effect: k.effect, turns: k.turns, cd: k.cd ?? 0,
+        } satisfies SkillSpec)),
+        // boss 级的终结技能：不占常规出手，蓄满自己放（见 engine 的咏唱三段）
+        ...(m.stage >= TUNING.ultStage
+          ? [{
+              id: 'foe-ult',
+              name: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).name,
+              kind: '技能' as const,
+              desc: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).desc,
+              cost: 0,
+              power: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).power,
+              axis: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).axis,
+              fx: prof.fx,
+              line: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).line,
+              target: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).target,
+              effect: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).effect,
+              turns: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).turns,
+              cd: 0,
+              ult: TUNING.ultCharge,
+              ultBreak: TUNING.ultBreak,
+            } satisfies SkillSpec]
+          : []),
+      ],
       fx: prof.fx,
       rated: true,
       bar: 0,
@@ -577,13 +655,16 @@ export function enemiesOf(m: Mission): Combatant[] {
       spMax,
       startNeed: 0,
       stack: 0,
+    chant: {},
       cds: {},
       scar: false,
       gearAtk: 0,
       gearSpd: 0,
       gearBasic: 0,
       tags: prof.tags,
-      note: m.nature,
+      note: rf.out
+        ? `${m.nature} · ${r.known ? '' : '推算 '}R ${r.r.toFixed(3)}`
+        : m.nature,
     })
   }
   return out
