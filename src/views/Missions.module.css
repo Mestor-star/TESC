@@ -59,6 +59,18 @@
   letter-spacing: 0.16em;
   color: var(--ink-faint);
 }
+/* 主线作战：正史的那几场，用紫色与巡逻任务分开 */
+.mainTag {
+  margin-right: 7px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--violet);
+  border: 1px solid color-mix(in srgb, var(--violet) 42%, transparent);
+  background: color-mix(in srgb, var(--violet) 10%, transparent);
+}
+.cardMain2 { border-color: color-mix(in srgb, var(--violet) 30%, var(--line)); }
 .cardTitle {
   font-size: 17px;
   font-weight: 900;
@@ -365,3 +377,7 @@
 .shopName i { font-style: normal; font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
 .shopDesc { margin: 0; font-size: 11.5px; line-height: 1.65; color: var(--ink-mute); }
 .shopFoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+
+/* 主线作战的记录单独描一道边：一眼能从巡逻任务里挑出来 */
+.recMain { border-left: 3px solid var(--violet); }
+.recMain .recNarr { border-color: color-mix(in srgb, var(--violet) 28%, var(--line)); }

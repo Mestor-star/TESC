@@ -28,6 +28,49 @@ export type SkillKind = '普攻' | '技能' | '启动'
 
 export type Target = 'one' | 'all' | 'self' | 'allyOne' | 'allyAll'
 
+/**
+ * 被动技能。
+ * ------------------------------------------------------------
+ * 不是「一手」，是那个人一直带着的东西：原文里他怎么站着、
+ * 身子是什么做的、别人为什么打不中他 —— 逐条落成这里的数。
+ * 全部只作用于本人（不做光环），引擎在读数处各加一笔即可。
+ */
+export interface PassiveSpec {
+  /** 被动名（原文措辞） */
+  name: string
+  /** 一句话说明它从原文哪儿来 */
+  desc: string
+  /** 每节拍回复的最大生命比例（丝线之躯自己往回长） */
+  regen?: number
+  /** 每节拍回复的体力（角色自身体力，不是终端那一池） */
+  spRegen?: number
+  /**
+   * 战斗续行：致命伤只留 1 点，每场可触发几次（-1 = 不限次）。
+   * 原文里心脏破了也照样站着的那些人走这条。
+   */
+  endure?: number
+  /** 常驻闪避（绝对值） */
+  evade?: number
+  /** 常驻命中：抵消对方闪避（绝对值） */
+  acc?: number
+  /** 常驻减伤 */
+  shield?: number
+  /** 常驻攻击加成（比例） */
+  atk?: number
+  /** 常驻充能加成（比例） */
+  spd?: number
+  /** 体力上限加成（绝对值） */
+  spMax?: number
+  /** 开场行动条领先（0..1，占一整条的比例） */
+  headStart?: number
+  /** 冷却缩短：每次自身行动多减几拍 */
+  cdCut?: number
+  /** 残血时的攻击加成（比例）——「血越薄，拳头越重」 */
+  lowHpAtk?: number
+  /** 普攻倍率提升（比例）——「这门东西打起来比别人重」 */
+  basicMul?: number
+}
+
 /** 一手技能除伤害之外能做的事（全部由 roster.ts 的数据驱动） */
 export interface SkillEffect {
   /** 行动条充能速度 +（比例，0.5 = +50%） */
@@ -36,6 +79,8 @@ export interface SkillEffect {
   pushBar?: number
   /** 闪避率 +（绝对值，0.3 = +30%） */
   evade?: number
+  /** 命中率 +（绝对值，抵消对方闪避） */
+  accUp?: number
   /** 减伤（这一段内持续） */
   shield?: number
   /** 回复（× 意志力） */
@@ -85,10 +130,15 @@ export interface SkillSpec {
   needsStack?: number
   /** 冷却：出手后 N 次自身行动之内不得再出（0 / 缺省 = 无冷却） */
   cd?: number
+  /** 需场上同在者（角色 id）：此人不在场或已失能，这一手就不可用 */
+  requireAlly?: string
+  /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
+  mergeAlly?: string
+  mergeTicks?: number
 }
 
 /** 增益 / 减益：k = 类别，v = 量（比例或绝对值），t = 剩余行动次数 */
-export type BuffKey = 'atk' | 'spd' | 'evade' | 'shield' | 'mark' | 'slow'
+export type BuffKey = 'atk' | 'spd' | 'evade' | 'acc' | 'shield' | 'mark' | 'slow'
 
 export interface Buff {
   k: BuffKey
@@ -127,6 +177,12 @@ export interface Combatant {
   /** 引仇剩余行动次数 */
   taunt: number
   down: boolean
+  /** 被动技能（本人常驻；缺省 = 无名录条目） */
+  passive?: PassiveSpec
+  /** 战斗续行已触发的次数 */
+  endured: number
+  /** 合体蛰伏：>0 表示此人暂时不在场上（不充能、不可选、不算失能），归零即归位 */
+  gone: number
   /** 已使用的「启动技」次数 */
   startUsed: number
   /** 需要几次启动技才解禁普攻/技能（0 = 无门） */
@@ -146,6 +202,8 @@ export interface Combatant {
   gearAtk: number
   /** 装具常驻的充能加成（比例） */
   gearSpd: number
+  /** 常驻的普攻倍率提升（比例，含装具与被动） */
+  gearBasic: number
   /** 敌方性质标签（克制判定用） */
   tags: string[]
   note?: string
@@ -204,6 +262,8 @@ export interface BattleState {
   /** 时期进度与成长（换装时重算面板要用） */
   progress: number
   growth: Record<string, number>
+  /** 主线作战：记录要求出「详细战斗过程」 */
+  mainline?: boolean
 }
 
 /** 一场作战的记录（写入隐藏存档，供作战记录页与后续生成取用） */
@@ -232,6 +292,8 @@ export interface BattleRecord {
   /** 本场入手的装具与军需点 */
   loot: string[]
   coin: number
+  /** 主线作战：归入正史，成文按「逐手复现全过程」写 */
+  mainline?: boolean
 }
 
 /** 体力（小队共用一条；只在执行任务时消耗，平时随观测进度缓慢回复） */
@@ -275,6 +337,8 @@ export interface GearDef {
     shield?: number
     /** 攻击 +（比例） */
     atk?: number
+    /** 普攻倍率提升（比例，0.5 = 普攻 ×1.5） */
+    basicMul?: number
   }
   /** 附带的一手额外用法（占用「技能」菜单，不消耗额外回合） */
   skill?: {
@@ -291,4 +355,6 @@ export interface GearDef {
   price: number
   /** 稀有度（用于掉落权重与标色） */
   rank: 1 | 2 | 3
+  /** 不入掉落池：某个人身上的私物，别人捡到也没用 */
+  noDrop?: boolean
 }

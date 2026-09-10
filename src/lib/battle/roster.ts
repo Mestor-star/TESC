@@ -12,7 +12,7 @@
    角色，只认识技能表。
    ============================================================ */
 
-import type { AxisKey, FxKind, SkillEffect, SkillKind, SkillSpec, Target } from './types'
+import type { AxisKey, FxKind, PassiveSpec, SkillEffect, SkillKind, SkillSpec, Target } from './types'
 
 export interface RoleDef {
   /** 战斗定位（职业名，取自原文意象） */
@@ -22,11 +22,20 @@ export interface RoleDef {
   /** 专属机制（被动），一句话 */
   trait: string
   skills: SkillSpec[]
+  /** 被动技能（见文件末尾 PASSIVE 表） */
+  passive?: PassiveSpec
 }
 
 interface Opt extends Partial<SkillSpec> {
   effect?: SkillEffect
 }
+
+/**
+ * 倍率口径：power 以「对应轴的百分之多少」计。
+ * 普攻 ≈ 200%、技能 300% 起、到达点更高 —— 出手就该是一次出手，
+ * 而不是挠痒。全部倍率在此处一次抬高，逐条数据仍写原来那个「份」。
+ */
+export const POWER_SCALE = 2
 
 /** 技能工厂：缺省值按类别给，其余逐项覆盖 */
 const sk = (id: string, name: string, kind: SkillKind, desc: string, o: Opt = {}): SkillSpec => ({
@@ -35,7 +44,7 @@ const sk = (id: string, name: string, kind: SkillKind, desc: string, o: Opt = {}
   kind,
   desc,
   cost: o.cost ?? (kind === '普攻' ? 1 : kind === '启动' ? 2 : 4),
-  power: o.power ?? (kind === '普攻' ? 1 : 1.5),
+  power: (o.power ?? (kind === '普攻' ? 1 : 1.5)) * POWER_SCALE,
   axis: (o.axis ?? '破坏力') as AxisKey,
   fx: (o.fx ?? 'slash') as FxKind,
   line: o.line ?? '',
@@ -477,4 +486,148 @@ export const ROSTER: Record<string, RoleDef> = {
 /** 战斗定位（未知者退回「见习」） */
 export function roleOf(id: string): RoleDef | undefined {
   return ROSTER[id]
+}
+
+/* ============================================================
+   被动技能表 —— 二十四人的「一直带着的东西」
+   ------------------------------------------------------------
+   技能是出手，被动是那个人本身：身子是什么做的、别人为什么
+   打不中他、原文里他为什么打不倒。逐条对着原文写，宁少不编。
+   单独成表（而不是塞进每人条目里）只为一眼能横着读、互相校对。
+   ============================================================ */
+
+const PASSIVE: Record<string, PassiveSpec> = {
+  /* —— 恋兔队 —— */
+  hikari: {
+    name: '主音',
+    desc: '一门樱色奇迹同时司掌治愈、屏障与光束：她自己在和音里回血，也歇得比谁都快。',
+    regen: 0.06, cdCut: 1,
+  },
+  luna: {
+    name: '丝线之躯',
+    desc: '由「境界领域商会」以金属丝线织成的机器人偶——没有要害，也没有心脏可破：'
+      + '丝线断了再织回去就是，血一直在往回长；而无论被打穿多少次，她都不会死。',
+    regen: 0.09, endure: -1,
+  },
+  mefisa: {
+    name: '无论何处都能抵达',
+    desc: '八脚马的引擎从不熄火：开场她就已经先走了半条行动条——副官决定谁先抵达战场。',
+    headStart: 0.5,
+  },
+  nyau: {
+    name: '位置互换',
+    desc: '沙姆希尔的子弹与「目标」的位置会被互换：打中她的那一枪，落在的是别处。',
+    evade: 0.13,
+  },
+  youshihan: {
+    name: '押不准',
+    desc: '四大凶兽——效果随机、性能极端，连她自己都押不准下一张是什么。对手更押不准。',
+    acc: 0.25, evade: 0.05,
+  },
+
+  /* —— 委员会本部 —— */
+  'alive-anatolia': {
+    name: '如散文般',
+    desc: '一击可贯穿过去，把干涉送往因果的开端：她出手之后，因果自己会把後面补齐。',
+    cdCut: 1,
+  },
+  'vern-simon': {
+    name: '黑档库',
+    desc: '战场上没有他不知道的数：看一眼就把对手的底数摊在桌面上，也因此总先到一步。',
+    acc: 0.2, headStart: 0.2,
+  },
+  'xiaochai-lin': {
+    name: '随身工房',
+    desc: '随身带着一台悬浮 3D 打印机：需要什么就当场造出来——包括当下挡住这一下的东西。',
+    shield: 0.09,
+  },
+  'danae-whitmore': {
+    name: '认真模式',
+    desc: '平时怯生生的朋克少女，越是怯场，越要变成那个高逾一米九、够得着的人。',
+    atk: 0.1, lowHpAtk: 0.4,
+  },
+  'nana-kamiru': {
+    name: '掂量',
+    desc: '大麻烦能任意增减重量：她把自身的重量调到最适——打上来的力道先被卸掉一截。',
+    shield: 0.12,
+  },
+  reiya: {
+    name: '狩猎的锯齿',
+    desc: '这把锯子最初为狩猎而转，直到有人教会它守护：开始转之后，它就只会往上走。',
+    atk: 0.15,
+  },
+  emei: {
+    name: '王子殿下',
+    desc: '只要她还站着，队伍就不会先垮——所以她本人也不会先垮。',
+    shield: 0.09, endure: 1,
+  },
+  'isis-halid': {
+    name: '先记下来',
+    desc: '她先记下来，队伍再打：被记录的目标没有秘密，也就没有躲得掉的余地。',
+    acc: 0.16,
+  },
+  katherine: {
+    name: '英雄不灭',
+    desc: '血越薄，拳头越重——濒死即是她的完全体。',
+    lowHpAtk: 0.7,
+  },
+  'alex-cave': {
+    name: '午夜降临',
+    desc: '化为现世最坚硬的物质：任何攻击都无法在他身上留下划痕。他站着，後面的人就不必挨打。',
+    shield: 0.16, endure: 1,
+  },
+  phidra: {
+    name: '赢面',
+    desc: '他从不逼人交手，只是让人自愿走进规则里——走进来的，就躲不开他。',
+    acc: 0.16,
+  },
+  maria: {
+    name: '镇痛剂',
+    desc: '台下的欢呼、观众的心跳都会在旋律中成真：第 6 区的镇痛剂，也在给自己镇痛。',
+    regen: 0.05, spRegen: 2,
+  },
+  'merwen-gray': {
+    name: '愚者的足迹',
+    desc: '只在想逃的地方留下脚印——她从不逃跑，只换坐标。',
+    evade: 0.16, headStart: 0.25,
+  },
+  ameria: {
+    name: '无处不在',
+    desc: '意识量子化、无限增殖：城市中的每一双眼、每一扇窗都是她的目光——杀掉一个，还有别的。',
+    regen: 0.04, endure: 2,
+  },
+
+  /* —— 三大学园 / 外围 —— */
+  'kuro-no-maou': {
+    name: '漆黑之影',
+    desc: 'Stage5 的人型终末：她的力量不属于三大学园任何一尊天使——反现实性对她不构成克制，也不构成弱点。',
+    shield: 0.12, atk: 0.12,
+  },
+  yiregel: {
+    name: '异界的法理',
+    desc: '龙之国的加护「龙花」——那边的东西不按这边的规矩运转，包括「被打倒」这条规矩。',
+    shield: 0.1, endure: 1,
+  },
+  'touyi-caojiro': {
+    name: '与世无争',
+    desc: '他珍爱日常，所以出手时从不用尽全力——敌人也因此总摸不准他。',
+    evade: 0.13,
+  },
+  'huda-nayume': {
+    name: '预读',
+    desc: '提前算好未来几步：她已经在想第三步了，出手自然比别人快半拍。',
+    headStart: 0.4, cdCut: 1,
+  },
+  'yuina-yoshito': {
+    name: '本能',
+    desc: '想都没想就已经冲出去了——抢得越早，打得越狠。',
+    atk: 0.1, spd: 0.1,
+  },
+}
+
+/* 挂回名册：ROSTER 是「谁是什么定位、会哪几手」的唯一出处，
+   被动同属那一份档案，故在此处一并合上，不再另建一张 id → 被动的表。 */
+for (const id in PASSIVE) {
+  const r = ROSTER[id]
+  if (r) r.passive = PASSIVE[id]
 }

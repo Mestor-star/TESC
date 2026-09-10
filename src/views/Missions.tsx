@@ -16,6 +16,7 @@ import {
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
 import { genBoard } from '../lib/battle/missiongen'
+import { mainlineMissions } from '../lib/battle/mainline'
 import { GEARS, ITEMS, GEAR_OF } from '../lib/battle/gear'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
 
@@ -86,13 +87,20 @@ export function Missions() {
 
   const set = (id: string, s: LocalStatus) => setStatus((prev) => ({ ...prev, [id]: s }))
 
+  /* 主线作战：时间线上确实交过手的事件，走到哪一段就能复盘到哪一段 */
+  const mainline = useMemo(() => mainlineMissions(epDone), [epDone])
+
   const list = useMemo(() => {
-    const rows = board.map((m) => ({ ...m, status: status[m.id] ?? m.status }))
-    const sorted = [...rows].sort((a, b) => (filter === '高威胁' ? a.stage - b.stage : b.stage - a.stage))
+    // 主线排在最前：正史优先于巡逻任务，其余照旧按危险度排
+    const rows = [...mainline, ...board].map((m) => ({ ...m, status: status[m.id] ?? m.status }))
+    const sorted = [...rows].sort((a, b) => {
+      if (!!a.mainline !== !!b.mainline) return a.mainline ? -1 : 1
+      return filter === '高威胁' ? a.stage - b.stage : b.stage - a.stage
+    })
     if (filter === '全部') return sorted
     if (filter === '高威胁') return sorted.filter((m) => m.stage >= 6)
     return sorted.filter((m) => m.status === filter)
-  }, [board, filter, status])
+  }, [mainline, board, filter, status])
 
   const counts = useMemo(() => {
     const s: Record<string, number> = {}
@@ -278,11 +286,14 @@ export function Missions() {
             const done = m2.status === '完成'
             const ribbonCls = m2.status === '完成' ? css.done : m2.status === '压制中' ? css.danger : m2.status === '锁定' ? css.warn : m2.stage >= 6 ? css.danger : m2.stage >= 3 ? css.warn : css.ok
             return (
-              <article key={m2.id} className={css.card} data-mission={m2.id} style={{ '--s': m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
+              <article key={m2.id} className={`${css.card} ${m2.mainline ? css.cardMain2 : ''}`} data-mission={m2.mainline ? undefined : m2.id} data-mainline-mission={m2.mainline ? m2.id : undefined} style={{ '--s': m2.mainline ? 'var(--violet)' : m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
                 <div className={`${css.cardRibbon} ${ribbonCls}`} />
                 <div className={css.cardMain}>
                   <div className={css.cardTop}>
-                    <span className={css.cardNo}>档案 {m2.no} / 阶段 S{m2.stage}</span>
+                    <span className={css.cardNo}>
+                      {m2.mainline ? <b className={css.mainTag}>正史 · 主线</b> : null}
+                      档案 {m2.no} / 阶段 S{m2.stage}
+                    </span>
                     <span className="num badge" style={{ color: sev.color, borderColor: sev.color }}>{sev.label}</span>
                     <span className={`${sm.cls}`}><span className={css.statusBadge}><span className={css.dot} style={{ background: sm.color, boxShadow: `0 0 6px ${sm.color}` }} />{sm.label}</span></span>
                     <span className={`chip`} style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>{m2.nature}</span>
@@ -359,9 +370,10 @@ export function Missions() {
         ) : (
           <div className={css.recList}>
             {records.map((r) => (
-              <article key={r.id} className={css.rec} data-battle-record={r.id} data-outcome={r.outcome}>
+              <article key={r.id} className={`${css.rec} ${r.mainline ? css.recMain : ''}`} data-battle-record={r.id} data-outcome={r.outcome} data-mainline={r.mainline ? '1' : undefined}>
                 <button className={css.recTop} onClick={() => setOpenRec(openRec === r.id ? null : r.id)}>
                   <span className={css.recOut} data-outcome={r.outcome}>{r.outcome}</span>
+                  {r.mainline ? <span className={css.mainTag} data-rec-main="1">主线</span> : null}
                   <b className={css.recTitle}>{r.no}「{r.title}」</b>
                   <span className="tiny muted">
                     {r.rounds} 手 / {r.ticks} 拍 · MVP {r.mvp} · 军需点 +{r.coin}
@@ -371,7 +383,7 @@ export function Missions() {
                 </button>
                 {openRec === r.id ? (
                   <div className={css.recBody}>
-                    <div className={css.recNarr} data-battle-narrative>{r.narrative || '（未成文）'}</div>
+                    <div className={css.recNarr} data-battle-narrative data-mainline-narr={r.mainline ? '1' : undefined}>{r.narrative || '（未成文）'}</div>
                     <details className={css.recRaw}>
                       <summary className="tiny mono">逐手底稿</summary>
                       <pre className={css.recPre}>{r.digest}</pre>

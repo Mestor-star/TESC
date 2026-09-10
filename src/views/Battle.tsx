@@ -153,7 +153,7 @@ export function Battle({
   const needsTarget = (cmd: Command): boolean => {
     if (cmd.t === 'atk') return true
     if (cmd.t === 'skill') {
-      const k = actor ? legalSkills(actor).find((x) => x.id === cmd.skillId) : undefined
+      const k = actor ? legalSkills(actor, st).find((x) => x.id === cmd.skillId) : undefined
       return !!k && (k.target === 'one' || k.target === 'allyOne')
     }
     if (cmd.t === 'item') {
@@ -342,7 +342,7 @@ export function Battle({
                       className={css.seqBtn}
                       onClick={() => {
                         if (b.id === 'atk') {
-                          const k = legalSkills(actor).find((x) => x.kind === '普攻')
+                          const k = legalSkills(actor, st).find((x) => x.kind === '普攻')
                           if (k) issue({ t: 'atk', targetId: '' })
                         } else if (b.id === 'guard') issue({ t: 'guard' })
                         else setPanel(b.id as Panel)
@@ -360,7 +360,7 @@ export function Battle({
               {panel === 'skill' ? (
                 <SubPanel title="技能" onBack={() => setPanel('root')}>
                   <div className={css.list} data-skill-list data-actor={actor.id}>
-                    {legalSkills(actor).map((k) => (
+                    {legalSkills(actor, st).map((k) => (
                       <SkillBtn
                         key={k.id}
                         k={k}
@@ -477,7 +477,7 @@ function aimLabel(s: BattleState, cmd: Command | null): string {
   if (!cmd) return '选择目标'
   const me = s.actor ? [...s.allies, ...s.enemies].find((c) => c.id === s.actor) : undefined
   if (cmd.t === 'atk') return '攻击 · 选择目标'
-  if (cmd.t === 'skill') return `${me ? legalSkills(me).find((k) => k.id === cmd.skillId)?.name ?? '技能' : '技能'} · 选择目标`
+  if (cmd.t === 'skill') return `${me ? legalSkills(me, s).find((k) => k.id === cmd.skillId)?.name ?? '技能' : '技能'} · 选择目标`
   if (cmd.t === 'item') return `${ITEM_OF[cmd.itemId]?.name ?? '道具'} · 选择目标`
   return '选择目标'
 }
@@ -514,6 +514,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       type="button"
       data-skill={k.id}
       data-kind={k.kind}
+      data-power={k.power}
       data-cd={cooling ? cd : undefined}
       className={`${css.row} ${k.kind === '启动' ? css.rowStart : ''} ${poor || cooling ? css.rowPoor : ''}`}
       disabled={poor || cooling}
@@ -548,7 +549,7 @@ function Bar({ c }: { c: Combatant }) {
 function BuffTags({ c }: { c: Combatant }) {
   if (!c.buffs.length && !c.shield && !c.taunt) return null
   const label: Record<string, string> = {
-    atk: '攻势', spd: '加速', evade: '闪避', shield: '护罩', mark: '破绽', slow: '减速',
+    atk: '攻势', spd: '加速', evade: '闪避', acc: '命中', shield: '护罩', mark: '破绽', slow: '减速',
   }
   return (
     <div className={css.buffs}>
@@ -577,10 +578,11 @@ function Unit({
   const hpPct = (c.hp / c.hpMax) * 100
   return (
     <div
-      className={`${css.unit} ${c.down ? css.unitDown : ''} ${active ? css.unitActive : ''} ${targetable ? css.unitAim : ''}`}
+      className={`${css.unit} ${c.down ? css.unitDown : ''} ${c.gone > 0 ? css.unitGone : ''} ${active ? css.unitActive : ''} ${targetable ? css.unitAim : ''}`}
       data-unit={c.id}
       data-side={c.side}
       data-down={c.down ? '1' : undefined}
+      data-gone={c.gone > 0 ? String(c.gone) : undefined}
       style={{ '--u': c.hue } as CSSProperties}
       onClick={targetable ? onPick : undefined}
       role={targetable ? 'button' : undefined}
@@ -614,6 +616,13 @@ function Unit({
         {c.gear ? <span className={css.gearTag}>{GEAR_OF[c.gear]?.name}</span> : null}
       </div>
       <BuffTags c={c} />
+      {/* 被动：这个人一直带着的东西（数值已计入面板，此处只报名字） */}
+      {c.passive ? (
+        <span className={css.unitPas} data-passive={c.passive.name} title={c.passive.desc}>
+          〔{c.passive.name}〕
+        </span>
+      ) : null}
+      {c.gone > 0 ? <span className={css.goneMark}>合体中 · {c.gone} 拍</span> : null}
       {hit && fx.dmg ? <span key={fx.n} className={css.dmgNum}>{fx.dmg}</span> : null}
       {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
     </div>

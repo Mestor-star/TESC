@@ -1096,7 +1096,14 @@ try {
         const pick=(k)=>{const l=document.querySelector('[data-skill-list]');if(!l)return false;
           if(l.querySelector('[data-skill][data-cd]'))window.__smokeCd=true;
           const t=l.querySelector('[data-skill][data-kind="'+k+'"]:not([disabled])');if(t){t.click();return true}return false};
-        if(pick('启动'))return true; if(pick('技能'))return true; if(pick('普攻'))return true;
+        // 优先出「能造成伤害」的那一手：纯辅助技能会互相顶着用、全场空转
+        const hit=(k)=>{const l2=document.querySelector('[data-skill-list]');if(!l2)return null;
+          return [...l2.querySelectorAll('[data-skill][data-kind="'+k+'"]:not([disabled])')]
+            .find(b=>Number(b.getAttribute('data-power'))>0)||null};
+        if(pick('启动'))return true;
+        if(hit('技能')){hit('技能').click();return true}
+        if(hit('普攻')){hit('普攻').click();return true}
+        if(pick('技能'))return true; if(pick('普攻'))return true;
         const back=document.querySelector('[data-sub-back]');if(back)back.click();
         await new Promise(r=>setTimeout(r,120));
         return 'noop'})()`)
@@ -1129,6 +1136,12 @@ try {
   ok('N5f 防御回复自身体力（回得不多，且入日志）', usedGuard === false || (guardLog.guard === true && guardLog.rec === true),
     JSON.stringify({ usedGuard, ...guardLog }))
 
+  if (!(await ev(`!!document.querySelector('[data-battle-result]')`))) {
+    const dbg = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
+      const h=document.querySelector('[data-hand]');const c=document.querySelector('[data-battle-cmd]');
+      return {hand:h?h.getAttribute('data-hand'):'',actor:c?c.getAttribute('data-actor'):null,tail:t.slice(-500)}})()`)
+    console.log('  DBG N-stall steps=' + steps + ' ' + JSON.stringify(dbg))
+  }
   await until(`!!document.querySelector('[data-battle-result]')`, 25000)
   const nRes = await ev(`(()=>{const b=document.querySelector('[data-battle-result]');if(!b)return null;
     const n=document.querySelector('[data-battle-narrative]');const t=n?n.textContent:'';

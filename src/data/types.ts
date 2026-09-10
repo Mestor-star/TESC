@@ -70,6 +70,10 @@ export interface Mission {
   deadline: string;      // 期限描述
   desc: string;
   reward: string[];      // 可能回报（用于氛围）
+  /** 主线作战：取自时间线上确曾交过手的事件，可反复复盘（记录里出详细战斗过程） */
+  mainline?: boolean;
+  /** 主线作战锚定的事件 id（时间线） */
+  at?: string;
 }
 
 /** 图鉴「处置状态」。基础四态来自委员会口径；后三态为考据后新增：

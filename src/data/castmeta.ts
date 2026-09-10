@@ -82,7 +82,7 @@ const SIDE_BOND: Record<string, number> = {
   'alex-cave': 18,       // 一较高下的竞争心
   maria: 20,
   'merwen-gray': 16,     // 嘴不饶人的武斗派文学少女
-  'alive-anatolia': 20,  // 居高临下、让你「做狗」的会长 · 态度难测
+  'alive-anatolia': 20,  // 会长：实际走 BOND_FULL（满值），此处仅为 SIDE_BOND 表完整保留
   'vern-simon': 18,      // 实用主义、说话不绕弯的副会长
   'kuro-no-maou': 24,    // 同船相识的漆黑少女 · 初见就口出「结婚」
   'danae-whitmore': 22,   // 卡乌斯黑锤部队队长 · 心叶的护卫兼监视者，怯生生地接近
@@ -184,6 +184,12 @@ export const OPERATOR_PERSON: CastPerson = {
 export function personOf(id: string): CastPerson | undefined {
   if (id === OPERATOR_ID) return OPERATOR_PERSON
   return CAST.find((p) => p.id === id)
+}
+
+/* 一登场就已是满值的羁绊。会长不在此列之外地「难测」——她从一开始就把话说到最满，
+   读者不必替她攒好感；此值不受主角行为偏移影响，永远停在满值。 */
+export const BOND_FULL: Record<string, true> = {
+  'alive-anatolia': true,
 }
 
 /** 羁绊「起步值」：初见≈20±性格。core → chars.defaultBond；side → SIDE_BOND；未知 → 0 */

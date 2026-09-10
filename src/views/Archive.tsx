@@ -12,7 +12,8 @@ import { bondName } from '../lib/format'
 import type { BondGender } from '../lib/format'
 import { opSituation } from '../lib/operator'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
-import { AXIS_KEYS, OP_PERIODS, opPeriodAt } from '../lib/operator-arc'
+import { AXIS_KEYS, OP_PERIODS, opBuiltinAt, opPeriodAt } from '../lib/operator-arc'
+import { GEAR_OF } from '../lib/battle/gear'
 import { AXIS_MAX } from '../data/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { Portrait } from '../components/Portrait'
@@ -244,6 +245,8 @@ export function Archive() {
   const sit = opSituation(epDone)
   /** 主角档案：随已收束的事件换页（原文里他每一段时期都不同） */
   const opArc = opPeriodAt(epDone)
+  /** 他身上自带的那件东西（露娜的丝线 —— 第一卷走完才系上手腕） */
+  const opBuiltin = opBuiltinAt(opArc, epDone)
   const [opOpen, setOpOpen] = useState(false)
 
   /* 展开某档案（卡片就近） */
@@ -402,11 +405,28 @@ export function Archive() {
                 </div>
               ))}
             </div>
+            {opBuiltin ? (
+              <div className={css.opPas} data-op-builtin={GEAR_OF[opBuiltin]?.name ?? opBuiltin}>
+                <span className={css.opAbilKind} data-kind="装备">装备</span>
+                <b>{GEAR_OF[opBuiltin]?.name ?? opBuiltin}</b>
+                <span className="tiny muted">
+                  {(GEAR_OF[opBuiltin]?.desc ?? '') + '（自带 · 不占装配位）'}
+                </span>
+              </div>
+            ) : null}
             <div className={css.opArm}>
               <b>{opArc.arm}</b>
               <i className="mono">{opArc.armSub}</i>
               <p>{opArc.armNote}</p>
             </div>
+            {/* 被动：不是「一手」，是这一段时期里他一直带着的东西 */}
+            {opArc.passive ? (
+              <div className={css.opPas} data-op-passive={opArc.passive.name}>
+                <span className={css.opAbilKind} data-kind="被动">被动</span>
+                <b>{opArc.passive.name}</b>
+                <span className="tiny muted">{opArc.passive.desc}</span>
+              </div>
+            ) : null}
             <div className={css.opAbil}>
               {opArc.abilities.map((a, i) => (
                 <div key={a.name} className={css.opAbilRow} data-op-abil={a.name}>

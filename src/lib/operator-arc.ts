@@ -11,8 +11,10 @@
 
 import { TIMELINE } from '../data/timeline'
 import { furthestDone } from './operator'
-import type { AxisKey, AxisSheet, FxKind, SkillEffect, SkillKind, Target } from './battle/types'
+import type { AxisKey, AxisSheet, FxKind, PassiveSpec, SkillEffect, SkillKind, Target } from './battle/types'
 import { OPERATOR_ID } from '../data/castmeta'
+/** 与名册同一口径：power 以「对应轴的百分之多少」计（见 roster.ts 的 POWER_SCALE） */
+import { POWER_SCALE } from './battle/roster'
 
 /** 他的一手技能（原文有则用原名，分支即同一门的变奏） */
 export interface OpAbility {
@@ -29,6 +31,11 @@ export interface OpAbility {
   needsStack?: number
   /** 冷却：出手后 N 次自身行动之内不得再出 */
   cd?: number
+  /** 需场上同在者（角色 id）——人不在，这一手就不列出来 */
+  requireAlly?: string
+  /** 合体：出这一手时把 requireAlly 那位暂时请下场，mergeTicks 拍后自行归位 */
+  mergeAlly?: string
+  mergeTicks?: number
 }
 
 export interface OpPeriod {
@@ -47,30 +54,75 @@ export interface OpPeriod {
   armSub: string
   armNote: string
   abilities: OpAbility[]
+  /** 被动技能：这一段时期里他「一直带着的东西」 */
+  passive?: PassiveSpec
+  /**
+   * 自带装备：他身上本来就带着的那件东西（gear.ts 的 id）。
+   * 只在玩家没另外装配时生效 —— 他自己买的那件比身上的旧物更贴手。
+   */
+  builtin?: string
+  /**
+   * 自带装备的解锁点：读到这一段时间线事件才算真正到他手上。
+   * 缺省 = 该时期一进入就有；给了就按进度卡 ——
+   * 露娜的丝线是「第一卷全部内容走完」那一刻才系上手腕的。
+   */
+  builtinFrom?: string
 }
 
 const A = (
   破坏力: number, 敏捷度: number, 物理抗性: number, 反现实亲和: number, 意志力: number,
 ): AxisSheet => ({ 破坏力, 敏捷度, 物理抗性, 反现实亲和, 意志力 })
 
+/** 第一卷的最后一节：走完它，露娜的丝线才算真的系在他手腕上 */
+const VOL1_END = 'v1-9'
+
 const ab = (
   name: string, kind: SkillKind, desc: string, pow: number, axis: AxisKey, fx: FxKind,
   o: Omit<OpAbility, 'name' | 'kind' | 'desc' | 'pow' | 'axis' | 'fx'> = {},
-) : OpAbility => ({ name, kind, desc, pow, axis, fx, target: kind === '启动' ? 'self' : 'one', ...o })
+) : OpAbility => ({
+  name, kind, desc, pow: pow * POWER_SCALE, axis, fx,
+  target: kind === '启动' ? 'self' : 'one', ...o,
+})
+
+/**
+ * 「黄金狮子」——露娜的本源终末。
+ * 她是「境界领域商会」以金属丝线织成的机器人偶，狮形是她被造出来时的样子；
+ * 合体出力远超两人相加，代价是此刻必须由他一个人站着：她在三拍之内不在场上。
+ */
+const GOLDEN_LION = (pow: number): OpAbility => ab(
+  '黄金狮子', '技能',
+  '与露娜合而为一——丝线织成的狮。她暂时从他身上消失，三拍之后自行归位；'
+  + '这一击的出力远超两人相加。（需露娜在场）',
+  pow, '反现实亲和', 'noise',
+  // 不设「到达点」：这门合体的门槛是「露娜在场」与「契约已立」，
+  // 不是攒印记——代价已经写在「三拍之内她不在场上」上了。
+  { target: 'all', cd: 5, requireAlly: 'luna', mergeAlly: 'luna', mergeTicks: 3 },
+)
 
 export const OP_PERIODS: OpPeriod[] = [
   {
     at: 'v1-1',
     vol: '第 1 卷 · 序章「船与影」',
     title: '落海的留学生',
-    cls: '落难者',
-    note: '被拘束服捆在货船甲板上、连游泳都不会的普通人。他唯一做对的事，是在落海时先救了别人。',
+    cls: '读心者',
+    note: '被拘束服捆在货船甲板上、连游泳都不会的普通人。他唯一做对的事，是在落海时先救了别人'
+      + '——那时他还不知道，自己心里那台收音机就没关过。',
     axes: A(8, 22, 12, 0, 40),
     arm: '无',
     armSub: '—',
-    armNote: '此刻他还没有任何武装。弹痕、斩击、片羽皆与他无关——能用的只有身体。',
+    armNote: '此刻他还没有任何武装。弹痕、斩击、片羽皆与他无关——能站住脚的东西只有两样：'
+      + '一双拳头，与那道还没被测定、也还没有名字的「低语」。',
+    passive: {
+      name: '低语 · 常在',
+      desc: '别人要做什么，他先听到半句。所以他的拳总在对方动之前半步落下，也总能先挪开半步。',
+      acc: 0.12, evade: 0.08,
+    },
     abilities: [
-      ab('徒手 · 挣', '普攻', '挣开拘束服的一下。谈不上战法，只是不肯死。', 1, '破坏力', 'slash'),
+      ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
+        1, '破坏力', 'slash'),
+      ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
+        + '他要喊的东西总在出手之前就到。',
+        0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
       ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
     ],
@@ -79,19 +131,26 @@ export const OP_PERIODS: OpPeriod[] = [
     at: 'v1-9',
     vol: '第 1 卷 · 第 11 话「低语者」',
     title: '低语者（Susurrador）· Stage4『活性化』',
-    cls: '读心者',
+    cls: '低语者',
     note: '灵魂深处的噪音被测定为「低语者」。他能听见别人心里最响的那一句，也被别人听见——委员会因此把他登记在册。',
     axes: A(14, 28, 18, 35, 58),
+    builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: '低语者（Susurrador）',
     armSub: 'SUSURRADOR · STAGE4「活性化」',
     armNote: '不是武装，而是一种反现实体质：读取半径约 500 米内的心声，并把读到的剧烈噪音反过来当作护身的杂音。'
       + '面具以坐标心声向他呼救、差点把他吞掉的那一次，正是这份噪音救了他。',
+    passive: {
+      name: '低语者的噪音',
+      desc: '半径约 500 米的心声里，最剧烈的那一段反过来裹住他：别人听见的是杂音，他听见的是下一步。',
+      acc: 0.18, evade: 0.12, spRegen: 2,
+    },
     abilities: [
       ab('低语 · 噪音', '普攻', '把灌进来的杂音丢回去。听者头痛欲裂。', 1, '反现实亲和', 'seal'),
       ab('读心 · 辨伪', '技能', '听见对方心里最响的那一句：全队闪避提升——他要喊的东西总在出手之前就到。',
-        0, '反现实亲和', 'seal', { target: 'allyAll', turns: 3, effect: { evade: 0.3 } }),
+        0, '反现实亲和', 'seal', { target: 'allyAll', turns: 3, effect: { evade: 0.3, accUp: 0.15 } }),
       ab('Stage4 · 活性化', '技能', '把低语者的活性推上去：全队充能提速，代价是他自己会被听得更清楚。',
         0, '意志力', 'noise', { target: 'allyAll', turns: 3, effect: { spdUp: 0.35, mark: 0.1 } }),
+      GOLDEN_LION(2.6),
     ],
   },
   {
@@ -101,10 +160,16 @@ export const OP_PERIODS: OpPeriod[] = [
     cls: '拟态者',
     note: '夜梦之后枕边多了一把手枪。它能让他变成任何人——曾被指为「会化作怪物的能力」。使用期间，他本人的意志不会反映出来。',
     axes: A(26, 34, 24, 62, 70),
+    builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'noapusa',
     armSub: 'NOAPUSA · 弹痕',
     armNote: '弹痕「noapusa」：化为与目标完全一致之人的复制体——外貌、声音到能力皆为一致，'
       + '并获得「无论是谁也无法分辨真正的本人」这一反现实性质。觉醒于 v2-2 的夜梦。',
+    passive: {
+      name: '无从分辨真假',
+      desc: '连「哪个才是本人」都变得无法分辨：打向他的手，落下的地方总是复制体的位置。',
+      acc: 0.16, evade: 0.18, spRegen: 2,
+    },
     abilities: [
       ab('noapusa · 借形', '普攻', '把对方的手借来用一次：照着他的战法打回去。', 1.05, '反现实亲和', 'guitar'),
       ab('noapusa · 同貌', '技能', '化为与目标一致之人的复制体。命中之外，还把自己的行动条抢回来。',
@@ -113,6 +178,7 @@ export const OP_PERIODS: OpPeriod[] = [
         0, '反现实亲和', 'guitar', { target: 'allyAll', turns: 3, effect: { evade: 0.4 } }),
       ab('夜梦 · 觉醒', '启动', '那一夜梦里的东西先要认他。需先后打出 2 次，复制的门才会打开。',
         0, '反现实亲和', 'seal'),
+      GOLDEN_LION(2.8),
     ],
   },
   {
@@ -122,16 +188,23 @@ export const OP_PERIODS: OpPeriod[] = [
     cls: '普通人',
     note: '为守护露娜他再冲阵、被万针刺穿濒死；露娜以己命为他缝伤输血，缔结使用者契约。星鲸之战后，noapusa 损坏、再也无法使用，与之相关的一段记忆也随之丢失。',
     axes: A(20, 36, 30, 48, 78),
+    builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'noapusa（损坏）',
     armSub: 'NOAPUSA · BROKEN',
     armNote: '弹痕已碎，再也无法使用。他失去了那段与之相关的记忆——连自己曾变成过谁都不记得了。'
       + '能依仗的只剩下低语者，与「黄金狮子」契约留下的余温。',
+    passive: {
+      name: '被缝回来的人',
+      desc: '万针刺穿、濒死，是露娜以己命为他缝伤输血。那一场之后，他身上留着她的一缕丝线。',
+      regen: 0.05, spRegen: 3, endure: 1,
+    },
     abilities: [
       ab('拳头 · 硬撑', '普攻', '没有武装的人，只能用身体挡在最前面。', 1, '物理抗性', 'blast'),
       ab('旁听 · 低语', '技能', '读到的不是敌意，而是恐惧：把目标的破绽标记给全队。',
         0, '反现实亲和', 'seal', { turns: 3, effect: { mark: 0.3, slow: 0.2 } }),
       ab('普通人的选择', '技能', '他只想做个普通的善良的人——全队减伤并回复。',
         0, '意志力', 'heal', { target: 'allyAll', effect: { shield: 0.3, heal: 0.3, cleanse: true } }),
+      GOLDEN_LION(3.0),
     ],
   },
   {
@@ -141,10 +214,16 @@ export const OP_PERIODS: OpPeriod[] = [
     cls: '共奏者',
     note: '篝火之国坠落后那一夜，他梦见满身伤痕的「斩击的天使」；醒来枕边多了一枚极其简朴的白金戒指——「a Session.」。他第一次明白，自己「被篝火喜欢着」。',
     axes: A(48, 46, 44, 84, 96),
+    builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'a Session.',
     armSub: 'A SESSION. · 斩击之戒',
     armNote: '两枚成对的戒指相互共鸣，能让佩戴者灵魂共奏、合而为一。它酷似 noapusa「实现渴望」的本质，'
       + '却不再是那把把人复制成他人的可悲小手枪。（第 5 卷经胡道乃梦鉴定：密度 29g/cc，为地球上从未存在过的超重物质所制。）',
+    passive: {
+      name: '被篝火喜欢着',
+      desc: '两枚戒指随时可以续上共鸣：他出手更重，也始终被谁拽着，不让倒下。',
+      atk: 0.18, regen: 0.05, spRegen: 3, endure: 1,
+    },
     abilities: [
       ab('a Session. · 共奏', '普攻', '戒指一响，两个人的动作合上拍子。', 1.1, '破坏力', 'slash'),
       ab('a Session. · 合而为一', '技能', '与同伴灵魂共奏：全队攻击与充能一并上扬。',
@@ -153,6 +232,7 @@ export const OP_PERIODS: OpPeriod[] = [
         0, '意志力', 'seal', { target: 'allyAll', effect: { cleanse: true, heal: 0.25 } }),
       ab('a Session. · 终曲', '技能', '到达点：把「两个人的渴望」合起来献出去。',
         2.6, '反现实亲和', 'slash', { needsStack: 3, target: 'all' }),
+      GOLDEN_LION(3.2),
     ],
   },
   {
@@ -162,9 +242,15 @@ export const OP_PERIODS: OpPeriod[] = [
     cls: '共奏者 · 心蕾雅',
     note: '与蕾雅合体为「心蕾雅」，在巴别塔顶击破终末化的黑金狮子；此后亦以共奏深入世界根源——那是「两个人的渴望」合在一起、献给彼此的赞歌。',
     axes: A(92, 60, 58, 120, 112),
+    builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'a Session.（共奏态）',
     armSub: 'A SESSION. · 心蕾雅',
     armNote: '共奏态：与热沃当的少女合而为一。两个人都不是最强，但「两个人的渴望」合在一起时，连世界的根源都进得去。',
+    passive: {
+      name: '两个人的渴望',
+      desc: '与蕾雅共奏之后，他不再是「一个人」在打：出力、续行、回复，都按两个人的份算。',
+      atk: 0.25, regen: 0.08, spRegen: 4, endure: 2,
+    },
     abilities: [
       ab('心蕾雅 · 斩', '普攻', '同一把锯子，由两个人的手一起挥。', 1.15, '破坏力', 'slash'),
       ab('灵魂共奏 · 合体', '技能', '与同伴合而为一：全场我方攻击大幅上扬。',
@@ -173,6 +259,7 @@ export const OP_PERIODS: OpPeriod[] = [
         0, '意志力', 'heal', { target: 'allyAll', effect: { heal: 0.55, cleanse: true } }),
       ab('巴别塔顶', '技能', '到达点：终末化的黑金狮子，在此处被击破。',
         2.8, '反现实亲和', 'slash', { needsStack: 3, target: 'all' }),
+      GOLDEN_LION(3.4),
     ],
   },
 ]
@@ -197,6 +284,28 @@ export function opPeriodAtProgress(p: number): OpPeriod {
   let cur = OP_PERIODS[0]
   for (let i = 0; i < OP_PERIODS.length; i++) if (p + 1e-6 >= AT_P[i]) cur = OP_PERIODS[i]
   return cur
+}
+
+/**
+ * 此刻他身上带着的那件自带装备（若有）。
+ * 有 builtinFrom 的按进度卡：读到那一节才算真的到他手上。
+ */
+export function opBuiltinOf(per: OpPeriod, progress: number): string | undefined {
+  if (!per.builtin) return undefined
+  if (!per.builtinFrom) return per.builtin
+  const i = TIMELINE.findIndex((e) => e.id === per.builtinFrom)
+  if (i < 0) return per.builtin
+  const need = i / Math.max(1, TIMELINE.length - 1)
+  return progress + 1e-6 >= need ? per.builtin : undefined
+}
+
+/** 同上，但按「已收束事件」判定（档案页走这条） */
+export function opBuiltinAt(per: OpPeriod, epDone: Record<string, true>): string | undefined {
+  if (!per.builtin) return undefined
+  if (!per.builtinFrom) return per.builtin
+  const i = TIMELINE.findIndex((e) => e.id === per.builtinFrom)
+  if (i < 0) return per.builtin
+  return furthestDone(epDone) >= i ? per.builtin : undefined
 }
 
 export { OPERATOR_ID }

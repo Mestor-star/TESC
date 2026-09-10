@@ -40,7 +40,13 @@ export function find(s: BattleState, id: string): Combatant | undefined {
   return allOf(s).find((c) => c.id === id)
 }
 
+/** 还在场上的人：没倒，也没因合体蛰伏 */
 export function aliveOf(list: Combatant[]): Combatant[] {
+  return list.filter((c) => !c.down && c.gone <= 0)
+}
+
+/** 还站着的人：含合体蛰伏者（用来判「小队是否全灭」，蛰伏不算阵亡） */
+export function standingOf(list: Combatant[]): Combatant[] {
   return list.filter((c) => !c.down)
 }
 
@@ -54,26 +60,34 @@ export function buffOf(c: Combatant, k: BuffKey): number {
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 
-/** 攻击倍率（自身增益 + 装具常驻） */
+/** 攻击倍率（自身增益 + 装具常驻 + 被动；被动里的残血加成按当前血线算） */
 export function atkMulOf(c: Combatant): number {
-  return 1 + buffOf(c, 'atk') + c.gearAtk
+  const p = c.passive
+  let mul = 1 + buffOf(c, 'atk') + c.gearAtk + (p?.atk ?? 0)
+  if (p?.lowHpAtk && c.hpMax > 0 && c.hp / c.hpMax <= 0.5) mul += p.lowHpAtk
+  return mul
 }
 
 /** 充能速度（基础 × 自身 spd 增益 × 减速，减速下限留两成） */
 export function chargeOf(c: Combatant): number {
-  const up = 1 + buffOf(c, 'spd') + c.gearSpd
+  const up = 1 + buffOf(c, 'spd') + c.gearSpd + (c.passive?.spd ?? 0)
   const slow = clamp(1 - buffOf(c, 'slow'), 0.2, 1)
   return Math.max(TUNING.spdFloor * 0.5, c.spd * up * slow)
 }
 
 /** 闪避率（上限封顶，pierce 一手另算） */
 export function evadeOf(c: Combatant): number {
-  return clamp(c.evade + buffOf(c, 'evade'), 0, TUNING.evadeMax)
+  return clamp(c.evade + buffOf(c, 'evade') + (c.passive?.evade ?? 0), 0, TUNING.evadeMax)
 }
 
-/** 减伤（装具常驻 + 本段护罩，封顶） */
+/** 命中（抵消对方闪避）：被动常驻 + 本手加成 */
+export function accOf(c: Combatant): number {
+  return Math.max(0, (c.passive?.acc ?? 0) + buffOf(c, 'acc'))
+}
+
+/** 减伤（装具常驻 + 本段护罩 + 被动，封顶） */
 export function shieldOf(c: Combatant): number {
-  return clamp(c.shield + buffOf(c, 'shield'), 0, TUNING.shieldCap)
+  return clamp(c.shield + buffOf(c, 'shield') + (c.passive?.shield ?? 0), 0, TUNING.shieldCap)
 }
 
 /** 被击时额外承受的比例（标记） */
@@ -91,13 +105,20 @@ const KIND_ORDER: Record<string, number> = { 启动: 0, 技能: 1, 普攻: 2 }
  *   · 慢启动门未解 → 只剩启动技
  *   · 门既解 → 启动技退场；「到达点」需先蓄够印记
  */
-export function legalSkills(c: Combatant): SkillSpec[] {
+export function legalSkills(c: Combatant, s?: BattleState): SkillSpec[] {
   const key = (k: SkillSpec) => KIND_ORDER[k.kind] ?? 9
+  // 「需与某人同在」的一手：那人不在场上（或已失能 / 蛰伏），这一手就不列出来
+  const together = (k: SkillSpec) => {
+    if (!k.requireAlly) return true
+    if (!s) return true
+    const a = find(s, k.requireAlly)
+    return !!a && !a.down && a.gone <= 0
+  }
   if (c.startUsed < c.startNeed) {
     return c.skills.filter((k) => k.kind === '启动').sort((a, b) => key(a) - key(b))
   }
   return c.skills
-    .filter((k) => k.kind !== '启动' && (!k.needsStack || c.stack >= k.needsStack))
+    .filter((k) => k.kind !== '启动' && (!k.needsStack || c.stack >= k.needsStack) && together(k))
     .sort((a, b) => key(a) - key(b))
 }
 
@@ -154,6 +175,12 @@ export function createBattle(opts: CreateOpts): BattleState {
     fleeOdds: 0,
     progress,
     growth,
+    mainline: mission.mainline,
+  }
+  // 被动里的「开场领先」：有人本来就该先到
+  for (const c of allies) {
+    const h = c.passive?.headStart ?? 0
+    if (h > 0) c.bar = Math.min(TUNING.barMax * 1.6, TUNING.barMax * h)
   }
   base.fleeOdds = fleeOddsOf(base)
   const line = (e: Partial<LogEntry> & { skill: string; note: string }) =>
@@ -181,7 +208,9 @@ function rollJitter(): number {
 }
 
 function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): number {
-  const raw = atk.axes[k.axis] * k.power * atkMulOf(atk)
+  // 普攻倍率提升只认普攻：那一门「打起来更重」是说它自己，不是说每一手
+  const basic = k.kind === '普攻' ? atk.gearBasic : 0
+  const raw = atk.axes[k.axis] * k.power * (1 + basic) * atkMulOf(atk)
   let mult = 1
   const anti = def.tags.includes('反现实')
   if (atk.scar) {
@@ -248,6 +277,7 @@ function applyEffect(
     if (eff.cleanse) t.buffs = t.buffs.filter((b) => b.k !== 'mark' && b.k !== 'slow')
     if (eff.clearBar) t.bar = 0
     if (eff.evade) addBuff(t, 'evade', eff.evade, turns)
+    if (eff.accUp) addBuff(t, 'acc', eff.accUp, turns)
     if (eff.shield) addBuff(t, 'shield', eff.shield, turns)
     if (eff.atkUp) addBuff(t, 'atk', eff.atkUp, turns)
     if (eff.spdUp) addBuff(t, 'spd', eff.spdUp, turns)
@@ -267,7 +297,9 @@ function applyEffect(
 
 function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogEntry {
   const pierce = k.effect?.pierce === true
-  if (!pierce && Math.random() < evadeOf(def)) {
+  // 命中 = 对方的闪避减去出手者这一手的命中（被动常驻 + 本手加成）
+  const miss = Math.max(0, evadeOf(def) - accOf(atk))
+  if (!pierce && Math.random() < miss) {
     return {
       round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
       skillId: k.id, skill: k.name, kind: k.kind, fx: k.fx,
@@ -277,7 +309,24 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   const dmg = damageOf(s, atk, def, k)
   def.hp = Math.max(0, def.hp - dmg)
   let down = false
-  if (def.hp === 0 && !def.down) {
+  if (def.hp === 0 && !def.down && def.gone <= 0) {
+    // 战斗续行：原文里「心脏破了也照样站着」的人，致命伤只留一口气
+    const p = def.passive
+    const canEndure = !!p?.endure && (p.endure < 0 || def.endured < p.endure)
+    if (canEndure) {
+      def.hp = 1
+      def.endured += 1
+      pushLog(s, {
+        round: s.hand, actorId: def.id, actor: def.name, side: def.side,
+        skillId: 'endure', skill: '战斗续行', kind: '指令', fx: 'guard',
+        note: `${p!.name} —— ${p!.desc.split('。')[0]}：这一下没打穿。`,
+      })
+      return {
+        round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
+        skillId: k.id, skill: k.name, kind: k.kind, fx: k.fx,
+        targetId: def.id, target: def.name, dmg, line: k.line || undefined,
+      }
+    }
     if (def.side === 'ally' && TUNING.downWillSave && def.axes.意志力 >= 60 && !def.note?.includes('不倒')) {
       // 意志力极强者：一次「不倒」——留一口气，记在 note 上，只保一次
       def.hp = 1
@@ -312,10 +361,10 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     else if (k.target === 'allyAll') targets = aliveOf(friends)
     else if (k.target === 'allyOne') {
       const t = targetId ? find(s, targetId) : undefined
-      targets = t && !t.down ? [t] : [atk]
+      targets = t && !t.down && t.gone <= 0 ? [t] : [atk]
     } else {
       const t = targetId ? find(s, targetId) : undefined
-      targets = t && !t.down ? [t] : aliveOf(foes).slice(0, 1)
+      targets = t && !t.down && t.gone <= 0 ? [t] : aliveOf(foes).slice(0, 1)
     }
     const hits = Math.max(1, k.effect?.hits ?? 1)
     for (const t of targets) {
@@ -340,18 +389,18 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
   const e = k.effect
   if (e) {
     const friendly: typeof e = {
-      heal: e.heal, cleanse: e.cleanse, shield: e.shield, evade: e.evade,
+      heal: e.heal, cleanse: e.cleanse, shield: e.shield, evade: e.evade, accUp: e.accUp,
       atkUp: e.atkUp, spdUp: e.spdUp, pushBar: e.pushBar, taunt: e.taunt,
     }
     const hostile: typeof e = { mark: e.mark, slow: e.slow, pushBack: e.pushBack }
-    const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.atkUp || e.spdUp || e.pushBar || e.taunt)
+    const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.accUp || e.atkUp || e.spdUp || e.pushBar || e.taunt)
     const hasHostile = !!(e.mark || e.slow || e.pushBack)
 
     if (k.target === 'all' || k.target === 'one') {
       if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns)
       if (hasHostile) {
         const ht = k.target === 'one'
-          ? (() => { const t = targetId ? find(s, targetId) : undefined; return t && !t.down ? [t] : aliveOf(foes).slice(0, 1) })()
+          ? (() => { const t = targetId ? find(s, targetId) : undefined; return t && !t.down && t.gone <= 0 ? [t] : aliveOf(foes).slice(0, 1) })()
           : aliveOf(foes)
         applyEffect(s, atk, hostile, [], ht, k.turns)
       }
@@ -360,9 +409,24 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
         ? [atk]
         : k.target === 'allyAll'
           ? aliveOf(friends)
-          : (() => { const x = targetId ? find(s, targetId) : undefined; return x && !x.down ? [x] : [atk] })()
+          : (() => { const x = targetId ? find(s, targetId) : undefined; return x && !x.down && x.gone <= 0 ? [x] : [atk] })()
       if (e.selfToo && !beneficiaries.includes(atk)) beneficiaries.push(atk)
       applyEffect(s, atk, e, beneficiaries, [], k.turns)
+    }
+  }
+
+  // 合体：把同在的那位暂时请下场，蛰伏若干拍后自行归位
+  if (k.mergeAlly) {
+    const mate = find(s, k.mergeAlly)
+    if (mate && !mate.down && mate.gone <= 0) {
+      mate.gone = Math.max(1, k.mergeTicks ?? 3)
+      mate.bar = 0
+      mate.buffs = []
+      pushLog(s, {
+        round: s.hand, actorId: mate.id, actor: mate.name, side: mate.side,
+        skillId: 'merge-off', skill: '合体 · 离场', kind: '指令', fx: 'noise',
+        note: `${mate.name} 与 ${atk.name} 合而为一 —— 她暂时不在场上了，${mate.gone} 拍后归位。`,
+      })
     }
   }
 
@@ -397,8 +461,9 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
 function beginAction(s: BattleState, c: Combatant) {
   c.bar = Math.max(0, c.bar - TUNING.barMax)
   if (c.taunt > 0) c.taunt -= 1
+  const cut = 1 + (c.passive?.cdCut ?? 0)
   for (const id in c.cds) {
-    c.cds[id] -= 1
+    c.cds[id] -= cut
     if (c.cds[id] <= 0) delete c.cds[id]
   }
   c.buffs = c.buffs.filter((b) => {
@@ -410,7 +475,7 @@ function beginAction(s: BattleState, c: Combatant) {
 
 function readyList(s: BattleState): Combatant[] {
   return allOf(s)
-    .filter((c) => !c.down && c.bar >= TUNING.barMax)
+    .filter((c) => !c.down && c.gone <= 0 && c.bar >= TUNING.barMax)
     .sort(
       (a, b) =>
         b.bar - a.bar ||
@@ -427,7 +492,28 @@ export function advance(s: BattleState): BattleState {
     if (ready.length === 0) {
       s.tick += 1
       for (const c of allOf(s)) {
-        if (!c.down) c.bar = Math.min(TUNING.barMax * 2, c.bar + chargeOf(c))
+        // 合体蛰伏者：不充能、不回血，只数着拍子等归位
+        if (c.gone > 0) {
+          c.gone -= 1
+          if (c.gone <= 0) {
+            c.bar = 0
+            pushLog(s, {
+              round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+              skillId: 'merge-back', skill: '合体 · 归位', kind: '指令', fx: 'heal',
+              note: `${c.name} 归位 —— 重新回到战列。`,
+            })
+          }
+          continue
+        }
+        if (c.down) continue
+        c.bar = Math.min(TUNING.barMax * 2, c.bar + chargeOf(c))
+        const p = c.passive
+        if (p?.regen && c.hp < c.hpMax) {
+          c.hp = Math.min(c.hpMax, c.hp + Math.max(1, Math.round(c.hpMax * p.regen)))
+        }
+        if (p?.spRegen && c.sp < c.spMax) {
+          c.sp = Math.min(c.spMax, c.sp + p.spRegen)
+        }
       }
       continue
     }
@@ -501,7 +587,7 @@ export function act(s: BattleState, cmd: Command): BattleState {
     beginAction(s, me)
     resolve(s, me, k, cmd.targetId)
   } else if (cmd.t === 'skill') {
-    const k = legalSkills(me).find((x) => x.id === cmd.skillId)
+    const k = legalSkills(me, s).find((x) => x.id === cmd.skillId)
     if (!k || k.cost > me.sp || (me.cds[k.id] ?? 0) > 0) return s
     me.sp = Math.max(0, me.sp - k.cost)
     beginAction(s, me)
@@ -512,11 +598,11 @@ export function act(s: BattleState, cmd: Command): BattleState {
     s.bag[cmd.itemId] = (s.bag[cmd.itemId] ?? 0) - 1
     beginAction(s, me)
     const targets = it.target === 'allyAll' ? aliveOf(s.allies)
-      : it.target === 'enemyOne' ? (() => { const t = cmd.targetId ? find(s, cmd.targetId) : undefined; return t && !t.down ? [t] : [] })()
+      : it.target === 'enemyOne' ? (() => { const t = cmd.targetId ? find(s, cmd.targetId) : undefined; return t && !t.down && t.gone <= 0 ? [t] : [] })()
       : (() => {
           const t = cmd.targetId ? find(s, cmd.targetId) : undefined
           if (it.effect.revive) return t ? [t] : []
-          return t && !t.down ? [t] : [me]
+          return t && !t.down && t.gone <= 0 ? [t] : [me]
         })()
     if (it.effect.revive) {
       for (const t of targets) {
@@ -576,7 +662,7 @@ function enemyAct(s: BattleState, foe: Combatant) {
 /* ---------- 收场 ---------- */
 
 function checkEnd(s: BattleState) {
-  if (aliveOf(s.enemies).length === 0) {
+  if (standingOf(s.enemies).length === 0) {
     s.phase = 'won'
     s.actor = null
     pushLog(s, {
@@ -584,7 +670,7 @@ function checkEnd(s: BattleState) {
       skillId: 'end', skill: '目标清除', kind: '指令', fx: 'seal',
       note: `${s.no}「${s.title}」敌方反现实反应归零 —— 作战成功。`,
     })
-  } else if (aliveOf(s.allies).length === 0) {
+  } else if (standingOf(s.allies).length === 0) {
     s.phase = 'lost'
     s.actor = null
     pushLog(s, {

@@ -13,11 +13,11 @@ import { ARMS } from '../../data/arms'
 import { AXIS_MAX } from '../../data/types'
 import type { Character, Mission } from '../../data/types'
 import { CAST, OPERATOR_ID, avatarIdOf, personOf } from '../../data/castmeta'
-import { opPeriodAtProgress } from '../operator-arc'
+import { opBuiltinOf, opPeriodAtProgress } from '../operator-arc'
 import type { OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
-import { ROSTER } from './roster'
+import { POWER_SCALE, ROSTER } from './roster'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
 import type { AxisKey, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target } from './types'
@@ -148,7 +148,7 @@ function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
     {
       id: `${id}-skill`, name: armName ? `${base}解放` : '协同压制', kind: '技能',
       desc: '把观测到的弱点一次打穿。',
-      cost: TUNING.skillCost, power: TUNING.skillPower, axis: '破坏力', fx,
+      cost: TUNING.skillCost, power: TUNING.skillPower * POWER_SCALE, axis: '破坏力', fx,
       line: '「让开——」', target: 'one',
     },
   ]
@@ -176,6 +176,10 @@ function opSkillsOf(per: OpPeriod): SkillSpec[] {
     needsStack: a.needsStack,
     // 冷却与名册同一口径：普攻 / 启动无冷却，到达点 4 拍，其余 2 拍
     cd: a.cd ?? (a.kind === '普攻' || a.kind === '启动' ? 0 : a.needsStack ? 4 : 2),
+    // 「合体」类：需同伴在场才可出，出手时把人请下场、若干拍后归位
+    requireAlly: a.requireAlly,
+    mergeAlly: a.mergeAlly,
+    mergeTicks: a.mergeTicks,
   }))
 }
 
@@ -216,15 +220,19 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
   // 主角：面板整块按时期换页，其余照旧走档案
   if (id === OPERATOR_ID) {
     const per = opPeriodAtProgress(progress)
-    const axes = gearAxes(gearId, axisSheetOf(id, progress, growthPct))
-    const gear = gearId ? GEAR_OF[gearId] : undefined
+    // 自带装备：某几段时期他身上本来就带着一件东西（如露娜的丝线），
+    // 玩家另外装配的优先——那是他自己买的，比身上的旧物更贴手。
+    const gid = gearId ?? opBuiltinOf(per, progress)
+    const axes = gearAxes(gid, axisSheetOf(id, progress, growthPct))
+    const gear = gid ? GEAR_OF[gid] : undefined
     const hpMax = Math.round(
       (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
       * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
     )
     const skills = opSkillsOf(per)
-    const gs = gearId ? gearSkillOf(gearId, id) : null
-    if (gs) skills.push({ ...(gs as SkillSpec), id: `${id}-gear-${gearId}` })
+    const gs = gid ? gearSkillOf(gid, id) : null
+    // 装具技的 id 不掺角色：与名册那边同一件装通用一枚图标、一份冷却
+    if (gs) skills.push(gs as SkillSpec)
     return {
       id,
       side: 'ally',
@@ -247,16 +255,21 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       shield: gear?.mods.shield ?? 0,
       taunt: 0,
       down: false,
-      sp: chSpMax(axes.意志力),
-      spMax: chSpMax(axes.意志力),
+      passive: per.passive,
+      endured: 0,
+      gone: 0,
+      sp: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
+      spMax: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
       startUsed: 0,
       startNeed: START_GATE[id] ?? 0,
       stack: 0,
       cds: {},
-      scar: false,
-      gear: gearId,
+      // 弹痕持有者才蓄印记：主角身上是不是弹痕，看他这一段时期拿的是什么
+      scar: /弹痕/.test(per.armSub),
+      gear: gid,
       gearAtk: gear?.mods.atk ?? 0,
       gearSpd: gear?.mods.spd ?? 0,
+      gearBasic: (gear?.mods.basicMul ?? 0) + (per.passive?.basicMul ?? 0),
       tags: ['委员会'],
       note: `${per.vol.split(' · ')[0]} · ${per.arm}`,
     }
@@ -292,8 +305,11 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     shield: gear?.mods.shield ?? 0,
     taunt: 0,
     down: false,
-    sp: chSpMax(axes.意志力),
-    spMax: chSpMax(axes.意志力),
+    passive: role?.passive,
+    endured: 0,
+    gone: 0,
+    sp: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
+    spMax: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
     startUsed: 0,
     startNeed: START_GATE[id] ?? 0,
     stack: 0,
@@ -302,6 +318,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     gear: gearId,
     gearAtk: gear?.mods.atk ?? 0,
     gearSpd: gear?.mods.spd ?? 0,
+    gearBasic: (gear?.mods.basicMul ?? 0) + (role?.passive?.basicMul ?? 0),
     tags: ['委员会'],
     note: arm ? `${arm.kind} ${arm.name}` : role ? role.cls : undefined,
   }
@@ -541,6 +558,8 @@ export function enemiesOf(m: Mission): Combatant[] {
       shield: 0,
       taunt: 0,
       down: false,
+      endured: 0,
+      gone: 0,
       startUsed: 0,
       sp: spMax,
       spMax,
@@ -550,6 +569,7 @@ export function enemiesOf(m: Mission): Combatant[] {
       scar: false,
       gearAtk: 0,
       gearSpd: 0,
+      gearBasic: 0,
       tags: prof.tags,
       note: m.nature,
     })

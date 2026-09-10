@@ -406,6 +406,19 @@
 
 .opAbil { display: flex; flex-direction: column; gap: 6px; }
 .opAbilIco { color: var(--amber); opacity: 0.85; align-self: center; }
+/* 被动单独一行、紫色描边：与「能出的手」区分开——它不占回合 */
+.opPas {
+  display: grid;
+  grid-template-columns: auto minmax(120px, auto) 1fr;
+  align-items: baseline;
+  gap: 9px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  border: 1px solid color-mix(in srgb, var(--violet) 34%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--violet) 6%, transparent);
+}
+.opPas b { font-size: 12.5px; }
 .opAbilRow {
   display: grid;
   grid-template-columns: auto auto minmax(120px, auto) 1fr;

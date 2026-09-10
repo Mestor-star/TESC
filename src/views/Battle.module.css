@@ -455,6 +455,31 @@
   color: var(--red);
 }
 
+/* ---------- 被动 / 合体蛰伏 ---------- */
+
+/* 被动只报名不报数：读数已经算进面板，这里多一行字只为「他带着什么」 */
+.unitPas {
+  display: block;
+  margin-top: 3px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--violet) 72%, var(--ink-mute));
+  cursor: help;
+}
+
+/* 合体蛰伏：人不在场上，但没倒——所以是「淡出」，不是「失能」的灰败 */
+.unitGone { filter: saturate(0.25) brightness(0.75); }
+.goneMark {
+  position: absolute;
+  inset: auto 0 6px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--violet);
+}
+
 /* ============================================================
    控制台：左日志 / 右指令
    ============================================================ */

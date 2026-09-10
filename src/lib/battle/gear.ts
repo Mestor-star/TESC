@@ -54,6 +54,19 @@ export const ITEM_OF: Record<string, ItemDef> = Object.fromEntries(ITEMS.map((i)
 
 export const GEARS: GearDef[] = [
   {
+    // 非卖品：露娜抽了自己一束丝线给他系上。此后它一直在他身上，
+    // 与他是不是拿着弹痕无关 —— 全属性上升，出手也比别人重。
+    id: 'luna-thread',
+    name: '露娜的丝线',
+    sub: 'THREAD OF LUNA',
+    desc: '一束银色的丝线，绕过手腕系成结。它自己会收紧、会把人往回拽；'
+      + '系着它的人，比原来更站得住，出手也更重。',
+    mods: { 破坏力: 8, 敏捷度: 6, 物理抗性: 10, 反现实亲和: 8, 意志力: 10, atk: 0.1, basicMul: 0.6 },
+    price: 0,
+    rank: 3,
+    noDrop: true,
+  },
+  {
     id: 'scope',
     name: '观测镜',
     sub: 'OBSERVER SCOPE',
@@ -165,7 +178,7 @@ export function rollLoot(stage: number, rnd: () => number = Math.random): GearDe
   const w2 = Math.min(0.55, 0.18 + stage * 0.045)
   const r = rnd()
   const rank: 1 | 2 | 3 = r < w3 ? 3 : r < w3 + w2 ? 2 : 1
-  const pool = GEARS.filter((g) => g.rank === rank)
+  const pool = GEARS.filter((g) => g.rank === rank && !g.noDrop)
   return pool[Math.floor(rnd() * pool.length)] ?? GEARS[0]
 }
 

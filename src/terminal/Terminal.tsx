@@ -5,7 +5,7 @@ import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
-import { defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
+import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { clamp } from '../lib/format'
 import { opFull } from '../lib/operator'
 import { ensureSeeded } from '../lib/lorestore'
@@ -525,6 +525,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    */
   const bondNow = useCallback(
     (charId: string) => {
+      // 会长：一开始就是满值，且不随主角行为偏移上下浮动
+      if (BOND_FULL[charId]) return 100
       const ep = cur ? TIMELINE.find((e) => e.id === cur) : undefined
       const v = ep?.bond[charId as keyof BondSnap]
       // 主役锚点 = 当前段原著快照；其余 20 名在册登场者 = 起步值（初见）；均叠加主角行为偏移
