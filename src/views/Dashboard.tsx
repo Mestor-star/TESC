@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowRight, ChatCircle, Crosshair, MapPin, NoteBlank } from '@phosphor-icons/react'
+import {
+  ArrowRight, ArrowUUpLeft, ChatCircle, ClockCounterClockwise, Crosshair, MapPin,
+  NoteBlank, Package, PaperPlaneTilt, ShieldChevron, Target,
+} from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
+import { CODEX } from '../data/codex'
 import { REGIONS } from '../data/regions'
 import { TIMELINE } from '../data/timeline'
 import { clamp, rSeverity } from '../lib/format'
 import { opSituation, furthestDone } from '../lib/operator'
-import { rBadgeOf } from '../lib/battle/rvalue'
-import { listRecords, readCoin, readGrowth, readStamina } from '../lib/battle/store'
+import { manifestOf, rBadgeOf, rFactor } from '../lib/battle/rvalue'
+import { GEAR_OF, ITEM_OF } from '../lib/battle/gear'
+import {
+  listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth, readStamina,
+} from '../lib/battle/store'
+import { loadSmsLogs, smsLogVersion, subscribeSmsLog, subscribeUnread, totalUnread, unreadOf } from '../lib/sms'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
-import type { Character } from '../data/types'
+import type { Character, ChatMsg } from '../data/types'
 
 import css from './Dashboard.module.css'
 
@@ -20,13 +28,34 @@ const ALL_DONE = '时间线上的六卷正传与外传插曲均已归档。'
 
 const CIRC = 2 * Math.PI * 90
 
+/** epoch ms → 「08-14 21:07」；0（legacy 旧档回填）显示 — */
+function stamp(ts: number): string {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export function Dashboard() {
-  const { operatorName, navigate, requestSms, focusRegion, setFocusId, epDone, bondNow, unlocked, isMet } = useTerminal()
+  const {
+    operatorName, navigate, requestSms, focusRegion, setFocusId, focusId,
+    epDone, bondNow, unlocked, isMet, isEndReg, records,
+  } = useTerminal()
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const sit = opSituation(epDone)
   const sev = rSeverity(focusRegion.r)
   const doneEvents = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).slice(-4).reverse(), [epDone])
   const f = clamp((focusRegion.r - 0.8) / 0.3, 0, 1)
+  /** 观测点选择器是否展开（默认收起：扫描面板一次只显示当前那一个读数） */
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  /* ---- 威胁条：判「异常」看 R 值偏离区间（两侧同判），不是只看原定的危险度 ---- */
+  const fac = useMemo(() => rFactor(focusRegion.r), [focusRegion.r])
+  const out = fac.out
+  const pct = Math.round((fac.mul - 1) * 100)
+  const siteAnomaly = out > 0
+  /* 分区行与推算行共用的增幅挂牌口径：正常就写「正常」，不许印成「+0%」 */
+  const facTag = fac.out === 0 ? '正常' : `${fac.kind} ${pct >= 0 ? '+' : ''}${pct}%`
 
   /* ---- 进度：走到哪、下一段是哪一段 ---- */
   const furthest = furthestDone(epDone)
@@ -34,23 +63,106 @@ export function Dashboard() {
   const volNow = TIMELINE[furthest]?.group ?? '卷1'
   const nextEv = useMemo(() => TIMELINE.find((e) => !epDone[e.id]), [epDone])
   const nextPlace = nextEv?.place ?? focusRegion.name
-  const nextR = useMemo(() => rBadgeOf(nextPlace, nextEv?.vol ?? 1), [nextPlace, nextEv])
-  /* 下一段所在的地点，若在侦察网标定表里就把它设为的聚焦区（总览的仪表盘跟着剧情走） */
+  /* 下一段的现场分级取该段的终末（entities ＋ 在场的人型终末，卷号不是危险度，见 manifestOf） */
+  const nextSite = useMemo(() => manifestOf(nextEv ?? {}), [nextEv])
+  const nextStage = nextSite.stage
+  const nextR = useMemo(() => rBadgeOf(nextPlace, nextStage, nextSite.names), [nextPlace, nextStage, nextSite])
+  /* 下一段所在的地点，若在侦察网标定表里就把它标出来（「下一段」角标） */
   const nextRegion = useMemo(() => REGIONS.find((g) => nextPlace.includes(g.name.split(' · ')[0])), [nextPlace])
-  /* 若已有作战记录，用最近一次的参战名单当「出击小队」，否则退回名录前几人 */
-  const [live, setLive] = useState<{ rec: BattleRecord[]; sp: StaminaState | null; coin: number; growth: Record<string, number> }>(
-    { rec: [], sp: null, coin: 0, growth: {} },
-  )
+
+  /* ---- 作战域的活读数（点数 / 体力 / 记录 / 装具 / 补给 / 成长） ---- */
+  const [live, setLive] = useState<{
+    rec: BattleRecord[]; sp: StaminaState | null; coin: number; growth: Record<string, number>
+    gearBag: Record<string, number>; equip: Record<string, string>; bag: Record<string, number>
+  }>({ rec: [], sp: null, coin: 0, growth: {}, gearBag: {}, equip: {}, bag: {} })
   useEffect(() => {
     let on = true
-    Promise.all([listRecords(), readStamina(doneCount), readCoin(), readGrowth()])
-      .then(([rec, sp, coin, growth]) => { if (on) setLive({ rec, sp, coin, growth }) })
+    Promise.all([listRecords(), readStamina(doneCount), readCoin(), readGrowth(), readGearBag(), readEquip(), readBag()])
+      .then(([rec, sp, coin, growth, gearBag, equip, bag]) => {
+        if (on) setLive({ rec, sp, coin, growth, gearBag, equip, bag })
+      })
       .catch(() => { /* 存档不可用时总览照常显示静态部分 */ })
     return () => { on = false }
   }, [doneCount])
+
+  /* ---- 通讯：未读数会随来信自己变，两条订阅把总览挂在同一个版本号上 ---- */
+  const [vSms, setVSms] = useState(0)
+  const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(() => loadSmsLogs())
+  useEffect(() => subscribeUnread(() => setVSms((v) => v + 1)), [])
+  useEffect(() => subscribeSmsLog(() => setLogs(loadSmsLogs())), [])
+  const unreadTotal = useMemo(
+    // vSms 是订阅给的版本号：未读表在订阅里改，这里靠它重取，不是多余的依赖
+    () => totalUnread(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [vSms, doneCount],
+  )
+  const logVersion = smsLogVersion()
+
   const lastSquad = live.rec[0]?.squad ?? []
   const squadShown = lastSquad.length ? lastSquad : CHARACTERS.slice(0, 4).map((c: Character) => c.id)
   const metCount = useMemo(() => CHARACTERS.filter((c: Character) => isMet(c.id)).length, [isMet])
+
+  /* 通讯中枢：只列已遇见的人（未解锁的联系人本来就不该出现在这台终端上），
+     未读的排前面，其余按名录序。预览取该线最后一句。 */
+  const contacts = useMemo(() => {
+    const met = CHARACTERS.filter((c: Character) => isMet(c.id))
+    return met
+      .map((c) => {
+        const line = logs[c.id]
+        const last = line && line.length ? line[line.length - 1] : null
+        return {
+          c,
+          unread: unreadOf(c.id),
+          preview: last ? (last.meta?.who ? `${last.meta.who}：${last.text}` : last.text) : '尚未联络 · 点开可发起对话',
+        }
+      })
+      .sort((a, b) => b.unread - a.unread)
+    // logVersion 是日志版本号：来信后本表要重排
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs, isMet, logVersion])
+
+  /* 观测通报：把「剧情收束」与「作战归档」两路事件按时间并成一条流 */
+  const feed = useMemo(() => {
+    const story = records.map((r) => {
+      const ev = TIMELINE.find((e) => e.id === r.eventId)
+      return {
+        k: 'story' as const,
+        ts: r.ts,
+        title: ev ? `${ev.group} · ${ev.title}` : '剧情收束',
+        body: r.digest,
+      }
+    })
+    const battle = live.rec.map((r) => ({
+      k: 'battle' as const,
+      ts: r.at,
+      title: `作战记录 · ${r.title}`,
+      body: `${r.place} · 参战 ${r.squad.length} 人 · 历时 ${r.ticks} 拍 · 出力最重 ${r.mvp}`
+        + (r.coin ? ` · 军需 +${r.coin}` : '')
+        + (r.loot.length ? ` · 缴获 ${r.loot.length} 件` : ''),
+    }))
+    return [...story, ...battle].sort((a, b) => b.ts - a.ts).slice(0, 6)
+  }, [records, live.rec])
+
+  /* 收录进度：图鉴 / 档案 / 时间线三本册子各登了几条 */
+  const codexDone = useMemo(() => CODEX.filter((e) => isEndReg(e.id)).length, [isEndReg])
+
+  /* 装具库存条目按「件数多的在前」排，便于一眼看出主力装备 */
+  const gearRows = useMemo(
+    () => Object.entries(live.gearBag).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]),
+    [live.gearBag],
+  )
+  const equipRows = useMemo(
+    () => Object.entries(live.equip)
+      .map(([cid, gid]) => ({ c: CHARACTERS.find((x: Character) => x.id === cid), g: GEAR_OF[gid] }))
+      .filter((r) => !!r.g),
+    [live.equip],
+  )
+  const bagRows = useMemo(
+    () => Object.entries(live.bag).map(([id, n]) => ({ it: ITEM_OF[id], n })).filter((r) => !!r.it),
+    [live.bag],
+  )
+
+  const staminaLow = !!live.sp && live.sp.cur < live.sp.max * 0.35
 
   return (
     <div className="vpage">
@@ -94,6 +206,10 @@ export function Dashboard() {
               <b className="mono">{live.rec.length}</b>
               <small>作战记录</small>
             </span>
+            <span className={css.stat} data-stat="unread">
+              <b className="mono">{unreadTotal}</b>
+              <small>未读讯息</small>
+            </span>
             <span className={css.stat} data-stat="met">
               <b className="mono">{metCount}/{CHARACTERS.length}</b>
               <small>已遇见</small>
@@ -115,9 +231,8 @@ export function Dashboard() {
                 <small>
                   {nextEv.group} · {nextEv.phase} · {nextEv.place}
                 </small>
-                <span className={css.nextR} title={nextR.reading.note}>
+                <span className={css.nextR} data-r-src={nextR.reading.src} title={nextR.reading.note}>
                   {nextR.text}
-                  {nextR.reading.known ? '' : ' · 推算'}
                 </span>
               </div>
               <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('plot')}>
@@ -143,11 +258,21 @@ export function Dashboard() {
             <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('plot')}>
               进入剧情 · 推演或通读 <ArrowRight size={13} weight="bold" />
             </button>
-            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('lore')}>
-              智库 · 世界观
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('missions')}>
+              <Target size={12} weight="bold" /> 出击任务
+            </button>
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('tavern')}>
+              <ChatCircle size={12} weight="bold" /> 角色短信
+              {unreadTotal > 0 ? <span className={css.badgeUnread} style={{ marginLeft: 6 }}>{unreadTotal}</span> : null}
+            </button>
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('codex')}>
+              终末图鉴
             </button>
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('archive')}>
               角色档案
+            </button>
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('lore')}>
+              智库 · 世界观
             </button>
           </div>
         </div>
@@ -178,7 +303,9 @@ export function Dashboard() {
               <span className={css.gaugeTag} style={{ color: sev.color }}>{focusRegion.code}</span>
             </div>
           </div>
-          <div className={css.gaugeName}>{focusRegion.name.split(' · ')[0]}</div>
+          <div className={css.gaugeName}>
+            {focusRegion.name.split(' · ')[0]}
+          </div>
           <div className={css.gaugeMeta}>
             <span>REALITY INDEX</span>
             <span className="mono" style={{ color: sev.color }}>{sev.label}</span>
@@ -186,20 +313,40 @@ export function Dashboard() {
           <div className="tiny muted" style={{ textAlign: 'center', maxWidth: 300, lineHeight: 1.7, marginTop: 8 }}>
             {focusRegion.note}
           </div>
+          <div className="tiny muted" style={{ textAlign: 'center', maxWidth: 300, lineHeight: 1.7, marginTop: 6 }}>
+            {focusId
+              ? '已钉住该观测点。'
+              : '观测点跟着剧情走 —— 最近收束的那一段在哪，读的就是哪。'}
+          </div>
         </div>
       </div>
 
-      {/* 威胁通告 / 平稳条 */}
-      {focusRegion.threatStage > 0 ? (
+      {/* 威胁通告 / 平稳条。
+          判「异常」看的是 **R 值偏离区间**（两侧都算），不是只看原定的危险度 ——
+          表里没有的地点没有原定危险度，可它的 R 值照样可能已经偏出区间。 */}
+      {siteAnomaly ? (
         <div className={css.threat}>
           <div className={css.threatHazard} />
           <div className={css.threatBody}>
-            <b>区域警戒 · {focusRegion.name}</b>
-            <p>{focusRegion.note}</p>
+            <b>区域观测异常 · {focusRegion.name}</b>
+            <p>
+              R 值 {focusRegion.r.toFixed(3)}，{fac.kind === '低R' ? '现实偏薄' : '现实过厚'}，
+              偏离正常区间 {out.toFixed(3)}（{focusRegion.code}）。
+              {focusRegion.note}
+            </p>
           </div>
           <div className={css.threatStage}>
-            <div className="num">{focusRegion.threatStage}</div>
-            <div className="tiny muted" style={{ letterSpacing: '0.2em' }}>STAGE</div>
+            {focusRegion.threatStage > 0 ? (
+              <>
+                <div className="num">{focusRegion.threatStage}</div>
+                <div className="tiny muted" style={{ letterSpacing: '0.2em' }}>STAGE</div>
+              </>
+            ) : (
+              <>
+                <div className="num">{pct > 0 ? '+' : ''}{pct}%</div>
+                <div className="tiny muted" style={{ letterSpacing: '0.2em' }}>敌体增幅</div>
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -207,10 +354,15 @@ export function Dashboard() {
           <div className={css.threatHazard} style={{ background: 'repeating-linear-gradient(-45deg, var(--jade) 0 10px, #0b0b13 10px 20px)' }} />
           <div className={css.threatBody}>
             <b style={{ color: 'var(--jade)' }}>本区观测平稳 · {focusRegion.name}</b>
-            <p>未检出反现实干涉异常。观测信道保持畅通，等待下一段事件。</p>
+            <p>
+              R 值 {focusRegion.r.toFixed(3)} 落在正常区间内，未检出反现实干涉异常（{focusRegion.code}）。
+              {focusRegion.threatStage > 0
+                ? `该区原定危险度 ${focusRegion.threatStage} 级，仍在编。`
+                : '观测信道保持畅通，等待下一段事件。'}
+            </p>
           </div>
           <div className={css.threatStage}>
-            <div className="num" style={{ color: 'var(--jade)' }}>0</div>
+            <div className="num" style={{ color: 'var(--jade)' }}>{focusRegion.threatStage}</div>
             <div className="tiny muted" style={{ letterSpacing: '0.2em' }}>STAGE</div>
           </div>
         </div>
@@ -232,6 +384,7 @@ export function Dashboard() {
                 .filter((c): c is Character => !!c)
                 .map((c) => {
                 const bond = bondNow(c.id)
+                const g = live.equip[c.id] ? GEAR_OF[live.equip[c.id]] : undefined
                 return (
                   <div key={c.id} className={css.squadRow} style={{ '--c': c.hue } as CSSProperties}>
                     <span className="glyph" style={{ '--g': c.hue, width: 38, height: 38 }}>
@@ -239,7 +392,7 @@ export function Dashboard() {
                     </span>
                     <div className={css.squadMeta}>
                       <b>{c.name} <span className="tiny muted" style={{ fontWeight: 400 }}>· {c.station}</span></b>
-                      <small>{c.role} · {c.division.split(' · ').pop()}</small>
+                      <small>{c.role} · {c.division.split(' · ').pop()}{g ? ` · 装具 ${g.name}` : ''}</small>
                       <div className={`${css.bondMini} meter`} style={{ height: 5 }}>
                         <div className="meter__fill" style={{ width: `${bond}%`, background: `linear-gradient(90deg, ${c.hue}66, ${c.hue})` }} />
                       </div>
@@ -261,6 +414,10 @@ export function Dashboard() {
                   尚未与名录上的人照面。每推进一段剧情，遇见的人会自己走进这栏。
                 </div>
               ) : null}
+              <div className="tiny muted" style={{ marginTop: 2, letterSpacing: '0.04em' }}>
+                小队体力 {live.sp ? `${Math.round(live.sp.cur)} / ${live.sp.max}` : '—'}
+                {staminaLow ? ' · 不足三成，出击前先歇一段' : ''}
+              </div>
             </div>
           </div>
         </section>
@@ -269,47 +426,101 @@ export function Dashboard() {
         <section className="panel">
           <div className="panel__head">
             <span className="panel__title">区域干涉扫描 <span className="slash" /></span>
-            <span className="muted tiny" style={{ marginLeft: 'auto' }}><MapPin size={11} weight="bold" /> {REGIONS.length} 区</span>
+            <span className="muted tiny" style={{ marginLeft: 'auto' }}>
+              {focusId
+                ? <><MapPin size={11} weight="bold" /> 已钉住观测点</>
+                : <><Crosshair size={11} weight="bold" /> 跟随剧情</>}
+            </span>
           </div>
           <div className="panel__body">
-            <div className={css.stack}>
-              {REGIONS.map((reg) => {
-                const rs = rSeverity(reg.r)
-                const focus = focusRegion.id === reg.id
-                const isNext = nextRegion?.id === reg.id
-                const amp = rBadgeOf(reg.name, nextEv?.vol ?? 1)
-                return (
-                  <button
-                    key={reg.id}
-                    className={`${css.rRow} ${focus ? css.isFocus : ''} ${isNext ? css.isNext : ''}`}
-                    style={{ gridTemplateColumns: 'minmax(0, 1fr) auto auto' }}
-                    onClick={() => setFocusId(reg.id)}
-                    data-region={reg.id}
-                    data-next-site={isNext ? '1' : undefined}
-                  >
-                    <span className={css.rRowName}>
-                      <b>
-                        {reg.name}
-                        {isNext ? <i className={css.nextMark}>下一段</i> : null}
-                      </b>
-                      <small>{reg.code} · 现实密度 · 敌方 {amp.text.split(' · ').pop()}</small>
-                      <div className="meter" style={{ height: 5, marginTop: 5 }}>
-                        <div
-                          className="meter__fill"
-                          style={{
-                            width: `${clamp((reg.r - 0.8) / 0.3, 0, 1) * 100}%`,
-                            background: `linear-gradient(90deg, ${rs.color}55, ${rs.color})`,
-                          }}
-                        />
-                      </div>
-                    </span>
-                    <span className={css.rRowVal} style={{ color: rs.color }}>{reg.r.toFixed(3)}</span>
-                    <span className={css.rRowDelta} style={{ color: reg.delta < 0 ? 'var(--red)' : 'var(--jade)' }}>
-                      {reg.delta >= 0 ? '+' : ''}{reg.delta.toFixed(3)}
-                    </span>
+            <div className={css.stack} data-dash-scan>
+              {/* 默认只列**当前观测点**这一个读数 —— 一次铺开六区是噪声不是情报。
+                  要换地方，点下面的按钮展开选择。 */}
+              <div className={css.nowSite}>
+                <span className={css.nowSiteBody}>
+                  <b>
+                    {focusRegion.name}
+                    {nextRegion?.id === focusRegion.id ? <i className={css.nextMark}>下一段</i> : null}
+                  </b>
+                  <small>
+                    {focusRegion.code} · 敌方 {facTag}
+                    {focusId ? '' : ' · 跟随剧情'}
+                  </small>
+                  <div className="meter" style={{ height: 5, marginTop: 7 }}>
+                    <div
+                      className="meter__fill"
+                      style={{
+                        width: `${clamp((focusRegion.r - 0.8) / 0.3, 0, 1) * 100}%`,
+                        background: `linear-gradient(90deg, ${sev.color}55, ${sev.color})`,
+                      }}
+                    />
+                  </div>
+                  <small style={{ marginTop: 6, letterSpacing: 0, lineHeight: 1.6 }}>{focusRegion.note}</small>
+                </span>
+                <span className={css.nowSiteVal}>
+                  <b style={{ color: sev.color }}>{focusRegion.r.toFixed(3)}</b>
+                  <small style={{ color: sev.color }}>{sev.label}</small>
+                  <small className="muted" style={{ letterSpacing: 0 }}>R 值</small>
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 11.5 }}
+                  onClick={() => setPickerOpen((v) => !v)}
+                  data-scan-picker
+                >
+                  <Crosshair size={12} weight="bold" /> {pickerOpen ? '收起观测点列表' : '更换观测地点'}
+                </button>
+                {focusId ? (
+                  <button className="btn btn--ghost" style={{ fontSize: 11.5 }} onClick={() => setFocusId(null)}>
+                    <ArrowUUpLeft size={12} weight="bold" /> 恢复跟随剧情
                   </button>
-                )
-              })}
+                ) : null}
+              </div>
+
+              {pickerOpen ? (
+                <div className={css.picker} data-scan-list>
+                  <div className={css.pickerHead}>观测点 · 共 {REGIONS.length} 区</div>
+                  <button
+                    className={css.pickRow}
+                    data-on={focusId ? '0' : '1'}
+                    data-region="live"
+                    data-r-src={focusRegion.src ?? 'table'}
+                    title={focusRegion.note}
+                    onClick={() => { setFocusId(null); setPickerOpen(false) }}
+                  >
+                    <b>跟随剧情 · {focusId ? '回到当前剧情地点' : `当前：${focusRegion.name}`}</b>
+                    <code>{focusRegion.code}</code>
+                    <i style={{ color: sev.color }}>{focusRegion.r.toFixed(3)}</i>
+                  </button>
+                  {REGIONS.map((reg) => {
+                    const rs = rSeverity(reg.r)
+                    const on = focusRegion.id === reg.id
+                    const isNext = nextRegion?.id === reg.id
+                    const amp = rBadgeOf(reg.name, nextStage)
+                    return (
+                      <button
+                        key={reg.id}
+                        className={css.pickRow}
+                        data-on={on ? '1' : '0'}
+                        data-region={reg.id}
+                        data-next-site={isNext ? '1' : undefined}
+                        title={`${reg.note} · 敌方 ${amp.text.split(' · ').pop()}`}
+                        onClick={() => { setFocusId(reg.id); setPickerOpen(false) }}
+                      >
+                        <b>
+                          {reg.name}
+                          {isNext ? <i className={css.nextMark}>下一段</i> : null}
+                        </b>
+                        <code>{reg.code}</code>
+                        <i style={{ color: rs.color }}>{reg.r.toFixed(3)}</i>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
             </div>
           </div>
         </section>
@@ -341,6 +552,229 @@ export function Dashboard() {
                 ))}
               </div>
             )}
+          </div>
+        </section>
+      </div>
+
+      {/* ---- 第二屏：通讯 / 战报 / 军需 ---- */}
+      <div className="grid grid--3" style={{ gap: 18, alignItems: 'start', marginTop: 18 }}>
+        {/* 通讯中枢 */}
+        <section className="panel" data-dash-msg>
+          <div className="panel__head">
+            <span className="panel__title">通讯中枢 <span className="slash" /></span>
+            <span className="muted tiny" style={{ marginLeft: 'auto' }}>
+              {unreadTotal > 0
+                ? <span style={{ color: 'var(--red)' }}>{unreadTotal} 条未读</span>
+                : `${metCount} 位可联络`}
+            </span>
+          </div>
+          <div className="panel__body">
+            <div className={css.stack}>
+              {metCount === 0 ? (
+                <div className="tiny muted" style={{ lineHeight: 1.8 }}>
+                  通讯录空着。遇见一个人，他的线才会接进来 —— 解锁一份档案，就解锁一个人的短信。
+                </div>
+              ) : (
+                contacts.slice(0, 6).map(({ c, unread, preview }) => (
+                  <button
+                    key={c.id}
+                    className={css.msgRow}
+                    data-unread={unread > 0 ? '1' : '0'}
+                    data-thread={c.id}
+                    onClick={() => requestSms(c.id)}
+                  >
+                    <span className="glyph" style={{ '--g': c.hue, width: 32, height: 32 }}>
+                      <span style={{ fontSize: 13 }}>{c.sigil}</span>
+                    </span>
+                    <span className={css.msgRowBody}>
+                      <b>{c.name}</b>
+                      <small>{preview}</small>
+                    </span>
+                    {unread > 0 ? <span className={css.badgeUnread}>{unread}</span> : null}
+                  </button>
+                ))
+              )}
+              {contacts.length > 6 ? (
+                <button className="linkGo" onClick={() => navigate('tavern')}>
+                  还有 {contacts.length - 6} 位联系人 <ArrowRight size={11} />
+                </button>
+              ) : metCount > 0 ? (
+                <button className="linkGo" onClick={() => navigate('tavern')}>
+                  打开通讯记录 <PaperPlaneTilt size={11} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        {/* 最近战报 */}
+        <section className="panel" data-dash-rec>
+          <div className="panel__head">
+            <span className="panel__title">最近战报 <span className="slash" /></span>
+            <button className="linkGo" onClick={() => navigate('missions')}>
+              简报板 <ArrowRight size={11} />
+            </button>
+          </div>
+          <div className="panel__body">
+            {live.rec.length === 0 ? (
+              <div className="tiny muted" style={{ lineHeight: 1.8, padding: '4px 0' }}>
+                尚无战报。前往「出击任务」选一处出阵，胜了这一栏会记下番号、历时与出力最重的人。
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {live.rec.slice(0, 4).map((r) => (
+                  <div key={r.id} className={css.recRow}>
+                    <span className={css.recNo}>{r.no}</span>
+                    <span className={css.recBody}>
+                      <b>{r.title}</b>
+                      <small>
+                        {r.place} · 历时 {r.ticks} 拍 · 出力最重 {r.mvp}
+                        {r.coin ? ` · 军需 +${r.coin}` : ''}
+                        {r.loot.length ? ` · 缴获 ${r.loot.length} 件` : ''}
+                      </small>
+                    </span>
+                    <span className={css.resTag} data-r={r.outcome}>{r.outcome}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 军需与装具 */}
+        <section className="panel" data-dash-supply>
+          <div className="panel__head">
+            <span className="panel__title">军需与装具 <span className="slash" /></span>
+            <button className="linkGo" onClick={() => navigate('missions')}>
+              军需处 <ArrowRight size={11} />
+            </button>
+          </div>
+          <div className="panel__body">
+            <div className={css.kv}>
+              <span className={css.kvKey}>终末点数</span>
+              <span className={css.kvVal}>
+                <b style={{ color: 'var(--amber)' }}>{live.coin}</b>
+                <span className="tiny muted"> · 出击与扫荡的结算货币</span>
+              </span>
+            </div>
+            <div className={css.kv}>
+              <span className={css.kvKey}>小队体力</span>
+              <span className={css.kvVal}>
+                <b style={{ color: staminaLow ? 'var(--red)' : 'var(--jade)' }}>
+                  {live.sp ? `${Math.round(live.sp.cur)}/${live.sp.max}` : '—'}
+                </b>
+                <span className="tiny muted"> · 每收束一段观测回补</span>
+              </span>
+            </div>
+            <div className={css.kv}>
+              <span className={css.kvKey}>道具补给</span>
+              <span className={css.kvVal}>
+                {bagRows.length === 0 ? <span className="tiny muted">空</span> : bagRows.map(({ it, n }) => (
+                  <span key={it.id} className={css.gearTag} title={it.desc}>
+                    {it.name} <i>×{n}</i>
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className={css.kv}>
+              <span className={css.kvKey}>装具库存</span>
+              <span className={css.kvVal}>
+                {gearRows.length === 0 ? (
+                  <span className="tiny muted">空 · 交战掉落或军需处购置</span>
+                ) : gearRows.slice(0, 6).map(([id, n]) => (
+                  <span key={id} className={css.gearTag} title={GEAR_OF[id]?.desc}>
+                    {GEAR_OF[id]?.name ?? id} <i>×{n}</i>
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className={css.kv}>
+              <span className={css.kvKey}>装配</span>
+              <span className={css.kvVal}>
+                {equipRows.length === 0 ? (
+                  <span className="tiny muted">全队均未装配 · 每人至多一件</span>
+                ) : equipRows.map(({ c, g }) => (
+                  <span key={c!.id} className={css.gearTag} title={g!.desc}>
+                    {c!.name} · {g!.name}
+                  </span>
+                ))}
+              </span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* ---- 第三屏：观测通报 / 收录进度 ---- */}
+      <div className="grid grid--2" style={{ gap: 18, alignItems: 'start', marginTop: 18 }}>
+        {/* 观测通报 */}
+        <section className="panel" data-dash-feed>
+          <div className="panel__head">
+            <span className="panel__title">观测通报 <span className="slash" /></span>
+            <span className="muted tiny" style={{ marginLeft: 'auto' }}>
+              <ClockCounterClockwise size={11} weight="bold" /> 收束与归档
+            </span>
+          </div>
+          <div className="panel__body">
+            {feed.length === 0 ? (
+              <div className="tiny muted" style={{ lineHeight: 1.8, padding: '4px 0' }}>
+                通报栏空着。剧情每收束一段、每归档一场作战，这里会自己长出一条。
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {feed.map((it, i) => (
+                  <div key={`${it.k}-${it.ts}-${i}`} className={css.feedRow}>
+                    <span className={css.feedMark} data-k={it.k} />
+                    <span className={css.feedBody}>
+                      <b>{it.title}</b>
+                      <p>{it.body}</p>
+                    </span>
+                    <span className={css.feedWhen}>{stamp(it.ts)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 收录进度 */}
+        <section className="panel" data-dash-collect>
+          <div className="panel__head">
+            <span className="panel__title">收录进度 <span className="slash" /></span>
+            <span className="muted tiny" style={{ marginLeft: 'auto' }}>
+              <ShieldChevron size={11} weight="bold" /> 三本册子
+            </span>
+          </div>
+          <div className="panel__body">
+            {[
+              { k: '终末图鉴', n: codexDone, all: CODEX.length, go: 'codex' as const, c: 'var(--red)' },
+              { k: '角色档案', n: metCount, all: CHARACTERS.length, go: 'archive' as const, c: 'var(--steel)' },
+              { k: '时间线', n: doneCount, all: TIMELINE.length, go: 'saga' as const, c: 'var(--amber)' },
+            ].map((row) => (
+              <div key={row.k} className={css.pRow}>
+                <div className={css.pRowHead}>
+                  <b>{row.k}</b>
+                  <span style={{ color: row.c }}>{row.n} / {row.all}</span>
+                  <button className="linkGo" onClick={() => navigate(row.go)}>
+                    {row.n === row.all ? '已收全' : '继续收录'} <ArrowRight size={11} />
+                  </button>
+                </div>
+                <div className="meter">
+                  <div
+                    className="meter__fill"
+                    style={{ width: `${row.all ? (row.n / row.all) * 100 : 0}%`, background: row.c }}
+                  />
+                </div>
+              </div>
+            ))}
+            <div className={css.kv} style={{ marginTop: 6 }}>
+              <span className={css.kvKey}>联络解锁</span>
+              <span className={css.kvVal}>
+                <Package size={11} weight="bold" style={{ opacity: 0.6 }} />
+                <span className="tiny muted">
+                  {' '}每遇见一人即解锁其档案与短信线；当前 {metCount} / {CHARACTERS.length}。
+                </span>
+              </span>
+            </div>
           </div>
         </section>
       </div>

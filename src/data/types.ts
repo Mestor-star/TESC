@@ -2,17 +2,65 @@
 
 /**
  * 反现实干涉指数（通称 R 值）：终端本地的经验标定。
- * 正常区间 0.95 ~ 1.05；越低代表该区域「现实越薄」、反现实干扰越强。
+ *
+ * **区间照原文**（V2 第 2 话『noapusa』，梅芙给出判据）：
+ * 「R值在正常情况下为「1」。如果R值高于1.02或者低于0.98，就说明存在着异常。」
+ * 故正常区间 = 0.98 ~ 1.02，**偏离即异常，两侧同判**，且偏离得越远危险度越高 ——
+ * 不是「只判低的一侧」，也不是终端早先自拟的 0.95 ~ 1.05（那个区间书上没有，已作废）。
+ *   · 低于 0.98 → 现实偏薄，反现实实体更凝实、更容易显形；
+ *   · 高于 1.02 → 现实过厚，是「高 R 存在」的主场（codex：低 R 地带会压制高 R 存在）。
+ * 区间与偏离量的唯一算法见下面 R_NORMAL_LO / R_NORMAL_HI / rOutOf ——
+ * 不要在别处再写一遍 0.98 / 1.02 的字面量。
  */
 export interface RegionReading {
   id: string;
   name: string;          // 区域名（天空都市 · 弗尔克图斯 各区 / 学园内设施）
-  code: string;          // 终端分区代码
+  code: string;          // 终端分区代码（CN- 原文实测 / FLK- 标定表 / EST- 推算）
   r: number;             // 当前 R 值（干涉指数）
   delta: number;         // 较上一轮变化（+回升 / -下滑）
   threatStage: number;   // 该区域危险度 0-10（终末潜力分级沿用学园标尺）
   threatName: string | null;
   note: string;          // 观测备注
+  /**
+   * 读数来源：'canon' = 原文明写了数（data/rreadings.ts，界面标「原文」）；
+   * 缺省 / true = 在侦察网标定表上（REGIONS 那六区，终端标定过）；false = 按现场危险度**推算**（EST-）。
+   * 界面须按它挂牌 —— 推算数不能冒充实测数，原文数也不该被推成另一个样子。
+   */
+  known?: boolean;
+  /** 读数出处：canon 原文实测 / table 侦察网标定表 / est 推算 */
+  src?: 'canon' | 'table' | 'est';
+  /** 原文一路读数（仅 canon：0.99 → 0.97 → 0.89） */
+  series?: { r: number; naxa: number | null; quote: string }[];
+  /** 纳克萨指数（现实的易变程度；原文同批报出时才有） */
+  naxa?: number | null;
+  /** 原文引句与出处（仅 canon；给界面订正口径用） */
+  quote?: string;
+  book?: string;
+  /** 读数超出六占式盘量程（如「线之人」内部 30.55 —— 照记不缩） */
+  over?: boolean;
+}
+
+/**
+ * R 值正常区间的下沿（低于它即「现实偏薄」）—— 原文判据，见本文件头。
+ */
+export const R_NORMAL_LO = 0.98
+/** R 值正常区间的上沿（高于它即「现实过厚」）—— 原文判据，见本文件头。 */
+export const R_NORMAL_HI = 1.02
+/**
+ * 偏离量达到此值即判「重度异常」。
+ * 区间由 0.95~1.05 收到原文的 0.98~1.02 之后，同一根尺子上刻度变紧：
+ * 0.07 的偏离落在 Stage 6.4 上下，仍是「6 级起判重度」那档（见 battle/tuning.ts 的推算梯度）。
+ */
+export const R_SEVERE_OUT = 0.07
+
+/**
+ * 偏离正常区间多少 —— 区间内记 0，两侧同取绝对值。
+ * 「与正常值相差越大，此值越大」：不论现实偏薄还是过厚，危险度都随之上升。
+ */
+export function rOutOf(r: number): number {
+  if (r < R_NORMAL_LO) return R_NORMAL_LO - r
+  if (r > R_NORMAL_HI) return r - R_NORMAL_HI
+  return 0
 }
 
 export type StationStatus = '在场' | '出击' | '疗养' | '待命' | '未知';

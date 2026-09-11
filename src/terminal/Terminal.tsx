@@ -8,7 +8,8 @@ import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { bondWithStage } from '../data/bondstage'
 import { clamp } from '../lib/format'
-import { opFull } from '../lib/operator'
+import { furthestDone, opFull } from '../lib/operator'
+import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
 import { ensureSeeded } from '../lib/lorestore'
 import { ensureBuiltinPresets } from '../lib/builtin-presets'
 import { requestRemount } from '../lib/remount'
@@ -42,7 +43,8 @@ interface Saved {
   epDone: Record<string, true>
   cur: string | null       // 目前最靠前的已读段
   operatorName: string
-  focusId: string
+  /** 手动钉住的观测点 id；null = 跟随剧情（默认） */
+  focusId: string | null
   world?: Partial<WorldState>
 }
 
@@ -55,9 +57,16 @@ export interface TerminalState {
   operatorTitle: string
   setOperatorName: (n: string) => void
 
-  focusId: string
+  /** 当前钉住的观测点 id；null = 跟随剧情。见 focusRegion */
+  focusId: string | null
+  /**
+   * 当前观测点读数。**默认跟着剧情走** —— 取最近收束段的地点，一段都没推过就取下一段的地点；
+   * 手动点选某一格才改为钉住该区（focusId 非 null）。表里没有的地点照算（推算读数，标 EST-），
+   * 不退回固定分区：退回等于「这一带从没变过」，而总览读的应当是此刻在哪。
+   */
   focusRegion: RegionReading
-  setFocusId: (id: string) => void
+  /** 钉住某个观测点（传 null 回到「跟随剧情」） */
+  setFocusId: (id: string | null) => void
 
   /** 开屏认证 */
   authed: boolean
@@ -207,7 +216,8 @@ function defaultSaved(): Saved {
     epDone: {},
     cur: null,
     operatorName: '言万心叶',
-    focusId: 'gcn',
+    // null = 跟随剧情（默认）。总览读的是此刻在哪，不该一上来就钉死在某一格。
+    focusId: null,
     world: emptyWorld(),
   }
 }
@@ -284,7 +294,9 @@ function loadSaved(): Saved {
       epDone,
       cur,
       operatorName: typeof parsed.operatorName === 'string' ? parsed.operatorName : fallback.operatorName,
-      focusId: typeof parsed.focusId === 'string' ? parsed.focusId : fallback.focusId,
+      // 老档里存的 'gcn' 是过去那个硬编码缺省值（那会儿聚焦区根本没人能改），
+      // 不算「用户选过」——按「跟随剧情」读，免得老档永远钉在第一格。
+      focusId: typeof parsed.focusId === 'string' && parsed.focusId !== 'gcn' ? parsed.focusId : null,
       world: hydrateWorld(epDone, cur, parsed.world),
     }
   } catch {
@@ -298,7 +310,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   // 初始视图：重挂载若带 pendingView（重置/读档想落脚的页面）则优先
   const [view, setViewRaw] = useState<ViewId>(() => takePendingView() ?? 'dashboard')
   const [operatorName, setOperatorNameState] = useState<string>(initial.operatorName)
-  const [focusId, setFocusId] = useState<string>(initial.focusId)
+  const [focusId, setFocusId] = useState<string | null>(initial.focusId)
   // authed：同会话读档重挂载时经 sessionAuthed 跳过 Boot；冷启动仍回 false
   const [authed, setAuthed] = useState<boolean>(initial.authed || sessionAuthed)
   const [stage, setStageState] = useState<'title' | 'game'>(sessionStage)
@@ -320,7 +332,46 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /** 跨视图「打开某角色短信」意图（短信页消费后清除） */
   const [smsRequest, setSmsRequest] = useState<{ id: string; ts: number } | null>(null)
 
-  const focusRegion: RegionReading = REGIONS.find((r) => r.id === focusId) ?? REGIONS[0]
+  /**
+   * 当前观测点 —— 总览的仪表盘、威胁条与顶栏读数都取这一个值。
+   * 默认**跟着剧情走**：最近收束的那一段在哪儿，观测的就是哪儿；一段都没推过就取下一段的地点。
+   * 手动点选分区才钉住（focusId 非 null）。
+   * 读数按 rOfPlace 的次序取：**原文明写了数的读原文（CN-，挂「原文」）**、
+   * 侦察网标定表命中取表值（FLK-，挂「标定」）、都对不上才按**这一段现场的终末**
+   * （manifestOf：entities ＋ 在场的人型终末）推一个（EST-，挂「推算」）。
+   * 不许退回 REGIONS[0] —— 退回等于宣称「这一带从没变过」，那是死板：
+   * 开场那艘太平洋上的货船有黑之魔王在甲板上，那里就不该读成 1.000。
+   * 拿卷号当危险度同样不行：卷号只说讲到第几本书，不说此刻这条街有多危险。
+   */
+  const focusRegion: RegionReading = useMemo(() => {
+    const pinned = focusId ? REGIONS.find((r) => r.id === focusId) : undefined
+    if (pinned) return pinned
+    const fi = furthestDone(epDone)
+    const ev = fi >= 0 ? TIMELINE[fi] : TIMELINE.find((e) => !epDone[e.id])
+    if (!ev) return REGIONS[0]
+    const hit = regionOfPlace(ev.place)
+    if (hit) return hit
+    const site = manifestOf(ev)
+    const rd = rOfPlace(ev.place, site.stage, site.names)
+    return {
+      id: `live:${ev.id}`,
+      name: ev.place,
+      code: rd.code,
+      r: rd.r,
+      delta: 0,
+      threatStage: site.stage,
+      threatName: site.names[0] ?? null,
+      note: rd.note,
+      /* 挂牌用出身：原文实测 / 标定表 / 推算 —— 推算数不能冒充实测数 */
+      known: rd.known,
+      src: rd.src,
+      series: rd.series,
+      naxa: rd.naxa,
+      quote: rd.quote,
+      book: rd.book,
+      over: rd.over,
+    }
+  }, [focusId, epDone])
   const saved = useMemo<Saved>(
     () => ({ authed, unlocked, epDone, cur, operatorName, focusId, world }),
     [authed, unlocked, epDone, cur, operatorName, focusId, world],

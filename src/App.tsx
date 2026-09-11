@@ -6,6 +6,7 @@ import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal
 import type { ViewId } from './terminal/Terminal'
 import type { Toast, ToastKind } from './data/types'
 import { clock, rSeverity } from './lib/format'
+import { rFactor } from './lib/battle/rvalue'
 import { clearRemount, registerRemount } from './lib/remount'
 import { resetGuide } from './lib/guide'
 import { bedForView, installAudio, setAudio, setBed, useAudioSettings } from './lib/audio'
@@ -225,6 +226,9 @@ function TopStatus({ view }: { view: ViewId }) {
   const { push, focusRegion: focus } = useTerminal()
   const [now, setNow] = useState(() => new Date())
   const sev = rSeverity(focus.r)
+  /* 与总览的威胁条同一个判据：R 值偏离正常区间（两侧都算）即为异常。
+     只看原定危险度会出现「横幅报警、顶栏写着本区观测平稳」两处口径打架。 */
+  const fac = rFactor(focus.r)
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000)
@@ -243,10 +247,19 @@ function TopStatus({ view }: { view: ViewId }) {
         <button className={css.pill} title="当前监测区域" onClick={() => push('info', '监测区域', `当前焦点：${focus.name} · ${focus.code}`, false)}>
           <span data-guide="region-pill" />区域&nbsp;<span className="muted tiny">{focus.code}</span>&nbsp;{focus.name.split(' · ').pop()}
         </button>
-        <button className={css.pill} onClick={() => push('info', 'R 值实时读数', `${focus.name} R 值 ${focus.r.toFixed(3)}（${focus.delta >= 0 ? '+' : ''}${focus.delta.toFixed(3)}）`, false)}>
+        <button className={css.pill} data-r-src={focus.src ?? 'table'} onClick={() => push('info', 'R 值实时读数', `${focus.name} R 值 ${focus.r.toFixed(3)}` + (focus.src === 'est' ? ' · 由该段现场危险度推算' : focus.src === 'canon' ? ` · ${focus.note}` : `（${focus.delta >= 0 ? '+' : ''}${focus.delta.toFixed(3)}）`), false)}>
           <span data-guide="r-pill" />R 值&nbsp;<span className={sev.cls} style={{ fontWeight: 800 }}>{focus.r.toFixed(3)}</span>
         </button>
-        {focus.threatStage > 0 ? (
+        {fac.out > 0 ? (
+          <button
+            className={`${css.pill} ${css['pill--danger']}`}
+            title={`${focus.name} R 值 ${focus.r.toFixed(3)} 偏出正常区间 ${fac.out.toFixed(3)}（${fac.kind === '低R' ? '现实偏薄' : '现实过厚'}）`}
+            onClick={() => push('danger', `区域观测${sev.label}`, `${focus.name} R 值 ${focus.r.toFixed(3)}，${fac.kind === '低R' ? '现实偏薄' : '现实过厚'}，偏离正常区间 ${fac.out.toFixed(3)} · ${focus.note}`, false)}
+          >
+            <span className={css.pulseDot} />
+            区域异常 · {sev.label}
+          </button>
+        ) : focus.threatStage > 0 ? (
           <button className={`${css.pill} ${css['pill--danger']}`} onClick={() => push('danger', '区域警戒确认', `观测危险度 STAGE ${focus.threatStage} · ${focus.note}`, false)}>
             <span className={css.pulseDot} />
             区域警戒 STAGE {focus.threatStage}
