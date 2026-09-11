@@ -39,6 +39,9 @@ import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
+import { buildDirectorSystem } from '../../src/lib/plot'
+import { splitSpeech } from '../../src/lib/dialogue'
+import type { DialogueSeg } from '../../src/lib/dialogue'
 import { BEDS } from '../../src/lib/audio/music'
 import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
@@ -2056,6 +2059,84 @@ export function run(): MechReport {
       + ` · 输出预算 ${MIN_BUDGET}–${MAX_BUDGET}（缺省 ${DEFAULT_BUDGET}）`)
   } catch (e) {
     fail.push('首启段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 18) 台词行契约：气泡版式不该被预设换掉 ----------
+     正文推演的气泡版式全押在「角色名：」起行这一条上，而它原先写在导演规则的
+     第 5 条 —— 规则之后还整段压着预设注入，自带预设又开机自动套用。
+     预设里但凡有一句「文本格式」把行首写法收走，规则里那条就被盖掉：
+     拆行器认不出说话人 → 一条 say 段都没有 → 整篇正文落进旁白，
+     界面上不报错，只是气泡版式看着像坏了。
+     所以这里钉两件事：契约**摆在预设之后**并且明说压过预设；拆行器认得出
+     模型最可能写的那几种写法，同时不该切的旁白照样不切。每条都配对照。 */
+  try {
+    const luna = personOf('luna')?.name ?? '露娜'
+    const op = personOf(OPERATOR_ID)?.name ?? '言万心叶'
+    /* 仿协议预设那一段（真实取值见 presets/*.json 的 ts-format）：
+       它只说了引号与空行，一个字没提「角色名：」—— 正是这一点让气泡失效的。 */
+    const presetPost = '【预设 · 输出格式】（在写出事件指令块之前须满足）\n'
+      + '▸ ts-format\n对白用「」括起；段落之间空一行；不使用 Markdown 标题、表格、加粗、列表与分隔线。'
+    const sys = buildDirectorSystem(TIMELINE[0], { operatorName: op, presetPost })
+
+    /* ① 契约段摆在预设段**之后**，且在事件指令 schema 之前 —— 位置就是它的分量 */
+    const iPreset = sys.indexOf(presetPost)
+    const iContract = sys.indexOf('【台词行格式 · 终端渲染约定】')
+    const iSchema = sys.indexOf('【事件指令 · 每回合末尾必须输出】')
+    ok('台词契约：摆在预设段之后、事件指令之前（离输出最近的位置）',
+      iPreset >= 0 && iContract > iPreset && iSchema > iContract,
+      `预设@${iPreset} → 契约@${iContract} → 指令@${iSchema}`)
+
+    /* ② 契约里得**明说**冲突时以它为准，否则模型按「后写的服从先写的」理解就白摆了 */
+    const seg = sys.slice(iContract, iSchema)
+    ok('台词契约：明说与预设「文本格式」冲突时以本条为准',
+      seg.includes('以本条为准') && seg.includes('冲突'), seg.split('\n')[0])
+
+    /* ③ 契约与拆行器是同一件事的两面：它许诺的写法，拆行器必须真认得出 */
+    ok('台词契约：点明了「角色名：」起行与气泡的对应关系',
+      seg.includes('角色名：') && seg.includes('气泡'),
+      seg.includes('角色名：') && seg.includes('气泡') ? '行首「角色名：」↔ 气泡' : '缺了链路说明')
+
+    /* ④ 同一条契约不再在导演规则里重复一遍 —— 两处说法迟早漂移 */
+    const rules = sys.slice(0, iPreset)
+    ok('台词契约：导演规则里不再重复这一条（同一件事只说一次）',
+      !rules.includes('台词行格式'), rules.includes('台词行格式') ? '规则里还留着一份' : '只在契约段说')
+
+    /* ⑤ 拆行器认出模型最可能写的四种写法（含被加粗的名字） */
+    const cases: Array<[string, DialogueSeg[]]> = [
+      [`${luna}：「小主人，你迟到了。」`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
+      [`${luna}：小主人，你迟到了。`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
+      [`**${luna}**：「小主人，你迟到了。」`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
+      [`${luna}“小主人，你迟到了。”`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
+      [`${op}：「我知道了。」`, [{ kind: 'you', text: '我知道了。' }]],
+    ]
+    const wrong = cases.filter(([src, want]) => JSON.stringify(splitSpeech(src)) !== JSON.stringify(want))
+    ok('台词拆行：四种写法（全角冒号／直接接台词／名字被加粗／直接接引号）都认得出，操作员落到右气泡',
+      wrong.length === 0,
+      wrong.length ? wrong.map(([src]) => src).join('；')
+        : cases.map(([src]) => src.slice(0, 14) + '…').join('　'))
+
+    /* 对照：拿掉契约里那半对引号／换个没登记的名字，同一条判据当场变红 ——
+       上面那条不是「怎么拆都过」。 */
+    ok('台词拆行（对照）：名字后直接接引号但整行没有收尾引号时，不认',
+      JSON.stringify(splitSpeech(`${luna}「小主人`)) === JSON.stringify([{ kind: 'narr', text: `${luna}「小主人` }]),
+      `${luna}「小主人 → 留旁白`)
+
+    /* ⑥ 不该切的照样不切：没登记的名字、冒号后没内容、名字在行中间 —— 全留旁白。
+       拆行器宁可漏认一个气泡，也不能把叙述切碎（切错了正文就散了）。 */
+    const narCases = [
+      '林越：「他是谁？」',                        // 未登记的名字
+      `${luna}：`,                                  // 冒号后没内容
+      `这时${luna}：「小主人。」`,                  // 名字不在行首
+      `${luna}「影」是异端。`,                      // 名字后接引号，但整行不收在引号上
+    ]
+    const cut = narCases.filter((s) => splitSpeech(s).some((x) => x.kind !== 'narr'))
+    ok('台词拆行：未登记的名字／空台词／名字在行中／引号不收尾 —— 一律留旁白（不切碎叙述）',
+      cut.length === 0, cut.length ? cut.join('；') : `${narCases.length} 种写法都留了旁白`)
+
+    info.push(`台词契约：摆在预设段之后（@${iContract} > @${iPreset}）· 拆行器认 ${cases.length} 种写法、`
+      + `${narCases.length} 种不认的留旁白`)
+  } catch (e) {
+    fail.push('台词契约段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

@@ -44,26 +44,55 @@ const SPEAKER_TABLE: SpeakerEntry[] = (() => {
     .sort((a, b) => b.text.length - a.text.length)
 })()
 
+/** 行首的强调标记（模型偶尔把名字加粗：`**露娜**：……`）—— 剥掉再认，气泡不该因此失效。
+    只认成对的（** / __ / ＊），单一个 * 或 _ 当作列表符号，不剥。 */
+const LEAD_MARK = /^(?:\*\*|__|＊)+/
+/** 名字与冒号之间可能还留着收尾的那半对标记（`**露娜**：` 的后一个 **） */
+const TAIL_MARK = /^(?:\*\*|__|＊)+/
+
+/** 名字后**直接**接引号的写法（`露娜「…….」`）→ 该开引号对应的收尾引号 */
+const OPEN_CLOSE: Record<string, string> = { '「': '」', '『': '』', '“': '”', '"': '"' }
+
 /** 若该行以某登记名/别名 + 冒号开头 → 返回匹配；否则 null（整行留旁白） */
 function matchSpeaker(line: string): { id: string; body: string } | null {
+  const head = line.replace(LEAD_MARK, '')
   for (const sp of SPEAKER_TABLE) {
-    if (!line.startsWith(sp.text)) continue
-    const ch = line[sp.text.length]
-    if (ch !== ':' && ch !== '：') continue
-    const body = line.slice(sp.text.length + 1).trim()
-    if (!body) continue // 冒号后无内容 → 疑为叙述，保守留旁白
-    return { id: sp.id, body }
+    if (!head.startsWith(sp.text)) continue
+    let k = sp.text.length
+    const tail = TAIL_MARK.exec(head.slice(k))
+    if (tail) k += tail[0].length
+    const ch = head[k]
+    if (ch === ':' || ch === '：') {
+      const body = head.slice(k + 1).trim()
+      if (!body) continue // 冒号后无内容 → 疑为叙述，保守留旁白
+      return { id: sp.id, body }
+    }
+    // 名字后直接接引号（`露娜「小主人，你迟到了。」`）：**只在整行确实被同一对引号
+    // 收住时**才认 —— 少了这一条，这种最省事的写法会整行掉回旁白，气泡凭空少一个；
+    // 放开成「名字后见引号就认」则会把「露娜「影」是异端」这类叙述也切成台词，
+    // 所以宁可留着这条尾巴不认，也别把旁白切碎。
+    const close = ch ? OPEN_CLOSE[ch] : ''
+    if (close && head.length >= k + 3 && head.endsWith(close)) {
+      const body = head.slice(k + 1, -1).trim()
+      if (!body) continue
+      return { id: sp.id, body }
+    }
   }
   return null
 }
 
-/** 剥一层外括：整段被一对「」或『』包住才剥（保留行内引号与对话内引号） */
+/** 成对的外括：整段被同一对包住才剥（保留行内引号与对话内引号）。
+    半角双引号也收 —— 预设里若写了「对白用引号」，模型可能就写成 "…"。 */
+const QUOTE_PAIRS: Array<[string, string]> = [
+  ['「', '」'], ['『', '』'], ['“', '”'], ['"', '"'],
+]
+
 function stripOuterQuotes(s: string): string {
   const t = s.trim()
   if (t.length >= 2) {
     const a = t[0]
     const b = t[t.length - 1]
-    if ((a === '「' && b === '」') || (a === '『' && b === '』')) {
+    if (QUOTE_PAIRS.some(([x, y]) => a === x && b === y)) {
       return t.slice(1, -1).trim()
     }
   }

@@ -632,8 +632,10 @@ export function Missions() {
             /* 该地 R 值 → 敌人成色：出击前就该看得见，好让人决定带谁去 */
             const rb = rBadgeOf(m2.place, m2.stage)
             const amp = Math.round((rb.f.mul - 1) * 100)
+            /* 危险度另挂一份 data-mission-stage：卡面上它是「阶段 S6」这样一行字，
+               要按危险度挑任务得有个准头，别让谁去正则屏上的文案。 */
             return (
-              <article key={m2.id} className={`${css.card} ${m2.mainline ? css.cardMain2 : ''}`} data-mission={m2.mainline ? undefined : m2.id} data-mainline-mission={m2.mainline ? m2.id : undefined} style={{ '--s': m2.mainline ? 'var(--violet)' : m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
+              <article key={m2.id} className={`${css.card} ${m2.mainline ? css.cardMain2 : ''}`} data-mission={m2.mainline ? undefined : m2.id} data-mainline-mission={m2.mainline ? m2.id : undefined} data-mission-stage={m2.stage} style={{ '--s': m2.mainline ? 'var(--violet)' : m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
                 <div className={`${css.cardRibbon} ${ribbonCls}`} />
                 <div className={css.cardMain}>
                   <div className={css.cardTop}>

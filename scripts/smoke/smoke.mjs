@@ -263,7 +263,10 @@ await new Promise((r) => stub.listen(STUB_PORT, '127.0.0.1', r))
 let eSeq = 0
 let eLast = null
 const eReplies = [
-  '<maintext>【E1】甲板上没有别人，只有被切开的海浪与压在栏杆上的一道影子。</maintext>\n<vars>{"eventDone":true,"digest":"E自动开场·夜航将启。"}</vars>',
+  // 【E1】里刻意留一句「露娜：」起行的台词：拆行器认得出说话人，
+  // 正文才会被渲染成左侧角色气泡（E5b 验的就是这一条链路 —— 契约段被预设盖掉时，
+  // 整篇正文会一丝不差地落进旁白，界面上不报错，只是气泡版式看着像坏了）。
+  '<maintext>【E1】甲板上没有别人，只有被切开的海浪与压在栏杆上的一道影子。\n露娜：「风向变了，别站在栏杆边。」</maintext>\n<vars>{"eventDone":true,"digest":"E自动开场·夜航将启。"}</vars>',
   '<maintext>【E2】露娜把半盒布丁放在桌上，坐到他旁边的空位。</maintext>\n<vars>{"eventDone":true,"digest":"E布丁收束·夜风。"}</vars>',
   '【E3】这一回合没有指令落定：他把终端亮度调低，夜风从窗缝钻进来，凉丝丝的。',
   '【E4】重写后仍旧没有指令落定：他把终端亮度调低，夜风从窗缝钻进来。',
@@ -611,6 +614,13 @@ try {
   ok('E4 标签路径确有且仅有一次剧情请求', eSeq === 1, 'eSeq=' + eSeq)
   const logV11 = await plotLogText('v1-1')
   ok('E5 正文入库且标签/围栏已剥离', logV11.includes('【E1】') && !logV11.includes('<maintext>') && !logV11.includes('<vars>') && !logV11.includes('```'), logV11.slice(0, 80))
+  // E5b 台词行 → 左侧角色气泡。这一条走的是「正文里的 角色名： → splitSpeech 认人 →
+  // Plot 渲染 say 气泡」整条链路：提示词里的台词契约一旦被预设段盖掉，模型就不再写
+  // 「角色名：」起行，这里会退化成零个 say 段（正文照旧上屏，只是全落进旁白）。
+  const sayB = await ev(`(()=>{const el=document.querySelector('[data-say-for="luna"]');
+    if(!el)return null;return {text:el.innerText, hasAvatar:!!el.querySelector('[role="img"]')}})()`)
+  ok('E5b 台词行渲染为角色左气泡（data-say-for=luna 含头像+台词）',
+    !!sayB && sayB.hasAvatar === true && (sayB.text || '').includes('风向变了'), JSON.stringify(sayB))
   // 点「进入下一事件」→ v1-1 此刻才归档；随后自动为 v1-2 生成衔接开场并收束（标签 digest 落记录）
   await concludedGo()
   await poll(`(${wState}).rec.length===1`, 40000, 'E v1-1 archived (进入下一事件)')
@@ -1018,8 +1028,16 @@ try {
   await goto('剧情推进')
   // 在线线程渲染：旁白 + 「露娜：……」→ 左头像 say 气泡；气泡带说话人头像
   await poll(`!!document.querySelector('[data-say]')`, 15000, 'I say bubble')
-  const sayProbe = await ev(`(()=>{const el=document.querySelector('[data-say]');if(!el)return null;return {text:el.innerText,hasAvatar:!!el.querySelector('[role="img"]'),forWho:el.getAttribute('data-say-for')}})()`)
-  ok('I2 台词行拆成左头像气泡（say 含说话人+正文）', !!sayProbe && sayProbe.hasAvatar === true && (sayProbe.text || '').includes('别走神'), JSON.stringify(sayProbe))
+  // 认自己预置的那一条（按正文找），不是版面上下第一个 say 气泡：
+  // 前面的相里也会留下气泡（E 段正文里就有一句露娜的台词），
+  // 取第一个时，那条一旦出现就会把这颗断言顶掉 —— 测的成了别人的气泡。
+  const sayProbe = await ev(`(()=>{const all=[...document.querySelectorAll('[data-say]')];
+    const el=all.find(x=>x.innerText.includes('别走神'))||all[0];
+    if(!el)return null;return {text:el.innerText,hasAvatar:!!el.querySelector('[role="img"]'),
+      forWho:el.getAttribute('data-say-for'),n:all.length}})()`)
+  ok('I2 台词行拆成左头像气泡（say 含说话人+正文）',
+    !!sayProbe && sayProbe.hasAvatar === true && (sayProbe.text || '').includes('别走神')
+    && sayProbe.forWho === 'luna', JSON.stringify(sayProbe))
   // 点旁白中的图鉴名 → 图鉴页自动展开该条目
   const lnk = await ev(`(()=>{const s=[...document.querySelectorAll('span[role="link"]')].find(x=>x.textContent==='灵魂蓄积器TM');if(!s)return false;s.click();return true})()`)
   ok('I3 旁白图鉴名可点（Linkified）', lnk === true, 'lnk=' + lnk)
@@ -1351,11 +1369,19 @@ try {
   await sleep(400)
   const boardAfter = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-mission]')];
     const open=cards.filter(c=>c.querySelector('[data-sortie]:not([disabled])'));
-    return {n:cards.length,open:open.length,ids:cards.filter(c=>c.querySelector('[data-act="接取"]')).map(c=>c.getAttribute('data-mission')).join('|')}})()`)
+    const raw=cards.filter(c=>c.querySelector('[data-act="接取"]'));
+    return {n:cards.length,open:open.length,ids:raw.map(c=>c.getAttribute('data-mission')).join('|'),
+      // 危险度由低到高（这一场要走到底，看板抽到哪一档不该由运气定）
+      low:raw.map(c=>c.getAttribute('data-mission')).sort((a,b)=>
+        Number(document.querySelector('[data-mission="'+a+'"]').getAttribute('data-mission-stage')||0)
+        -Number(document.querySelector('[data-mission="'+b+'"]').getAttribute('data-mission-stage')||0))}})()`)
   ok('N1b 手动刷新看板重掷出一批新任务', boardAfter.n >= 1 && boardAfter.ids.length > 0 && boardAfter.ids !== noBefore, JSON.stringify(boardAfter).slice(0, 140))
 
   // 接取 → 出击 → 编队（主角可编入；只留恋兔光，保证慢启动门可被完整观测）
-  const target = boardAfter.ids.split('|')[0]
+  // 挑**危险度最低**的那一张：这一场是要一路打到战果面板的，
+  // 而界面每一步都要等日志回放（一手好几秒）—— 抽到危险度 9 那一档，
+  // 光回放就能把这台机器人耗到步数用尽（这不是卡死，见 N6 那一带的长注释）。
+  const target = (boardAfter.low && boardAfter.low[0]) || boardAfter.ids.split('|')[0]
   await ev(`(()=>{const b=document.querySelector('[data-mission="${target}"] [data-act="接取"]');if(b)b.click();return true})()`)
   await sleep(250)
   const nAccept = await ev(`(()=>{const c=document.querySelector('[data-mission="${target}"]');
@@ -1514,11 +1540,15 @@ try {
   let sawFoeLine = false
   // 战报挂右栏：整场都没横在战场前面才算数
   let sawSideLog = false
-  // 步数预算：每一步是一次界面往返（一次出手），而这一场是「慢启动门全观测」那种
-  // 打法 —— 解封之前除恋兔光以外全员防御，敌人打不死、还一直召唤，仗本来就长。
-  // 早先给 200 步，随机看板抽到危险度 9 那一档就走不完（不是卡死：引擎那边
-  // 600 场 × 三档时期的复核里「卡死 0 场」，是这里的预算不够用）。
-  while (steps++ < 700) {
+  // 预算按**手**算，不按步算。
+  // 界面的一手不是一步：日志要逐条回放（普通一条 380~620 毫秒，连携那条 1500 毫秒），
+  // 回放期间指令菜单不挂出来，机器人只能空转 —— 一手摊到二十来步。
+  // 早先按步给 200，看着像「打了两百手」，其实只走到三十二手，
+  // 一场还没收场就断了（不是卡死：scripts/balance.mjs 那套复核
+  // 600 场 × 三档时期里「卡死 0 场」）。
+  // 于是：手数封顶 90 手（一场看板任务足够走完），步数只当防呆的上限。
+  let handNow = 0
+  while (steps++ < 3000 && handNow < 90) {
     const snap = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
       if(document.querySelector('[data-battle-result]'))return {r:1};
       const handEl=document.querySelector('[data-hand]');
@@ -1542,6 +1572,7 @@ try {
           return L.left>=A.right-1&&L.width>=200&&L.height>=A.height*0.6})(),
         kinds:[...document.querySelectorAll('[data-skill-list] [data-skill]')].map(b=>b.getAttribute('data-kind'))}})()`)
     if (!snap || snap.r) break
+    if (snap.hand) handNow = Math.max(handNow, Number(snap.hand) || 0)
     if (snap.ready) atbGate = true
     if (snap.link) sawLink = true
     if (snap.full) sawGaugeFull = true
@@ -1633,12 +1664,19 @@ try {
             .find(b=>Number(b.getAttribute('data-power'))>0)||null};
         if(pick('启动'))return true;
         if(hit('技能')){hit('技能').click();return true}
-        if(pick('技能'))return true;
+        // 出得起伤害技能的**没有**了（体力见底 / 全在冷却）：先退出去走「攻击」——
+        // 普攻免费、必定出伤，在「攻击」这条指令上（不在技能表里）。
+        // 早先这里先去点一手「不带伤害的技能」，于是体力一空，机器人就整场
+        // 用调律与治疗互相顶着：全队满血、对面也死不了，几十手不动地方。
         const back=document.querySelector('[data-sub-back]');if(back)back.click();
         await new Promise(r=>setTimeout(r,140));
-        // 普攻在「攻击」这条指令上（不在技能表里）：技能都按不动时用它。
         const atk=document.querySelector('[data-command-menu] [data-cmd="atk"]');
         if(atk&&!atk.disabled){atk.click();return true}
+        // 连普攻都不给（封印期）：这时才把技能表翻回来，随便点一手能点的 ——
+        // 门没开的时候，表里本来也只有「启动」那一类。
+        const b3=document.querySelector('[data-command-menu] [data-cmd="skill"]');if(b3)b3.click();
+        await new Promise(r=>setTimeout(r,150));
+        if(pick('技能'))return true;
         return 'noop'})()`)
       if (clicked === 'noop') {
         usedGuard = true
@@ -1687,18 +1725,31 @@ try {
   // 槽满 ≠ 接上了：防御只蓄拍、不接招。牌上要挂「出手即接」，防御时日志要把这句说白
   ok('N5f2b 槽满时牌上挂「出手即接」提示（否则玩家只看到槽停在上限）',
     sawGaugeFull === false || sawHint === true, `gaugeFull=${sawGaugeFull} hint=${sawHint} 槽最高蓄到=${gmax}`)
+  // 判据跟着日志的现行措辞走：c2a50f6「观测频道不再混进机制说明」把这一行改成了
+  // 剧情口吻（「这一拍只是架着，得有人真打出去，他们才接得上。」），
+  // 断言还留着老措辞「出手才接得上」—— 于是它只在槽真蓄满的那一次才露馅：
+  // 槽没满时 said=false 直接过关，看着一直是绿的。
   const waitLog = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
-    return {said:t.includes('共鸣已满'),why:t.includes('出手才接得上')}})()`)
+    return {said:t.includes('共鸣已满')||t.includes('全员能量满'),
+            why:t.includes('只是架着')&&t.includes('才接得上')}})()`)
   ok('N5f2c 槽满仍防御时，日志写明「防御只蓄拍不接招」',
     waitLog.said === false || waitLog.why === true, JSON.stringify(waitLog))
   ok('N5f 防御回复自身体力（回得不多，且入日志）', usedGuard === false || (guardLog.guard === true && guardLog.rec === true),
     JSON.stringify({ usedGuard, ...guardLog }))
 
   if (!(await ev(`!!document.querySelector('[data-battle-result]')`))) {
+    // 走不完时要能一眼看出是「血没在掉」还是「手数没在走」：
+    // 敌方血量、我方血量、手数、当前是谁，四样一起打出来。
     const dbg = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
       const h=document.querySelector('[data-hand]');const c=document.querySelector('[data-battle-cmd]');
-      return {hand:h?h.getAttribute('data-hand'):'',actor:c?c.getAttribute('data-actor'):null,tail:t.slice(-500)}})()`)
-    console.log('  DBG N-stall steps=' + steps + ' ' + JSON.stringify(dbg))
+      const foes=[...document.querySelectorAll('[data-foe-card]')].map(x=>{const f=x.querySelector('[data-foe-hp]');
+        const b=x.querySelector('[data-foe-body]');
+        return (b&&b.hasAttribute('data-down')?'×':'')+(f?Number(f.getAttribute('data-foe-hp')):'?')});
+      const party=[...document.querySelectorAll('[data-party-field] [data-unit]')];
+      const mine={n:party.length,down:party.filter(x=>x.hasAttribute('data-down')).length};
+      return {hand:h?h.getAttribute('data-hand'):'',actor:c?c.getAttribute('data-actor'):null,
+        foes,mine,tail:t.slice(-300)}})()`)
+    console.log('  DBG N-stall steps=' + steps + ' hand=' + handNow + ' ' + JSON.stringify(dbg))
   }
   await until(`!!document.querySelector('[data-battle-result]')`, 25000)
   const nRes = await ev(`(()=>{const b=document.querySelector('[data-battle-result]');if(!b)return null;
