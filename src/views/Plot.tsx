@@ -50,7 +50,7 @@ const LOG_KEY = 'zts-plot:v1'
 /**
  * 侧栏是否展出本段大纲。
  * 默认关：还没发生的收束摆在观测者眼前就是剧透。
- * 导演仍然照常拿到大纲（plot.ts 的【事件大纲 · 唯一事实来源】），
+ * 导演仍然照常拿到大纲（plot.ts 的【事件大纲 · 原文走向（参照系，不锁结局）】），
  * 这里只是决定要不要把它摊在界面上；想恢复成旧样子把它改回 true 即可。
  */
 const SHOW_OUTLINE = false
@@ -1076,7 +1076,7 @@ export function Plot() {
             把 SHOW_OUTLINE 改回 true 即可恢复。导演照常拿到它，见 plot.ts 的事件大纲。 */}
         {SHOW_OUTLINE ? (
           <div>
-            <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>大纲 · 唯一事实来源</div>
+            <div className="tiny muted" style={{ marginBottom: 6, color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>大纲 · 原文走向（参照系）</div>
             <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.85, margin: 0, color: 'var(--ink-mute)' }}>{focusEv.summary}</p>
           </div>
         ) : null}

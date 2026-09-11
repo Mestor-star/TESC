@@ -2154,7 +2154,7 @@ export function run(): MechReport {
        否则改 JSON 只有新装机有效，老用户永远停在装机那天的旧稿上，而界面看不出差别。 */
     const refresh: Array<[number, string[], boolean, string]> = [
       [1, [BUILTIN_IDS[0], 'user-made'], true, '旧账本 + 内置那份还在'],
-      [2, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
+      [3, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
       [1, ['user-made'], false, '用户把内置那份删了（尊重这个删除）'],
       [0, [], false, '列表是空的（没有可换的）'],
     ]
@@ -2171,8 +2171,8 @@ export function run(): MechReport {
     const entryOf = (id: string) => p0.prompts?.find((x) => x.identifier === id)
     const think = entryOf('ts-think')
     const fmt = entryOf('ts-format')
-    ok('预设：带「思考纪律」一条（思考要收得住 —— 想清楚就写，不推翻已定、不翻来覆去）',
-      !!think?.content && think.content.includes('先定后写') && think.content.includes('不推翻已定'),
+    ok('预设：带「思考纪律」一条（思考要收得住 —— 先定后写、不推翻已发生、不翻来覆去）',
+      !!think?.content && think.content.includes('先定后写') && think.content.includes('不推翻已发生'),
       think ? `字数 ${think.content.length}` : '缺 ts-think')
     ok('预设：正文格式一条里写明「人物名字：」起行（终端靠行首切角色气泡）',
       !!fmt?.content && fmt.content.includes('人物名字：') && fmt.content.includes('另起一行'),
@@ -2552,12 +2552,45 @@ export function run(): MechReport {
     }
     const full = buildDirectorSystem({ ...ev0, id: '__probe__' }, ctx)
     const at = (s: string) => full.indexOf(s)
-    const order = ['一、情节线', '二、关键台词', '三、在场的谁知道什么', '四、收束条件', '五、禁忌']
+    const order = ['一、原文情节线', '二、关键台词', '三、在场的谁知道什么', '四、原文里这一段的落点', '五、禁忌']
       .map((h) => at(h))
     const ascending = order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))
-    ok('详纲：摘到了就把五节按序摆出来（情节线 / 关键台词 / 谁知道什么 / 收束条件 / 禁忌）',
+    ok('详纲：摘到了就把五节按序摆出来（情节线 / 关键台词 / 谁知道什么 / 落点 / 禁忌）',
       full.includes('【本事件实施细则】') && ascending,
       `各节位置 ${order.join(' → ')}`)
+
+    /* ③b 大纲是**参照系、不是剧本** —— 这是全系统最容易被当成「越严越好」而写反的一处：
+       把大纲说成「唯一事实来源」「定论」「这几件事必须发生」，模型就会不管言万心叶做了什么，
+       照原著把情节推回原位 —— 玩家的行动等于白做，而表面上一切正常（文风对、人名对、
+       大纲里的每一拍都发生了）。所以两件事一起钉：松口径必须在场，「锁结局」的说法一个都不得留下。 */
+    const AGENCY = ['参照系，不锁结局', '取决于言万心叶怎么做', '走出去的那一条用 diverged 标出来']
+    const LOCKS = ['唯一事实来源', '就是定论', '必须发生']
+    const missing = AGENCY.filter((s) => !full.includes(s))
+    const locked = LOCKS.filter((s) => full.includes(s))
+    ok('详纲：大纲是参照系、不锁结局（言万心叶的行动能改结果，走出去的标 diverged）',
+      missing.length === 0, missing.length ? `缺：${missing.join('、')}` : AGENCY.join('｜'))
+    ok('详纲（对照）：提示词里不残留「大纲就是定论」那一类锁结局的说法',
+      locked.length === 0, locked.length ? `残留：${locked.join('、')}` : '无')
+
+    /* ③c 松口径还差最后一寸：**主角的意志在第一位**。
+       「参照系、不锁结局」只说清了「大纲不压他」，没说清「他压大纲」——
+       少这一条，模型会把他明确写下的打算当成一个「提案」：让在场者找理由推脱、
+       让条件不凑巧、把结果写成「他试了，但没成」。玩家写进操作栏的剧情是既成前提，
+       此后一切建立其上。两处都要有：直连提示词与内置预设的思考纪律。 */
+    const WILL = ['以言万心叶的意志为中心', '就是已经发生的事', '压过本节的一切']
+    const noWill = WILL.filter((s) => !full.includes(s))
+    ok('详纲：以主角的意志为中心（他写下的剧情是既成前提，压过大纲）',
+      noWill.length === 0, noWill.length ? `缺：${noWill.join('、')}` : WILL.join('｜'))
+    const thinkContent = (() => {
+      const p = BUILTIN_SOURCE[0].json as { prompts?: Array<{ identifier?: string; content?: string }> }
+      return p.prompts?.find((x) => x.identifier === 'ts-think')?.content ?? ''
+    })()
+    ok('预设：思考纪律一条同样写明「以主角的意志为中心」（思考时不把他的打算当提案）',
+      thinkContent.includes('以主角的意志为中心')
+      && thinkContent.includes('既成前提')
+      && thinkContent.includes('不推翻已发生')
+      && thinkContent.includes('结局归言万心叶的行动管'),
+      thinkContent ? `字数 ${thinkContent.length}` : '缺 ts-think')
 
     /* ③ 台词与「还不知道」必须原样进提示词 —— 这两样一旦被改写，写出来的人就不是原文那个 */
     const probe = EVENT_BRIEFS.__probe__
@@ -2571,7 +2604,7 @@ export function run(): MechReport {
     EVENT_BRIEFS.__probe2__ = { beats: ['只有一拍'] }
     const lean = buildDirectorSystem({ ...ev0, id: '__probe2__' }, ctx)
     ok('详纲（对照）：只给了情节线时，其余四节的标题一个都不出现（不摆空壳）',
-      lean.includes('一、情节线') && !['二、关键台词', '三、在场的谁知道什么', '四、收束条件', '五、禁忌']
+      lean.includes('一、原文情节线') && !['二、关键台词', '三、在场的谁知道什么', '四、原文里这一段的落点', '五、禁忌']
         .some((h) => lean.includes(h)),
       ['二、三、四、五 节的标题'].map((h) => `${h}${lean.includes(h) ? '有' : '无'}`).join('　'))
     delete EVENT_BRIEFS.__probe__
