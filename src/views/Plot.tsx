@@ -14,7 +14,7 @@ import { clampBudget } from '../lib/budget'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode } from '../data/types'
-import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply } from '../lib/plot'
+import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
 import {
   effectiveGrowth, listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth,
   readLevels, readStamina,
@@ -526,7 +526,7 @@ export function Plot() {
             if (!parsed.found) {
               push('warn', '未解析到事件指令', '叙述已上屏；本回合无变量自动落地，下一回会附带补发提醒。', false)
             }
-            const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim()
+            const shown = replyDisplayText(parsed, acc)
             if (shown) {
               appendMsg(evId, {
                 id: idFor(),

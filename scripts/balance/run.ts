@@ -93,7 +93,7 @@ function policyOf(s: BattleState, me: Combatant): { t: 'skill'; skillId: string;
 
 interface Tally {
   outcome: 'won' | 'lost' | 'fled' | 'stuck'
-  hands: number
+  /** 全场拍数：一拍 = 一个轮回（场上还站着的每人各出过一手，含敌方） */
   ticks: number
   actors: number
   survivors: number
@@ -156,7 +156,6 @@ function fight(m: Mission, progress: number, growth: Record<string, number>): Ta
   const done = s.phase === 'won' || s.phase === 'lost' || s.phase === 'fled'
   return {
     outcome: done && !stalled ? s.phase : 'stuck',
-    hands: s.hand,
     ticks: s.tick,
     actors: s.allies.length,
     survivors,
@@ -183,7 +182,7 @@ interface Row {
   loss: number
   flee: number
   stuck: number
-  hands: number
+  beats: number
   alive: number
   guards: number
   ult: number
@@ -261,7 +260,7 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
         loss: ts.filter((t) => t.outcome === 'lost').length / ts.length,
         flee: ts.filter((t) => t.outcome === 'fled').length / ts.length,
         stuck: ts.filter((t) => t.outcome === 'stuck').length / ts.length,
-        hands: avg(ts.map((t) => t.hands)),
+        beats: avg(ts.map((t) => t.ticks)),
         alive: avg(ts.map((t) => t.survivors / Math.max(1, t.actors))),
         guards: avg(ts.map((t) => t.guards)),
         ult: avg(ts.map((t) => t.ultFired)),
@@ -288,9 +287,9 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
     if (r.runs < 12) continue
     if (r.win < 0.45) flags.push(`危险度 ${r.stage}：胜率 ${(r.win * 100).toFixed(0)}% 偏低（低于 45%）——这一档偏难`)
     // 「没有张力」得是打得起来却没输过：一手就结束的场次归下面那条「没打起来」管
-    if (r.win > 0.97 && r.stage >= HARD_STAGE && r.hands >= 6) flags.push(`危险度 ${r.stage}：胜率 ${(r.win * 100).toFixed(0)}%、平均 ${r.hands.toFixed(0)} 拍——这一档没有张力`)
-    if (r.hands > 60) flags.push(`危险度 ${r.stage}：平均 ${r.hands.toFixed(0)} 拍，拖得太长（> 60）`)
-    if (r.hands < 3) { thin += r.runs; flags.push(`危险度 ${r.stage}：平均 ${r.hands.toFixed(1)} 拍——敌人还没出手就结束了（${r.runs} 场）`) }
+    if (r.win > 0.97 && r.stage >= HARD_STAGE && r.beats >= 6) flags.push(`危险度 ${r.stage}：胜率 ${(r.win * 100).toFixed(0)}%、平均 ${r.beats.toFixed(0)} 拍——这一档没有张力`)
+    if (r.beats > 60) flags.push(`危险度 ${r.stage}：平均 ${r.beats.toFixed(0)} 拍，拖得太长（> 60）`)
+    if (r.beats < 3) { thin += r.runs; flags.push(`危险度 ${r.stage}：平均 ${r.beats.toFixed(1)} 拍——敌人还没出手就结束了（${r.runs} 场）`) }
     if (r.guards > 8) flags.push(`危险度 ${r.stage}：平均每场 ${r.guards.toFixed(1)} 次「出不起任何技能」——体力偏紧`)
     if (r.alive < 0.25) flags.push(`危险度 ${r.stage}：平均存活 ${(r.alive * 100).toFixed(0)}%，团灭边缘`)
   }
@@ -329,7 +328,7 @@ export function report(r: BalanceReport, progress: number): string {
   for (const x of r.rows) {
     out.push(
       '  ' + String(x.stage).padStart(4) + '  ' + String(x.runs).padStart(5) + '  ' + pc(x.win) + '  ' + pc(x.loss)
-      + '  ' + pc(x.flee) + '  ' + pc(x.stuck) + '   ' + x.hands.toFixed(1).padStart(7) + '   '
+      + '  ' + pc(x.flee) + '  ' + pc(x.stuck) + '   ' + x.beats.toFixed(1).padStart(7) + '   '
       + pc(x.alive) + '    ' + x.guards.toFixed(1).padStart(6) + '   ' + x.ult.toFixed(2).padStart(6)
       + '   ' + x.name + x.title,
     )

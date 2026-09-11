@@ -206,33 +206,110 @@ export interface PlotReply {
   found: boolean
 }
 
-/** 标签行：……事件指令…… 或 指令 / directives 等（可带 —— 装饰） */
-const LABEL_RE = /^\s*(——+\s*)?(?:事件指令|指令|directives?)\s*(?:——+)?\s*$/i
+/**
+ * 标签行：……事件指令…… 或 指令 / directives 等。
+ * 装饰一律容忍 —— 模型爱写成 `**事件指令**`、`【事件指令】`、`## 指令`，
+ * 早先只认光秃秃的那一种，剩下的会连装饰一起漏进正文当旁白。
+ */
+const LABEL_RE = /^\s*[*_~#>\s]*(?:——+\s*)?(?:【\s*)?(?:事件指令|指令块|指令|directives?)(?:\s*】)?\s*(?:——+)?[*_~]*\s*$/i
 
-function firstBalancedJsonCandidate(text: string): string | null {
-  // 从最后一个 '{' 往前试探平衡括号，最多试探 6 个起点
-  const starts: number[] = []
-  for (let i = text.length - 1; i >= 0 && starts.length < 6; i--) {
-    if (text[i] === '{') starts.push(i)
-  }
-  for (const start of starts) {
-    let depth = 0
-    let inStr = false
-    let esc = false
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i]
-      if (esc) { esc = false; continue }
-      if (ch === '\\' && inStr) { esc = true; continue }
-      if (ch === '"') inStr = !inStr
-      if (inStr) continue
-      if (ch === '{') depth++
-      else if (ch === '}') {
-        depth--
-        if (depth === 0) return text.slice(start, i + 1)
-      }
+/**
+ * 「接口处的残迹」：把指令块从正文里摘走之后，紧挨着它的那一头还剩什么。
+ * 空行不算数；标签行（—— 事件指令 ——）不算数；孤零零一个围栏行（```json 或 ```）也不算数。
+ * 被输出预算截断的回执就长这样：标签行 + 半个围栏 + 半截 JSON ——
+ * 摘掉 JSON 之后，标签行和那个开着的围栏会原地留下，当旁白上屏。
+ */
+const seamNoise = (l: string) => l.trim() === '' || LABEL_RE.test(l) || /^\s*```[a-zA-Z]*\s*$/.test(l)
+
+/** 从尾部收：把贴在指令块**之前**的标签行、围栏行、空行一路摘掉 */
+function trimSeamEnd(s: string): string {
+  const lines = s.split('\n')
+  while (lines.length && seamNoise(lines[lines.length - 1])) lines.pop()
+  return lines.join('\n').trim()
+}
+
+/** 从头部收：指令块**之后**若还跟着一个孤立的收尾围栏或空行，一并摘掉 */
+function trimSeamHead(s: string): string {
+  const lines = s.split('\n')
+  while (lines.length && seamNoise(lines[0])) lines.shift()
+  return lines.join('\n').trim()
+}
+
+/** start 处必须是 '{'；返回配平的那个 '}' 的下一位，配不平返回 -1 */
+function balancedEnd(text: string, start: number): number {
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (esc) { esc = false; continue }
+    if (ch === '\\' && inStr) { esc = true; continue }
+    if (ch === '"') inStr = !inStr
+    if (inStr) continue
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return i + 1
     }
   }
+  return -1
+}
+
+/** 对象收尾之后只剩这些，就算「这一块说到这儿了」：空白、围栏残渣、markdown 装饰 */
+const TAIL_NOISE_RE = /^[\s`*_~]*$/
+
+/**
+ * 从裸文本里挑出**整块**指令，而不是它里面的一小节。
+ *
+ * 为什么不能只认「最后一个 '{'」：指令一旦带嵌套（bond / flag / battle 全是对象），
+ * 最后那个 '{' 恰好是**里层**那个 —— 拿 {"flag":{"trust":5}} 来说，从 {"trust":5}
+ * 起算照样配平、照样 JSON.parse 得动，白名单一过就成了 {}：面板报「已收到事件指令」，
+ * 可什么也没落地，正文里还留一截 {"flag": 的残骸。这就是「事件指令总是出错」的主因。
+ *
+ * 所以先按「收尾之后只剩噪声」筛一遍，再从命中的起心里取**最靠前**的那个 ——
+ * 起心越靠前，对象越大，越可能是整块指令。筛不出（模型在 JSON 后面还絮叨了两句）
+ * 再退回旧口径，至少不比以前差。
+ */
+function firstBalancedJsonCandidate(text: string): string | null {
+  const starts: number[] = []
+  // 从后往前收起点。裸指令就在文末，64 个足够覆盖正文里的零散花括号
+  for (let i = text.length - 1; i >= 0 && starts.length < 64; i--) {
+    if (text[i] === '{') starts.push(i)
+  }
+  let best: string | null = null
+  for (const start of starts) {
+    const end = balancedEnd(text, start)
+    if (end < 0) continue
+    if (!TAIL_NOISE_RE.test(text.slice(end))) continue
+    // starts 是从后往前攒的：越晚遍历到，起心越靠前 —— 最后落定的就是最外层那个
+    best = text.slice(start, end)
+  }
+  if (best !== null) return best
+  for (const start of starts) {
+    const end = balancedEnd(text, start)
+    if (end > 0) return text.slice(start, end)
+  }
   return null
+}
+
+/* 字符串原样留着；字符串外的注释删掉；} 或 ] 之前的尾逗号删掉 —— 分组 1 是字符串 */
+const JSON_NOISE_RE = /("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\/|,(\s*[}\]])/g
+
+/**
+ * 修「差一点点」的 JSON：尾逗号、`//` 注释、BOM 与零宽字符。
+ * 这几样在 JSON.parse 那里是直接抛的，抛了整块指令就丢 —— 正文照旧上屏，
+ * 玩家看到的是「叙述有了、变量没落地」，也就是「事件指令出错」。
+ * 只修格式，不猜语义：不动键名、不改字符串里的一个字。
+ */
+function repairJson(s: string): string {
+  return s
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u200b-\u200d\u2060]/g, '')
+    .replace(JSON_NOISE_RE, (_m, str: string | undefined, tail: string | undefined) => {
+      if (str !== undefined) return str
+      if (tail !== undefined) return tail
+      return ''
+    })
 }
 
 /**
@@ -247,8 +324,8 @@ export function parsePlotReply(raw: string): PlotReply {
   let segStart = -1
   let segEnd = -1
 
-  // 1) 围栏块（含语言标注 json / JSON）
-  const fenceRe = /```[ \t]*([a-zA-Z]*)[ \t]*\r?\n([\s\S]*?)```/g
+  // 1) 围栏块（含语言标注 json / JSON）—— 换行可有可无：```json{…}``` 也是一样的意思
+  const fenceRe = /```[ \t]*([a-zA-Z]*)[ \t]*\r?\n?([\s\S]*?)```/g
   let m: RegExpExecArray | null
   let lastFence: { start: number; end: number; content: string } | null = null
   while ((m = fenceRe.exec(text)) !== null) {
@@ -275,7 +352,8 @@ export function parsePlotReply(raw: string): PlotReply {
   let found = false
   if (segment !== null) {
     try {
-      const parsed: unknown = JSON.parse(segment)
+      // 修过格式再 parse：尾逗号 / 注释 / 零宽字符只让 JSON.parse 抛，不该让整块指令陪着丢
+      const parsed: unknown = JSON.parse(repairJson(segment))
       directive = sanitizeDirective(parsed)
       found = true
     } catch {
@@ -283,23 +361,26 @@ export function parsePlotReply(raw: string): PlotReply {
     }
   }
 
-  // 正文：剥掉指令区间与紧邻的标签行
+  // 正文：剥掉指令区间，并把接口处那几行残迹一并收干净
   let narrative = text
   if (segStart >= 0) {
     const before = text.slice(0, segStart)
     const after = text.slice(segEnd)
-    narrative = before.replace(/\s*$/, '') + '\n' + after.replace(/^\s*/, '')
+    narrative = [trimSeamEnd(before), trimSeamHead(after)].filter(Boolean).join('\n')
+  } else {
+    // 指令区没能认出来（裸写又没配平、或被输出预算截断），但正文里还留着指令的**界标**：
+    // 最后一条「—— 事件指令 ——」标签行，或者最后一个落单的围栏行。
+    // 界标之后就是指令的地盘 —— 一律不往正文里放。否则 {"flag": 这样的残骸会当旁白上屏。
+    // 注意要从**整篇**里找最后一条界标，不能只看文末那一串：
+    // 残骸本身既不是标签行也不是空行，只看文末的话第一行就被它挡回来了。
     const lines = narrative.split('\n')
-    // 去掉恰好承接在指令块之前的标签行（如 —— 事件指令 ——）
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (LABEL_RE.test(lines[i])) { lines.splice(i, 1); break }
-      if (lines[i].trim() === '') continue
-      break
-    }
-    narrative = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    let cut = -1
+    for (let i = lines.length - 1; i >= 0; i--) if (LABEL_RE.test(lines[i])) { cut = i; break }
+    if (cut < 0) for (let i = lines.length - 1; i >= 0; i--) if (/^\s*```/.test(lines[i])) { cut = i; break }
+    if (cut >= 0) narrative = lines.slice(0, cut).join('\n')
   }
 
-  return { narrative: narrative.trim(), directive, found }
+  return { narrative: narrative.replace(/\n{3,}/g, '\n\n').trim(), directive, found }
 }
 
 /* ============================================================
@@ -433,6 +514,21 @@ export function parseDirectorReply(raw: string): DirectorReply {
     hasVars,
     source: usedTags ? 'tags' : base.source,
   }
+}
+
+/**
+ * 一条回执里「能上屏的那部分正文」。
+ *
+ * **绝不回落到原文**。原文兜底看着稳妥，实则是最难查的一种坏法：回执如果整份就是一块指令
+ * （补发那一路正是如此 —— 提示词明说「仅输出指令本身，无需展开叙述」，模型照办），
+ * 回落到原文就是把 {"bond":[{"char":"luna","delta":2}]} 原样摊进气泡给玩家看。
+ * 效果其实落地了，可屏幕上是这么一坨，谁看都以为「事件指令出错」。
+ *
+ * 剥干净之后仍是空串，就说明这一条本来就没有正文可上屏 —— 交给调用方当「空」处理，
+ * 别替它硬凑一行字出来（凑出来的每一个字都不在设定里）。
+ */
+export function replyDisplayText(r: DirectorReply, raw: string): string {
+  return r.narrative.trim() || extractLiveDisplay(raw).trim()
 }
 
 /* ============================================================

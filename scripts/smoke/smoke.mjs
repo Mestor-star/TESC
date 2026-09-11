@@ -568,8 +568,25 @@ try {
   ok('C9b 交战成文进推演：以「交战 · 成文」分栏渲染，不混进导演叙述',
     cStory.n === 1 && cStory.cap === '交战 · 成文' && cStory.txt.includes('【战斗开始】'), JSON.stringify(cStory).slice(0, 160))
 
-  /* ============ Phase D：旧 zts-tavern:v1 线程延续（清空后仍现旧记录） ============ */
-  console.log('\n[Phase D] 短信旧线程延续（zts-tavern:v1）')
+  /* ============ Phase D：短信 —— 新线程初始没有消息 / 旧线程延续（zts-tavern:v1） ============ */
+  console.log('\n[Phase D] 短信新线程初始没有消息 / 旧线程延续（zts-tavern:v1）')
+  /* D0 先验「初始没有消息」：把会话表清空过一遍。点开一个已经遇见过的角色，
+     线程里应该是**一条都没有**，只留一句说明 —— 不替对方垫开场白。
+     顺手把主动来信的调度器按住（last 设成当下），否则它在这条断言跑之前
+     插一条进来，验的就不是「初始」了。 */
+  await ev(`(()=>{localStorage.setItem('zts-tavern:v1', JSON.stringify({}));
+    localStorage.setItem('zts-sms-auto:v1', JSON.stringify({last: Date.now(), per: {}}));return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('短信')
+  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D sms view')
+  await goto('露娜')
+  await poll(`!!document.querySelector('[data-sms-empty]')`, 15000, 'D empty thread')
+  const dEmpty = await ev(`(()=>{const e=document.querySelector('[data-sms-empty]');
+    return {n:document.querySelectorAll('[data-sms-msg]').length, txt:e?e.innerText:''}})()`)
+  ok('D0 新线程初始没有消息（一条都没有，只留一句说明，不替对方垫开场白）',
+    dEmpty.n === 0 && (dEmpty.txt || '').includes('还没有消息'), JSON.stringify(dEmpty))
+
   await ev(`localStorage.setItem('zts-tavern:v1', JSON.stringify({luna:[{id:'old::1',from:'them',text:'旧档开场白：今晚天台的风有点大，小心着凉。',time:'01:02'},{id:'old::2',from:'user',text:'布丁给你，趁热。',time:'01:03'}]}))`)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
@@ -577,7 +594,10 @@ try {
   await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D sms view')
   await goto('露娜')
   await poll(`document.body.innerText.includes('旧档开场白：今晚天台的风有点大')`, 20000, 'D legacy thread visible')
-  ok('D1 旧线程仍现（未被开场种子覆盖）', true)
+  const dOld = await ev(`(()=>({n:document.querySelectorAll('[data-sms-msg]').length,
+    empty:!!document.querySelector('[data-sms-empty]')}))()`)
+  ok('D1 旧线程仍现：两条旧记录原样读回来（没被丢弃，也不再拿开场白垫底）',
+    dOld.n === 2 && !dOld.empty, JSON.stringify(dOld))
   ok('D2 世界进度在重载后延续', (await state()).rec.length === 3, 'rec=' + (await state()).rec.length)
 
   /* ============ Phase E：词条库注入 / 标签回执 / 反剧透 / 回溯重写只动日志 / 播种幂等 ============ */

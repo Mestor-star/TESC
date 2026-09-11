@@ -17,6 +17,11 @@
   color: var(--ink-mute); font-size: 13px; line-height: 1.9;
 }
 .hint b { color: var(--ink); font-size: 15px; display: block; margin-bottom: 6px; }
+/* 线程内的空态：新线程是空的（不替对方垫开场白），得有一句话说明这不是坏了 */
+.threadEmpty {
+  padding: 28px 18px; text-align: center;
+  color: var(--ink-faint); font-size: 12.5px; line-height: 1.9;
+}
 
 /* 情境行上的小标签 */
 .scenarioTag { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-faint); }

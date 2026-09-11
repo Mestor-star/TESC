@@ -19,7 +19,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import {
-  act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, chargeOf, createBattle,
+  act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, createBattle,
   enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
 } from '../../src/lib/battle/engine'
 import { combatantOf, enemiesOf, minionOf } from '../../src/lib/battle/derive'
@@ -39,7 +39,7 @@ import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
-import { buildDirectorSystem } from '../../src/lib/plot'
+import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
 import { BEDS } from '../../src/lib/audio/music'
@@ -49,6 +49,7 @@ import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/l
 import { API_DEFAULTS } from '../../src/lib/api'
 import { BUILTIN_IDS, BUILTIN_SOURCE, needsBudgetFloor, shouldAutoStart } from '../../src/lib/builtin-presets'
 import { parseChatPreset } from '../../src/lib/schemes'
+import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
 import type { Mission } from '../../src/data/types'
@@ -1023,19 +1024,34 @@ export function run(): MechReport {
     ok('黄金狮子（对照）：不顶着形态时，同一手不会自己接上这记连携',
       plainLinks === 0, `未变身出手 → 连携 ${plainLinks} 次`)
 
-    // 期满：这里推的是**全局拍**（advance 的 tick），不是自己的回合数 ——
-    // 变身按场上过了多久算，与增益按自身出场数算不是一回事（见 SkillForm.ticks）。
+    // 期满：这里推的是**拍**，不是自己的回合数 —— 变身按场上过了多久算，
+    // 与增益按自身出场数算不是一回事（见 SkillForm.ticks）。
+    //
+    // 一拍 = 一个轮回：场上还站着的每人各出一手，**敌方也算**（见 engine 的 endBeat）。
+    // 所以不能像早先那样把敌方按死在 -1e6 再推 advance —— 那样的出手配额永远差着敌方
+    // 那几手，拍子根本收不了，变身长度也就一直不往下走。这里让露娜把配额走满：
+    // 她一律「防御」，既不出手打人（靶子够硬，也不想在这一段顺手把敌人清了），
+    // 也不碰他自己那份出场数。
+    const luna = find(s, 'luna')!
+    /** 走满这一拍的出手配额；返回 tick 是否真的往前走了一拍 */
+    const closeBeat = (): boolean => {
+      const t0 = s.tick
+      let guard = 0
+      while (s.tick === t0 && guard++ < 24) drive(s, luna, { t: 'guard' })
+      return s.tick > t0
+    }
     let pushed = 0
     for (let i = 0; i < 12 && me.morph; i++) {
-      for (const c of [...s.allies, ...s.enemies]) c.bar = c.side === 'enemy' ? -1e6 : 0
-      s.phase = 'select'
-      take(() => advance(s))
+      // 解体的那一笔是收拍时写进日志的（endBeat 里），所以这一段也要照收不误
+      const n = s.log.length
+      if (!closeBeat()) break
+      seen.push(...s.log.slice(n).map((l) => l.skillId ?? l.skill ?? ''))
       pushed += 1
     }
     ok('黄金狮子：期满自己变回来（形态解除，五轴与技能表原样还回去）',
       !me.morph && me.axes.破坏力 === before.axes.破坏力
       && me.skills.map((k) => k.name).join('／') === before.skills.join('／'),
-      me.morph ? `推了 ${pushed} 次仍未解除，余 ${me.morph.ticks} 拍` : `推 ${pushed} 次后还原，破坏力回到 ${me.axes.破坏力}`)
+      me.morph ? `推了 ${pushed} 拍仍未解除，余 ${me.morph.ticks} 拍` : `推 ${pushed} 拍后还原，破坏力回到 ${me.axes.破坏力}`)
     ok('黄金狮子：解除时在日志里留了一笔',
       seen.includes('form-off'), seen.filter((x) => x.startsWith('form-')).join('／') || '（没记）')
 
@@ -1070,13 +1086,22 @@ export function run(): MechReport {
       !!b && b.rt === TUNING.buffRoundsCap,
       `atk.rt=${b?.rt}（表上 ${TUNING.buffRoundsCap}）t=${b?.t}`)
 
-    // 一拍一拍地推（把条压到「再充一次就满」，advance 恰好只会 tick 一拍）。
-    // 全程不让她出手 —— 于是「自身出场」那条时限一动不动，散掉只能是回合闸干的。
+    /* 一拍一拍地推。这里让**梅菲莎代劳**把出手配额走满，把亚纳托利亚整个晾在一边：
+       一拍只有在场上每人（含敌方）都出过一手时才收（见 engine 的 endBeat），
+       所以让谁推不出拍子来是有讲究的 —— 让她推，亚纳托利亚就一次手都没出，
+       「自身出场次数」那条时限一动不动，散掉只可能是回合闸干的。 */
+    const other = find(s, 'mefisa')!
     const oneTick = () => {
-      for (const c of s.allies) c.bar = TUNING.barMax - chargeOf(c)
-      for (const f of s.enemies) f.bar = -1e6
-      s.phase = 'select'
-      advance(s)
+      const t0 = s.tick
+      let guard = 0
+      while (s.tick === t0 && guard++ < 24) {
+        for (const f of s.enemies) f.bar = -1e6
+        other.sp = 999
+        s.actor = other.id
+        s.phase = 'select'
+        // 「防御」：占掉一手的配额，却不出手打人，也不动她自己以外的任何人。
+        act(s, { t: 'guard' })
+      }
     }
     let ticks = 0
     while (buffOf(her, 'atk') > 0 && ticks < 20) { oneTick(); ticks += 1 }
@@ -2137,6 +2162,229 @@ export function run(): MechReport {
       + `${narCases.length} 种不认的留旁白`)
   } catch (e) {
     fail.push('台词契约段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 19) 梅芙引导：作战屏那一段 ----------
+     为什么单开一段、绑在界面上而不是塞进「任务简报」的模块讲解：
+     羁绊、编队、连携这三样在任务板上一个字都看不见，全在作战屏上。
+     站在简报板前讲共鸣槽，玩家没处对；等切过去，那一屏还是生的。
+
+     这里钉三件事：
+       ① 该讲的时候讲（第一次进战场），不该讲的时候不讲（不在场上）；
+       ② 次序——作战基础排在 boss 之前，倒过来讲等于让人听天书；
+       ③ 每一步的**锚点真的存在**。锚点写错不会报错，只会让气泡落到屏幕正中，
+          讲的内容跟屏幕上哪一块都对不上 —— 这是这一整套引导最容易烂掉的地方，
+          所以拿源码逐条核。 */
+  try {
+    /* guide.ts 的状态落在 localStorage 上，Node 里没有这一号。
+       它只在函数体里被读（模块顶层不碰），所以在这里补一块最小的就来得及。 */
+    const store = new Map<string, string>()
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => { store.set(k, v) },
+        removeItem: (k: string) => { store.delete(k) },
+        clear: () => { store.clear() },
+      },
+    })
+
+    const BATTLE_ID = 'battle-basics'
+    const BOSS_ID = 'boss-ult'
+    const battle = TOURS.find((t) => t.id === BATTLE_ID)
+    const boss = TOURS.find((t) => t.id === BOSS_ID)
+    ok('梅芙引导：作战屏单有一段（讲行动条、指令、编队、羁绊、连携），且绑在界面上而非模块上',
+      !!battle && battle.field === 'battle' && !battle.view,
+      battle ? `${battle.steps.length} 步 · field=${battle.field}` : '（找不到这一段）')
+
+    /** 教程讲到「模块都讲完了、作战基础还没讲」的那一刻 */
+    const upToBattle = () => {
+      store.clear()
+      markDone('boot')
+      for (const m of TOURS.filter((t) => t.id.startsWith('tour-'))) markDone(m.id)
+    }
+
+    upToBattle()
+    const a1 = nextTour('missions', {}, true, false)
+    ok('梅芙引导：第一次进作战屏，讲的是作战基础（这时模块已讲完，没别的可讲）',
+      a1?.id === BATTLE_ID, a1?.id ?? '（没讲）')
+    const a2 = nextTour('missions', {}, false, false)
+    ok('梅芙引导（对照）：不在作战屏上时，这一段不出现 —— 它是绑界面的，不是讲模块的',
+      a2 === null, a2?.id ?? '（没讲）')
+
+    /* 次序：boss 也在场时，先讲这一屏本身。
+       反过来的话，boss 那一段说的「打断咏唱」「槽满接招」在玩家眼里没有落脚点。 */
+    upToBattle()
+    const a3 = nextTour('missions', {}, true, true)
+    ok('梅芙引导：boss 也在场时，作战基础仍然排在前面（先认屏，再挨 boss）',
+      a3?.id === BATTLE_ID, a3?.id ?? '（没讲）')
+    markDone(BATTLE_ID)
+    const a4 = nextTour('missions', {}, true, true)
+    ok('梅芙引导：作战基础讲完、场上又是 boss —— 紧接着讲这一场怎么打',
+      a4?.id === BOSS_ID, a4?.id ?? '（没讲）')
+
+    /* 跳过教程管得住作战基础（那是玩家明说的「别再讲了」），管不住 boss（那一场不解释是要死人的）。 */
+    upToBattle()
+    skipTutorial()
+    const a5 = nextTour('missions', {}, true, false)
+    ok('梅芙引导：按过「跳过教程」之后，作战基础不再出现（它与模块讲解在同一条线上）',
+      a5 === null, a5?.id ?? '（没讲）')
+    const a6 = nextTour('missions', {}, true, true)
+    ok('梅芙引导（对照）：唯独 boss 那一段，跳过教程也照讲 —— 打到那一场时跳过等于摸黑挨打',
+      a6?.id === BOSS_ID, a6?.id ?? '（没讲）')
+    ok('梅芙引导：气泡上的「跳过教程」按钮也照这条线给 —— 作战基础给，boss 不给',
+      battle?.tutorial === true && boss?.tutorial !== true,
+      `作战基础 tutorial=${battle?.tutorial}　boss tutorial=${boss?.tutorial}`)
+
+    /* 锚点核账：`at` 里点名的每一个 data-* 属性，都得在作战屏源码里真的挂着。
+       缺一个，那一步就只剩一个落在屏幕中央的气泡 —— 讲了，但对不上任何一块。 */
+    const battleSrc = readFileSync('src/views/Battle.tsx', 'utf8')
+    const attrsOf = (sel: string | undefined) => (sel ?? '').match(/data-[a-z-]+/g) ?? []
+    const fieldTours = [battle, boss].filter((t): t is (typeof TOURS)[number] => !!t)
+    const missing: string[] = []
+    for (const t of fieldTours) {
+      for (const st of t.steps) {
+        for (const a of attrsOf(st.at)) if (!battleSrc.includes(a)) missing.push(`${t.id} → ${a}`)
+      }
+    }
+    const steps = fieldTours.reduce((n, t) => n + t.steps.length, 0)
+    ok('梅芙引导：作战屏那两段每一步的锚点，在 Battle.tsx 里都真的挂着',
+      missing.length === 0,
+      missing.length ? [...new Set(missing)].join('、') : `${steps} 步逐条查过`)
+    ok('梅芙引导（对照）：同一条判据认得出一根不存在的锚点',
+      attrsOf('[data-guide-nope]').some((a) => !battleSrc.includes(a)),
+      '构造的 data-guide-nope 在作战屏上找不到')
+
+    /* 有条件才出现的锚点：写它就必须再留一个常驻候选。
+       羁绊行只在队里凑得出羁绊时才摆；咏唱那一格断掉就没了。
+       候选写对了（querySelector 认逗号列表），这一步落到旁边那块常驻的格子上；
+       不写，气泡就飘到屏幕正中、铺一层黑，指着空气讲羁绊 —— 比不讲还糟。 */
+    const COND = ['data-synergy-row', 'data-link-gauge', 'data-link-hint', 'data-link-full', 'data-chant']
+    const needFallback = (sel: string) => {
+      const all = attrsOf(sel)
+      if (!all.some((a) => COND.includes(a))) return false
+      return !all.some((a) => !COND.includes(a))
+    }
+    const noFallback = fieldTours.flatMap((t) => t.steps
+      .map((st, i) => ({ t: t.id, i, sel: st.at ?? '' }))
+      .filter((x) => needFallback(x.sel))
+      .map((x) => `${x.t} 第 ${x.i + 1} 步（${x.sel}）`))
+    const condSteps = fieldTours.flatMap((t) => t.steps).filter((st) => attrsOf(st.at).some((a) => COND.includes(a)))
+    ok('梅芙引导：挂在「有条件才出现」的锚点上的步骤，都另留了一个常驻候选',
+      noFallback.length === 0,
+      noFallback.length ? noFallback.join('、') : `${condSteps.length} 步都留了候选`)
+    ok('梅芙引导（对照）：同一条判据认得出「只挂了羁绊行、没留候选」的写法',
+      needFallback('[data-link-gauge]') && !needFallback('[data-link-gauge], [data-hand]'),
+      '构造的裸 [data-link-gauge] 被判定为缺候选')
+
+    // 每一步都得有话说：空标题 / 空条目 = 玩家点了一下「下一步」，什么也没发生
+    const hollow = fieldTours.flatMap((t) => t.steps
+      .map((st, i) => ({ t: t.id, i, empty: !st.title.trim() || st.lines.length === 0 || st.lines.some((l) => !l.trim()) }))
+      .filter((x) => x.empty)
+      .map((x) => `${x.t} 第 ${x.i + 1} 步`))
+    ok('梅芙引导：作战屏那两段没有空步骤（标题与条目都得有字）',
+      hollow.length === 0, hollow.length ? hollow.join('、') : `${steps} 步都查过`)
+
+    info.push(`作战屏引导：作战基础 ${battle?.steps.length ?? 0} 步 + boss ${boss?.steps.length ?? 0} 步；`
+      + `次序 作战基础 → boss；跳过教程管得住前者、管不住后者`)
+  } catch (e) {
+    fail.push('梅芙引导段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 20) 事件指令的解析 ----------
+     这一段的每一条，都是「模型真的会那么写」的写法。
+     事件的坏法不在报错，而在**不报错**：指令块认出了一半、面板报「已收到」，
+     可变量一条没落地，正文里还留一截 JSON 残骸。所以下面每一条都咬住两件事 ——
+     落地的字段，和上屏的正文。 */
+  {
+    const P = (raw: string) => parsePlotReply(raw)
+    const D = (raw: string) => JSON.stringify(P(raw).directive)
+
+    /* 裸写（没有围栏）的指令只要带嵌套，旧口径就会从**里层**那个 '{' 起算：
+       {"flag":{"trust":5}} 会解析成 {"trust":5}，白名单一过成了 {} ——
+       面板报成功、变量没落地、正文里留下 {"flag": 的残骸。这是「总是出错」的主因。 */
+    const nested = P('雪落了。\n\n{"bond":[{"char":"luna","delta":2}],"flag":{"trust":5},"digest":"收束。"}')
+    ok('事件指令：裸写的嵌套指令整块落地（不是只捡了里层那一小节）',
+      nested.found && nested.directive?.bond?.[0]?.delta === 2
+      && nested.directive?.flag?.trust === 5 && nested.directive?.digest === '收束。',
+      `directive=${D('雪落了。\n\n{"bond":[{"char":"luna","delta":2}],"flag":{"trust":5},"digest":"收束。"}')}`)
+    ok('事件指令（对照）：同一份裸写指令，正文里不留 JSON 残骸',
+      nested.narrative === '雪落了。', JSON.stringify(nested.narrative))
+
+    const onlyFlag = P('雪落了。\n{"flag":{"trust":5}}')
+    ok('事件指令：裸写且只含一个嵌套对象时，flag 照样落地（旧口径在这一条上必然丢）',
+      onlyFlag.found && onlyFlag.directive?.flag?.trust === 5 && onlyFlag.narrative === '雪落了。',
+      `directive=${D('雪落了。\n{"flag":{"trust":5}}')}　正文=${JSON.stringify(onlyFlag.narrative)}`)
+
+    /* 格式上的小毛病：都不该让整块指令陪着丢 */
+    const comma = P('雪落了。\n```json\n{"flag":{"a":1,},}\n```')
+    ok('事件指令：尾逗号修得动（JSON.parse 直接抛，抛了指令就整块没了）',
+      comma.found && comma.directive?.flag?.a === 1, `directive=${D('雪落了。\n```json\n{"flag":{"a":1,},}\n```')}`)
+    const note = P('雪落了。\n```json\n{\n  // 本回合变化\n  "flag": {"a": 1}\n}\n```')
+    ok('事件指令：字符串外的 // 注释修得动',
+      note.found && note.directive?.flag?.a === 1, `directive=${D('雪落了。\n```json\n{\n  // 本回合变化\n  "flag": {"a": 1}\n}\n```')}`)
+    const keep = P('雪落了。\n```json\n{"digest":"他说「a, }」就没了。"}\n```')
+    ok('事件指令（对照）：修格式不动字符串里的内容 —— 引号内的逗号与括号原样留着',
+      keep.directive?.digest === '他说「a, }」就没了。', JSON.stringify(keep.directive))
+
+    const upper = P('雪落了。\n```JSON\n{"digest":"收束。"}\n```')
+    ok('事件指令：```JSON 大写标注照样认',
+      upper.found && upper.directive?.digest === '收束。', `directive=${D('雪落了。\n```JSON\n{"digest":"收束。"}\n```')}`)
+
+    /* 被输出预算截断：围栏开着没闭合，指令本身还算完整 —— 这是常事，不该丢 */
+    const cut = P('雪落了。\n\n—— 事件指令 ——\n```json\n{"digest":"收束。"}')
+    ok('事件指令：围栏没闭合（回执被预算截断）时指令仍落地，正文不留标签行与半截围栏',
+      cut.found && cut.directive?.digest === '收束。' && cut.narrative === '雪落了。',
+      `directive=${D('雪落了。\n\n—— 事件指令 ——\n```json\n{"digest":"收束。"}')}　正文=${JSON.stringify(cut.narrative)}`)
+
+    /* 指令区整个认不出来时，标签行之后照样不许进正文 */
+    const wreck = P('雪落了。\n\n—— 事件指令 ——\n{"flag": ')
+    ok('事件指令（对照）：指令区认不出时，标签行之后一律不往正文放（残骸不上屏）',
+      !wreck.narrative.includes('flag') && !wreck.narrative.includes('事件指令') && wreck.narrative === '雪落了。',
+      JSON.stringify(wreck.narrative))
+
+    const deco = P('雪落了。\n\n**事件指令**\n```json\n{"digest":"收束。"}\n```')
+    ok('事件指令：标签行带 markdown 装饰也认得出来（不至于连装饰一起当旁白上屏）',
+      deco.narrative === '雪落了。' && deco.directive?.digest === '收束。', JSON.stringify(deco.narrative))
+
+    /* 取「最后一个」围栏：正文里自带示例 JSON 时，别把示例当成指令 */
+    const two = P('示例：\n```json\n{"foo":1}\n```\n正文接着写。\n\n```json\n{"digest":"收束。"}\n```')
+    ok('事件指令：正文自带示例 JSON 时，认的是最后那一块（示例不落地、也留着当正文）',
+      two.directive?.digest === '收束。' && two.narrative.includes('{"foo":1}'),
+      `directive=${D('示例：\n```json\n{"foo":1}\n```\n正文接着写。\n\n```json\n{"digest":"收束。"}\n```')}`)
+
+    const brace = P('他想起那句「{约定}」——雪落在肩上。\n\n```json\n{"digest":"收束。"}\n```')
+    ok('事件指令（对照）：正文里的花括号不误伤（剥的是指令，不是正文）',
+      brace.narrative.includes('{约定}') && brace.directive?.digest === '收束。', JSON.stringify(brace.narrative))
+
+    /* 标签路径（<vars>）与 JSON 路径汇合到同一条白名单：别修了这边坏了那边 */
+    const tags = parseDirectorReply('雪落了。\n<vars>{"flag":{"a":1}}</vars>')
+    ok('事件指令：<vars> 标签路径仍走同一条白名单（修 JSON 路径没把这条路带塌）',
+      tags.found && tags.directive?.flag?.a === 1 && tags.source === 'tags',
+      `${tags.source} directive=${JSON.stringify(tags.directive)}`)
+
+    /* 白名单兜底：修格式不等于放行未知字段 */
+    const junk = P('雪落了。\n```json\n{"digest":"收束。","__proto__":{"x":1},"nope":1}\n```')
+    const keys = Object.keys(junk.directive ?? {})
+    ok('事件指令：修格式不放行未知字段（净化那一步照旧只留认识的）',
+      keys.every((k) => ['met', 'bond', 'ends', 'flag', 'diverged', 'eventDone', 'digest', 'battle'].includes(k)),
+      keys.join('、'))
+
+    /* 回执整份就是一块指令（补发那一路提示词明说「仅输出指令本身」）：
+       上屏文本必须是空串，绝不能回落到原文 —— 回落就是把 {"bond":…} 摊进气泡。 */
+    const only = '```json\n{"bond":[{"char":"luna","delta":2}]}\n```'
+    const onlyRaw = parseDirectorReply(only)
+    ok('事件指令：回执整份只有指令时，上屏文本为空（绝不回落到原文把 JSON 摊进气泡）',
+      replyDisplayText(onlyRaw, only) === '' && replyDisplayText(onlyRaw, only) !== only,
+      `上屏=${JSON.stringify(replyDisplayText(onlyRaw, only))}`)
+    const withProse = parseDirectorReply('雪落了。\n```json\n{"digest":"收束。"}\n```')
+    ok('事件指令（对照）：有正文时照常上屏正文，指令只落地不上屏',
+      replyDisplayText(withProse, '雪落了。\n```json\n{"digest":"收束。"}\n```') === '雪落了。',
+      JSON.stringify(replyDisplayText(withProse, '雪落了。\n```json\n{"digest":"收束。"}\n```')))
+
+    info.push('事件指令：裸写/围栏/截断/尾逗号/注释/装饰标签行/示例块 七种写法逐一验过，'
+      + '落地字段与上屏正文两样都咬住；只有指令没有正文时不上屏原文')
   }
 
   return { pass, fail, info }

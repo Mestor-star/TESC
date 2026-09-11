@@ -251,6 +251,7 @@ export function createBattle(opts: CreateOpts): BattleState {
     nextBoss: namedBossOf(mission.bossId)?.next,
     rivalCd: 0,
     tick: 0,
+    beatActs: 0,
     hand: 0,
     actor: null,
     again: null,
@@ -1011,6 +1012,117 @@ function beginAction(s: BattleState, c: Combatant) {
     return b.t > 0
   })
   s.hand += 1
+  /* 一个轮回 = 场上还站着的每个人各出过一手。
+     按「出满这么多手」判、而不记谁出过：速度差摆在那儿，快的这一轮里会出手两回，
+     记账去重的话配额就永远凑不齐 —— 那不是玩家眼里的一个回合，那是卡住了。 */
+  s.beatActs += 1
+  if (s.beatActs >= allOf(s).filter((x) => !x.down && x.gone <= 0).length) endBeat(s)
+}
+
+/**
+ * 收一拍：一个轮回走完时结一次账。
+ *
+ * 这一摞原先挂在**充能脉冲**上（`advance` 里没人满格时的空转）：
+ * 变身时长、停滞、流血、增益的按拍时限，都按脉冲数走。脉冲不是拍 ——
+ * 双方速度差多大，一轮里就空转几格，同样写「3 拍」，快队与慢队差出好几倍。
+ * 现在统一按拍算：一拍就是玩家眼里的一轮。
+ */
+function endBeat(s: BattleState) {
+  s.tick += 1
+  s.beatActs = 0
+  for (const c of allOf(s)) {
+    // 合体蛰伏者：不充能、不回血，只数着拍子等归位
+    if (c.gone > 0) {
+      c.gone -= 1
+      if (c.gone <= 0) {
+        c.bar = 0
+        pushLog(s, {
+          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+          skillId: 'merge-back', skill: '合体 · 归位', kind: '指令', fx: 'heal',
+          note: `${c.name} 归位 —— 重新回到战列。`,
+        })
+      }
+      continue
+    }
+    if (c.down) continue
+    /* 停滞按拍数往下走 —— 被冻住的人不行动，也就轮不到 beginAction 给他减层，
+       所以只能在这儿数。数到零就解开，行动条从他停下的地方接着涨。 */
+    const st = c.buffs.find((b) => b.k === 'stasis')
+    if (st) {
+      st.t -= 1
+      if (st.t <= 0) {
+        c.buffs = c.buffs.filter((b) => b !== st)
+        pushLog(s, {
+          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+          skillId: 'stasis-off', skill: '停滞 · 解除', kind: '指令', fx: 'heal',
+          targetId: c.id, target: c.name,
+          note: `${c.name} 动了 —— 停滞解开。`,
+        })
+      }
+    }
+    /* 流血：每一拍都掉，掉到失能为止。
+       它不占出手、不看减伤 —— 治不了就得一路流下去，这是这一条的用意。 */
+    const bl = bleedOf(c)
+    if (bl > 0) {
+      const dmg = Math.max(1, Math.round(c.hpMax * bl))
+      c.hp = Math.max(0, c.hp - dmg)
+      pushLog(s, {
+        round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+        skillId: 'bleed', skill: '流血', kind: '指令', fx: 'slash',
+        targetId: c.id, target: c.name, dmg,
+        note: `${c.name} 在流血 —— 这一拍又少 ${dmg}。`,
+      })
+      if (c.hp <= 0 && !c.down) {
+        c.down = true
+        c.bar = 0
+        pushLog(s, {
+          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+          skillId: 'down', skill: '失能', kind: '指令', fx: 'noise',
+          targetId: c.id, target: c.name, down: true,
+          note: `${c.name} 流尽了 —— 失去战力。`,
+        })
+      }
+    }
+    /* 增益的第二条时限：按拍数扣，扣完即散（见 TUNING.buffRoundsCap）。
+       与 beginAction 里那份不冲突 —— 那份按「自身出场次数」扣。两条并行、谁先到零算谁，
+       于是「这条增益还能挂多久」有一个按场上节拍算得出来的答案。
+       放在停滞那一段之后：停滞有它自己的解除日志（stasis-off），
+       别让这里抢先把人解冻，那样日志就漏了一笔。 */
+    c.buffs = c.buffs.filter((b) => {
+      if (b.rt == null) return true
+      b.rt -= 1
+      return b.rt > 0
+    })
+    // 变身的拍子：数满即解体，把借来的能力还回去，冷却从这一刻才起算
+    if (c.morph) {
+      /* 先长后数：这一拍他还顶着这副面目，那这一拍该涨的就该算上。
+         涨的是技能表里那份拷贝的倍率，随解体一起还回去，不落到本体头上。 */
+      if (c.morph.kind === 'form' && c.morph.ramp) {
+        const b = c.skills.find((x) => x.kind === '普攻')
+        if (b) b.power = Math.round((b.power + c.morph.ramp) * 100) / 100
+      }
+      c.morph.ticks -= 1
+      if (c.morph.ticks <= 0) {
+        const m = c.morph
+        c.axes = { ...m.base.axes }
+        c.spd = m.base.spd
+        c.skills = m.base.skills
+        c.cds[m.skillId] = m.cd
+        c.buffs.push({ k: 'atk', v: -0.12, t: m.cd, rt: TUNING.buffRoundsCap })
+        c.buffs.push({ k: 'slow', v: 0.12, t: m.cd, rt: TUNING.buffRoundsCap })
+        pushLog(s, {
+          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+          skillId: m.kind === 'form' ? 'form-off' : 'morph-off',
+          skill: m.kind === 'form' ? '变身 · 解体' : '变形 · 解除',
+          kind: '指令', fx: 'seal',
+          note: m.kind === 'form'
+            ? `「${m.name}」散开了 —— ${c.name} 变回自己，接下来 ${m.cd} 拍发虚。`
+            : `${c.name} 变回自己 —— 借来的东西还了回去，接下来 ${m.cd} 拍手感发虚。`,
+        })
+        c.morph = null
+      }
+    }
+  }
 }
 
 function readyList(s: BattleState): Combatant[] {
@@ -1030,70 +1142,14 @@ export function advance(s: BattleState): BattleState {
   while (s.phase === 'select' && guard++ < 8000) {
     const ready = readyList(s)
     if (ready.length === 0) {
-      s.tick += 1
-      for (const c of allOf(s)) {
-        // 合体蛰伏者：不充能、不回血，只数着拍子等归位
-        if (c.gone > 0) {
-          c.gone -= 1
-          if (c.gone <= 0) {
-            c.bar = 0
-            pushLog(s, {
-              round: s.hand, actorId: c.id, actor: c.name, side: c.side,
-              skillId: 'merge-back', skill: '合体 · 归位', kind: '指令', fx: 'heal',
-              note: `${c.name} 归位 —— 重新回到战列。`,
-            })
-          }
-          continue
-        }
-        if (c.down) continue
-        /* 停滞按拍数往下走 —— 被冻住的人不行动，也就轮不到 beginAction 给他减层，
-           所以只能在这儿数。数到零就解开，行动条从他停下的地方接着涨。 */
-        const st = c.buffs.find((b) => b.k === 'stasis')
-        if (st) {
-          st.t -= 1
-          if (st.t <= 0) {
-            c.buffs = c.buffs.filter((b) => b !== st)
-            pushLog(s, {
-              round: s.hand, actorId: c.id, actor: c.name, side: c.side,
-              skillId: 'stasis-off', skill: '停滞 · 解除', kind: '指令', fx: 'heal',
-              targetId: c.id, target: c.name,
-              note: `${c.name} 动了 —— 停滞解开。`,
-            })
-          }
-        }
-        /* 流血：每一拍都掉，掉到失能为止。
-           它不占出手、不看减伤 —— 治不了就得一路流下去，这是这一条的用意。 */
-        const bl = bleedOf(c)
-        if (bl > 0) {
-          const dmg = Math.max(1, Math.round(c.hpMax * bl))
-          c.hp = Math.max(0, c.hp - dmg)
-          pushLog(s, {
-            round: s.hand, actorId: c.id, actor: c.name, side: c.side,
-            skillId: 'bleed', skill: '流血', kind: '指令', fx: 'slash',
-            targetId: c.id, target: c.name, dmg,
-            note: `${c.name} 在流血 —— 这一拍又少 ${dmg}。`,
-          })
-          if (c.hp <= 0 && !c.down) {
-            c.down = true
-            c.bar = 0
-            pushLog(s, {
-              round: s.hand, actorId: c.id, actor: c.name, side: c.side,
-              skillId: 'down', skill: '失能', kind: '指令', fx: 'noise',
-              targetId: c.id, target: c.name, down: true,
-              note: `${c.name} 流尽了 —— 失去战力。`,
-            })
-          }
-        }
-        /* 增益的第二条时限：按拍数扣，扣完即散（见 TUNING.buffRoundsCap）。
-           与 beginAction 里那份不冲突 —— 那份按「自身出场次数」扣。两条并行、谁先到零算谁，
-           于是「这条增益还能挂多久」有一个按场上节拍算得出来的答案。
-           放在停滞那一段之后：停滞有它自己的解除日志（stasis-off），
-           别让这里抢先把人解冻，那样日志就漏了一笔。 */
-        c.buffs = c.buffs.filter((b) => {
-          if (b.rt == null) return true
-          b.rt -= 1
-          return b.rt > 0
-        })
+      /* 没人满格：只空转充能。
+         拍子的结账不在这儿 —— 见 endBeat()，那摞原先挂在这段空转上的东西
+         已经按「一个轮回」结算了。 */
+      const live = allOf(s).filter((c) => !c.down && c.gone <= 0)
+      /* 兜底：场上活着的人全被冻住时，谁都没法出手，配额永远填不满 ——
+         那这一拍就自己往下走。少了这一条，停滞会卡在「还没数到零」上永远解不开。 */
+      if (live.length > 0 && live.every((c) => stasisOf(c) > 0)) endBeat(s)
+      for (const c of live) {
         c.bar = Math.min(TUNING.barMax * 2, c.bar + chargeOf(c))
         const p = c.passive
         if (p?.regen && c.hp < c.hpMax) {
@@ -1101,35 +1157,6 @@ export function advance(s: BattleState): BattleState {
         }
         if (p?.spRegen && c.sp < c.spMax) {
           c.sp = Math.min(c.spMax, c.sp + p.spRegen)
-        }
-        // 变身的拍子：数满即解体，把借来的能力还回去，冷却从这一刻才起算
-        if (c.morph) {
-          /* 先长后数：这一拍他还顶着这副面目，那这一拍该涨的就该算上。
-             涨的是技能表里那份拷贝的倍率，随解体一起还回去，不落到本体头上。 */
-          if (c.morph.kind === 'form' && c.morph.ramp) {
-            const b = c.skills.find((x) => x.kind === '普攻')
-            if (b) b.power = Math.round((b.power + c.morph.ramp) * 100) / 100
-          }
-          c.morph.ticks -= 1
-          if (c.morph.ticks <= 0) {
-            const m = c.morph
-            c.axes = { ...m.base.axes }
-            c.spd = m.base.spd
-            c.skills = m.base.skills
-            c.cds[m.skillId] = m.cd
-            c.buffs.push({ k: 'atk', v: -0.12, t: m.cd, rt: TUNING.buffRoundsCap })
-            c.buffs.push({ k: 'slow', v: 0.12, t: m.cd, rt: TUNING.buffRoundsCap })
-            pushLog(s, {
-              round: s.hand, actorId: c.id, actor: c.name, side: c.side,
-              skillId: m.kind === 'form' ? 'form-off' : 'morph-off',
-              skill: m.kind === 'form' ? '变身 · 解体' : '变形 · 解除',
-              kind: '指令', fx: 'seal',
-              note: m.kind === 'form'
-                ? `「${m.name}」散开了 —— ${c.name} 变回自己，接下来 ${m.cd} 拍发虚。`
-                : `${c.name} 变回自己 —— 借来的东西还了回去，接下来 ${m.cd} 拍手感发虚。`,
-            })
-            c.morph = null
-          }
         }
       }
       continue

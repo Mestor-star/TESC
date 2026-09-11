@@ -9,8 +9,8 @@
    单聊用角色 id，群聊用 `g:<uuid>`（线程名册另存，见 lib/smsthreads.ts）。
    ============================================================ */
 
-import { TAVERN_PERSONAS, charOf, profileLinesOf, voiceLinesOf } from '../data/personas'
-import type { CharId, ChatMsg } from '../data/types'
+import { charOf, profileLinesOf, voiceLinesOf } from '../data/personas'
+import type { ChatMsg } from '../data/types'
 import { clock } from './format'
 import { extractLiveDisplay } from './plot'
 
@@ -273,10 +273,9 @@ export function parseGroupReply(raw: string, charIds: string[]): GroupLine[] {
   return out
 }
 
-/** 线程的开场白（单聊取 persona 的 greeting；群聊无开场，由首条发言起头） */
-export function greetingOf(charId: string): string {
-  return TAVERN_PERSONAS.find((p) => p.charId === charId as CharId)?.greeting ?? '……你来了。'
-}
+/* 这里原先有一个 greetingOf()：新线程落一句 persona 的 greeting 垫底。
+   现在线程**初始没有消息** —— 谁先开口是玩家自己的事。
+   persona 上的 greeting 留着（撰写风格样本、也是那几句来讯的出处），只是不再自动发出去。 */
 
 /** 单聊线程 id 即角色 id；群聊线程以 g: 起头 */
 export const GROUP_PREFIX = 'g:'

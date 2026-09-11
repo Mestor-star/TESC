@@ -12,7 +12,7 @@ import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
-import { extractLiveDisplay, parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
+import { extractLiveDisplay, parseDirectorReply, replyDisplayText, smsBondRule, smsDirective } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
 import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/preset'
@@ -21,7 +21,7 @@ import type { AiLogMeta } from '../lib/ailog'
 import type { GroupThread } from '../lib/smsthreads'
 import { listGroups, makeGroup, nameOf, storeGroups } from '../lib/smsthreads'
 import {
-  greetingOf, groupSystemPrompt, isGroupThread, loadSmsLogs, markRead, newMsgId,
+  groupSystemPrompt, isGroupThread, loadSmsLogs, markRead, newMsgId,
   parseGroupReply, smsLogVersion, smsTurns, subscribeSmsLog, subscribeUnread, systemPrompt,
   totalUnread, unreadOf, writeSmsLogs,
 } from '../lib/sms'
@@ -103,7 +103,9 @@ export function Tavern() {
 
   const metIds = useMemo(() => TAVERN_PERSONAS.map((p) => p.charId).filter((id) => isMet(id)), [isMet])
 
-  /** 选中某个线程（单聊 = 角色 id，群聊 = g:uuid）；单聊没有会话时落一句开场白 */
+  /** 选中某个线程（单聊 = 角色 id，群聊 = g:uuid）。
+      新线程是**空的** —— 不再替对方垫一句开场白：
+      谁先开口是玩家自己的事，上来就有一条躺着，「初始没有消息」这个前提就没了。 */
   const enter = useCallback(
     (threadId: string) => {
       if (!isGroupThread(threadId) && !isMet(threadId)) {
@@ -113,12 +115,8 @@ export function Tavern() {
       setActiveId(threadId)
       setErr(null)
       markRead(threadId)
-      if (isGroupThread(threadId)) return
-      setThread(threadId, (prev) => (prev.length ? prev : [{
-        id: idFor(threadId), from: 'them', text: greetingOf(threadId), time: clock(),
-      }]))
     },
-    [isMet, push, setThread],
+    [isMet, push],
   )
 
   // 初次渲染：若已有可聊角色，自动选第一位
@@ -275,7 +273,9 @@ export function Tavern() {
 
         // 回执正文照常上屏；JSON 或 <vars> 轻量指令经短信过滤后自动落地羁绊/标记
         const parsed = parseDirectorReply(reply)
-        const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim() || reply
+        /* 只剥、不回落到原文：回执万一整份就是一块指令（补发那一路正是如此），
+           回落到原文等于把 {"bond":…} 原样摊进气泡。没有正文就没有正文 —— 效果照旧落地。 */
+        const shown = replyDisplayText(parsed, acc)
         const sd = smsDirective(parsed.directive, charId)
         let sum = 0
         for (const b of sd.bond ?? []) {
@@ -285,6 +285,11 @@ export function Tavern() {
         const flags = Object.entries(sd.flag ?? {})
         for (const [k, v] of flags) setFlag(k, v)
         const hasFx = sum !== 0 || flags.length > 0
+        // 整份回执只有指令、没有正文：不出气泡（空气泡比一坨 JSON 更像坏了），提醒一句就走
+        if (!shown) {
+          if (hasFx) push('info', '短信效果', `${c.name} · 本回合只有指令、没有正文；效果已落地。`, false)
+          return
+        }
         const ai: ChatMsg = {
           id: idFor(charId),
           from: 'them',
@@ -411,7 +416,8 @@ ${preset.post}` : '')
           return
         }
         const parsed = parseDirectorReply(reply)
-        const shown = parsed.narrative.trim() || extractLiveDisplay(acc).trim() || reply
+        // 同上：只剥、不回落到原文。群回执整份只有指令时，拆行结果自然为空 —— 一条不发。
+        const shown = replyDisplayText(parsed, acc)
         const lines = parseGroupReply(shown, g.charIds)
 
         // 轻量指令：flag 与托付照常；羁绊只认群成员，逐个按 ±3 收
@@ -542,7 +548,7 @@ ${preset.post}` : '')
       return next
     })
     setErr(null)
-    push('info', isGroupThread(id) ? '本群已解散' : '本线程已清空', isGroupThread(id) ? '群聊记录一并清除。' : '下次点入会重新落一句开场白。', false)
+    push('info', isGroupThread(id) ? '本群已解散' : '本线程已清空', isGroupThread(id) ? '群聊记录一并清除。' : '线程回到一条消息都没有的状态。', false)
   }
 
   /** 会话页签上的未读数：后台来信也会让它立刻变 */
@@ -774,11 +780,16 @@ ${preset.post}` : '')
                 </button>
               </div>
 
-              <div className={comm.thread}>
+              <div className={comm.thread} data-sms-thread>
                 <div className={comm.dayLabel}>苍之学园 · 今日 · 角色短信</div>
+                {activeLog.length === 0 ? (
+                  <div className={css.threadEmpty} data-sms-empty>
+                    本线程还没有消息 —— 先说点什么过去，或者等对方先开口。
+                  </div>
+                ) : null}
                 {activeLog.map((m, i) => (
                   <Fragment key={m.id}>
-                    <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`}>
+                    <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`} data-sms-msg={m.from}>
                       <span className={comm.msgHead}>
                         {avatarOf(m) ? <Portrait avatarId={avatarOf(m)} size={26} round /> : null}
                         <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>

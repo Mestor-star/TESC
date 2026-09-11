@@ -162,7 +162,10 @@ export function Guide() {
   if (!tour || !step) return null
 
   const last = i >= tour.steps.length - 1
-  const tutorialPart = tour.id === 'boot' || !!tour.view
+  /* 「跳过教程」只给教程那几条 —— 绑在界面上、又不算教程的（boss 讲解）不给：
+     打到那一场的时候，跳过等于让人摸黑挨打。作战基础那一段算教程，
+     它与模块介绍在同一条线上（见 GuideTour.tutorial）。 */
+  const tutorialPart = tour.id === 'boot' || !!tour.view || tour.tutorial === true
 
   const finish = () => {
     markDone(tour.id)
