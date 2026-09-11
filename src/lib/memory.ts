@@ -230,6 +230,8 @@ export interface MemMindGroup {
   group: string
   /** 这一卷读完了没有 —— 没读完，本卷的心声一条都不回放（回放等于剧透） */
   done: boolean
+  /** 本卷读到过几条（没读完时只报这个数，正文一字不给） */
+  total: number
   rows: MemMind[]
 }
 
@@ -254,6 +256,7 @@ export function mindsOf(inp: MemInput): MemMindGroup[] {
     groups.push({
       group,
       done,
+      total: list.length,
       rows: done
         ? list.map((m) => ({ group: m.group, vol: m.vol, speaker: m.speaker, scene: m.scene, text: m.text }))
         : [],
@@ -324,6 +327,11 @@ export interface MemChronRow {
   day: string
   done: boolean
   diverged: boolean
+  /**
+   * 还没观测到（未归档、也不是正卡着的那一段）—— 这一行的内容以「未观测」占位。
+   * 行本身照列（编年不瞒着「还有多少段」），只是名字与地点一个字都不给。
+   */
+  unseen: boolean
   /** 归档时间（0 = 旧档回填，没有确切时刻） */
   ts: number
 }
@@ -334,20 +342,29 @@ export interface MemChron {
   doneCount: number
 }
 
-/** 编年：按卷列出全部段落，已归档的标出时间与分歧，没走到的照旧列着（不藏后事） */
+/**
+ * 编年：按卷列出全部段落 —— 行一条不少（「还剩多少段」不是秘密），
+ * 但**没观测到的那几行不给内容**：已归档的照实写，正卡着的那一段照实写
+ * （它与「当前事件」是同一处读数），再往后的以「未观测」占位。
+ * 这与终端其它地方一个口径：没遇见的人写「？？？」，没登记的条目翻不开。
+ */
 export function chronicleOf(inp: MemInput): MemChron[] {
   const recOf = new Map(inp.records.map((r) => [r.eventId, r]))
+  const focusId = TIMELINE.find((e) => !inp.epDone[e.id])?.id ?? null
   const out: MemChron[] = []
   for (const ev of TIMELINE) {
     const rec = recOf.get(ev.id)
+    const done = inp.epDone[ev.id] === true
+    const seen = done || ev.id === focusId
     const row: MemChronRow = {
       id: ev.id,
       seq: seqOfStrict(ev.id),
-      title: ev.title,
-      place: ev.place,
-      day: ev.day ?? '',
-      done: inp.epDone[ev.id] === true,
+      title: seen ? ev.title : '未观测',
+      place: seen ? ev.place : '——',
+      day: seen ? ev.day ?? '' : '',
+      done,
       diverged: rec?.diverged === true,
+      unseen: !seen,
       ts: rec?.ts ?? 0,
     }
     const g = out.find((x) => x.group === ev.group)

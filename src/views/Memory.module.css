@@ -1,0 +1,419 @@
+/* 情景记忆库 · 七栏
+   版式：左侧目录（吸顶）+ 右侧七段。窄屏折成一列，目录变成一行横滑。
+   这里是「重排既有的账」，所以样式一律走既有语汇：panel / chip / meter / 等宽数字。 */
+
+.layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* ————————————————— 目录 ————————————————— */
+
+.index {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.indexHead {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+.indexRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.indexRow:hover { background: var(--bg-3); border-color: var(--line-2); color: var(--ink); }
+
+.indexNo {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.indexIc { display: inline-flex; color: var(--steel); }
+.indexName { flex: 1 1 auto; min-width: 0; }
+.indexVal {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.indexNote {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  line-height: 1.85;
+  color: var(--ink-faint);
+}
+
+/* ————————————————— 七段 ————————————————— */
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.col > section { scroll-margin-top: 12px; }
+
+.secIc { display: inline-flex; color: var(--steel); transform: translateY(1px); }
+
+.grow { flex: 1 1 auto; }
+
+.no {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 2px 6px;
+  color: var(--ink-mute);
+  font-size: 13px;
+}
+.empty b { color: var(--ink-dim); font-size: 14px; }
+.empty span { line-height: 1.9; }
+
+/* ————————————————— 一、人物关系 ————————————————— */
+
+.relList { display: flex; flex-direction: column; gap: 8px; }
+
+.relRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.relRow:hover { border-color: var(--line-3); transform: translateX(2px); }
+
+.relMain { flex: 1 1 auto; min-width: 0; }
+.relTop { display: flex; align-items: baseline; gap: 8px; }
+.relTop b { font-size: 14.5px; }
+.relStage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--jade);
+}
+
+.relFoot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--ink-mute);
+}
+.relFoot .up { color: var(--jade); }
+.relFoot .down { color: var(--red); }
+
+.locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--amber);
+}
+
+.relGo { color: var(--ink-faint); flex: 0 0 auto; }
+
+/* ————————————————— 二、事迹 ————————————————— */
+
+.deedList { display: flex; flex-direction: column; gap: 12px; }
+
+.deed {
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-3);
+  border-radius: var(--radius);
+}
+
+.deedHead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.deedHead b { font-size: 14.5px; }
+
+.diverge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--amber);
+  border: 1px solid rgba(255, 181, 46, 0.45);
+  background: rgba(255, 181, 46, 0.08);
+  border-radius: 999px;
+}
+
+.stamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.deedMeta {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+
+.digest {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 2;
+  color: var(--ink-dim);
+}
+.digestEmpty {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+/* ————————————————— 三、伏笔 ————————————————— */
+
+.threadList { display: flex; flex-direction: column; gap: 8px; }
+
+.thread {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.threadMain { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.threadMain b { font-size: 14px; }
+.threadMain span { line-height: 1.8; }
+
+/* ————————————————— 四、见闻 ————————————————— */
+
+.sightList { display: flex; flex-direction: column; gap: 10px; }
+
+.sight {
+  padding: 11px 13px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.sightHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sightHead b { font-size: 14.5px; }
+
+.stageChip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--amber);
+  border: 1px solid rgba(255, 181, 46, 0.4);
+  background: rgba(255, 181, 46, 0.07);
+}
+
+.origin {
+  margin: 7px 0 0;
+  font-size: 12.5px;
+  line-height: 1.95;
+  color: var(--ink-mute);
+}
+
+/* ————————————————— 五、心迹 ————————————————— */
+
+.mindList { display: flex; flex-direction: column; gap: 14px; }
+
+.mindGroup {
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.mindGroup[data-sealed='1'] { border-style: dashed; opacity: 0.86; }
+
+.mindHead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.mindHead b { font-size: 14.5px; }
+
+.mind { padding: 8px 0 8px 12px; border-left: 2px solid rgba(156, 134, 255, 0.45); }
+.mind + .mind { margin-top: 6px; }
+
+.mindWho { display: flex; align-items: baseline; gap: 8px; }
+.mindWho b { font-size: 13px; color: var(--violet); }
+
+.mindText {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 2;
+  color: var(--ink-dim);
+}
+
+.sealed {
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-faint);
+}
+
+/* ————————————————— 六、技能 ————————————————— */
+
+.skillTop { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+
+.skillPeriod { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.skillTitle { font-size: 16px; }
+
+.skillNote {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-mute);
+}
+
+.armBox {
+  margin-top: 12px;
+  padding: 11px 13px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.armHead { display: flex; align-items: center; gap: 8px; color: var(--ink); }
+.armHead svg { color: var(--red); }
+.armHead b { font-size: 14.5px; }
+.armNote {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-mute);
+}
+.passive {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--line-2);
+  font-size: 12.5px;
+  color: var(--steel);
+}
+
+.skillList { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+.skillRow {
+  padding: 9px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.skillRow[data-locked='1'] { opacity: 0.62; }
+
+.skillName { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.skillName b { font-size: 14px; }
+
+.skillDesc {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-mute);
+}
+
+/* ————————————————— 七、大事记 ————————————————— */
+
+.chronList { display: flex; flex-direction: column; gap: 14px; }
+
+.chronHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.chronHead b { font-size: 14px; letter-spacing: 0.04em; }
+
+.chronRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-bottom: 1px dashed rgba(35, 36, 56, 0.9);
+  font-size: 13px;
+}
+.chronRow:last-child { border-bottom: none; }
+.chronRow b { font-weight: 600; }
+.chronRow[data-done='1'] b { color: var(--ink); }
+.chronRow[data-done='0'] b { color: var(--ink-mute); }
+.chronRow[data-unseen='1'] { opacity: 0.55; }
+
+.unseenTitle { letter-spacing: 0.24em; color: var(--ink-faint); }
+
+.chronPlace {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chronTs {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+.chronSealed {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+  flex: 0 0 auto;
+}
+
+/* ————————————————— 窄屏 ————————————————— */
+
+@media (max-width: 980px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .index {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .indexHead, .indexNote { display: none; }
+  .indexRow { width: auto; padding: 5px 9px; font-size: 12px; }
+  .indexNo { display: none; }
+}

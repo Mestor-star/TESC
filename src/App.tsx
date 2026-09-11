@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowLeft, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
+import { ArrowLeft, Brain, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -17,6 +17,7 @@ import { Boot } from './Boot'
 import { TitleMenu } from './views/Title'
 import { Dashboard } from './views/Dashboard'
 import { Saga } from './views/Saga'
+import { Memory } from './views/Memory'
 import { Lore } from './views/Lore'
 import { Arms } from './views/Arms'
 import { Archive } from './views/Archive'
@@ -36,6 +37,7 @@ const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
   { id: 'dashboard', en: 'DASHBOARD', cn: '终端总览', icon: <Gauge size={21} weight="bold" /> },
   { id: 'plot', en: 'PLOT / STORY', cn: '剧情推进', icon: <Play size={21} weight="bold" /> },
   { id: 'saga', en: 'RECORD / TIMELINE', cn: '低语者日志', icon: <Scroll size={21} weight="bold" /> },
+  { id: 'memory', en: 'MEMORY / SITUATIONAL', cn: '情景记忆库', icon: <Brain size={21} weight="bold" /> },
   { id: 'lore', en: 'THINK TANK', cn: '智库', icon: <Vault size={21} weight="bold" /> },
   { id: 'arms', en: 'ARMORY', cn: '武装图鉴', icon: <Sword size={21} weight="bold" /> },
   { id: 'archive', en: 'ARCHIVE', cn: '角色档案', icon: <Users size={21} weight="bold" /> },
@@ -49,6 +51,7 @@ const TITLE: Record<ViewId, { en: string; cn: string }> = {
   dashboard: { en: 'TERMINAL / DASHBOARD', cn: '终端总览' },
   plot: { en: 'PLOT / STORY', cn: '剧情推进' },
   saga: { en: 'RECORD / WHISPERER LOG', cn: '低语者日志' },
+  memory: { en: 'MEMORY / SITUATIONAL', cn: '情景记忆库' },
   lore: { en: 'DATA / THINK TANK', cn: '智库' },
   arms: { en: 'DATA / ARMORY', cn: '武装图鉴' },
   archive: { en: 'DATA / ARCHIVE', cn: '角色档案' },
@@ -308,6 +311,7 @@ function Stage() {
     case 'dashboard': return <Dashboard />
     case 'plot': return <Plot />
     case 'saga': return <Saga />
+    case 'memory': return <Memory />
     case 'lore': return <Lore />
     case 'arms': return <Arms />
     case 'archive': return <Archive />

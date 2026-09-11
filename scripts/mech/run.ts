@@ -56,13 +56,18 @@ import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 import { EVENT_BRIEFS } from '../../src/data/briefs'
 import { TEMPER, temperAt } from '../../src/data/temper'
+import { MINDS } from '../../src/data/minds'
+import {
+  MEM_SECTIONS, chronicleOf, deedsOf, memCounts, mindsOf, relationsOf, seqOfStrict, sightsOf, skillsOf, threadsOf,
+} from '../../src/lib/memory'
+import type { MemInput } from '../../src/lib/memory'
 import { SCENES } from '../../src/data/scenes'
 import { CHARACTERS } from '../../src/data/chars'
 import { castOf } from '../../src/lib/cast'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
-import type { Mission, TimelineEvent } from '../../src/data/types'
+import type { Mission, TimelineEvent, WorldRecord, WorldState } from '../../src/data/types'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
 export interface MechReport {
@@ -2494,6 +2499,38 @@ export function run(): MechReport {
     ok('梅芙引导：作战屏那两段没有空步骤（标题与条目都得有字）',
       hollow.length === 0, hollow.length ? hollow.join('、') : `${steps} 步都查过`)
 
+    /* 侧栏与引导对账 —— 这两条都会悄悄烂掉，所以钉在这里：
+       · 开篇说「这一排是终端的 N 个模块」，还要把这一排逐个念一遍。侧栏加一格、
+         引导不加，玩家先听到的就是一句假话（真踩过：加「情景记忆库」时，
+         NAV_LINE 还停在九个、标题还写着九个）。
+       · boot 那一步对玩家的承诺是「每开一格，你第一次进去，我讲一遍它在管什么」。
+         侧栏上有、TOURS 里没有的模块，点进去没人开口 —— 承诺落空。 */
+    const appSrc = readFileSync('src/App.tsx', 'utf8')
+    const rail = appSrc.split('\n')
+      .map((l) => /^\s*\{ id: '([a-z]+)', en: '[^']+', cn: '([^']+)'/.exec(l))
+      .filter((m): m is RegExpExecArray => !!m)
+      .map((m) => ({ id: m[1]!, cn: m[2]! }))
+    const bootTour = TOURS.find((t) => t.id === 'boot')
+    const navStep = bootTour?.steps.find((s) => s.at === '[data-guide="nav"]')
+    const named = (navStep?.lines[0] ?? '').replace(/。$/, '').split('、')
+    const NUM: Record<string, number> = {
+      一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12,
+    }
+    const claim = /^这一排是终端的(.+)个模块。$/.exec(navStep?.title ?? '')?.[1] ?? ''
+
+    ok('梅芙引导：侧栏有几格，开篇就念几格 —— 数、次序、名字逐条对上',
+      rail.length > 0 && named.length === rail.length && named.every((n, i) => n === rail[i]!.cn),
+      `侧栏 ${rail.length} 格｜引导念 ${named.length} 格：${named.join('、')}`)
+    ok('梅芙引导：开篇那句「这一排是终端的 N 个模块」，N 与侧栏实际格数相符',
+      NUM[claim] === rail.length, `说的是「${claim}个」· 实际 ${rail.length} 格`)
+    const noTour = rail.filter((r) => !TOURS.some((t) => t.view === r.id)).map((r) => r.cn)
+    ok('梅芙引导：侧栏每一格都有一段讲它的（「每开一格，我讲一遍它在管什么」不许落空）',
+      noTour.length === 0, noTour.length ? `没人讲：${noTour.join('、')}` : `${rail.length} 格都有`)
+    const noRail = TOURS.filter((t) => t.view && !rail.some((r) => r.id === t.view)).map((t) => t.view!)
+    ok('梅芙引导（对照）：反过来，没有哪一段是挂在侧栏不存在的模块上的',
+      noRail.length === 0, noRail.length ? `挂着空模块：${noRail.join('、')}` : '没有孤立的模块讲解')
+    info.push(`侧栏 ${rail.length} 格 ↔ 模块讲解 ${TOURS.filter((t) => t.view).length} 段，逐格对得上`)
+
     info.push(`作战屏引导：作战基础 ${battle?.steps.length ?? 0} 步 + boss ${boss?.steps.length ?? 0} 步；`
       + `次序 作战基础 → boss；跳过教程管得住前者、管不住后者`)
   } catch (e) {
@@ -2984,5 +3021,213 @@ export function run(): MechReport {
     fail.push('露娜续行段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
+  /* ---------- 24) 情景记忆库：只重排既有的账（不新记 · 不漏 · 不剧透） ----------
+     七栏全部由纯函数从既有的那几本账现场排出来。这一层最容易坏在三处，
+     而且三处坏了界面都照常显示，看不出少了什么：
+       · 排的时候手一滑漏掉几段（编年少一行，谁也不觉得少）
+       · 把还没发生过的事写了出来（未读的卷回放心声、没走到的段露名字）
+       · 自己另记一份、跟事实对不上（这里没有第二份副本，所以钉死「同一份输入同一份结果」） */
+  try {
+    const world = (over: Partial<WorldState> = {}): WorldState => ({
+      offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [], ...over,
+    })
+    const mk = (over: Partial<WorldState> = {}, epDone: Record<string, true> = {}, records: WorldRecord[] = []): MemInput =>
+      ({ world: world(over), epDone, records, bondNow: (id) => (id === 'luna' ? 46 : 20) })
+
+    const timelineIds = new Set(TIMELINE.map((e) => e.id))
+
+    /* ① 编年：一段不少、一段不重、不认时间线以外的 id */
+    const chron0 = chronicleOf(mk())
+    const chronRows = chron0.flatMap((g) => g.rows)
+    const chronDup = chronRows.length !== new Set(chronRows.map((r) => r.id)).size
+    ok('记忆库 · 编年：时间线有多少段就列多少行，不重不漏（漏一行没人看得出来）',
+      chronRows.length === TIMELINE.length && !chronDup
+      && chronRows.every((r) => timelineIds.has(r.id)),
+      `列出 ${chronRows.length} 行 / 时间线 ${TIMELINE.length} 段${chronDup ? '（有重复）' : ''}`)
+
+    /* ② 不剧透：没观测到的段落只留位置 —— 名字与地点一个字都不给；
+          反过来，已归档的必须露出真名（两头都卡住，遮一片或露一片都过不去） */
+    const doneTwo = TIMELINE.slice(0, 2).reduce<Record<string, true>>((m, e) => (m[e.id] = true, m), {})
+    const chron2 = chronicleOf(mk({}, doneTwo)).flatMap((g) => g.rows)
+    const focusId = TIMELINE[2]!.id
+    const leak = chron2.filter((r) => r.unseen)
+      .filter((r) => {
+        const ev = TIMELINE.find((e) => e.id === r.id)!
+        return r.title !== '未观测' || r.place !== '——' || r.day !== ''
+          || r.title.includes(ev.title) || r.place.includes(ev.place)
+      })
+    const hiddenDone = chron2.filter((r) => r.done && (r.title === '未观测' || r.unseen))
+    ok('记忆库 · 不剧透：没走到的段落名字与地点一律不给（只留「未观测」的位置）',
+      leak.length === 0, leak.length ? `露了的：${leak.map((r) => r.id).join('、')}` : `遮住 ${chron2.filter((r) => r.unseen).length} 段`)
+    ok('记忆库 · 不剧透：已归档的照实写（走过两段就露两段真名，正卡着的一段也露）',
+      hiddenDone.length === 0
+      && chron2.filter((r) => !r.unseen).length === 3
+      && chron2.find((r) => r.id === focusId)?.title === TIMELINE[2]!.title,
+      `露名 ${chron2.filter((r) => !r.unseen).length} 段（含正卡着的 ${focusId}）`)
+
+    /* ③ 心声闸门：整卷读完才回放。没读完的卷只报条数、正文一条不给 */
+    const gWithMinds = [...new Set(MINDS.map((m) => m.group))]
+      .find((g) => gWithMindsOk(g)) ?? null
+    if (!gWithMinds) {
+      fail.push('记忆库 · 心声：MINDS 里找不到任何「整卷都有段」的卷，闸门无从验起')
+    } else {
+      const sealed = mindsOf(mk())
+      const doneAll = TIMELINE.filter((e) => e.group === gWithMinds).reduce<Record<string, true>>((m, e) => (m[e.id] = true, m), {})
+      const opened = mindsOf(mk({}, doneAll))
+      const sg = sealed.find((g) => g.group === gWithMinds)!
+      const og = opened.find((g) => g.group === gWithMinds)!
+      const truth = MINDS.filter((m) => m.group === gWithMinds)
+      ok('记忆库 · 心声：整卷读完才回放 —— 没读完的卷正文一条不给，只报条数',
+        sg.done === false && sg.rows.length === 0 && sg.total === truth.length && truth.length > 0,
+        `「${gWithMinds}」封存 ${sg.rows.length}/${sg.total} 条`)
+      ok('记忆库 · 心声：这一卷读完 → 原文逐字回放（条数对得上、正文一字不改）',
+        og.done === true && og.rows.length === truth.length
+        && og.rows.every((r, i) => r.text === truth[i]!.text && r.speaker === truth[i]!.speaker),
+        `回放 ${og.rows.length} 条`)
+      ok('记忆库 · 心声：闸门只开这一卷（别的卷照旧封着）',
+        opened.filter((g) => g.group !== gWithMinds).every((g) => g.rows.length === 0),
+        `另封 ${opened.filter((g) => g.group !== gWithMinds && !g.done).length} 卷`)
+    }
+
+    /* ④ 事迹：正文字面照搬（不截断、不加工），且只认时间线上的段 */
+    const raw = '第一行原文。「引号」与\n换行都得原样留着 —— 记忆库不替谁润色。'
+    const recs: WorldRecord[] = [
+      { eventId: TIMELINE[0]!.id, mode: 'online', digest: raw, diverged: true, ts: 1730000000000 },
+      { eventId: 'zz-99', mode: 'online', digest: '这一段不存在', ts: 1 },
+    ]
+    const deeds = deedsOf(mk({}, {}, recs))
+    ok('记忆库 · 事迹：写下的经过逐字照搬（换行与引号都不动），时间线以外的 id 一律不收',
+      deeds.length === 1 && deeds[0]!.digest === raw && deeds[0]!.diverged === true
+      && deeds[0]!.title === TIMELINE[0]!.title,
+      `${deeds.length} 条：${deeds.map((d) => d.eventId).join('、') || '（空）'}`)
+
+    /* ⑤ 见闻：只认登记过的（图鉴或自记），没登记的不许冒出来 */
+    const ownOne = {
+      id: 'own-1', name: '自记条目', alias: 'OWN', no: '0001', stage: 2, stageKw: '『初现』',
+      classes: ['异法'], state: '存疑' as const, origin: '操作员自记', detail: '', counter: '',
+      ref: '操作员自记 · 档案扩充', ts: 1,
+    }
+    const codexOne = CODEX[0]!
+    const sights = sightsOf(mk({ ends: { [codexOne.id]: true, 'own-1': true, 'ghost-1': true }, own: [ownOne] }))
+    ok('记忆库 · 见闻：只列登记过的（图鉴条目 / 操作员自记各走各的表，没登记的进不来）',
+      sights.length === 2 && sights.some((s) => s.id === codexOne.id && s.name === codexOne.name)
+      && sights.some((s) => s.id === 'own-1' && s.origin === '操作员自记'),
+      `${sights.length} 条：${sights.map((s) => s.id).join('、')}`)
+    ok('记忆库 · 见闻：出处（origin）原文照搬，不改写',
+      sights.find((s) => s.id === codexOne.id)?.origin === codexOne.origin,
+      '与图鉴原文一致')
+
+    /* ⑥ 人物关系：只收遇见过的人；操作员本人不在列；锁定值优先于行为偏移 */
+    ok('记忆库 · 关系：没遇见的人不出现（遇见之前连名字都不该有）',
+      relationsOf(mk()).length === 0, `met 为空 → ${relationsOf(mk()).length} 行`)
+    const rels = relationsOf(mk({
+      met: { luna: true, hikari: true, [OPERATOR_ID]: true },
+      offset: { luna: 12, hikari: -6 },
+      locked: { luna: 88 },
+    }))
+    ok('记忆库 · 关系：只列遇见过的人，操作员本人不在其中',
+      rels.length === 2 && !rels.some((r) => r.id === OPERATOR_ID),
+      `${rels.length} 人：${rels.map((r) => r.id).join('、')}`)
+    ok('记忆库 · 关系：行为偏移与锁定值分开读（锁了的那段关系读得出「已定」）',
+      rels.find((r) => r.id === 'luna')?.drift === 12
+      && rels.find((r) => r.id === 'luna')?.locked === 88
+      && rels.find((r) => r.id === 'hikari')?.drift === -6
+      && rels.find((r) => r.id === 'hikari')?.locked === null,
+      JSON.stringify(rels.map((r) => ({ id: r.id, bond: r.bond, drift: r.drift, locked: r.locked }))))
+    ok('记忆库 · 关系：按此刻的分量从高到低排（谁重谁在前）',
+      rels[0]!.bond >= rels[rels.length - 1]!.bond && rels.length === 2
+      && rels[0]!.id === 'luna',
+      rels.map((r) => `${r.name}${r.bond}`).join(' > '))
+
+    /* ⑦ 伏笔三类各有各的出处：正卡着的一段 / 走了另一条路还没收束的 / 应下没了的托付 */
+    /* 两个**不同的**段各取一条：同一段里既有原著选项又有旁支选项，
+       拿同一段验两边，后一条 pick 会把前一条盖掉（read 到的自然是空的）。
+       另：旁支选项不带 canon 字段（不是 canon:false）—— 判据写 `!== true` 才抓得到。 */
+    const divergeEv = Object.entries(SCENES)
+      .find(([id, sc]) => timelineIds.has(id) && (sc?.choices ?? []).some((c) => c.canon !== true))
+    const canonEv = Object.entries(SCENES)
+      .find(([id, sc]) => id !== divergeEv?.[0] && timelineIds.has(id) && (sc?.choices ?? []).some((c) => c.canon === true))
+    const nonCanonKey = divergeEv?.[1]?.choices?.find((c) => c.canon !== true)?.key ?? ''
+    const canonKey = canonEv?.[1]?.choices?.find((c) => c.canon === true)?.key ?? ''
+    const th = threadsOf({
+      world: world({ pick: { [divergeEv![0]]: nonCanonKey, [canonEv![0]]: canonKey } }),
+      epDone: {}, records: [], bondNow: () => 20,
+      tasks: [
+        { id: 't1', title: '应下的事', detail: '还没做', done: false, ts: 1 },
+        { id: 't2', title: '做完的事', done: true, ts: 2 },
+      ],
+    })
+    ok('记忆库 · 伏笔：正卡着的一段、走了另一条路的抉择、应下没了的托付 —— 三样各归各类',
+      th.some((t) => t.kind === '进行中' && t.title === TIMELINE[0]!.title)
+      && th.filter((t) => t.kind === '分歧').length === 1
+      && th.find((t) => t.kind === '分歧')?.title === TIMELINE.find((e) => e.id === divergeEv![0])!.title
+      && th.filter((t) => t.kind === '托付').length === 1
+      && th.find((t) => t.kind === '托付')?.title === '应下的事',
+      th.map((t) => `${t.kind}·${t.title}`).join('　'))
+    ok('记忆库 · 伏笔：选了原著那条路不算分歧；了结的托付不再挂着（那是「事迹」）',
+      !th.some((t) => t.kind === '分歧' && t.title === TIMELINE.find((e) => e.id === canonEv![0])!.title)
+      && !th.some((t) => t.title === '做完的事'),
+      `分歧 ${th.filter((t) => t.kind === '分歧').length} 条 · 原著抉择（${canonEv![0]}）没算进来`)
+
+    /* ⑧ 技能：读到的位置换时期 —— 与引擎同一口径（opPeriodAt）。时期的分界点是
+          「读到那一节当节翻篇」，所以拿分界点前后各一次读数对着看，比「读了几段之后应该不一样」结实。
+          另：解锁点没到的那几手也列着，只是标成未解锁 —— 藏起来等于没有。 */
+    const prefix = (n: number) => TIMELINE.slice(0, n).reduce<Record<string, true>>((m, e) => (m[e.id] = true, m), {})
+    const sk0 = skillsOf(mk())
+    const skAll = skillsOf(mk({}, prefix(TIMELINE.length)))
+    const flip = TIMELINE.findIndex((e) => e.id === 'v2-2')
+    const before = skillsOf(mk({}, prefix(flip)))
+    const at = skillsOf(mk({}, prefix(flip + 1)))
+    const after = skillsOf(mk({}, prefix(flip + 2)))
+    ok('记忆库 · 技能：此刻的时期与武装来自已读位置（读到分界点前还是上一时期，到分界点当节才翻篇，再读不会连翻）',
+      sk0.skills.length > 0 && !!sk0.arm
+      && sk0.title === before.title && before.title !== at.title && at.title === after.title
+      && skAll.title !== before.title,
+      `${sk0.title} → @v2-2 → ${at.title}（${
+        sk0.title === before.title ? '分界点前未动' : '分界点前就动了'}）`)
+    ok('记忆库 · 技能：解锁点没到的那几手也列着，但标成未解锁（藏起来等于没有）',
+      sk0.skills.some((k) => k.locked)
+      && skAll.skills.filter((k) => k.locked).length < sk0.skills.filter((k) => k.locked).length,
+      `未读时锁着 ${sk0.skills.filter((k) => k.locked).length}/${sk0.skills.length} 手 · 读到最后锁着 ${skAll.skills.filter((k) => k.locked).length}`)
+
+    /* ⑨ 序号：表外 id 记 0（编年行上写着 00 就是「不在时间线上」的信号） */
+    ok('记忆库 · 序号：1-based 落在时间线上，表外的记 0',
+      seqOfStrict(TIMELINE[0]!.id) === 1 && seqOfStrict(TIMELINE[6]!.id) === 7
+      && seqOfStrict('zz-99') === 0,
+      `首段=${seqOfStrict(TIMELINE[0]!.id)} 第七个=${seqOfStrict(TIMELINE[6]!.id)} 表外=${seqOfStrict('zz-99')}`)
+
+    /* ⑩ 计数与各栏实际行数一致（导航上的数字就是点进去能看到的东西） */
+    const full = mk({ met: { luna: true }, ends: { [codexOne.id]: true }, offset: { luna: 4 } }, doneTwo, recs)
+    const c = memCounts(full)
+    ok('记忆库 · 计数：目录上的数字与点进去的行数一致（数不对就是有一栏在骗人）',
+      c.人物关系 === relationsOf(full).length && c.事迹 === deedsOf(full).length
+      && c.伏笔 === threadsOf(full).length && c.见闻 === sightsOf(full).length
+      && c.心迹 === mindsOf(full).reduce((n, g) => n + g.rows.length, 0)
+      && c.技能 === skillsOf(full).skills.length
+      && c.大事记 === chronicleOf(full).reduce((n, g) => n + g.doneCount, 0),
+      JSON.stringify(c))
+
+    /* ⑪ 没有第二份副本：同一份世界状态排出来的一定是同一份记忆 */
+    const snap = (i: MemInput) => JSON.stringify({
+      rel: relationsOf(i), deed: deedsOf(i), th: threadsOf(i), sight: sightsOf(i),
+      mind: mindsOf(i), skill: skillsOf(i), chron: chronicleOf(i), count: memCounts(i),
+    })
+    ok('记忆库 · 同一份输入排两次结果一字不差（记忆库不自己记东西，只重排）',
+      snap(full) === snap(mk({ met: { luna: true }, ends: { [codexOne.id]: true }, offset: { luna: 4 } }, doneTwo, recs)),
+      `${snap(full).length} 字符两次一致 · 另一次输入不同结果也不同=${snap(full) !== snap(mk())}`)
+
+    info.push(`记忆库：七栏 ${MEM_SECTIONS.join(' / ')} · 全收束时 ${JSON.stringify(memCounts(
+      mk({ met: Object.fromEntries(PERSON_IDS.filter((p) => p !== OPERATOR_ID).map((p) => [p, true])) as Record<string, true>,
+        ends: Object.fromEntries(CODEX.map((x) => [x.id, true])) },
+        TIMELINE.reduce<Record<string, true>>((m, e) => (m[e.id] = true, m), {}))))}`)
+  } catch (e) {
+    fail.push('情景记忆库段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
   return { pass, fail, info }
+}
+
+/** MINDS 里「整卷的每一段都在时间线上」的卷才验得动闸门（缺段的卷永远开不了） */
+function gWithMindsOk(g: string): boolean {
+  return TIMELINE.some((e) => e.group === g)
 }

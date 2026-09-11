@@ -92,12 +92,23 @@ async function getPageWs() {
 
 let cdp
 async function ev(expr) {
-  const r = await cdp.send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })
-  if (r.exceptionDetails) {
-    const d = r.exceptionDetails.exception?.description || r.exceptionDetails.text || 'eval error'
-    throw new Error('EVAL FAIL: ' + d + '\n  expr: ' + expr.slice(0, 160))
+  /* 换页那一下发出去的求值会撞上「Inspected target navigated or closed」——
+     那是**发早了**，不是页面坏了：睡一下再问一次，别把整支冒烟判死。
+     （真关掉了的话，重试两次照样抛，掩不住。） */
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await cdp.send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })
+      if (r.exceptionDetails) {
+        const d = r.exceptionDetails.exception?.description || r.exceptionDetails.text || 'eval error'
+        throw new Error('EVAL FAIL: ' + d + '\n  expr: ' + expr.slice(0, 160))
+      }
+      return r.result.value
+    } catch (e) {
+      const m = String((e && e.message) || e)
+      if (attempt < 2 && /navigated or closed/i.test(m)) { await sleep(420); continue }
+      throw e
+    }
   }
-  return r.result.value
 }
 async function poll(expr, ms = 45000, label = 'poll') {
   const t0 = Date.now()
@@ -1030,8 +1041,20 @@ try {
   // 打开恋兔光详情（就近锚定）
   await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
   await poll(`(()=>{const d=document.querySelector('[data-archive-dialog]');return !!d && d.innerText.includes('无法测量')})()`, 15000, 'G dialog open ∞ note')
-  const dg = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;const r=d.getBoundingClientRect();return {l:Math.round(r.left),t:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),vw:innerWidth,vh:innerHeight,text:d.innerText}})()`)
-  ok('G5 就近弹窗视口内落位（未越界）', !!dg && dg.t >= 0 && dg.l >= 0 && dg.l + dg.w <= dg.vw + 2 && dg.t + dg.h <= dg.vh + 2, JSON.stringify(dg && { l: dg.l, t: dg.t, w: dg.w, h: dg.h, vw: dg.vw, vh: dg.vh }))
+  /* 弹窗是**先上屏、后落位**的：内容一渲染出来就有「无法测量」那行字，而 left/top 要等
+     一次布局 + ResizeObserver 才落下去。上面那条 poll 认的是文字，量得太早会量到还没落位的
+     那一帧（弹窗停在文档流末尾、整个挂在视口下沿外），把「落位慢了一帧」误报成「落位错了」。
+     所以这里等它落位（inline top 出现）再量 —— 等不到照样按未落位判失败，掩不住。 */
+  let dg = null
+  for (let i = 0; i < 25; i++) {
+    dg = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;
+      const r=d.getBoundingClientRect();
+      return {l:Math.round(r.left),t:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),
+        vw:innerWidth,vh:innerHeight,placed:!!d.style.top,text:d.innerText}})()`)
+    if (dg && dg.placed) break
+    await sleep(200)
+  }
+  ok('G5 就近弹窗视口内落位（未越界）', !!dg && dg.placed === true && dg.t >= 0 && dg.l >= 0 && dg.l + dg.w <= dg.vw + 2 && dg.t + dg.h <= dg.vh + 2, JSON.stringify(dg && { l: dg.l, t: dg.t, w: dg.w, h: dg.h, vw: dg.vw, vh: dg.vh, placed: dg.placed }))
   ok('G6 弹窗含 立绘位 与 当前羁绊 区', !!dg && dg.text.includes('立绘') && dg.text.includes('当前羁绊'), '')
   ok('G7 弹窗含 ∞/无法测量 说明行', !!dg && dg.text.includes('无法测量'), '')
   // 立绘全图查看器
@@ -1245,6 +1268,100 @@ try {
   ok('K5 读毕揭示事件 → 双武装点亮为实卡（灰卡移除）', kAfter.noap === true && kAfter.sess === true && kAfter.stillLocked === false, JSON.stringify(kAfter))
   ok('K6 点亮后显示本体（noapusa / a Session.）', kAfter.name === true, 'name=' + kAfter.name)
   ok('K7 点亮后计数随之上调（实卡数增加）', kAfter.lit > kBefore.lit, 'lit ' + kBefore.lit + ' → ' + kAfter.lit)
+
+  /* ============ Phase K2：情景记忆库（七栏 · 只重排既有的账 · 不剧透） ============
+     播一份「走过一段、应下一件托付、走了一条原著没有的路」的账，看记忆库排出来的是什么。
+     验的是三件事：七栏都在、栏上的数与栏里的行对得上、没走到的段落一个字都不给。 */
+  console.log('\n[Phase K2] 情景记忆库：七栏齐 · 计数与行数一致 · 未观测只留位置')
+  const k2Seed = await ev(`(()=>{
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true,epDone:{'v1-1':true},cur:'v1-1',operatorName:'记忆观察员',focusId:'gcn',
+      world:{offset:{luna:14,hikari:-4},locked:{},flags:{},met:{luna:true,hikari:true},
+        ends:{'soul-reservoir':true},own:[],pick:{'v1-3':'bargain'},records:[]}}));
+    localStorage.setItem('zts-sms-tasks:v1',JSON.stringify([
+      {id:'k2t1',title:'替她把这句带回去',detail:'她还等着回话',ts:1,done:false},
+      {id:'k2t2',title:'已经做完的事',ts:2,done:true}]));
+    localStorage.setItem('zts-plot:v1',JSON.stringify({}));
+    localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
+    return true})()`)
+  ok('K2-0 播种：走过 v1-1 · 应下一件托付 · v1-3 走的是非原著那条路', k2Seed === true, 'seed=' + k2Seed)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('情景记忆库')
+  await poll(`!!document.querySelector('[data-mem]') && document.querySelectorAll('[data-mem-section]').length===7`, 20000, 'K2 mem mounted')
+  const k2m = await ev(`(()=>{
+    const secs=[...document.querySelectorAll('[data-mem-section]')];
+    const bodyOf=s=>document.querySelector('[data-mem-section="'+s+'"] .panel__body')||document.querySelector('[data-mem-section="'+s+'"]');
+    const counts={},rows={};
+    for(const s of ['人物关系','事迹','伏笔','见闻','心迹','技能','大事记']){
+      const el=document.querySelector('[data-mem-count="'+s+'"]');
+      counts[s]=el?Number(el.textContent.trim()):null;
+      const b=bodyOf(s);
+      rows[s]=b?b.querySelectorAll('[data-mem-rel],[data-mem-deed],[data-mem-thread],[data-mem-sight],[data-mem-mind],[data-mem-skill],[data-mem-chron]').length:null;
+      if(s==='技能'&&b)rows[s]=b.querySelectorAll('[data-mem-skill]').length;
+    }
+    const idx=[...document.querySelectorAll('[data-mem-jump]')].map(b=>b.getAttribute('data-mem-jump'));
+    const chron=[...document.querySelectorAll('[data-mem-chron]')].map(r=>({
+      id:r.getAttribute('data-mem-chron'),done:r.getAttribute('data-done')==='1',
+      unseen:r.getAttribute('data-unseen')==='1',
+      title:(r.querySelector('b')||{innerText:''}).innerText.trim(),
+      txt:r.innerText.replace(/\\s+/g,' ').trim()}));
+    const shown=chron.filter(r=>!r.unseen);
+    // 露了名的那些段标题 —— 未观测的行里一个字都不该沾
+    const shownTitles=shown.map(r=>r.title).filter(t=>t.length>1&&t!=='未观测');
+    const leak=chron.filter(r=>r.unseen&&shownTitles.some(t=>r.txt.includes(t))).map(r=>r.id);
+    const groups=[...document.querySelectorAll('[data-mem-mind-group]')].map(g=>({
+      sealed:g.getAttribute('data-sealed')==='1',txt:g.innerText}));
+    return {secs:secs.length,counts,rows,idx,
+      nav:!!document.querySelector('[data-mem-nav]'),
+      overflowX:document.documentElement.scrollWidth-window.innerWidth,
+      sectionWidth:Math.round((secs[1]||secs[0]).getBoundingClientRect().width),
+      rel:[...document.querySelectorAll('[data-mem-rel]')].map(x=>x.getAttribute('data-mem-rel')),
+      threads:[...document.querySelectorAll('[data-mem-thread]')].map(x=>x.getAttribute('data-mem-thread')),
+      sights:[...document.querySelectorAll('[data-mem-sight]')].map(x=>x.getAttribute('data-mem-sight')),
+      minds:document.querySelectorAll('[data-mem-mind]').length,
+      sealed:groups.filter(g=>g.sealed).length,sealedTxt:groups.filter(g=>g.sealed&&/封存/.test(g.txt)).length,
+      skills:document.querySelectorAll('[data-mem-skill]').length,
+      lockedSkills:document.querySelectorAll('[data-mem-skill][data-locked="1"]').length,
+      chronN:chron.length,done:chron.filter(r=>r.done).length,
+      unseen:chron.filter(r=>r.unseen).length,
+      seen:shown.length,leak,
+      unseenMarked:chron.filter(r=>r.unseen).every(r=>r.txt.includes('未观测')),
+      head:secs.map(s=>s.innerText.slice(0,40)).join(' | ')}})()`)
+  ok('K2-1 七栏都在（人物关系/事迹/伏笔/见闻/心迹/技能/大事记），目录也列全了，且不横向溢出',
+    k2m.secs === 7 && k2m.idx.length === 7 && k2m.overflowX <= 2
+    && k2m.nav === true && k2m.sectionWidth > 300,
+    `sections=${k2m.secs} index=${k2m.idx.join(',')} 溢出=${k2m.overflowX}px 正文宽=${k2m.sectionWidth}`)
+  /* 遇见谁由「读过哪几段」推出来（读过一段就自动登记了那一段的人），
+     所以这里不写死人数，只卡「数得对得上」与「该在的在、不该在的不在」。 */
+  ok('K2-2 目录上的数与栏里的行数一致（数不对就是有一栏在骗人）',
+    k2m.counts.人物关系 === k2m.rows.人物关系 && k2m.rows.人物关系 > 0
+    && k2m.counts.见闻 === 1 && k2m.rows.见闻 === 1
+    && k2m.counts.事迹 === 1 && k2m.rows.事迹 === 1
+    && k2m.counts.技能 === k2m.rows.技能
+    && k2m.counts.心迹 === k2m.minds && k2m.counts.大事记 === k2m.done,
+    JSON.stringify({counts:k2m.counts,rows:k2m.rows,minds:k2m.minds,done:k2m.done}))
+  ok('K2-3 人物关系：该在的在（露娜/恋兔光）· 操作员本人不在列（那是「他」，不是「关系」）',
+    k2m.rel.includes('luna') && k2m.rel.includes('hikari') && !k2m.rel.includes('operator')
+    && k2m.rel.length === k2m.rows.人物关系,
+    JSON.stringify(k2m.rel))
+  ok('K2-4 伏笔三类各归各类：正卡着一段 / 走了另一条路 / 应下没了的托付（做完的不再挂着）',
+    k2m.threads.filter(x=>x==='进行中').length === 1
+    && k2m.threads.filter(x=>x==='分歧').length === 1
+    && k2m.threads.filter(x=>x==='托付').length === 1,
+    JSON.stringify(k2m.threads))
+  ok('K2-5 见闻只列登记过的（图鉴那条在、没登记的不冒出来）',
+    k2m.sights.length === 1 && k2m.sights[0] === 'soul-reservoir', JSON.stringify(k2m.sights))
+  ok('K2-6 心声按卷封存：一卷都没读完 → 正文一条不回放，只报条数',
+    k2m.minds === 0 && k2m.sealed > 0 && k2m.sealedTxt === k2m.sealed,
+    `回放 ${k2m.minds} 条 · 封存 ${k2m.sealed} 卷（都写着「封存」）`)
+  ok('K2-7 技能栏列得出现在这几手，解锁点没到的标成未解锁（不藏起来）',
+    k2m.skills > 0 && k2m.lockedSkills > 0 && k2m.lockedSkills < k2m.skills,
+    `共 ${k2m.skills} 手 · 锁着 ${k2m.lockedSkills} 手`)
+  ok('K2-8 不剧透：编年一段不少（57 行），没走到的一条都不露名 —— 只留「未观测」的位置',
+    k2m.chronN === 57 && k2m.done === 1 && k2m.unseenMarked === true && k2m.leak.length === 0
+    && k2m.seen === 2,
+    `57 行 · 已归档 ${k2m.done} · 露名 ${k2m.seen}（含正卡着的一段）· 遮蔽 ${k2m.unseen} · 泄名 ${JSON.stringify(k2m.leak)}`)
 
   /* ============ Phase L：标题「终端连接」→ 设置专用界面（无侧边栏）+ 返回标题按钮 ============ */
   console.log('\n[Phase L] P9 标题「终端连接」：仅设置一页（无侧边栏）· 返回标题按钮回标题')
