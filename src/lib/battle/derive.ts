@@ -760,12 +760,26 @@ const SUFFIX = ['甲', '乙', '丙', '丁']
  * 按任务阶段生成敌阵（阶段越高，数量与数值越强）。
  * 再按**该地 R 值**加一层：偏离正常区间越远，实体越凝实 ——
  * 只抬血量与「反现实亲和」，不动攻击与充能（理由见 rvalue.ts 文件头）。
+ *
+ * 再再按**时期**加一层（`progress`）——
+ * 这一层是复核跑出来的，不是设计时想到的：在此之前敌方只认任务阶段，
+ * 与小队推进到哪一卷毫无关系。而小队是会长的（言万叶的五轴整块按时期换页，
+ * 卷末那几段的出力是开局的五倍多）。两边一错开，同一个危险度的含义
+ * 就随着读到的卷数一路贬值：时期 0.15 时危险度 9/10 胜率 42%/38%（打不过），
+ * 时期 0.90 时危险度 5/6/7/8 胜率 100%/100%/100%/99%（没得打）。
+ * 一套数值在不同时期指向完全不同的难度，那它就不算一套数值。
+ *
+ * 所以实体也随现实变薄而凝实：越往后，同样一档危险度站上来的东西越硬。
+ * 增益只给血量与破坏力 —— 充能不给，免得快起来的是「出手次数」，
+ * 那一条已经在血量的马拉松里被算过一遍了（见 tuning 的 enemyAtkPerStage）。
  */
-export function enemiesOf(m: Mission): Combatant[] {
+export function enemiesOf(m: Mission, progress = 0): Combatant[] {
   const prof = ENEMY_PROFILE.find((p) => p.match.test(m.nature)) ?? FALLBACK_PROFILE
   const count = m.stage >= 8 ? 3 : m.stage >= 5 ? 2 : 1
   const r = rOfPlace(m.place, m.stage)
   const rf = rFactor(r.r)
+  // 时期增幅：开局 ×1，卷末 ×(1 + enemyProgressGain)
+  const pf = 1 + Math.max(0, Math.min(1, progress)) * TUNING.enemyProgressGain
   const out: Combatant[] = []
   for (let i = 0; i < count; i++) {
     // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到顶时它升格为「首领」。
@@ -783,9 +797,11 @@ export function enemiesOf(m: Mission): Combatant[] {
     const hpMax = named
       // 有名有姓的那位按自己的档案读数站场：血量走同一套曲线，
       // 但再乘一次他自己的 hpMul —— RANK6 与 RANK47 不该一样硬。
+      // 指名首领**不吃时期增幅**：他是档案里的人，读数就该跟档案页一致，
+      // 不能因为玩家多读了一卷，同一个人在档案上还是那个数、打起来却更厚。
       ? Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage)
         * rf.mul * TUNING.bossHpMul * named.hpMul)
-      : Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul * hpMul)
+      : Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul * hpMul * pf)
     const axes: AxisSheet = named
       // 五轴照档案：与档案页读的是同一组数（roster 的 SIDE_AXIS 口径）
       ? {
@@ -796,7 +812,9 @@ export function enemiesOf(m: Mission): Combatant[] {
         意志力: named.axes?.[4] ?? SIDE_AXIS[named.id]?.[4] ?? 0,
       }
       : {
-        破坏力: Math.round((TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage) * atkMul),
+        // 破坏力跟血量一起随时期走：只抬血的话，晚期的仗会变成
+        // 「打不动我、我也打不死它」的干耗，那不是难度，是拖时间。
+        破坏力: Math.round((TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage) * atkMul * pf),
         敏捷度: Math.round(TUNING.enemySpdBase + m.stage * TUNING.enemySpdPerStage),
         物理抗性: Math.round(TUNING.enemyResistBase + m.stage * TUNING.enemyResistPerStage),
         反现实亲和: Math.round((10 + m.stage * 4) * rf.mul),

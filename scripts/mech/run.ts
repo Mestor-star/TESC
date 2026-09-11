@@ -21,7 +21,7 @@ import {
   act, advance, aliveOf, basicOf, brokenOf, buffOf, createBattle, enemysTurn, find,
   guardLeft, legalSkills, pendingFoe, skipOf,
 } from '../../src/lib/battle/engine'
-import { enemiesOf } from '../../src/lib/battle/derive'
+import { combatantOf, enemiesOf } from '../../src/lib/battle/derive'
 import { MISSIONS } from '../../src/data/missions'
 import { TUNING } from '../../src/lib/battle/tuning'
 import { ROSTER } from '../../src/lib/battle/roster'
@@ -605,6 +605,93 @@ export function run(): MechReport {
       missing.length ? missing.join('、') : `${HOSTILE_BUFF_KEYS.length} 个`)
   } catch (e) {
     fail.push('读数段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 8) 敌阵：血量远高于我方 · 首领不弱于精英 · 随时期变强 ----------
+     这一节的判据全是「比值」，不是「某个绝对值」——
+     因为这三条本身就是比值：远高于、不低于、随时期一起长。
+     写死 818 这种数的话，改一次曲线就得回来改一次测试，
+     而那正是测试最该拦住的那种改动。 */
+  try {
+    const stages = [...new Set(MISSIONS.map((m) => m.stage))].sort((a, b) => a - b)
+    const PERIODS = [0, 0.5, 1]
+    // 我方（p=1 口径）最硬的那一位：拿它当分母，是很苛刻的一把尺
+    const allyTop = Math.max(...Object.keys(ROSTER).map((id) => combatantOf(id, 1, 0).hpMax))
+
+    // (a) 每一档、每一时期，敌体血量都得站上我方最硬者的两倍
+    const thin: string[] = []
+    for (const p of PERIODS) {
+      for (const st of stages) {
+        const m = MISSIONS.find((x) => x.stage === st)!
+        for (const f of enemiesOf({ ...m, bossId: undefined }, p)) {
+          if (f.hpMax < allyTop * 2) thin.push(`p${p} 阶段${st} ${f.name}=${f.hpMax}`)
+        }
+      }
+    }
+    ok('敌阵：每一档、每一时期的血量都远高于我方（≥ 我方最硬者的 2 倍）',
+      thin.length === 0, thin.length ? thin.slice(0, 4).join('／') : `分母 ${allyTop}`)
+    info.push(`敌我血量：我方最硬 ${allyTop}（p=1）；`
+      + stages.map((st) => {
+        const m = MISSIONS.find((x) => x.stage === st)!
+        const f = enemiesOf({ ...m, bossId: undefined }, 1)[0]!
+        return `阶段${st} ${f.hpMax}`
+      }).join('／'))
+
+    // (b) 首领不弱于精英：两档从不在同一阶段同场（阶段 <6 出精英、≥6 出首领），
+    //     所以这条只能跨阶段比 —— 也正是旧 bug 的形态（阶段 6 的首领比阶段 4 的精英还脆）。
+    const eliteAt = (st: number, p = 0) => {
+      const m = MISSIONS.find((x) => x.stage === st)
+      return m ? enemiesOf({ ...m, bossId: undefined }, p).find((f) => f.tier === 'elite')?.hpMax ?? 0 : 0
+    }
+    const bossAt = (st: number, p = 0) => {
+      const m = MISSIONS.find((x) => x.stage === st)
+      return m ? enemiesOf({ ...m, bossId: undefined }, p).find((f) => f.tier === 'boss')?.hpMax ?? 0 : 0
+    }
+    const eliteStages = stages.filter((st) => eliteAt(st) > 0)
+    const bossStages = stages.filter((st) => bossAt(st) > 0)
+    const lowElite = eliteStages.length ? eliteAt(eliteStages[0]!, 1) : 0
+    const highBoss = bossStages.length ? bossAt(bossStages[bossStages.length - 1]!, 0) : 0
+    ok('敌阵：首领不弱于精英（跨阶段比 —— 最低档的首领也要压过最高档的精英）',
+      lowElite > 0 && highBoss > lowElite,
+      `最低档首领 ${highBoss} ／ 最高档精英 ${lowElite}`)
+    // 首领那一档自己的倍数也该大于精英那一档的
+    ok('敌阵：首领的档位倍数都在精英之上',
+      TUNING.bossHpMul > TUNING.eliteHpMul && TUNING.bossAtkMul > TUNING.eliteAtkMul
+      && TUNING.bossWillMul > TUNING.eliteWillMul,
+      `血 ${TUNING.bossHpMul}>${TUNING.eliteHpMul}　攻 ${TUNING.bossAtkMul}>${TUNING.eliteAtkMul}　意 ${TUNING.bossWillMul}>${TUNING.eliteWillMul}`)
+
+    // (c) 同一档危险度，越往后站上来的东西越硬 —— 这一条是补上的那个洞：
+    //     在敌方读时期之前，同一个危险度在开局与卷末指向的是两场完全不同的仗。
+    const flat: string[] = []
+    for (const st of stages) {
+      const m = MISSIONS.find((x) => x.stage === st)!
+      const a = enemiesOf({ ...m, bossId: undefined }, 0)[0]!
+      const b = enemiesOf({ ...m, bossId: undefined }, 1)[0]!
+      if (!(b.hpMax > a.hpMax && b.axes.破坏力 > a.axes.破坏力)) {
+        flat.push(`阶段${st} ${a.hpMax}/${a.axes.破坏力} → ${b.hpMax}/${b.axes.破坏力}`)
+      }
+    }
+    ok('敌阵：同一档危险度，血量与破坏力都随时期变强',
+      flat.length === 0, flat.length ? flat.join('／') : `${stages.length} 档都比过`)
+    const m10 = MISSIONS.find((x) => x.stage === Math.max(...stages))!
+    const a10 = enemiesOf({ ...m10, bossId: undefined }, 0)[0]!
+    const b10 = enemiesOf({ ...m10, bossId: undefined }, 1)[0]!
+    info.push(`时期增幅：最高档 ${a10.hpMax} → ${b10.hpMax}（×${(b10.hpMax / a10.hpMax).toFixed(2)}）`
+      + `　破坏力 ${a10.axes.破坏力} → ${b10.axes.破坏力}`)
+
+    // (d) 点名首领不吃时期增幅：档案页上是什么读数，打起来就该是什么读数
+    const namedMission = MISSIONS.find((m) => m.bossId)
+    if (namedMission) {
+      const n0 = enemiesOf(namedMission, 0)[0]!
+      const n1 = enemiesOf(namedMission, 1)[0]!
+      ok('敌阵：点名首领不吃时期增幅（与档案页读数一致）',
+        n0.hpMax === n1.hpMax && n0.axes.破坏力 === n1.axes.破坏力,
+        `${n0.name} ${n0.hpMax} → ${n1.hpMax}`)
+    } else {
+      info.push('敌阵：没有挂 bossId 的任务，跳过点名首领那一条')
+    }
+  } catch (e) {
+    fail.push('敌阵段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

@@ -230,7 +230,8 @@ export function createBattle(opts: CreateOpts): BattleState {
   const allies = squad.map((id) => combatantOf(id, progress, growth[id] ?? 0, gear[id]))
   // 羁绊：谁站在场上（队伍协同 + 双人）＋ 每人与你的交情攒到了哪一档
   applySynergies(allies, undefined, bond)
-  const enemies = enemiesOf(mission)
+  // 敌方也读时期：同一档危险度，小队走到哪一卷，站上来的东西就硬到哪一档
+  const enemies = enemiesOf(mission, progress)
   const base: BattleState = {
     missionId: mission.id,
     no: mission.no,
