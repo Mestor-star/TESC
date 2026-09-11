@@ -705,6 +705,35 @@ export function run(): MechReport {
     } else {
       info.push('敌阵：没有挂 bossId 的任务，跳过点名首领那一条')
     }
+
+    /* (e) 档案角色当 BOSS：场上头一名拿的是**他自己那一份手牌**。
+       这一条钉的是「天空竞技祭那几位上场时还是他们本人」——
+       名字对不上、招式串成通用包，那就成了换皮精英（读起来最像「做完了」的假通过）。
+       逐条比 id 与顺序，不只看「有没有技能」：少一手、串一手都算。 */
+    const bossMissions = MISSIONS.filter((m) => m.bossId)
+    const onField = bossMissions.map((m) => {
+      const nb = namedBossOf(m.bossId)
+      const f = enemiesOf(m, 1)[0]!
+      const same = !!nb && f.namedId === m.bossId && f.name === nb.name
+        && f.skills.length === nb.skills.length
+        && f.skills.every((k, i) => k.id === nb.skills[i]!.id)
+      return { no: m.no, who: nb?.name ?? String(m.bossId), n: nb?.skills.length ?? 0, same }
+    })
+    ok('点名首领：上场的是档案里那个人 —— 手牌逐条照他自己那份，不是通用机制包',
+      onField.length > 0 && onField.every((r) => r.same),
+      onField.map((r) => `${r.who}（${r.n} 手）${r.same ? '' : ' ✗'}`).join('、') || '（一个也没挂）')
+
+    /* 对照：没挂 bossId 的头名，拿的正是那一套通用包 ——
+       两边的技能 id 不许有任何交集，否则上面那一条可能只是「大家碰巧同名」。 */
+    const plainTop = MISSIONS.filter((m) => !m.bossId && m.stage >= TUNING.ultStage).pop()!
+    const pt = enemiesOf(plainTop, 1)[0]!
+    const namedSkillIds = new Set(onField.length
+      ? bossMissions.flatMap((m) => namedBossOf(m.bossId)?.skills.map((k) => k.id) ?? [])
+      : [])
+    ok('点名首领（对照）：没挂 bossId 的头名走的是现推那一套（两边的表没有一处重合）',
+      !pt.namedId && pt.skills.some((k) => k.id.startsWith('foe-'))
+      && pt.skills.every((k) => !namedSkillIds.has(k.id)),
+      `${plainTop.no}「${plainTop.title}」　${pt.name}　${pt.skills.map((k) => k.id).join(',')}`)
   } catch (e) {
     fail.push('敌阵段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
