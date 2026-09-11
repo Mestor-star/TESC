@@ -2,12 +2,15 @@
  * lib/charimg.ts — 角色头像 / 立绘素材解析。
  *
  * 素材约定（把真图丢进 public/charimg/ 即点亮，无需改码）：
- *   <avatarId>.webp|.png        立绘：竖构图整身（档案大图、剧情区人物框用）
- *   <avatarId>-face.webp|.png   头像：方构图、脸居中偏上（小圆头像、行动表用）
+ *   <avatarId>.webp|.png|.jpg        立绘：竖构图整身（档案大图、剧情区人物框用）
+ *   <avatarId>-face.webp|.png|.jpg   头像：方构图、脸居中偏上（小圆头像、行动表用）
  *   档案角色 = 其 id；操作员 = operator。同目录允许少量异名（alias）作为备用候选。
  *
  * 取图规则：<变体名> 找不到就退回同名主名（只放了立绘也能用），再顺延 alias；
- * 每个名字先试 webp 再试 png。全部 404 时由 <Portrait> 回退「hue 底 + sigil」占位纹章。
+ * 每个名字按 webp → png → jpg 的顺序试。全部 404 时由 <Portrait> 回退「hue 底 + sigil」占位纹章。
+ *
+ * 换图只要**换个更靠前的扩展名**就能盖掉旧的：想替掉现成的 .jpg 头像，
+ * 丢一个同名的 .webp 或 .png 进去即可，不必先删旧文件（webp/png 排在 jpg 前面）。
  */
 
 import { assetBase } from './assetbase'

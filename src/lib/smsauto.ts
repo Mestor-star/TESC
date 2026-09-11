@@ -132,7 +132,8 @@ export function useProactiveSms(): void {
         const logs = loadSmsLogs()
         const meta = TAVERN_PERSONAS.find((p) => p.charId === charId)
         const scan = (logs[charId] ?? []).slice(-6).map((m) => m.text).join('\n')
-        const preset = buildPresetContext(readActivePreset(), scan)
+        // scope='sms'：主动来信也是一条短信，只取管短信的那一支
+        const preset = buildPresetContext(readActivePreset(), scan, 'sms')
         const system =
           systemPrompt(charId, c.operatorName, c.bondNow(charId), meta?.scenario ?? '各自的日常')
           + (preset.pre ? `\n\n${preset.pre}` : '')

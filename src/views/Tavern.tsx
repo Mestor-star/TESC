@@ -206,7 +206,8 @@ export function Tavern() {
       }
 
       // 预设导演指令（短信侧同样受「管理预设」的生效快照管辖）
-      const preset = buildPresetContext(readActivePreset(), scanText)
+      // scope='sms' —— 长文那一支（篇幅 1000–2000 字、段落空行、交战文风…）不往这儿进
+      const preset = buildPresetContext(readActivePreset(), scanText, 'sms')
 
       // 通联日志身份：短信侧这一趟问的是谁
       const presetInfo = activePresetInfo()
@@ -359,7 +360,7 @@ export function Tavern() {
         loreBlock = ''
       }
 
-      const preset = buildPresetContext(readActivePreset(), scanText)
+      const preset = buildPresetContext(readActivePreset(), scanText, 'sms')
       const presetInfo = activePresetInfo()
       const logMeta: AiLogMeta = {
         channel: '角色短信',

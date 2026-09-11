@@ -5,8 +5,8 @@
 
 import { useMemo, useState } from 'react'
 import { Eye, EyeSlash, Plus, Trash } from '@phosphor-icons/react'
-import { newPresetEntry } from '../lib/preset'
-import type { PresetEntry, PresetEntryKind, PresetEntryPos } from '../lib/preset'
+import { newPresetEntry, scopeOf } from '../lib/preset'
+import type { PresetEntry, PresetEntryKind, PresetEntryPos, PresetEntryScope } from '../lib/preset'
 import css from './PresetManager.module.css'
 
 interface Props {
@@ -15,6 +15,9 @@ interface Props {
 }
 
 const KINDS: PresetEntryKind[] = ['行为', '格式', '其它']
+
+/** 适用范围 → 界面上的短标（左列副标题用） */
+const SCOPE_TAG: Record<PresetEntryScope, string> = { all: '两通道', main: '仅主线', sms: '仅短信' }
 
 export default function PresetEntryPane({ entries, onChange }: Props) {
   const [selId, setSelId] = useState<string | null>(entries[0]?.id ?? null)
@@ -80,6 +83,7 @@ export default function PresetEntryPane({ entries, onChange }: Props) {
                       <span className="muted tiny">
                         {e.placeholder ? '占位 · 运行时填充' : e.constant ? '常驻' : `关键词 ${e.keys.join('/') || '（未设）'}`}
                         {' · '}{e.position === 'post' ? '后置' : '前置'}
+                        {scopeOf(e) !== 'all' ? ` · ${SCOPE_TAG[scopeOf(e)]}` : ''}
                       </span>
                     </button>
                     {!e.placeholder && (
@@ -135,6 +139,23 @@ export default function PresetEntryPane({ entries, onChange }: Props) {
                 <select className="field" style={{ width: 190 }} value={sel.position} onChange={(ev) => patch(sel.id, { position: ev.target.value as PresetEntryPos })}>
                   <option value="pre">前置（导演规则之后）</option>
                   <option value="post">后置（事件指令之前）</option>
+                </select>
+              </label>
+              <label>
+                适用范围
+                <select
+                  className="field" style={{ width: 150 }} value={scopeOf(sel)}
+                  onChange={(ev) => {
+                    const v = ev.target.value as PresetEntryScope
+                    /* 写成 'all' 时把这个字段删掉，而不是存一个 scope:'all' ——
+                       缺省本来就是 all，存下去会让「没设过」和「特意设为两边」分不清。 */
+                    const { scope: _drop, ...rest } = sel
+                    patch(sel.id, v === 'all' ? rest : { ...rest, scope: v })
+                  }}
+                >
+                  <option value="all">两条通道都进</option>
+                  <option value="main">只管主线推演</option>
+                  <option value="sms">只管角色短信</option>
                 </select>
               </label>
               <label>

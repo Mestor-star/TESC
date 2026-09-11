@@ -13,6 +13,17 @@ import type { ChatTurn } from './api'
 
 export type PresetEntryKind = '行为' | '格式' | '其它'
 export type PresetEntryPos = 'pre' | 'post'
+/**
+ * 适用范围 —— 条目**管哪一条通道**。
+ *
+ * 主线推演与角色短信是两种活：前者要写一千多字的散文长段，后者只发一到三句
+ * 聊天。同一条指令压在两边，必有一边是错的 —— 「每回合 1000–2000 字」让短信
+ * 变成长信，「一到三句、不加星号动作」让推演的正文散架。所以适用范围是条目
+ * 自己的属性，而不是让每条内容去兼顾两边。
+ *
+ * 缺省视作 `all`：老存档里的条目没有这个字段，按「两边都进」读，与加这个维度之前一致。
+ */
+export type PresetEntryScope = 'all' | 'main' | 'sms'
 
 export interface PresetEntry {
   id: string
@@ -30,11 +41,19 @@ export interface PresetEntry {
   order: number
   /** 注入位置：导演指令说明之后（管「如何理解」）/ 事件指令 schema 之前（管「如何输出」） */
   position: PresetEntryPos
+  /** 管哪条通道；缺省 = all（两边都进） */
+  scope?: PresetEntryScope
   /** 分组标题（酒馆预设里「===xxx===」那种分隔行的名字）；仅用于界面归纳 */
   group?: string
   /** 占位条目：由本终端在运行时填充（角色档案、世界书、对话历史…），本身不含可注入文本 */
   placeholder?: boolean
 }
+
+/** 条目适用范围（缺省 all） */
+export function scopeOf(e: PresetEntry): PresetEntryScope {
+  return e.scope === 'main' || e.scope === 'sms' ? e.scope : 'all'
+}
+
 
 /** 新建预设时的起步条目：只谈结构性约定，不碰故事口径，用户可随意改删 */
 export const DEFAULT_PRESET_ENTRIES: PresetEntry[] = [
@@ -68,38 +87,63 @@ export function newPresetEntry(order = 100): PresetEntry {
   }
 }
 
-/** 命中本回合应注入的条目：先剔关闭者，再按常驻／关键词判定，最后按order 升序 */
-export function matchPresetEntries(entries: PresetEntry[], scanText: string): PresetEntry[] {
+/**
+ * 命中本回合应注入的条目：先剔关闭者与不归本通道管的，再按常驻／关键词判定，最后按 order 升序。
+ *
+ * `scope` 传调用方自己的通道（'main' / 'sms'）；传 'all'（或省略）表示不问通道，全收 ——
+ * 界面预览与通联日志统计走这条，它们要的是「这套预设备了什么」，不是「这回合进了什么」。
+ * 排序用 `order` 升序，同号时以数组下标兜底：`Array.prototype.sort` 自 ES2019 起稳定，
+ * 同号条目于是保持预设文件里的先后 —— 顺序可预期，不随实现漂。
+ */
+export function matchPresetEntries(
+  entries: PresetEntry[], scanText: string, scope: PresetEntryScope = 'all',
+): PresetEntry[] {
   const text = (scanText || '').toLowerCase()
   return entries
     .filter((e) => e.enabled !== false && !e.placeholder)
+    .filter((e) => scope === 'all' || scopeOf(e) === 'all' || scopeOf(e) === scope)
     .filter((e) => e.constant || e.keys.some((k) => !!k && text.includes(k.toLowerCase())))
     .slice()
     .sort((a, b) => a.order - b.order)
 }
 
-const HEAD_PRE = '【预设 · 导演指令】（本段叙事的硬性约定，与既有习惯冲突时以此为准）'
-const HEAD_POST = '【预设 · 输出格式】（在写出事件指令块之前须满足）'
+/* 两段注入的抬头。两个通道各写各的 —— 短信这边若也抬「本段叙事的硬性约定」，
+   等于先给模型递一个「你在写小说」的话头，后面那几条「只发一到三句」就白写了。 */
+const HEAD = {
+  main: {
+    pre: '【预设 · 导演指令】（本段叙事的硬性约定，与既有习惯冲突时以此为准）',
+    post: '【预设 · 输出格式】（在写出事件指令块之前须满足）',
+  },
+  sms: {
+    pre: '【预设 · 角色设定】（扮演这个人的硬性约定，与既有习惯冲突时以此为准）',
+    post: '【预设 · 发言格式】（每条消息都须满足）',
+  },
+} as const
 
 /**
  * 命中条目 → 两段注入文本（各自为空时返回 ''）。
  * `hits` 是**这一回合真的进了提示词**的条目名（按注入序）——
  * 通联日志拿它对账：「预设备了 22 条、这一回合进了 5 条」是两件事，
  * 页面上只说前者就成了「看着生效、其实没进」。
+ *
+ * `scope` 是**调用方所在通道**（Plot 传 'main'，Tavern / smsauto 传 'sms'）：
+ * 不归本通道管的条目在这里就出局，连 hits 都不进 —— 日志上的数字与提示词里的
+ * 实际内容才对得上是同一回事。
  */
 export function buildPresetContext(
-  entries: PresetEntry[], scanText: string,
+  entries: PresetEntry[], scanText: string, scope: PresetEntryScope = 'main',
 ): { pre: string; post: string; hits: string[] } {
-  const hits = matchPresetEntries(entries, scanText)
-  const block = (pos: PresetEntryPos, head: string) => {
+  const hits = matchPresetEntries(entries, scanText, scope)
+  const head = HEAD[scope === 'sms' ? 'sms' : 'main']
+  const block = (pos: PresetEntryPos, text: string) => {
     const part = hits.filter((e) => e.position === pos && (e.content || '').trim())
     if (!part.length) return ''
     const body = part.map((e) => `▸ ${e.name}\n${e.content.trim()}`).join('\n')
-    return `${head}\n${body}`
+    return `${text}\n${body}`
   }
   return {
-    pre: block('pre', HEAD_PRE),
-    post: block('post', HEAD_POST),
+    pre: block('pre', head.pre),
+    post: block('post', head.post),
     hits: hits.filter((e) => (e.content || '').trim()).map((e) => e.name),
   }
 }
@@ -267,6 +311,9 @@ export function parseStPrompts(prompts: unknown, promptOrder?: unknown): PresetE
       order: typeof o.injection_order === 'number' && Number.isFinite(o.injection_order) ? o.injection_order : idx * 10,
       // role:'user' 的酒馆条目挂在对话尾部，对应到本终端即「贴近输出」的后置段
       position: !marker && o.role === 'user' ? 'post' : 'pre',
+      /* 适用范围是本终端给酒馆格式加的一个字段（酒馆读不懂也不报错，导回去无碍）：
+         写 'main' / 'sms' 就把条目限在那一侧，不写 = 两侧都进。 */
+      ...(o.scope === 'main' || o.scope === 'sms' ? { scope: o.scope } : {}),
     })
   }
   return out.length ? out : null
@@ -276,7 +323,11 @@ export function parseStPrompts(prompts: unknown, promptOrder?: unknown): PresetE
 
 const KINDS: PresetEntryKind[] = ['行为', '格式', '其它']
 
-/** 方案文件／本地存档里的条目数组 → PresetEntry[]；无有效项返回 null */
+/**
+ * 方案文件／本地存档里的条目数组 → PresetEntry[]；无有效项返回 null。
+ * 认不出 `scope` 就**不写这个字段**（而不是写成 'all'）：缺省本就是 all，
+ * 显式写进去只会让老存档看起来像「被人改过」。
+ */
 export function parsePresetEntries(v: unknown): PresetEntry[] | null {
   if (!Array.isArray(v)) return null
   const out: PresetEntry[] = []
@@ -296,6 +347,7 @@ export function parsePresetEntries(v: unknown): PresetEntry[] | null {
       constant: o.constant !== false,
       keys: Array.isArray(o.keys) ? (o.keys as unknown[]).filter((x): x is string => typeof x === 'string') : [],
       order: typeof o.order === 'number' && Number.isFinite(o.order) ? o.order : 100,
+      ...(o.scope === 'main' || o.scope === 'sms' ? { scope: o.scope } : {}),
       ...(typeof o.group === 'string' && o.group ? { group: o.group } : {}),
       ...(o.placeholder === true ? { placeholder: true } : {}),
     })

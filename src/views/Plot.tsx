@@ -421,7 +421,8 @@ export function Plot() {
       }
 
       // 预设导演指令：由「管理预设」套用后落下的生效快照提供；与本回合扫描同一份文本
-      const preset = buildPresetContext(readActivePreset(), scanText)
+      // scope='main' —— 只取管主线叙事的那一支；短信专用条目（篇幅、发言格式）在这里出局
+      const preset = buildPresetContext(readActivePreset(), scanText, 'main')
 
       // 通联日志身份：这一趟是谁在问、预设实际进了哪几条、世界书命中多少
       const presetInfo = activePresetInfo()
