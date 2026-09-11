@@ -188,8 +188,14 @@ export const ROSTER: Record<string, RoleDef> = {
       place('到达点', {
         id: 'mefisa-burst', name: '无论何处都能抵达', power: 0, axis: '反现实亲和',
         target: 'allyAll', fx: 'drone',
-        effect: { pushBar: 0.85, spdUp: 0.3, pushBack: 0.5 },
-        desc: '八脚马把全队直接载到「应有的位置」——全体回满行动条，并把敌人推离坐标。',
+        // 「行动条」的两位主人之一（另一位是会长）。
+        // 这里原本还挂了 pushBack，但这一手的目标是 allyAll ——
+        // 引擎在辅助分支里只把效果发给队友（hostile 那一份没有接收者），
+        // 所以「把敌人推离坐标」从来就没生效过。改成一个真能落地的东西：
+        // 载具把全队带走，敌人这一轮就是打空。
+        effect: { pushBar: 0.85, spdUp: 0.3, evade: 0.3 },
+        desc: '八脚马把全队直接载到「应有的位置」——全体行动条直接满上；'
+          + '接下来的这一程里，敌人的每一手都追不上他们。',
         line: '「八脚马是——为了『无论何处都能抵达』的弹痕。」',
       }),
     ],
@@ -206,14 +212,18 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('提速', {
         id: 'nyau-swap', name: '换位 · 掩护', axis: '敏捷度', fx: 'seal',
-        effect: { evade: 0.3, pushBar: 0.35 },
-        desc: '把同伴从必死的坐标里换出来：全队闪避大幅提升，自身行动条一并前推。',
+        effect: { evade: 0.55 },
+        desc: '把同伴从必死的坐标里换出来：全队充能提速、闪避大幅提升 ——'
+          + '打不中的人，就不必去挨那一下。',
         line: '「沙，沙姆希尔……」',
       }),
       place('驱逐', {
         id: 'nyau-void', name: '掷入真空', power: 1.7, axis: '反现实亲和', fx: 'seal',
-        effect: { pushBack: 0.6, hits: 1 },
-        desc: '把远处的敌人直接与子弹换位，掷进无声的宇宙——伤害之外，还把它推出好远。',
+        // 「掷进无声的宇宙」本来就该落在「没有声音」上：换成沉默，比一个推条
+        // 更贴她那句台词，也才像一门掷换手的东西（沉默只对技能生效，普攻照打）。
+        turns: 2, effect: { silence: true },
+        desc: '把远处的敌人直接与子弹换位，掷进无声的宇宙 —— 那里面没有声音，'
+          + '它喊不出自己的技能，只剩普攻；节奏也被一并打散。',
         line: '「没关系。那里没有声音。因为是真空。」',
       }),
       place('到达点', {
@@ -243,8 +253,10 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('自愈', {
         id: 'youshihan-fate', name: '留级的直觉', axis: '意志力', target: 'self',
-        fx: 'guard', effect: { evade: 0.4, pushBar: 0.4, heal: 0, cleanse: false },
-        desc: '懒得挪步，却总能站到不该站的地方：自身闪避提升并回一截气。',
+        // 她不是拿来疗伤的（凶兽只负责打），所以把这一类自带的回复与解厄按住，
+        // 只留「站到不该站的地方」那一半。
+        fx: 'guard', effect: { evade: 0.5, heal: 0, cleanse: false, shield: 0.25 },
+        desc: '懒得挪步，却总能站到不该站的地方：自身闪避提升，顺手把这一拍硬接下来。',
         line: '「呼啊……这是哪？陌生的天花板？久违一年的阳光，好刺眼啊……」',
       }),
       place('到达点', {
@@ -260,7 +272,10 @@ export const ROSTER: Record<string, RoleDef> = {
   'alive-anatolia': {
     cls: '撰史者',
     sub: '以「散文」撰写委员会的未来 · 会长席上的那一笔',
-    trait: '如散文般：一击可贯穿过去，把干涉送往因果的开端。战场上她改的不是结果，是起因。',
+    // 「行动条」这一条的两位主人之一（另一位是梅芙）：她动的不是伤害，是顺位。
+    // 「贯穿过去」把对面的条从起因上抹掉，「撰写」把全队的条按她写下的一段往前挪。
+    trait: '如散文般：一击可贯穿过去，把干涉送往因果的开端。战场上她改的不是结果，是起因 ——'
+      + '谁先动、谁不动，是她写下来的。',
     skills: [
       /* 会长席上的那一笔 —— 数值口径（重标定）：
          她的问题从来不是「打不痛」，是「一手把整场拉走」。
@@ -286,15 +301,21 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('增益', {
         id: 'alive-edit', name: '撰写', axis: '反现实亲和', fx: 'seal',
-        cost: 5, cd: 6, turns: 2,
-        effect: { atkUp: 0.2, spdUp: 0.2 },
-        desc: '为全队补上一行注脚：攻击与充能一并上扬。',
+        // 冷却 6 → 7 拍：这一手现在多了一条「把全队往前挪」，
+        // 那就得按「多买了一件东西」付账（她本来靠被动折冷却，折完也不该回到一手接一手）。
+        // atkUp 0.2 → 0.15 同理：加的是顺位，不是火力。
+        cost: 5, cd: 7, turns: 2,
+        effect: { atkUp: 0.15, spdUp: 0.2, pushBar: 0.25 },
+        desc: '为全队补上一行注脚：攻击与充能一并上扬 —— 而她写下的那一段，'
+          + '全队就照着往前挪一截。',
         line: '「——让你成为我的俘虏，成为我可爱的狗狗吧。」',
       }),
       place('到达点', {
-        id: 'alive-burst', name: '会长的一笔', power: 2.2, axis: '反现实亲和',
+        id: 'alive-burst', name: '如散文般——有时亦如诗歌', power: 2.2, axis: '反现实亲和',
         target: 'all', fx: 'noise', cd: 7,
-        desc: '直接改写这一战的结末。', line: '「——我在此宣判：对你，执行即刻销毁处分。」',
+        desc: '不再是一笔，是一整页：她把这一战的结末从头到尾重写一遍 ——'
+          + '「如散文般」，有时亦如诗歌。',
+        line: '「——我在此宣判：对你，执行即刻销毁处分。」',
       }),
     ],
   },
@@ -316,8 +337,10 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('提速', {
         id: 'vern-dispatch', name: '黑档库 · 调度', axis: '意志力', fx: 'drone',
-        effect: { pushBar: 0.45 },
-        desc: '把观测到的时机分发给全队：行动条一同前推。', line: '「A-11小队向后方撤退300米，支援部队已经部署在建筑高层。C-7小队，从东侧小巷穿越大道，掩护D-3中队。」',
+        // 他给的是「算过的那一格」：命中。顺位不归他管（那条只有梅芙与会长能动）。
+        effect: { accUp: 0.3 },
+        desc: '把观测到的时机分发给全队：充能提速，每个人的出手也都落在算过的那一格上。',
+        line: '「A-11小队向后方撤退300米，支援部队已经部署在建筑高层。C-7小队，从东侧小巷穿越大道，掩护D-3中队。」',
       }),
       place('到达点', {
         id: 'vern-end', name: '黑档库 · 底数总清算', power: 2.6, axis: '反现实亲和',
@@ -400,21 +423,22 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('重压', {
         id: 'nana-heavy', name: '大麻烦 · 增重', axis: '物理抗性', fx: 'blast',
-        effect: { pushBack: 0.45, slow: 0.45 },
+        effect: { slow: 0.55 },
         desc: '把敌方全体的自重提到数十倍：它们几乎挪不动，充能大幅滞后。',
         line: '「吃我一招——『大麻烦』！」',
       }),
       place('驱逐', {
         id: 'nana-light', name: '大麻烦 · 减重', power: 1.8, fx: 'slash',
-        effect: { pushBack: 0.5 },
-        desc: '把对手体重降到几十分之一，一棒送它离场。',
+        // 轻到那个地步，它自己那点分量压不住任何东西 —— 减伤也就拦不住这一棒。
+        effect: { pierce: true },
+        desc: '把对手体重降到几十分之一，一棒送它离场 —— 轻成那样的东西，护甲也拦不住。',
         line: '「出发了哦——大麻烦！」',
       }),
       place('到达点', {
         id: 'nana-end', name: '大麻烦 · 掂量完毕', power: 2.6, axis: '物理抗性',
-        target: 'all', fx: 'blast', effect: { pushBack: 0.6, slow: 0.3 },
-        desc: '给全场每一个东西都称一遍：轻的送走，重的压住 —— '
-          + '这一手过后，战场上谁站在哪里就由她说了。',
+        target: 'all', fx: 'blast', effect: { slow: 0.5, mark: 0.3 },
+        desc: '给全场每一个东西都称一遍：轻的托起来，重的压下去 —— '
+          + '这一手过后，全场的节奏都归她称。',
         line: '「都说别小瞧我了！『大麻烦』的能力可是能把接触到的物体的重量翻三倍呢！」',
       }),
     ],
@@ -436,8 +460,8 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('屏障', {
         id: 'reiya-oath', name: '共奏之约', axis: '意志力', fx: 'guard',
-        effect: { shield: 0.4, pushBar: 0.2 },
-        desc: '篝火之国那一夜的约定：这把锯子第一次为守护而转动。全队减伤并回气。',
+        effect: { shield: 0.5 },
+        desc: '篝火之国那一夜的约定：这把锯子第一次为守护而转动。全队减伤。',
         line: '「我是蕾雅·库尔·杜·琉米爱尔。我以我的骄傲起誓，我一定会保护你！」',
       }),
       /*
@@ -475,8 +499,9 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('屏障', {
         id: 'emei-guard', name: '佩剑 · 殿后', axis: '物理抗性', fx: 'guard',
-        effect: { shield: 0.38, pushBar: 0.25 },
-        desc: '副议长殿后：全队减伤，并甩开身后的追兵。', line: '「争取时间？错了！我是为了战胜你而来——为了守护我爱的人而来！」',
+        effect: { shield: 0.5 },
+        desc: '副议长殿后：全队减伤 —— 追兵要过来，得先过她这一关。',
+        line: '「争取时间？错了！我是为了战胜你而来——为了守护我爱的人而来！」',
       }),
       // 统率者的到达点不落在敌人身上：她把整支队伍当这一手打出去
       place('到达点', {
@@ -501,14 +526,14 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('牵制', {
         id: 'isis-scoop', name: '独家取材', axis: '反现实亲和', fx: 'drone',
-        effect: { mark: 0.3, slow: 0.2, pushBack: 0.2 },
+        effect: { mark: 0.35, slow: 0.35 },
         desc: '把目标的破绽写进稿子：全队打它更重，它的充能也跟着慢下来。',
         line: '「这可是一条超级劲爆的独家新闻☆我绝对会揪住你的尾巴，将真相公之于众！」',
       }),
       place('提速', {
         id: 'isis-live', name: '实况解说', axis: '敏捷度', fx: 'seal',
-        effect: { spdUp: 0.45, pushBar: 0.2 },
-        desc: '就像在天空竞技祭那样，把全场的节奏念出来：全队充能提速。',
+        effect: { accUp: 0.3 },
+        desc: '就像在天空竞技祭那样，把全场的节奏念出来：全队充能提速，出手也不容易落空。',
         line: '『好的，吴选手发动穷奇……玛丽娅选手的「天下无双的公主大人 」也同时发动……然后——哇哦？！ 这是怎么回事——？！』',
       }),
       place('到达点', {
@@ -597,8 +622,8 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('牵制', {
         id: 'phidra-match', name: '来一场好比赛吧', axis: '反现实亲和', fx: 'seal',
-        effect: { pushBack: 0.55, mark: 0.25, slow: 0.2 },
-        desc: '把目标请进他的规则：行动条大幅推后，攻击随之萎顿。',
+        effect: { mark: 0.35, slow: 0.45 },
+        desc: '把目标请进他的规则：在规则里，它出手更轻、充得更慢 —— 每一步都是他安排好的。',
         line: '「让我们来一场好比赛吧。」',
       }),
       place('增益', {
@@ -609,8 +634,9 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('到达点', {
         id: 'phidra-end', name: '赌局结算', power: 2.5, axis: '反现实亲和',
-        fx: 'seal', effect: { mark: 0.4, pushBack: 0.5 },
-        desc: '走进他规则里的东西，最终都要按他的算法结一次账。',
+        fx: 'seal', effect: { mark: 0.55, pierce: true },
+        desc: '走进他规则里的东西，最终都要按他的算法结一次账 ——'
+          + '连它身上那层挡着的东西，也早就记在他的账上了。',
         line: '「……呵呵。你真是个奇怪的人。好啊，来吧！言万心叶！」',
       }),
     ],
@@ -633,14 +659,17 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('提速', {
         id: 'maria-encore', name: '安可', axis: '敏捷度', fx: 'guitar',
-        effect: { pushBar: 0.5 },
-        desc: '返场加演：全队立刻抢回一截行动条。', line: '「谢谢大家——！我会努力的！请多多支持我哦！」',
+        // 「安可」给的是士气，不是顺位：台下再喊一遍她的名字，全队就打得更狠更准。
+        effect: { atkUp: 0.3, accUp: 0.2 },
+        desc: '返场加演：台下再喊一遍她的名字 —— 全队士气与准头一起提上来。',
+        line: '「谢谢大家——！我会努力的！请多多支持我哦！」',
       }),
       place('到达点', {
         id: 'maria-end', name: '安可 · 最后一句', power: 0, axis: '反现实亲和',
         target: 'allyAll', fx: 'heal',
-        effect: { heal: 0.6, atkUp: 0.4, pushBar: 0.3, cleanse: true },
-        desc: '把整场演唱会一次唱完：台下的心跳全部变成现实，全队一起站起来。',
+        effect: { heal: 0.65, atkUp: 0.45, cleanse: true, evade: 0.2 },
+        desc: '把整场演唱会一次唱完：台下的心跳全部变成现实，全队一起站起来 ——'
+          + '也一起躲开下一轮。',
         line: '「我会以向您请教的心情全力迎战！来吧——『天下无双的公主大人』！」',
       }),
     ],
@@ -657,8 +686,8 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('提速', {
         id: 'merwen-step', name: '愚者的足迹', axis: '敏捷度', target: 'self',
-        fx: 'drone', effect: { evade: 0.45, pushBar: 0.55, spdUp: 0.2 },
-        desc: '瞬移到「刚刚想到的地方」：自身闪避大幅提升，并抢回行动条。',
+        fx: 'drone', effect: { evade: 0.6, spdUp: 0.3 },
+        desc: '瞬移到「刚刚想到的地方」：自身闪避大幅提升，充能也快得抓不住。',
         line: '「我可不喜欢一直输啊——来吧，第二回合！」',
       }),
       place('强袭', {
@@ -668,9 +697,9 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('到达点', {
         id: 'merwen-end', name: '愚者的足迹 · 终点', power: 3.0, axis: '敏捷度',
-        fx: 'slash', effect: { pushBar: 0.4 },
+        fx: 'slash', effect: { pierce: true },
         desc: '她说自己不逃，只换坐标。那这一下就是「换到对手身上」——'
-          + '落点不在任何地方，在他背后。',
+          + '落点不在任何地方，在他背后，也绕开了他所有的准备。',
         line: '「——那么，开始反击吧。你应该已经做好被我痛扁一顿的准备了吧?」',
       }),
     ],
@@ -693,8 +722,8 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('牵制', {
         id: 'ameria-fix', name: '注视 · 定', axis: '反现实亲和', fx: 'drone',
-        effect: { mark: 0.35, pushBack: 0.4, slow: 0.3 },
-        desc: '把目光钉在目标身上：它再难挪动，也更容易被打中。',
+        effect: { mark: 0.4, slow: 0.4 },
+        desc: '把目光钉在目标身上：被整座城市盯着的东西，充得更慢，也更容易被打中。',
         line: '「是呢。所以就由我，来代替你们去思考呀♡」',
       }),
       place('到达点', {
@@ -729,13 +758,14 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('重压', {
         id: 'kuro-sand', name: '风与沙 · 落沙', axis: '反现实亲和', fx: 'noise',
-        effect: { slow: 0.3, mark: 0.25, pushBack: 0.3 },
+        effect: { slow: 0.4, mark: 0.3 },
         desc: '沙那一支：细密的沙落进每一道缝隙，把对手的脚步与节奏一并埋住。',
         line: '「像你这样的终末，我，绝不饶恕。」',
       }),
       place('解厄', {
         id: 'kuro-chain', name: '风与沙 · 解镣', axis: '意志力', fx: 'noise',
-        desc: '两支合一，把束缚连同这一带的规则一并吹散：全队脱离减益，行动条前推。',
+        desc: '两支合一，把束缚连同这一带的规则一并吹散：全队脱离减益 ——'
+          + '吹散之后，敌人这一段的出手也一起落空。',
         line: '「——我会这么做。——你呢？」',
       }),
       place('到达点', {
@@ -758,8 +788,9 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('强袭', {
         id: 'yiregel-bloom', name: '龙花 · 开', power: 2.0, axis: '反现实亲和',
-        fx: 'noise', effect: { pushBar: 0.35 },
-        desc: '龙花绽放：一击贯穿，并顺势把自己的行动条推满一截。',
+        // 「贯穿」就该落在贯穿上：龙之国的东西不按这边的规矩运转，护甲也一样。
+        fx: 'noise', effect: { pierce: true },
+        desc: '龙花绽放：一击贯穿 —— 龙之国的东西不按这边的规矩运转，对面的护甲也一样。',
         line: '「但是抱歉。我要你死。妨碍她的所有人，全都一样。」',
       }),
       place('屏障', {
@@ -788,8 +819,8 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('牵制', {
         id: 'touyi-joke', name: '插科打诨', axis: '意志力', fx: 'seal',
-        effect: { slow: 0.35, pushBack: 0.35, mark: 0.15 },
-        desc: '把对手的节奏搅乱：攻击萎顿、行动条错位。',
+        effect: { slow: 0.45, mark: 0.2 },
+        desc: '把对手的节奏搅乱：它充得更慢，破绽也一起露出来 —— 谁也听不懂他哪句是真的。',
         line: '「……………………开玩笑的啦。」',
       }),
       place('治愈', {
@@ -819,20 +850,21 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('提速', {
         id: 'huda-read', name: '预读', axis: '敏捷度', fx: 'drone',
-        effect: { pushBar: 0.8, spdUp: 0.35 },
-        desc: '把未来几步摊开：全队行动条大幅前推，并抢在对手之前。',
+        effect: { spdUp: 0.85 },
+        desc: '把未来几步摊开：全队充能大幅提速 —— 她已经在想第三步了，队伍得跟上。',
         line: '「不过，我们也得考虑一下今后的立场了。」',
       }),
       place('牵制', {
         id: 'huda-lock', name: '算死', axis: '反现实亲和', fx: 'seal',
-        effect: { pushBack: 1.0, mark: 0.4 },
-        desc: '把目标的退路一步步堵上：行动条清零，并标记为全队靶子。',
+        effect: { mark: 0.45, slow: 0.5 },
+        desc: '把目标的退路一步步堵上：它每一步都落在她算好的格子里，早就被标成全队的靶子。',
         line: '「我们来谈谈吧。因为我是用手机在操控瞄准，所以也没把握只打穿腿之类的〜」',
       }),
       place('到达点', {
         id: 'huda-end', name: '终局预读', power: 2.5, axis: '反现实亲和', fx: 'seal',
-        effect: { pushBack: 1.0, mark: 0.5 },
-        desc: '她早就算到了这一拍。这一手不是「快」，是「本来就在那里」。',
+        effect: { mark: 0.6, pierce: true },
+        desc: '她早就算到了这一拍。这一手不是「快」，是「本来就在那里」——'
+          + '连它身上那层挡着的东西，也早就在她的算式里被划掉了。',
         line: '「这个世界——是你的梦，小叶。」',
       }),
     ],
@@ -853,8 +885,8 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('提速', {
         id: 'yuina-flare', name: '锋芒毕露', axis: '敏捷度', fx: 'noise',
-        effect: { spdUp: 0.4, pushBack: 0.25 },
-        desc: '浑身锋芒炸开：全队充能提速，敌人被迫后退。',
+        effect: { spdUp: 0.95 },
+        desc: '浑身锋芒炸开：全队充能大幅提速 —— 想都没想就已经冲出去了，谁也拦不住。',
         line: '「不。和他们敌对吧。那样就能和各种家伙战斗了。想想就爽。」',
       }),
       place('到达点', {

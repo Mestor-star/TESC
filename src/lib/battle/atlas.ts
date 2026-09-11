@@ -13,6 +13,27 @@
    不一样的是档位与来历，不是规则本身。
    要加一类之前先问：它跟已有的某一类**在打法上**不同吗？
    只是数值大小不同的，一律并进同一类，靠倍率带分档。
+
+   ------------------------------------------------------------
+   「行动条」这一条不许再往下发
+   ------------------------------------------------------------
+   能直接挪动行动条的效果只有三个键：
+     · pushBar   把自己这边往前推
+     · pushBack  把对手往后推
+     · clearBar  把目标的条清零（打断咏唱）
+   这三样**只有梅芙（mefisa）与会长（alive-anatolia）**能碰 ——
+   因为她俩的设定本身就是这件事：梅芙的八脚马是「无论何处都能抵达」，
+   她决定谁先到场；会长的「如散文般」在因果的开端处落笔，她决定谁的那一拍被划掉。
+   其余人只能在自己那一拍里做事。
+
+   所以：**本表的骨架效果一律不带这三个键**，谁也不能靠「挑一个类」白拿一条。
+   需要的那两位在 roster.ts 里自己往 effect 上写（place 的 effect 是同名覆盖，
+   角色层压得过骨架层）。
+   为什么这么收：条一旦人人能推，条就不代表「这一拍轮到谁」了 ——
+   所有人都在抢顺位，就没有人在打输出。
+   敌方的推条不受此限（见 bosses.ts 与 derive.ts 的杂兵技）：那是他们施压的手段，
+   不是给玩家挑的选项。道具的打断也不算在内 —— 「镇静剂」（gear.ts）压掉的是
+   对面正在咏唱的那一发，它是首领战的三种解法之一，拆了就没得解了。
    ============================================================ */
 
 import type { AxisKey, FxKind, SkillEffect, SkillKind, SkillSpec, Target } from './types'
@@ -76,13 +97,13 @@ export const ARCH: Record<string, Arch> = {
   },
   驱逐: {
     id: '驱逐', name: '驱逐', kind: '技能',
-    desc: '打出去的同时把目标推离这一轮：伤害中等，但它的行动条要重排。',
-    target: 'one', cost: 5, cd: 2, band: [1.4, 2.0], effect: { pushBack: 0.55 },
+    desc: '打出去的同时把它赶出射程：伤害中等，但它的节奏被打散了。',
+    target: 'one', cost: 5, cd: 2, band: [1.4, 2.0], effect: { slow: 0.4 },
   },
   震退: {
     id: '震退', name: '震退', kind: '技能',
-    desc: '一下打到敌方全体，并一起震退：清小幅兵与拆蓄势都用它。',
-    target: 'all', cost: 4, cd: 3, band: [1.0, 1.6], effect: { pushBack: 0.5, slow: 0.3 },
+    desc: '一下打到敌方全体，把它们的节奏一起震散：清小幅兵与拆蓄势都用它。',
+    target: 'all', cost: 4, cd: 3, band: [1.0, 1.6], effect: { slow: 0.5, mark: 0.15 },
   },
 
   /* —— 保住人：往上加的那种 —— */
@@ -94,8 +115,8 @@ export const ARCH: Record<string, Arch> = {
   },
   自愈: {
     id: '自愈', name: '自愈', kind: '技能',
-    desc: '只修自己：回血、回气、回行动条 —— 一个人把这一拍找回来。',
-    target: 'self', cost: 3, cd: 2, band: [0, 0], effect: { heal: 0.3, pushBar: 0.5, cleanse: true },
+    desc: '只修自己：回一截血、刮掉身上的负面，再扣上一层薄甲 —— 一个人把这条命找回来。',
+    target: 'self', cost: 3, cd: 2, band: [0, 0], effect: { heal: 0.45, cleanse: true, shield: 0.18 },
   },
   屏障: {
     id: '屏障', name: '屏障', kind: '技能',
@@ -117,8 +138,8 @@ export const ARCH: Record<string, Arch> = {
   },
   提速: {
     id: '提速', name: '提速', kind: '技能',
-    desc: '全队立刻抢回一截行动条，并跑得更快：先手是这一类给的。',
-    target: 'allyAll', cost: 4, cd: 2, band: [0, 0], effect: { spdUp: 0.4, pushBar: 0.35 },
+    desc: '全队跑得更快：先手是这一类给的 —— 但它只改充能的速度，不替谁把行动条挪过去。',
+    target: 'allyAll', cost: 4, cd: 2, band: [0, 0], effect: { spdUp: 0.6 },
   },
   牵制: {
     id: '牵制', name: '牵制', kind: '技能',
@@ -127,13 +148,13 @@ export const ARCH: Record<string, Arch> = {
   },
   重压: {
     id: '重压', name: '重压', kind: '技能',
-    desc: '对敌方全体下手：一起慢下来、一起往后挪、一起被标上。',
-    target: 'all', cost: 5, cd: 3, turns: 3, band: [0, 0], effect: { mark: 0.2, slow: 0.35, pushBack: 0.4 },
+    desc: '对敌方全体下手：一起慢下来、一起被标上 —— 谁也跑不掉。',
+    target: 'all', cost: 5, cd: 3, turns: 3, band: [0, 0], effect: { mark: 0.25, slow: 0.5 },
   },
   解厄: {
     id: '解厄', name: '解厄', kind: '技能',
-    desc: '只做一件事：把全队身上的负面全刮掉，并让他们立刻往前挪。',
-    target: 'allyAll', cost: 4, cd: 3, band: [0, 0], effect: { cleanse: true, pushBar: 0.45 },
+    desc: '只做一件事：把全队身上的负面全刮掉 —— 刮干净之后，敌人这一段的出手也一起落空。',
+    target: 'allyAll', cost: 4, cd: 3, band: [0, 0], effect: { cleanse: true, evade: 0.2 },
   },
 
   /* —— 规格：改自己底子的那一类 —— */
