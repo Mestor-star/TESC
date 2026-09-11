@@ -319,11 +319,16 @@ for (let i = 0; i < 60; i++) {
 
 /* ---------- 启动 Edge ---------- */
 const profile = mkdtempSync(path.join(tmpdir(), 'zts-smoke-'))
-const edge = spawn(EDGE, [
-  '--headless=new', '--no-first-run', '--disable-gpu', '--disable-extensions',
+/* --mute-audio：复核是在**用户自己的机器**上跑真浏览器。
+   这份界面自己会出声（P3 那一段就把底噪打开，后面一路都有垫乐），
+   无头浏览器不设这一项是往真实声卡送的 —— 复核期间用户那边会莫名有音乐，
+   关掉自己的界面也停不下来（声音不是从他那来的）。真出厂的界面照放，这里只是把复核静音。 */
+const EDGE_ARGS = [
+  '--headless=new', '--no-first-run', '--disable-gpu', '--disable-extensions', '--mute-audio',
   '--remote-debugging-port=' + DBG_PORT, '--remote-allow-origins=*',
   '--user-data-dir=' + profile, '--window-size=1440,1000', APP_URL,
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+]
+const edge = spawn(EDGE, EDGE_ARGS, { stdio: ['ignore', 'ignore', 'pipe'] })
 
 let passAll = true
 try {
@@ -1749,6 +1754,52 @@ try {
   const o4 = await ev(`(()=>{const k=document.querySelector('[data-op-kv]');const t=k?k.innerText:'';
     return {standing:/苍之学园|临时访问/.test(t),pos:/低语者|化身之枪|灵魂共奏/.test(t),pot:/Stage4|未测定/.test(t),txt:t.slice(0,180)}})()`)
   ok('O4 专档口径随观测进度（学园身份 · 战斗定位 · 终末潜力）', o4.standing === true && o4.pos === true && o4.pot === true, JSON.stringify(o4))
+
+  /* ============ Phase Q：关了界面就得收声 ============
+     用户报的原话是「关闭界面还会有音乐，我关掉了浏览器声音才好」。
+     走的是标题菜单那条**退出终端**：回到指纹认证开屏之后，上一段底照旧一直放。
+     这里量的还是**真的合成**（createOscillator 计数），不是把音量拧到 0 ——
+     音量的事看不出来「还在不在响」，音符数看得见。
+     底噪在 P3 打开过、P6 又关掉了，这里直接把本机设置写成「开」再重载：
+     开关本身由 P3/P6 负责，这一相管的是「关了界面还响不响」。 */
+  console.log('\n[Phase Q] 关了界面就得收声：标题有音乐 · 退出终端之后一段都不再排')
+  await ev(`(()=>{try{const s=JSON.parse(localStorage.getItem('zts-audio:v1')||'{}');
+    localStorage.setItem('zts-audio:v1',JSON.stringify(Object.assign({},s,{beds:true,muted:false})))}catch(e){}return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'Q boot screen')
+  // 计数要在**起音之前**挂上 —— 长按指纹那一下既是手势、也是解锁
+  const qArm = await ev(`(()=>{window.__au={src:0,err:[]};
+    const A=window.AudioContext||window.webkitAudioContext;if(!A)return {ac:false};
+    const co=A.prototype.createOscillator,cb=A.prototype.createBufferSource;
+    A.prototype.createOscillator=function(){window.__au.src++;return co.apply(this,arguments)};
+    A.prototype.createBufferSource=function(){window.__au.src++;return cb.apply(this,arguments)};
+    window.addEventListener('error',e=>window.__au.err.push(String(e.message)));
+    return {ac:true}})()`)
+  const qr = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+  ok('Q0 退出终端那一路能走到（认证开屏 + 指纹键都在，真 Web Audio 在场）',
+    qArm.ac === true && !!qr, JSON.stringify({ ...qArm, finger: !!qr }))
+  if (qr) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: qr.x, y: qr.y, button: 'left', clickCount: 1 })
+    await sleep(2200)
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: qr.x, y: qr.y, button: 'left', clickCount: 1 })
+  }
+  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'Q title menu')
+  const qOn0 = await ev(`window.__au.src`)
+  await sleep(2000)
+  const qOn1 = await ev(`window.__au.src`)
+  ok('Q1 标题菜单上确实有音乐在放（否则下面那一条什么也证明不了）',
+    qOn1 - qOn0 > 0, `Δ=${qOn1 - qOn0}`)
+
+  const qExit = await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('退出终端'));
+    if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 12000, 'Q back to boot screen')
+  const qOff0 = await ev(`window.__au.src`)
+  await sleep(2500)
+  const qOff1 = await ev(`window.__au.src`)
+  const qErrs = await ev(`window.__au.err`)
+  ok('Q2 退出终端回到认证开屏后，一个音都不再合成 —— 关了界面，声音就停',
+    qExit === true && qOff1 - qOff0 === 0, `退出=${qExit} Δ=${qOff1 - qOff0}`)
+  ok('Q3 这一路调度器一条都没抛错', Array.isArray(qErrs) && qErrs.length === 0, JSON.stringify(qErrs))
 
 } catch (e) {
   passAll = false

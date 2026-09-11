@@ -9,7 +9,7 @@ import { clock, rSeverity } from './lib/format'
 import { rFactor } from './lib/battle/rvalue'
 import { clearRemount, registerRemount } from './lib/remount'
 import { resetGuide } from './lib/guide'
-import { bedForView, installAudio, setAudio, setBed, useAudioSettings } from './lib/audio'
+import { bedForState, bedForView, installAudio, setAudio, setBed, stopBed, useAudioSettings } from './lib/audio'
 import { subscribeUnread, totalUnread } from './lib/sms'
 import { useProactiveSms } from './lib/smsauto'
 
@@ -381,12 +381,18 @@ function SetupShell() {
 }
 
 function Gate() {
-  const { authed, stage, setupMode, enter } = useTerminal()
-  // 标题菜单与设置专用界面不在 Shell 里，底在这里补上；
-  // 进了终端本体就撒手 —— 那一段由 Shell 按当前模块决定
+  const { authed, stage, setupMode, enter, view } = useTerminal()
+  /*
+    标题菜单与设置专用界面不在 Shell 里，底在这里补上；
+    进了终端本体就照模块那一份（按 view 判，Shell 那边也一样）。
+    「该放哪一段」由 bedForState 一处决定 —— 关键的一份是**指纹认证开屏**：
+    「退出终端」之后那一段底必须停，否则界面关了、声音还在。
+  */
   useEffect(() => {
-    if (authed && (stage !== 'game' || setupMode)) setBed('menu')
-  }, [authed, stage, setupMode])
+    const want = bedForState({ authed, stage, setupMode, view })
+    if (want === null) stopBed()
+    else setBed(want)
+  }, [authed, stage, setupMode, view])
   // 认证开屏 → 标题菜单 → 终端本体 / 设置专用界面（读档/重置经 key 重挂载后按阶段直达）
   if (!authed) return <Boot onDone={enter} />
   if (stage !== 'game') return <TitleMenu />

@@ -184,6 +184,17 @@ export function unlockAudio(): boolean {
   }
 }
 
+/**
+ * 把上下文整个挂起（页面要走了时用）。
+ * 与「把音量拧到 0」不是一回事：挂起会连合成与调度一起停下来 ——
+ * 页面即便被浏览器留在后台（关窗后继续运行后台应用一类），也不再出声。
+ * 回来时 unlockAudio() 会把它叫醒（它本来就会 resume 挂起的上下文）。
+ */
+export function suspendAudio(): void {
+  if (!ctx) return
+  try { void ctx.suspend() } catch { /* 挂不起就算了，声音那点事不值得把界面拖下水 */ }
+}
+
 /** 当前总音量（给界面上的电平指示用） */
 export function masterLevel(): number {
   return volume

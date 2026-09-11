@@ -10,8 +10,8 @@
 
 import { useSyncExternalStore } from 'react'
 
-import { audioOn, audioSettings, bedsOn, followVisibility, onAudio, setAudio, unlockAudio } from './engine'
-import { resumeBed, setBed, stopBed, wakeBed } from './music'
+import { audioOn, audioSettings, bedsOn, followVisibility, onAudio, setAudio, suspendAudio, unlockAudio } from './engine'
+import { currentBed, resumeBed, setBed, stopBed, wakeBed } from './music'
 import { sfx } from './sfx'
 import type { SfxName } from './sfx'
 import type { AudioSettings } from './engine'
@@ -54,6 +54,21 @@ let lastView = 'dashboard'
 export function bedForView(view: string): BedName {
   lastView = view
   return VIEW_BED[view] ?? 'terminal'
+}
+
+/**
+ * 「眼下这个状态该放哪一段底」—— null 就是**一段都不放**（收声）。
+ *
+ * 之所以要把它收成一处：背景音同时有三层想决定它 —— 模块（按 view 换）、
+ * 标题菜单与设置专用界面（压在 menu 上）、以及指纹认证开屏。
+ * 前两层以前各写各的 `if`，而**开屏那一层没人写**：用户点「退出终端」回到开屏之后，
+ * 上一段 menu 照旧一直放着 —— 界面已经关了、声音还在，只能去关浏览器声音。
+ * 现在「该放什么」只在这里判一次，界面按它的返回值决定 setBed 还是 stopBed。
+ */
+export function bedForState(s: { authed: boolean; stage: string; setupMode: boolean; view: string }): BedName | null {
+  if (!s.authed) return null                                // 终端已退出（指纹认证开屏）：收声
+  if (s.stage !== 'game' || s.setupMode) return 'menu'      // 标题菜单 / 设置专用界面
+  return bedForView(s.view)                                 // 终端本体：按模块
 }
 
 /** 当前是不是正压在作战屏上（作战屏盖在终端上面，底也要跟着换） */
@@ -142,10 +157,39 @@ export function installAudio(): () => void {
 
   const offVis = followVisibility()
 
+  /*
+    页面要走了（关标签页 / 关窗口 / 离开本页）就得收声。
+    只靠 React 的卸载是不保险的：关标签页并不会跑一遍组件卸载，
+    而浏览器「关窗后继续运行后台应用」一类的设置还会把这个文档留着 ——
+    于是调度器照旧往后排音符，人已经看不到界面了，音乐却还在响。
+    freeze 是页面生命周期里的「被冻结」，同样按「走了」处理。
+    回来（pageshow，含从往返缓存恢复）再把刚才那一段补上。
+  */
+  let lastBed: BedName | null = null
+  const leave = () => {
+    lastBed = currentBed()
+    stopBed()
+    suspendAudio()
+  }
+  const back = () => {
+    if (!lastBed) return
+    const want = lastBed
+    lastBed = null
+    if (unlockAudio() && bedsOn()) setBed(want)
+  }
+  window.addEventListener('pagehide', leave)
+  window.addEventListener('beforeunload', leave)
+  window.addEventListener('freeze', leave)
+  window.addEventListener('pageshow', back)
+
   return () => {
     window.removeEventListener('pointerdown', wake, true)
     window.removeEventListener('keydown', wake, true)
     document.removeEventListener('click', onClick, true)
+    window.removeEventListener('pagehide', leave)
+    window.removeEventListener('beforeunload', leave)
+    window.removeEventListener('freeze', leave)
+    window.removeEventListener('pageshow', back)
     offVis()
     stopBed()
     installed = false

@@ -40,7 +40,7 @@ import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
 import { BEDS } from '../../src/lib/audio/music'
-import { VIEW_BED } from '../../src/lib/audio/index'
+import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
 import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/lib/budget'
 import { API_DEFAULTS } from '../../src/lib/api'
@@ -1866,13 +1866,17 @@ export function run(): MechReport {
     }
     walk('src')
     const code = files.map((p) => bare(readFileSync(p, 'utf8'))).join('\n')
-    /* 作战屏那一段是**按条件挑**的（on ? (boss ? 'boss' : 'battle')），
-       没有 setBed('battle') 这样的字面量可找 —— 所以单独取 battleBed 的函数体来看。
-       取的就是那个函数：别的写法（在别处另挑一次）这条看不到，也就该被抓住。 */
+    /* 有两处是**按条件挑**的，没有 setBed('x') 这样的字面量可找：
+         · 作战屏（on ? (boss ? 'boss' : 'battle')）—— 取 battleBed 的函数体；
+         · 状态决定（标题/设置页那一段 menu）—— 取 bedForState 的函数体。
+       取的就是那两个函数：别的写法（在别处另挑一次）这条看不到，也就该被抓住。 */
     const idxSrc = bare(readFileSync('src/lib/audio/index.ts', 'utf8'))
-    const battleBody = idxSrc.includes('function battleBed') ? idxSrc.split('function battleBed')[1].slice(0, 400) : ''
-    /** 有人用名字点过它：静态映射、一处 setBed('x')、或作战屏那两个名字之一 */
-    const named = (n: BedName) => Object.values(VIEW_BED).includes(n) || code.includes(`setBed('${n}')`) || battleBody.includes(`'${n}'`)
+    const bodyOf = (fn: string, n = 400) => idxSrc.includes(`function ${fn}`) ? idxSrc.split(`function ${fn}`)[1].slice(0, n) : ''
+    const battleBody = bodyOf('battleBed')
+    const stateBody = bodyOf('bedForState', 700)
+    /** 有人用名字点过它：静态映射、一处 setBed('x')、作战屏那两个名字之一、或状态那一档 */
+    const named = (n: BedName) => Object.values(VIEW_BED).includes(n) || code.includes(`setBed('${n}')`)
+      || battleBody.includes(`'${n}'`) || stateBody.includes(`'${n}'`)
     const handPicked = names.filter((n) => !Object.values(VIEW_BED).includes(n) && named(n))
 
     const orphan = names.filter((n) => !named(n))
@@ -1885,7 +1889,39 @@ export function run(): MechReport {
     /* 对照：这条判据认得出一段真没人点的床（不是「怎么写都过」） */
     ok('背景音（对照）：同一条判据认得出一段没人点名的床',
       !named('__nobody__' as BedName) && names.every((n) => named(n)),
-      `手工点名的三段（${handPicked.join('、')}）分别从调用点与 battleBed 里认出来`)
+      `手工点名的两段（${handPicked.join('、')}）分别从调用点、battleBed 与 bedForState 里认出来`)
+
+    /* ⑤ 什么状态下该放哪一段 —— 尤其是**不该放**的那一处。
+       用户报的是「关闭界面还有音乐」：标题菜单的「退出终端」回到指纹认证开屏之后，
+       上一段底照旧放着，只能去关浏览器声音。所以「该放什么」收成了一个纯函数，
+       这里按状态逐档点名，开屏那一档必须是 null（一段都不放）。 */
+    const st = (authed: boolean, stage: string, setupMode: boolean, view = 'plot') =>
+      bedForState({ authed, stage, setupMode, view })
+    ok('背景音：终端已退出（指纹认证开屏）一段都不放 —— 关了界面就该收声',
+      st(false, 'title', false) === null && st(false, 'game', false) === null,
+      `开屏 ${JSON.stringify(st(false, 'title', false))} / ${JSON.stringify(st(false, 'game', false))}`)
+
+    /* 对照：判据不是「一律静音」。标题菜单与设置专用界面照样点名 menu，
+       终端本体照样按模块走 —— 这样上面那一条收得过宽（把 game 也判成静音）当场会被抓。 */
+    ok('背景音（对照）：同一条判据在标题/设置页点名 menu、在终端本体按模块走',
+      st(true, 'title', false) === 'menu' && st(true, 'title', true) === 'menu'
+      && st(true, 'game', false, 'tavern') === 'tavern' && st(true, 'game', false, '不存在' as string) === 'terminal',
+      `${st(true, 'title', false)} / ${st(true, 'title', true)} / ${st(true, 'game', false, 'tavern')}`)
+
+    /* 还有一条路是「页面本身要走了」（关标签页 / 关窗口）：那一下**不会**跑一遍组件卸载，
+       所以收声得挂在 pagehide 一类的生命周期事件上。这条只能读源码，
+       但判据本身要有牙：把 suspendAudio 那一句换掉、把事件名换掉，同一条判据都得变红。 */
+    const leaves = (src: string) => {
+      const d = src.indexOf('const leave = ')
+      if (d < 0 || !src.includes(`addEventListener('pagehide', leave)`)) return false
+      const body = src.slice(d, d + 240)
+      return body.includes('stopBed()') && body.includes('suspendAudio()')
+    }
+    ok('背景音：页面要走（关标签页/关窗口）时也收声 —— 收声挂在 pagehide 上',
+      leaves(idxSrc), leaves(idxSrc) ? 'pagehide → stopBed + suspendAudio' : '没找到收声的接线')
+    ok('背景音（对照）：同一条判据认得出「挂着却不收声」的写法',
+      !leaves(idxSrc.replace('suspendAudio()', 'noop()')) && !leaves(idxSrc.replace(`'pagehide'`, `'x'`)),
+      '抽掉 suspendAudio / 换掉事件名之后，判据都变红')
 
     info.push(`背景音 ${names.length} 段：`
       + names.map((n) => `${n} ${BEDS[n].bpm}bpm·${BEDS[n].prog.length}和弦·${BEDS[n].voice}·`
