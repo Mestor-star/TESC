@@ -213,6 +213,12 @@ export interface SkillSpec {
    * 一解封就丢出去的话，那五下启动就只是纯亏的过场。
    */
   openAfter?: number
+  /**
+   * 「启动」类专有：解封是一层一层拧开的，所以每一层有每一层的台词。
+   * 第 n 次启动报 startLines[n-1]，最后一句留给「尽解」那一拍（见 engine 的解封分支）。
+   * 比 startNeed 短就连报最后一句 —— 中途没词了不算错，只是那几层不吭声。
+   */
+  startLines?: string[]
   /** 这一手在技能框架里按哪一类打的（见 atlas.ts；档案与作战面板都写它） */
   arch?: string
   /**
@@ -232,6 +238,19 @@ export interface SkillSpec {
    * 只有 boss 的「回响 · 复写」用它 —— 见 engine 的 resolve。
    */
   echo?: boolean
+  /**
+   * 复写（片羽「申告虚伪」）：出手时当场照抄**任意一个角色**的一手，原样打出去。
+   * 与回响的分工：回响抄的是「我方刚出的那一手」，复写抄的是「她挑的那一手」。
+   * 门（启动）与印记（到达点）抄不过来 —— 借来的手没有那五下启动、也没有印记；
+   * `uncopyable` 的那些同样抄不过来。
+   */
+  copy?: boolean
+  /**
+   * 抄不过来。恋兔的吉他写的就是这一条：
+   * 那把琴是弹痕「樱之残影」的形状，真正出力的是她本人 ——
+   * 抄得来一把琴，抄不来弹它的那股力，因为那股力本来就不在吉他上。
+   */
+  uncopyable?: boolean
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
@@ -450,6 +469,12 @@ export interface BattleState {
   hand: number
   /** 当前满条可行动者 id（null = 无人待命 / 已收场） */
   actor: string | null
+  /**
+   * 「回手」：下一手仍旧是这一位，不看行动条先后（用完即清）。
+   * 只有一处会写它 —— 解封尽解的那一拍（见 engine 的 k.kind === '启动' 分支）：
+   * 五下启动把回合全让出去了，尽解不给一手回手的话，解封本身就是白亏五拍。
+   */
+  again: string | null
   allies: Combatant[]
   enemies: Combatant[]
   log: LogEntry[]

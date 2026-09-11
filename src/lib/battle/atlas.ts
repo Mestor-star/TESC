@@ -197,8 +197,16 @@ export interface PlaceOpt {
   needsStack?: number
   /** 解封之后还要过几拍才放得出来 */
   openAfter?: number
+  /** 启动（解封）类专有：每一层的台词（见 SkillSpec.startLines） */
+  startLines?: string[]
   /** 倍率浮动（乱击一类） */
   variance?: number
+  /** 复写：把小队方才用过的那一手原样念回来（见 engine 的回响分支） */
+  echo?: boolean
+  /** 复写（申告虚伪）：当场照抄任意一个角色的一手（见 engine 的 copy 分支） */
+  copy?: boolean
+  /** 抄不过来（见 SkillSpec.uncopyable） */
+  uncopyable?: boolean
   /** 需与某位同伴同队 */
   requireAlly?: string
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
@@ -235,7 +243,11 @@ export function place(archId: string, o: PlaceOpt): SkillSpec {
     needsStack: o.needsStack ?? a.needsStack,
     cd: o.cd ?? a.cd,
     openAfter: o.openAfter,
+    startLines: o.startLines,
     variance: o.variance,
+    echo: o.echo,
+    copy: o.copy,
+    uncopyable: o.uncopyable,
     requireAlly: o.requireAlly,
     mergeAlly: o.mergeAlly,
     mergeTicks: o.mergeTicks,

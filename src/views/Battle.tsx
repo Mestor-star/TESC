@@ -18,7 +18,8 @@ import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import type { GearDef } from '../lib/battle/types'
-import { POWER_SCALE, passiveText } from '../lib/battle/roster'
+import { passiveText } from '../lib/battle/roster'
+import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
@@ -215,6 +216,27 @@ export function Battle({
         return { c, pct, ready, eta }
       })
       .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
+  }, [st])
+
+  /* ---- 「回手」的那一下 ----
+     解封尽解的人会被引擎原位填满行动条、点名下一位还是他（见 engine 的 again）。
+     顺位条靠 translate 滑过去，那个人会当着玩家的面窜到最前 ——
+     这里只再补一记提亮，说明「这一手不是抢来的，是解封给的」。 */
+  const [surge, setSurge] = useState<string | null>(null)
+  const logged = useRef(0)
+  useEffect(() => {
+    // 引擎是就地推进的（push 进同一个数组），所以只按「新添了哪几条」找
+    const from = logged.current
+    logged.current = st.log.length
+    let who: string | null = null
+    for (let i = st.log.length - 1; i >= from; i--) {
+      const e = st.log[i]
+      if (e.skillId === 'unseal' && e.skill === '解禁') { who = e.actorId; break }
+    }
+    if (!who) return
+    setSurge(who)
+    const t = window.setTimeout(() => setSurge(null), 1800)
+    return () => window.clearTimeout(t)
   }, [st])
 
   /* ---- 底：一进作战屏就换战斗底，boss 上场再压重一层 ---- */
@@ -466,12 +488,19 @@ ${siteR.f.word}`}>
         </div>
       </header>
 
-      {/* 行动顺位 —— 把每个人的行动条摊开排一行：谁先动、还差几拍，出招前一眼看得清 */}
+      {/* 行动顺位 —— 把每个人的行动条摊开排一行：谁先动、还差几拍，出招前一眼看得清。
+          卡片是绝对定位 + translate 走的（见 orderCards 的注释）：
+          顺位一变就是滑过去，不是「啪」地换一排 ——
+          解封尽解那一拍的回手要靠这一下才看得见。 */}
       <div className={css.orderStrip} data-order-strip>
         <span className={`${css.orderCap} tiny mono`}>
           <Sneaker size={13} /> 行动顺位
         </span>
-        <div className={css.orderCards}>
+        <div
+          className={css.orderCards}
+          data-order-cards
+          style={{ width: order.length * ORDER_STEP - ORDER_GAP }}
+        >
           {order.map(({ c, pct, ready, eta }, i) => (
             <span
               key={c.id}
@@ -480,7 +509,9 @@ ${siteR.f.word}`}>
               data-side={c.side}
               data-ready={ready ? '1' : undefined}
               data-next={i === 0 && !ready ? '1' : undefined}
-              style={{ '--u': c.hue } as CSSProperties}
+              data-surge={surge === c.id ? '1' : undefined}
+              data-slot={i}
+              style={{ '--u': c.hue, '--x': `${i * ORDER_STEP}px` } as CSSProperties}
               title={`${named(c)} · 行动条 ${Math.round(pct)}%${ready ? ' · 已待命' : ` · 约 ${eta} 拍后出手`}`}
             >
               <i className={css.orderSigil}>{c.sigil}</i>
@@ -892,36 +923,16 @@ function notesOf(k: SkillSpec): string[] {
   const out: string[] = []
   // 这一手在框架里按哪一类打的 —— 同类的两个人可以直接对着看
   if (k.arch) out.push(`框架 · ${archNameOf(k.arch) ?? k.arch}`)
-  if (k.power > 0) {
-    const mul = k.variance
-      ? `倍率 ${((k.power * (1 - k.variance)) / POWER_SCALE).toFixed(2)}~${((k.power * (1 + k.variance)) / POWER_SCALE).toFixed(2)} 摇摆 × ${k.axis}`
-      : `倍率 ${(k.power / POWER_SCALE).toFixed(2)} × ${k.axis}`
-    out.push(mul)
-  } else out.push('本手不造成伤害')
+  // 倍率与效果同出一处（skilltext）：面板读的是实值，一件不落
+  const mul = mulTextOf(k)
+  if (mul) out.push(mul)
   out.push(TARGET_LABEL[k.target] ?? k.target)
   if (k.cost) out.push(`耗 ${k.cost} 体力`)
   if (k.cd) out.push(`冷却 ${k.cd} 拍`)
 
-  const e = k.effect
-  if (e) {
-    if (e.hits && e.hits > 1) out.push(`${e.hits} 段`)
-    if (e.heal) out.push(`回复 ×${e.heal} 意志力`)
-    if (e.shield) out.push(`减伤 ${Math.round(e.shield * 100)}%`)
-    if (e.mark) out.push(`目标受伤 +${Math.round(e.mark * 100)}%`)
-    if (e.slow) out.push(`敌方充能 −${Math.round(e.slow * 100)}%`)
-    if (e.pushBack) out.push(`击退行动条 ${Math.round(e.pushBack * 100)}%`)
-    if (e.clearBar) out.push('清空行动条 · 打断咏唱')
-    if (e.pierce) out.push('无视闪避与减伤')
-    if (e.cleanse) out.push('解除负面')
-    if (e.taunt) out.push(`引仇 ${k.turns ?? 2} 拍`)
-    if (e.revive) out.push('把失能者拉回战列')
-    if (e.selfToo) out.push('增益同时及于自身')
-    if (e.atkUp) out.push(`攻击 +${Math.round(e.atkUp * 100)}%`)
-    if (e.spdUp) out.push(`充能 +${Math.round(e.spdUp * 100)}%`)
-    if (e.evade) out.push(`闪避 +${Math.round(e.evade * 100)}%`)
-    if (e.accUp) out.push(`命中 +${Math.round(e.accUp * 100)}%`)
-    if (e.pushBar) out.push(`立刻充能 ${Math.round(e.pushBar * 100)}%`)
-  }
+  const eff = effectTextsOf(k)
+  if (eff.length) out.push(...eff)
+  else if (k.power <= 0) out.push('不造成伤害 · 亦无附带效果')
 
   if (k.needsStack) out.push(`需 ${k.needsStack} 层印记`)
   if (k.requireAlly) out.push(`需 ${personOf(k.requireAlly)?.name ?? k.requireAlly} 在场`)
@@ -935,6 +946,8 @@ function notesOf(k: SkillSpec): string[] {
   }
   if (k.ult) out.push(`终结技 · 蓄 ${k.ult} 拍`)
   if (k.kind === '启动') out.push('启动技 · 解封普攻与技能')
+  // 解封是一层一层拧开的：把每一层的台词也摊开，免得玩家以为五下是同一句
+  if (k.startLines?.length) out.push(`逐层台词 · ${k.startLines.join(' → ')}`)
   return out
 }
 
@@ -989,6 +1002,14 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
     </button>
   )
 }
+
+/* ---------- 行动顺位条的滑动 ----------
+   卡片在容器里是绝对定位的，横坐标由 `--x` 给（第几张 × 一步的距离），
+   位移写在 `translate` 上、并有过渡 —— 于是顺位一变就是滑过去。
+   宽度必须是个常数：靠内容撑宽的话，JS 算不出该滑多远。 */
+const ORDER_CARD_W = 112
+const ORDER_GAP = 6
+const ORDER_STEP = ORDER_CARD_W + ORDER_GAP
 
 /* ---------- 行动条 ---------- */
 

@@ -11,7 +11,7 @@
      其中「更换装备」不消耗回合（执行委员长口径）。
    ============================================================ */
 
-import { applySynergies, bondsOf } from './synergy'
+import { LION_PAIR_ID, applySynergies, bondsOf } from './synergy'
 import { lineFor, poolFor } from './banter'
 import { TUNING } from './tuning'
 import { combatantOf, enemiesOf, speedOf } from './derive'
@@ -70,10 +70,16 @@ export function atkMulOf(c: Combatant): number {
   let mul = 1 + buffOf(c, 'atk') + c.gearAtk + (p?.atk ?? 0)
   if (p?.lowHpAtk && c.hpMax > 0 && c.hp / c.hpMax <= 0.5) mul += p.lowHpAtk
   // 全技能倍率乘算（旧吉他解封）：加的是「规格」，所以乘在最外层
-  mul *= 1 + buffOf(c, 'skillMul')
+  mul *= skillSpecOf(c)
   // 「磨蚀」一类：被磨软了打不出原来的分量。留个底，减攻不至于把人打成零输出
   mul -= buffOf(c, 'frail')
   return Math.max(TUNING.frailFloor, mul)
+}
+
+/** 技能效果倍率（旧吉他解封）：给的是「× N」，内部存 +（N−1），读数处 1 + v 即得乘数。
+    伤害那一支走 atkMulOf；回复 / 护盾 / 各类增益与压制的「量」走这里。 */
+export function skillSpecOf(c: Combatant): number {
+  return 1 + buffOf(c, 'skillMul')
 }
 
 /** 被停滞了吗 —— 行动条完全冻住，一格都不涨 */
@@ -218,6 +224,7 @@ export function createBattle(opts: CreateOpts): BattleState {
     tick: 0,
     hand: 0,
     actor: null,
+    again: null,
     allies,
     enemies,
     log: [],
@@ -359,12 +366,18 @@ function applyEffect(
   targets: Combatant[],
   hostileTargets: Combatant[],
   turns = 2,
+  // 技能效果倍率（旧吉他解封）：伤害之外的每一种「量」都跟着翻。
+  // 道具走的是默认值 1 —— 解封放大的是使用者的技术，不是手里那件东西。
+  scale = 1,
 ) {
   if (!eff) return
+  // 整数类的量（生命回复）取整；小数类的量（护盾系数、行动条推移、命中/闪避）留两位
+  const iv = (v: number) => Math.round(v * scale)
+  const fv = (v: number) => Math.round(v * scale * 100) / 100
   for (const t of targets) {
     if (t.down && !eff.heal) continue
     if (eff.heal) {
-      const n = healAmount(src, t, eff.heal)
+      const n = iv(healAmount(src, t, eff.heal))
       t.hp = Math.min(t.hpMax, t.hp + n)
       pushLog(s, {
         round: s.hand, actorId: src.id, actor: src.name, side: src.side,
@@ -375,14 +388,15 @@ function applyEffect(
     // 解除负面：沉默 / 流血 / 减攻一并洗掉（见 types 的 DEBUFF_KEYS）
     if (eff.cleanse) t.buffs = t.buffs.filter((b) => !isDebuff(b.k))
     if (eff.clearBar) t.bar = 0
-    if (eff.evade) addBuff(t, 'evade', eff.evade, turns)
-    if (eff.accUp) addBuff(t, 'acc', eff.accUp, turns)
-    if (eff.shield) addBuff(t, 'shield', eff.shield, turns)
-    if (eff.atkUp) addBuff(t, 'atk', eff.atkUp, turns)
-    // skillMul 给的是「× N」：内部存 +（N−1），读数处 1 + v 即得乘数
+    if (eff.evade) addBuff(t, 'evade', fv(eff.evade), turns)
+    if (eff.accUp) addBuff(t, 'acc', fv(eff.accUp), turns)
+    if (eff.shield) addBuff(t, 'shield', fv(eff.shield), turns)
+    if (eff.atkUp) addBuff(t, 'atk', fv(eff.atkUp), turns)
+    // skillMul 给的是「× N」：内部存 +（N−1），读数处 1 + v 即得乘数。
+    // 这条**不**跟着 scale 走 —— 否则解封叠解封会自己乘自己。
     if (eff.skillMul && eff.skillMul > 0) addBuff(t, 'skillMul', eff.skillMul - 1, turns)
-    if (eff.spdUp) addBuff(t, 'spd', eff.spdUp, turns)
-    if (eff.pushBar) t.bar = Math.min(TUNING.barMax * 1.6, t.bar + TUNING.barMax * eff.pushBar)
+    if (eff.spdUp) addBuff(t, 'spd', fv(eff.spdUp), turns)
+    if (eff.pushBar) t.bar = Math.min(TUNING.barMax * 1.6, t.bar + TUNING.barMax * fv(eff.pushBar))
     if (eff.taunt) t.taunt = Math.max(t.taunt, turns)
   }
   for (const t of hostileTargets) {
@@ -392,20 +406,20 @@ function applyEffect(
       // 「镇静剂」压住的不只是行动条：正在咏唱的大招也一并哑掉
       if (resetChant(s, t, '镇静')) { /* 已入日志 */ }
     }
-    if (eff.mark) addBuff(t, 'mark', eff.mark, turns)
-    if (eff.slow) addBuff(t, 'slow', eff.slow, turns)
-    if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * eff.pushBack)
+    if (eff.mark) addBuff(t, 'mark', fv(eff.mark), turns)
+    if (eff.slow) addBuff(t, 'slow', fv(eff.slow), turns)
+    if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * fv(eff.pushBack))
     // 敌方专给我方的三种：沉默 / 流血 / 减攻
     if (eff.silence) addBuff(t, 'silence', 1, turns)
-    if (eff.bleed) addBuff(t, 'bleed', eff.bleed, turns)
-    if (eff.frail) addBuff(t, 'frail', eff.frail, turns)
-    if (eff.lockdown) addBuff(t, 'lockdown', eff.lockdown, turns)
+    if (eff.bleed) addBuff(t, 'bleed', fv(eff.bleed), turns)
+    if (eff.frail) addBuff(t, 'frail', fv(eff.frail), turns)
+    if (eff.lockdown) addBuff(t, 'lockdown', fv(eff.lockdown), turns)
 
     /* 停滞：不走 addBuff 那一套 —— 它的时长按「拍」算，而拍是要在
        心跳里自己往下数的（被冻住的人不会行动，也就没机会给自己减层）。
        见 advance 的拍子循环。 */
     if (eff.stasis) {
-      const n = Math.max(1, Math.min(TUNING.stasisCap, eff.stasis))
+      const n = Math.max(1, Math.min(TUNING.stasisCap, Math.round(eff.stasis * scale)))
       const found = t.buffs.find((b) => b.k === 'stasis')
       if (found) found.t = Math.max(found.t, n)
       else t.buffs.push({ k: 'stasis', v: 1, t: n })
@@ -420,7 +434,7 @@ function applyEffect(
     /* 归档：把人从战场上收走几拍。用的是「合体」那套离场机制，
        所以列表、行动条、判定都会当他不在场上 —— 回来时行动条从零起。 */
     if (eff.archive) {
-      const n = Math.max(1, Math.min(TUNING.archiveCap, eff.archive))
+      const n = Math.max(1, Math.min(TUNING.archiveCap, Math.round(eff.archive * scale)))
       t.gone = Math.max(t.gone, n)
       t.bar = 0
       t.buffs = []
@@ -584,7 +598,7 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
         pushLog(s, hit(s, atk, t, k))
       }
     }
-  } else if (k.kind !== '启动' && !k.echo) {
+  } else if (k.kind !== '启动' && !k.echo && !k.copy) {
     // 不造成伤害的辅助手：调律、屏障、鼓舞之类（回响不在此列，它自己那一段会写日志）
     pushLog(s, {
       round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
@@ -620,11 +634,53 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     }
   }
 
+  /* 复写（片羽「申告虚伪」）：照抄**任意一个角色**的一手 ——
+     不是「上一手」（那是回响），是她当场挑的那一手。
+     原文里那三条硬限制照样成立：二十四小时的观测窗口、同一时间只能拿一手、
+     以及减寿的代价，所以这里一次只抄一手，抄完就过。
+     抄不来的那些也写明在数据上（SkillSpec.uncopyable）：
+     恋兔的吉他抄得来一把琴，抄不来弹它的那股力 —— 那股力本来就不在吉他上。 */
+  if (k.copy) {
+    const pool: SkillSpec[] = []
+    for (const c of allOf(s)) {
+      if (c.down || c.gone > 0) continue
+      for (const x of c.skills) {
+        if (x.id === k.id || x.uncopyable || x.copy) continue
+        // 门与印记抄不过来：「解封」要的是那五下启动，「到达点」要的是自己的印记，
+        // 借来的手没有这两样。变身一类也不是「一手」，是「换个人」，同样不算。
+        if (x.kind === '启动' || x.kind === '到达点') continue
+        if (x.form || x.morph) continue
+        pool.push(x)
+      }
+    }
+    const foes = atk.side === 'ally' ? aliveOf(s.enemies) : aliveOf(s.allies)
+    if (pool.length && foes.length) {
+      const stolen = pool[Math.floor(Math.random() * pool.length)]
+      const t = foes[Math.floor(Math.random() * foes.length)]
+      const ck: SkillSpec = {
+        ...stolen,
+        id: `${k.id}-copy`, name: `复写 · ${stolen.name}`,
+        cost: 0, cd: 0, ult: undefined, openAfter: undefined, needsStack: undefined,
+      }
+      pushLog(s, {
+        round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
+        skillId: k.id, skill: k.name, kind: k.kind, fx: 'seal',
+        line: k.line || undefined,
+        note: `${atk.name} 申告了那一手 —— 「${stolen.name}」原样落在 ${t.name} 身上。`
+          + '二十四小时里她只拿得动这一手。',
+      })
+      resolve(s, atk, ck, t.id)
+    }
+  }
+
   // 效果：伤害之外的增益 / 压制。
   //   · 单体 / 全体 攻击手：增益留给自己，压制落在选中的那个（或全体）敌人身上
   //   · 辅助手：效果按 target 落在我方
   const e = k.effect
   if (e) {
+    // 出手时点上的技能效果倍率（旧吉他解封）。在这里取一次定值：
+    // 若这手本身就把 skillMul 加上去了，那也**从下一手**才生效，不自乘。
+    const smul = skillSpecOf(atk)
     const friendly: typeof e = {
       heal: e.heal, cleanse: e.cleanse, shield: e.shield, evade: e.evade, accUp: e.accUp,
       atkUp: e.atkUp, skillMul: e.skillMul, spdUp: e.spdUp, pushBar: e.pushBar, taunt: e.taunt,
@@ -642,12 +698,12 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     )
 
     if (k.target === 'all' || k.target === 'one') {
-      if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns)
+      if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, smul)
       if (hasHostile) {
         const ht = k.target === 'one'
           ? (() => { const t = targetId ? find(s, targetId) : undefined; return t && !t.down && t.gone <= 0 ? [t] : aliveOf(foes).slice(0, 1) })()
           : aliveOf(foes)
-        applyEffect(s, atk, hostile, [], ht, k.turns)
+        applyEffect(s, atk, hostile, [], ht, k.turns, smul)
       }
     } else {
       const beneficiaries = k.target === 'self'
@@ -656,7 +712,7 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
           ? aliveOf(friends)
           : (() => { const x = targetId ? find(s, targetId) : undefined; return x && x.side === atk.side && !x.down && x.gone <= 0 ? [x] : [atk] })()
       if (e.selfToo && !beneficiaries.includes(atk)) beneficiaries.push(atk)
-      applyEffect(s, atk, e, beneficiaries, [], k.turns)
+      applyEffect(s, atk, e, beneficiaries, [], k.turns, smul)
     }
   }
 
@@ -731,19 +787,34 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
   if (k.kind === '启动') {
     atk.startUsed += 1
     const n = atk.startUsed
-    if (n >= atk.startNeed) {
+    // 解封是「一层一层拧开」的过程，所以每一层有每一层的台词：
+    // 第 n 次报 startLines 的第 n 句，最后一句留给「尽解」那一拍。
+    const ladder = k.startLines
+    const done = n >= atk.startNeed
+    const line = ladder?.length
+      ? ladder[Math.min(n, ladder.length) - 1]
+      : undefined
+    if (done) {
       // 记下解封这一拍：带 openAfter 的手要从这里起算（见 legalSkills）
       atk.unsealedAt = s.hand
+      /* 尽解那一拍他立刻再动一次：五下启动把回合全让给了对面，
+         门开了却轮不到自己出招的话，解封本身就只是白亏五拍 ——
+         所以把行动条原位填满，并点名下一手仍旧是他（见 advance 的 again）。 */
+      atk.bar = TUNING.barMax
+      s.again = atk.id
       pushLog(s, {
         round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
         skillId: 'unseal', skill: '解禁', kind: '指令', fx: 'noise',
-        note: `封印尽解 —— 普攻与技能已可用（第 ${n}/${atk.startNeed} 重）。`,
+        line: line || undefined,
+        note: `封印尽解 —— 普攻与技能已可用（第 ${n}/${atk.startNeed} 重）。`
+          + '门开的这一拍他接着再动一手，不算在别人头上。',
       })
     } else {
       pushLog(s, {
         round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
         skillId: 'unseal', skill: `封印 ${n}/${atk.startNeed}`, kind: '指令', fx: atk.fx,
-        note: '还没解开。',
+        line: line || undefined,
+        note: `第 ${n} 重解开了 —— 还差 ${atk.startNeed - n} 下。`,
       })
     }
   }
@@ -873,7 +944,14 @@ export function advance(s: BattleState): BattleState {
       }
       continue
     }
-    const cur = ready[0]
+    /* 「回手」：解封尽解的那一位下一手还是他，不看行动条先后。
+       只认一次 —— 消费掉就清，免得他一路连着动下去。 */
+    let cur = ready[0]
+    if (s.again) {
+      const back = ready.find((c) => c.id === s.again)
+      s.again = null
+      if (back) cur = back
+    }
     if (cur.side === 'enemy') {
       // 接通接口时，这一手不由引擎决定：停在 'think' 让视图去问，
       // 算完 enemysTurn() 把 intent 交回来，这里从同一个 cur 续上。
@@ -948,16 +1026,23 @@ export function act(s: BattleState, cmd: Command): BattleState {
   }
 
   /* —— 消耗回合的三手 —— */
+  /* 出手之前他是不是已经顶着那头狮子 —— 变身那一手本身不算「攻击后」，
+     所以这个状态要在 resolve 之前取（resolve 会把变身安上去）。 */
+  const lionBefore = me.morph?.kind === 'form'
+  /** 这一手是不是「攻击」（真的打出去了才算 —— 增益、变身、治疗都不算） */
+  let attacked = false
   if (cmd.t === 'atk') {
     const k = basicOf(me)
     if (!k) return s
     me.sp = Math.max(0, me.sp - k.cost)
+    attacked = k.power > 0
     beginAction(s, me)
     resolve(s, me, k, cmd.targetId)
   } else if (cmd.t === 'skill') {
     const k = legalSkills(me, s).find((x) => x.id === cmd.skillId)
     if (!k || k.cost > me.sp || (me.cds[k.id] ?? 0) > 0) return s
     me.sp = Math.max(0, me.sp - k.cost)
+    attacked = k.power > 0
     // 记下这一手：boss 的「回响」会照着它原样打回来
     s.lastSkill = k
     beginAction(s, me)
@@ -1019,7 +1104,12 @@ export function act(s: BattleState, cmd: Command): BattleState {
   // 恋兔光封印期的那五下启动就会替全队把合击提前打光，门还没解，敌人先死了。
   const isTune = cmd.t === 'skill'
     && me.skills.some((x) => x.id === cmd.skillId && x.kind === '启动')
-  if (cmd.t !== 'guard' && !isTune) fireLinks(s, me.id)
+  if (cmd.t !== 'guard' && !isTune) {
+    // 顶着黄金狮子的那几拍，双人连携不看共鸣槽 —— 先接它，槽里那一笔留着
+    // 给别人接（否则同一手会把同一条连携接两遍）。
+    if (lionBefore && attacked) fireLionLink(s, me.id)
+    fireLinks(s, me.id)
+  }
 
   checkEnd(s)
   if (s.phase !== 'select') {
@@ -1102,6 +1192,59 @@ function fireLinks(s: BattleState, actorId: string) {
       linkPow: b.link.linkPow,
     }, target.id)
   }
+}
+
+/**
+ * 黄金狮子 · 每一手攻击都接得上的那一记双人连携。
+ *
+ * 平时连携走共鸣槽：羁绊里的人一人添一笔，满了才接得上（见 chargeLinks）。
+ * 但黄金狮子形态是另一回事 —— 那不是「两个人打熟了」，是**她此刻就在他手里**：
+ * 丝线缠在拳面上、缠在獠牙上，他每打出去一手，她那一份就跟着出去一次。
+ * 所以这几拍里不看槽、不等满，每一手攻击后自己接上，且不动槽里那一笔。
+ *
+ * 参加者按条规不能少人：露娜倒了、被归档收走了，这一记就接不上。
+ * 它也有自己的冷却（连携上写的 cd）—— 那是「她跟得上几次」的节拍器，
+ * 与共鸣槽无关。
+ */
+function fireLionLink(s: BattleState, actorId: string) {
+  const b = bondsOf(s.allies.map((c) => c.id), s.bond).find((x) => x.id === LION_PAIR_ID)
+  if (!b) return
+  s.linkCd = s.linkCd ?? {}
+  if ((s.linkCd[b.id] ?? 0) > 0) return
+  const live = b.members
+    .map((id) => find(s, id))
+    .filter((c): c is Combatant => !!c && !c.down && c.gone <= 0)
+  if (live.length < b.members.length) return
+  const actor = live.find((c) => c.id === actorId)
+  if (!actor) return
+  const foes = aliveOf(s.enemies)
+  if (!foes.length) return
+  const target = [...foes].sort((a, c) => a.hp - c.hp)[0]
+  // 槽里那一笔留给他们自己攒：这几拍接的是「她在手上」，不是「槽满了」
+  s.link[b.id] = 0
+  s.linkCd[b.id] = b.link.cd
+  pushLog(s, {
+    round: s.hand, actorId: actor.id, actor: actor.name, side: actor.side,
+    skillId: `link-${b.id}`, skill: `连携 · ${b.name}`, kind: '技能', fx: b.link.fx,
+    tone: 'strike', scope: 'one',
+    note: `${actor.name} 打出去的那一手还没收，丝线已经顺着同一个方向缠上去了 ——`
+      + `${live.map((c) => c.name).join('、')} 又接了一记。`,
+    link: { id: b.id, name: b.link.name, members: live.map((c) => c.id) },
+  })
+  resolve(s, actor, {
+    id: `link-${b.id}`,
+    name: b.link.name,
+    kind: '技能',
+    desc: b.link.desc,
+    cost: 0,
+    power: b.link.power,
+    axis: b.link.axis,
+    fx: b.link.fx,
+    line: b.link.line,
+    target: 'one',
+    linkUnits: live.filter((c) => c.id !== actor.id).map((c) => c.id),
+    linkPow: b.link.linkPow,
+  }, target.id)
 }
 
 /* ---------- 敌方 AI ---------- */

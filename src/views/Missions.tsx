@@ -12,8 +12,10 @@ import { Battle } from './Battle'
 import { periodProgress, personIdOf, squadIdsFrom } from '../lib/battle/derive'
 import { TUNING } from '../lib/battle/tuning'
 import {
-  buyGear, buyItem, deleteRecord, listRecords, readBag, readCoin, readEquip, readGearBag,
+  buyGear, buyItem, buyLevel, deleteRecord, effectiveGrowth, levelCostOf, listRecords,
+  readBag, readCoin, readEquip, readGearBag, readLevels,
   addGear, readGrowth, readStamina, writeEquip, readMainClaimed, writeMainClaimed,
+  LEVEL_STEP_PCT,
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
 import { genBoard } from '../lib/battle/missiongen'
@@ -65,6 +67,8 @@ export function Missions() {
   /* —— 作战子系统状态 —— */
   const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
   const [growth, setGrowth] = useState<Record<string, number>>({})
+  /** 买来的终末等级（与任务成长合流后才进战斗 —— 见 effectiveGrowth） */
+  const [levels, setLevels] = useState<Record<string, number>>({})
   const [records, setRecords] = useState<BattleRecord[]>([])
   /* 已领取归档的剧情战斗（事件 id）：牌面靠它翻页，所以要落盘 */
   const [mainClaimed, setMainClaimed] = useState<Record<string, true>>({})
@@ -80,7 +84,7 @@ export function Missions() {
   const [gearBag, setGearBag] = useState<Record<string, number>>({})
   const [equip, setEquip] = useState<Record<string, string>>({})
   const [bag, setBag] = useState<Record<string, number>>({ ...TUNING.bagDefault })
-  const [shopTab, setShopTab] = useState<'装具' | '补给'>('装具')
+  const [shopTab, setShopTab] = useState<'装具' | '补给' | '终末等级'>('装具')
   /** 军需处的柜台：平时只是一个按钮，点开才展开 */
   const [shopOpen, setShopOpen] = useState(false)
 
@@ -97,12 +101,13 @@ export function Missions() {
   const board = useMemo(() => (patrolOpen ? genBoard(seed) : []), [patrolOpen, seed])
 
   const reload = useCallback(async () => {
-    const [sp, g, rs, c, gb, eq, bg, mc] = await Promise.all([
+    const [sp, g, rs, c, gb, eq, bg, mc, lv] = await Promise.all([
       readStamina(eventsDone), readGrowth(), listRecords(),
-      readCoin(), readGearBag(), readEquip(), readBag(), readMainClaimed(),
+      readCoin(), readGearBag(), readEquip(), readBag(), readMainClaimed(), readLevels(),
     ])
     setStamina(sp)
     setGrowth(g)
+    setLevels(lv)
     setRecords(rs)
     setCoin(c)
     setGearBag(gb)
@@ -114,6 +119,17 @@ export function Missions() {
   useEffect(() => { void reload() }, [reload])
 
   const set = (id: string, s: LocalStatus) => setStatus((prev) => ({ ...prev, [id]: s }))
+
+  /* 出击真正吃的那份成长：任务成长 + 买来的终末等级。
+     合流只发生在这里，别处不许自己加（见 store 的 effectiveGrowth）。 */
+  const growthForBattle = useMemo(() => effectiveGrowth(growth, levels), [growth, levels])
+
+  /* 能升的人：已经结识的那些（外加主角本人）。没见过的名字不该出现在这份名册上。 */
+  const levelRows = useMemo(() => {
+    const rows = PERSON_IDS.filter((id) => isMet(id)).map((id) => ({ id, name: personOf(id)?.name ?? id }))
+    if (operatorName) rows.unshift({ id: OPERATOR_ID, name: operatorName })
+    return rows
+  }, [operatorName, isMet])
 
   /* 剧情作战：一场一场来 —— 打赢一场、领取归档，下一场才上牌面 */
   const mainline = useMemo(() => mainlineMissions(epDone, mainClaimed), [epDone, mainClaimed])
@@ -352,10 +368,66 @@ export function Missions() {
               <button className={`${css.shopTab} ${shopTab === '补给' ? css.isOn : ''}`} data-shop-tab="补给" onClick={() => setShopTab('补给')}>
                 道具补给
               </button>
+              <button className={`${css.shopTab} ${shopTab === '终末等级' ? css.isOn : ''}`} data-shop-tab="终末等级" onClick={() => setShopTab('终末等级')}>
+                终末等级
+              </button>
             </div>
 
+            {shopTab === '终末等级' ? (
+              <div className={css.levelNote} data-level-note>
+                <b>这里的「终末等级」与剧情里的终末无关。</b>
+                <span>
+                  剧情里的终末 Stage（Stage4『活性化』、Stage6『动摇』那一路）是那个人命里带来的东西，
+                  按原文读数记在档案上，谁也不能改。
+                  这一栏记的是另一回事：终端替在册者记下的常驻强化评级 ——
+                  花终末点数买来的训练与校准，每级让本人的五轴与生命整体上抬 {LEVEL_STEP_PCT}%，
+                  且不封顶，可以一路推上去。两者只是碰巧都叫「终末」，不是同一样东西。
+                </span>
+              </div>
+            ) : null}
+
             <div className={css.shopGrid} data-shop-grid>
-              {shopTab === '装具'
+              {shopTab === '终末等级' ? levelRows.map((r) => {
+                const lv = levels[r.id] ?? 0
+                const cost = levelCostOf(lv)
+                const afford = coin >= cost
+                return (
+                  <div key={r.id} className={css.shopItem} data-level={r.id} data-lv={lv}>
+                    <div className={css.shopName}>
+                      <b>{r.name}</b>
+                      <i className="mono">终末等级 {lv}</i>
+                    </div>
+                    <p className={css.shopDesc}>
+                      当前加成 +{(effectiveGrowth(growth, levels)[r.id] ?? 0).toFixed(0)}%（含任务成长）
+                      {' · '}再升一级 → +{(effectiveGrowth(growth, levels)[r.id] ?? 0) + LEVEL_STEP_PCT}%
+                    </p>
+                    <div className={css.shopFoot}>
+                      <span className="tiny muted">五轴与生命整体上抬 · 无等级上限</span>
+                      <button
+                        className="btn btn--ghost"
+                        style={{ fontSize: 11 }}
+                        data-level-up={r.id}
+                        disabled={!afford}
+                        onClick={async () => {
+                          const res = await buyLevel(r.id, cost)
+                          setCoin(res.coin)
+                          setLevels(res.levels)
+                          push(
+                            res.ok ? 'success' : 'warn',
+                            '军需处',
+                            res.ok
+                              ? `${r.name} 的终末等级 → ${(res.levels[r.id] ?? 0)}（余 ${res.coin} 贡献点）`
+                              : '贡献点不够 —— 先打几场再回来。',
+                            false,
+                          )
+                        }}
+                      >
+                        升一级 · {cost} 贡献点
+                      </button>
+                    </div>
+                  </div>
+                )
+              }) : shopTab === '装具'
                 ? GEAR_SHOP.map((g) => {
                   const owned = gearBag[g.id] ?? 0
                   const full = g.maxOwn != null && owned >= g.maxOwn
@@ -785,7 +857,7 @@ ${rb.f.word}`}
           /* 「变成他人」可借的档案：已遇见、且不在这支队伍里 */
           morphPool={PERSON_IDS.filter((id) => id !== OPERATOR_ID && isMet(id) && !live.squad.includes(id))}
           progress={periodProgress(epDone)}
-          growth={growth}
+          growth={growthForBattle}
           stamina={stamina}
           equip={equip}
           owned={gearBag}

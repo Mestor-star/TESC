@@ -15,11 +15,12 @@ import { opSituation } from '../lib/operator'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { AXIS_KEYS, OP_PERIODS, opBuiltinAt, opPeriodAt } from '../lib/operator-arc'
 import { GEAR_OF, GEARS, canEquip } from '../lib/battle/gear'
-import { POWER_SCALE, passiveText } from '../lib/battle/roster'
+import { passiveText } from '../lib/battle/roster'
+import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { combatantOf, periodProgress } from '../lib/battle/derive'
 import { readEquip, readGearBag, writeEquip } from '../lib/battle/store'
-import { AXIS_MAX } from '../data/types'
+import { AXIS_REF } from '../data/types'
 import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
@@ -42,9 +43,19 @@ function axisOf(c: Character, key: string): AxisVal {
   return s ? s.value : 0
 }
 
-/** 五轴读数 / 条宽（'∞' → 满格） */
+/**
+ * 五轴读数 / 条宽（'∞' → 满格）。
+ * 条宽按量表基准（AXIS_REF = 200）归一化 —— 基准**不是上限**：
+ * 战斗数值本身不封顶，越过基准的一律满格，并另标「超限」，
+ * 免得把「条满了」误读成「这个人到顶了」。
+ */
 function axisW(v: AxisVal): number {
-  return v === '∞' ? 100 : Math.min(100, (v / AXIS_MAX) * 100)
+  return v === '∞' ? 100 : Math.min(100, (v / AXIS_REF) * 100)
+}
+
+/** 是否已越过量表基准（'∞' 单算 —— 它有条纹与「不可测」的说明） */
+function axisOver(v: AxisVal | null | undefined): boolean {
+  return typeof v === 'number' && v > AXIS_REF
 }
 
 /** 读数文本（'∞' 原样） */
@@ -239,26 +250,37 @@ function Meters({ row }: { row: Row }) {
         const lim = row.axisLimit[i] ?? null
         const vW = axisW(v)
         const limW = lim === null ? vW : Math.max(vW, axisW(lim))
-        // 已登记的轴恒记双值「常态/极限」（含 ∞/∞）；未登记的轴退回单值
+        // 已登记的轴恒记双值「常态/极限」（含 200/∞）；未登记的轴退回单值
         const showLimit = lim !== null
+        // '∞' 那一侧单独用条纹：「读不出数」与「数很大」不是一回事
         const inf = v === '∞'
-        const fillBg = inf
-          ? `repeating-linear-gradient(-45deg, ${row.hue} 0 5px, transparent 5px 10px)`
-          : `linear-gradient(90deg, ${row.hue}66, ${row.hue})`
+        const limInf = lim === '∞'
+        const stripe = (c: string) => `repeating-linear-gradient(-45deg, ${c} 0 5px, transparent 5px 10px)`
+        const fillBg = inf ? stripe(row.hue) : `linear-gradient(90deg, ${row.hue}66, ${row.hue})`
         return (
           <div key={k} className={css.stat}>
             <small>{k}</small>
             <div className="meter" title={showLimit ? `常态 ${axisText(v)} · 极限 ${axisText(lim)}` : undefined}>
               {lim !== null && limW > vW ? (
-                <div className={`meter__fill ${css.limitFill}`} style={{ width: `${limW}%` }} />
+                <div
+                  className={`meter__fill ${limInf ? css.infFill : css.limitFill}`}
+                  style={{ width: `${limW}%`, background: limInf ? stripe('var(--red)') : undefined }}
+                />
               ) : null}
               <div
                 className={`meter__fill ${inf ? css.infFill : ''}`}
                 style={{ width: `${vW}%`, background: fillBg }}
               />
             </div>
-            <span className="num" data-axis-num data-axis-normal={axisText(v)} data-axis-limit={showLimit ? axisText(lim) : ''}>
+            <span
+              className="num"
+              data-axis-num
+              data-axis-normal={axisText(v)}
+              data-axis-limit={showLimit ? axisText(lim) : ''}
+              data-axis-over={axisOver(v) || axisOver(lim) ? '1' : undefined}
+            >
               {showLimit ? `${axisText(v)}/${axisText(lim)}` : axisText(v)}
+              {axisOver(v) || axisOver(lim) ? <i className={css.overMark}>超限</i> : null}
             </span>
           </div>
         )
@@ -356,12 +378,16 @@ function CombatPanel({ id, progress, gearId }: { id: string; progress: number; g
               {/* 这一手按框架里的哪一类打的：同类的两个人可以对着看 */}
               {k.arch ? <span className={css.combatArch}>{archNameOf(k.arch) ?? k.arch}</span> : null}
               <span className="mono tiny">
-                {k.power > 0 ? `倍率 ${(k.power / POWER_SCALE).toFixed(2)} × ${k.axis}` : '不造成伤害'}
+                {mulTextOf(k) ?? '不造成伤害'}
                 {k.cost ? ` · 耗 ${k.cost}` : ''}
                 {k.cd ? ` · 冷却 ${k.cd}` : ''}
               </span>
             </div>
             <p>{k.desc}</p>
+            {/* 效果逐条写出来 —— 面板读的就是引擎算的数（skilltext 一份口径） */}
+            <p className={css.combatEffect} data-skill-effect>
+              {effectTextsOf(k).length ? effectTextsOf(k).join(' · ') : '本手无附带效果'}
+            </p>
           </div>
         ))}
       </div>
@@ -557,7 +583,7 @@ export function Archive() {
             <div className="vhead__sub">
               委员会全量角色档案，主役与登场者并置同一名册，按学院／所属归组，格式一致。
               能力参数按委员会五轴评定，以「学生排行榜 RANK」与已观测的战绩、称号为参照——10 ≈ 普通成年人的该轴水准，
-              观测上限 200，『∞』为无法测量；凡观测记录载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
+              量表读数到 200 为止（那是档案给的格子，不是能力的天花板——战斗数值不封顶，超出量表的另标「超限」），『∞』为无法测量；凡观测记录载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
               （陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的走向推进，
               好感随主角行为——推演中的抉择、短信往来——实时增减。
             </div>
@@ -879,7 +905,7 @@ export function Archive() {
                   <Meters row={focus} />
                 </div>
                 {focus.axis.includes('∞') ? (
-                  <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的『∞』读数无法测量——已超出委员会可评定上限。</div>
+                  <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的『∞』读数无法测量——已超出委员会可评定的量程。</div>
                 ) : null}
               </div>
 

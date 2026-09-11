@@ -153,6 +153,71 @@ export async function addGrowth(patch: Record<string, number>): Promise<Record<s
   return cur
 }
 
+/* ---------- 终末等级（用终末点数换的常驻强化） ----------
+   先说清楚这个名字：这里的「终末等级」是**终端给在册者记的常驻强化评级**，
+   与剧情里的终末 Stage（那个人背负的终末到了第几级、危险度多高）**毫无关系**。
+   一个是可以花的点数堆出来的训练记录，一个是命里带来的东西。
+   两者只是碰巧都叫「终末」，界面上必须分开写，不许混。
+
+   口径：与任务成长走同一条路 —— 每级给本人加 LEVEL_STEP_PCT 个百分点，
+   五轴按 (1 + 成长/100) 放大，生命按 growthHpWeight 那一份跟着涨（见 derive）。
+   区别只有一条：任务成长封顶在 12%，买来的等级**不封顶**。
+   价格按级别指数上涨，所以第一级便宜、后面越推越贵。 */
+const LEVEL_KEY = 'level'
+
+/** 每一级给本人加的百分比 */
+export const LEVEL_STEP_PCT = 5
+/** 第 0 级（→ 第 1 级）的价格 */
+export const LEVEL_BASE_COST = 80
+/** 每一级在上一级价格上乘的倍率 —— 就是这条曲线的「指数」 */
+export const LEVEL_RATE = 1.6
+
+/** 从 n 级升到 n+1 级要多少终末点数（n 从 0 起） */
+export function levelCostOf(n: number): number {
+  return Math.round(LEVEL_BASE_COST * Math.pow(LEVEL_RATE, Math.max(0, n)))
+}
+
+export async function readLevels(): Promise<Record<string, number>> {
+  return safe(async () => {
+    const row = await db().meta.get(LEVEL_KEY)
+    return (row?.value as Record<string, number> | undefined) ?? {}
+  }, {})
+}
+
+/**
+ * 买一级。点数不够原样退回（ok: false），不扣钱也不加倍。
+ * 只加不减：等级是这个人在终端上留下的记录，没有「洗掉」这一说。
+ */
+export async function buyLevel(
+  id: string, cost: number,
+): Promise<{ ok: boolean; coin: number; levels: Record<string, number> }> {
+  const coin = await readCoin()
+  const levels = await readLevels()
+  if (coin < cost) return { ok: false, coin, levels }
+  const next = { ...levels, [id]: (levels[id] ?? 0) + 1 }
+  const left = coin - cost
+  await safe(async () => {
+    await db().meta.put({ key: COIN_KEY, value: left })
+    await db().meta.put({ key: LEVEL_KEY, value: next })
+  }, undefined)
+  return { ok: true, coin: left, levels: next }
+}
+
+/**
+ * 战斗真正吃的那一份成长 = 任务成长（封顶 12%） + 买来的终末等级（不封顶）。
+ * 引擎只认这一个数（combatantOf 的 growthPct），所以两者在这里合流，
+ * 别的任何地方都不许自己去加。
+ */
+export function effectiveGrowth(
+  growth: Record<string, number>, levels: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = { ...growth }
+  for (const id in levels) {
+    out[id] = (out[id] ?? 0) + LEVEL_STEP_PCT * (levels[id] ?? 0)
+  }
+  return out
+}
+
 /* ---------- 军需：终末点数 / 道具补给池 / 反现实辅助装备 ---------- */
 
 const COIN_KEY = 'coin'

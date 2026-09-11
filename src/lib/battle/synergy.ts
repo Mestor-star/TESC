@@ -19,6 +19,20 @@ import { ROSTER_GROUPS } from '../../data/roster'
 import { TUNING } from './tuning'
 import type { AxisKey, AxisSheet, Combatant, FxKind } from './types'
 
+/**
+ * 连携技的份量：**每位参加者**按本手那条轴出这么多份。
+ * 一手连携的总额 = 0.75 ×（参加者各人该轴读数之和）—— 两个人接就是
+ * 0.75 ×（甲 + 乙），整队接就是 0.75 × 全员之和。
+ *
+ * 为什么压这么低：连携**不占出手**。它是自己接上去的一记白送的合击，
+ * 槽满了就来一下 —— 按普攻的倍率给，场上就成了「谁出手都顺便白打一拳」，
+ * 玩家该点的那几手反倒不重要了。0.75 的意思是：它值得等，但等不来胜负。
+ *
+ * 出手者那一份走 SkillSpec.power，其余参加者那一份走 linkPow —— 两边必须同值，
+ * 否则「谁先动」会改变同一记连携的总量。
+ */
+export const LINK_SHARE = 0.75
+
 /** 一档羁绊给出的东西（人没凑够就不给） */
 interface TraitTier {
   /** 需要几人 */
@@ -77,7 +91,7 @@ export const TRAITS: Trait[] = [
         + `（凑够 ${TUNING.traitMax} 个人就成立 —— 与档位天花板是同一个数：`
         + '名单七个人，一队上不了这么多，所以「到齐」指的是把最高那一档凑满）',
       line: '「队长！」「梅芙、喵呜、心叶！这里就交给你们了！」「了解！」',
-      power: 1.6, linkPow: 1.5, axis: '破坏力', fx: 'slash', cost: 12, cd: 5,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '破坏力', fx: 'slash', cost: 12, cd: 5,
     },
   },
   {
@@ -139,9 +153,16 @@ interface PairBond {
   }
 }
 
+/**
+ * 黄金狮子那一记双人连携的 id。
+ * 引擎单独认它一处：顶着黄金狮子形态时，**每一手攻击**都自己接上这一记，
+ * 不走共鸣槽（见 engine 的 fireLionLink）。所以这个键不许改。
+ */
+export const LION_PAIR_ID = 'golden-lion'
+
 export const PAIRS: PairBond[] = [
   {
-    id: 'golden-lion',
+    id: LION_PAIR_ID,
     name: '黄金狮子',
     desc: '【No.8288「黄金狮子」】—— 心叶 × 露娜合击的编号名（异法）。'
       + '原文那一战里，那道金色的光「简直，就像被读心了一样」地游走于视野之外；'
@@ -152,7 +173,7 @@ export const PAIRS: PairBond[] = [
       name: '黄金狮子',
       desc: '两人同时出手：她把他甩出去，他在半空里听见对方心里喊的那一声。合击由两人的对应轴相加。',
       line: '「「我！」」「「会保护你！」」',
-      power: 2.2, linkPow: 1.6, axis: '反现实亲和', fx: 'noise', cost: 6, cd: 4,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '反现实亲和', fx: 'noise', cost: 6, cd: 4,
     },
   },
   {
@@ -167,7 +188,7 @@ export const PAIRS: PairBond[] = [
       name: '如散文般 · 补笔',
       desc: '她的弹痕「如散文般」能向过去开枪：那些他没能赶上的瞬间，由她一页一页补回来。',
       line: '「——你要不要成为我的猎犬？」',
-      power: 1.6, linkPow: 1.8, axis: '反现实亲和', fx: 'seal', cost: 5, cd: 4,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '反现实亲和', fx: 'seal', cost: 5, cd: 4,
     },
   },
   {
@@ -180,7 +201,7 @@ export const PAIRS: PairBond[] = [
       name: '终末之前的婚约',
       desc: '「要是你最终没能够停滞终末的话。在世界毁灭之前……我们结婚吧」—— 两人把这句话当筹码压上去。',
       line: '「要是你最终没能够停滞终末的话……在世界毁灭之前——」「——我们结婚吧。」',
-      power: 1.8, linkPow: 1.8, axis: '意志力', fx: 'noise', cost: 5, cd: 4,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '意志力', fx: 'noise', cost: 5, cd: 4,
     },
   },
   {
@@ -195,7 +216,7 @@ export const PAIRS: PairBond[] = [
       name: '樱之残影 · 白色吉他',
       desc: '队长起了个前奏，他顺着那声把整段收掉 —— 参加的两人各按同一轴出力。',
       line: '「要上了哦——樱之残影！」',
-      power: 2.0, linkPow: 1.6, axis: '破坏力', fx: 'guitar', cost: 6, cd: 4,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '破坏力', fx: 'guitar', cost: 6, cd: 4,
     },
   },
   {
@@ -210,7 +231,7 @@ export const PAIRS: PairBond[] = [
       name: '沙姆希尔 · 换位',
       desc: '他读准了要落在哪，小柴便把那一发直接换到对面身上。',
       line: '「——沙姆希尔！」',
-      power: 1.7, linkPow: 1.6, axis: '反现实亲和', fx: 'seal', cost: 5, cd: 4,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '反现实亲和', fx: 'seal', cost: 5, cd: 4,
     },
   },
   {
@@ -224,7 +245,7 @@ export const PAIRS: PairBond[] = [
       name: '八脚马 · 收口',
       desc: '她放出八脚马把场子围住，他趁那一下把该了结的收掉。',
       line: '「……事到如今也没办法了呢——八脚马！」',
-      power: 1.7, linkPow: 1.7, axis: '意志力', fx: 'blast', cost: 5, cd: 4,
+      power: LINK_SHARE, linkPow: LINK_SHARE, axis: '意志力', fx: 'blast', cost: 5, cd: 4,
     },
   },
 ]

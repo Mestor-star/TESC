@@ -169,8 +169,8 @@ const GOLDEN_LION = (sc: number): OpAbility => ab(
       cd: 6,
       // 兽化的代价写在原著里：破坏力与物理抗性大幅上抬，意志力反而下去
       axes: {
-        破坏力: Math.round(42 * sc), 物理抗性: Math.round(34 * sc),
-        反现实亲和: Math.round(48 * sc), 意志力: Math.round(22 * sc),
+        破坏力: Math.round(72 * sc), 物理抗性: Math.round(58 * sc),
+        反现实亲和: Math.round(82 * sc), 意志力: Math.round(38 * sc),
       },
       skills: lionSkills(sc),
     },
@@ -186,7 +186,9 @@ export const OP_PERIODS: OpPeriod[] = [
     note: '他不会游泳、也不穿武装，一身本事都长在一双拳头与那台关不掉的收音机上。'
       + '低语者不是武器，是一种反现实体质——听得见别人心里最响的那一句，'
       + '所以他的拳总比对方先到半步，也总先挪开半步。',
-    axes: A(12, 26, 14, 20, 46),
+    // 五轴口径（三处时期同此）：量表放宽之后按同一套判据重排 —— 他仍旧是全队面板最低的那个人，
+    // 「低语者不是武器」，但不再低到拉上战场就只能站着看（敌阵已随新量程整体抬高）。
+    axes: A(20, 44, 24, 34, 78),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: '低语者（Susurrador）',
     armSub: 'SUSURRADOR · STAGE4「活性化」',
@@ -226,7 +228,7 @@ export const OP_PERIODS: OpPeriod[] = [
     cls: '化身之枪',
     note: '夜梦之后枕边多了一把手枪。它能让他变成任何人——曾被指为「会化作怪物的能力」。'
       + '使用期间，他本人的意志不会反映出来；而借来的东西总要还，还得缓一缓。',
-    axes: A(26, 34, 24, 62, 70),
+    axes: A(44, 58, 41, 105, 119),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'noapusa',
     armSub: 'NOAPUSA · 弹痕 · 化身之枪',
@@ -271,7 +273,7 @@ export const OP_PERIODS: OpPeriod[] = [
     cls: '灵魂共奏',
     note: '篝火之国坠落后那一夜，他梦见满身伤痕的「斩击的天使」；醒来枕边多了一枚极其简朴的白金戒指。'
       + '「变成他人」已经随 noapusa 一起碎掉了——现在他要做的是合而为一，不是变成别人。',
-    axes: A(48, 46, 44, 84, 96),
+    axes: A(82, 78, 75, 143, 163),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'a Session.',
     armSub: 'A SESSION. · 斩击之戒',

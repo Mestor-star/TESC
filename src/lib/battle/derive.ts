@@ -11,7 +11,7 @@
 import { CHARACTERS } from '../../data/chars'
 import { SIDE_AXIS } from '../../data/roster'
 import { ARMS } from '../../data/arms'
-import { AXIS_MAX } from '../../data/types'
+import { AXIS_INF } from '../../data/types'
 import type { Character, Mission } from '../../data/types'
 import { CAST, OPERATOR_ID, avatarIdOf, personOf } from '../../data/castmeta'
 import { opBuiltinOf, opPeriodAtProgress } from '../operator-arc'
@@ -19,6 +19,7 @@ import type { OpAbility, OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
 import { POWER_SCALE, ROSTER } from './roster'
+import { namedBossOf } from './bosses'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
 import { rFactor, rOfPlace } from './rvalue'
@@ -63,10 +64,13 @@ export function chSpMax(will: number): number {
   return Math.round(TUNING.chSpBase + will * TUNING.chSpPerWill)
 }
 
-/** '∞' → 观测上限（数学上代入 AXIS_MAX；UI 另标「不可测」） */
+/**
+ * '∞' → 代入值（数学上代入 AXIS_INF；UI 另标「不可测」）。
+ * 战斗数值不设上限：这里只做「读不出数 → 一个数」的翻译，不做钳制。
+ */
 function numOf(v: number | '∞' | undefined): number {
   if (v === undefined) return 0
-  return v === '∞' ? AXIS_MAX : v
+  return v === '∞' ? AXIS_INF : v
 }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
@@ -723,36 +727,62 @@ export function enemiesOf(m: Mission): Combatant[] {
     const tier: Combatant['tier'] = i > 0
       ? undefined
       : m.stage >= TUNING.ultStage ? 'boss' : 'elite'
-    const hpMul = tier === 'elite' ? TUNING.eliteHpMul : 1
-    const atkMul = tier ? TUNING.eliteAtkMul : 1
-    const willMul = tier ? TUNING.eliteWillMul : 1
-    const hpMax = Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul * hpMul)
-    const axes: AxisSheet = {
-      破坏力: Math.round((TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage) * atkMul),
-      敏捷度: Math.round(TUNING.enemySpdBase + m.stage * TUNING.enemySpdPerStage),
-      物理抗性: Math.round(TUNING.enemyResistBase + m.stage * TUNING.enemyResistPerStage),
-      反现实亲和: Math.round((10 + m.stage * 4) * rf.mul),
-      意志力: Math.round((10 + m.stage * TUNING.enemyWillPerStage) * willMul),
-    }
+    // 指名首领：任务挂了 bossId、且那份档案对得上时，场上的头一名就换成他
+    // （见 bosses.ts —— 那一类对手是有名有姓有 RANK 的真人，不是现推的观测体）。
+    const named = i === 0 ? namedBossOf(m.bossId) : undefined
+    // 首领与精英各走各的倍数：只写 elite 那一支的话，升格成首领反而掉回 ×1
+    const hpMul = tier === 'boss' ? TUNING.bossHpMul : tier === 'elite' ? TUNING.eliteHpMul : 1
+    const atkMul = tier === 'boss' ? TUNING.bossAtkMul : tier === 'elite' ? TUNING.eliteAtkMul : 1
+    const willMul = tier === 'boss' ? TUNING.bossWillMul : tier === 'elite' ? TUNING.eliteWillMul : 1
+    const hpMax = named
+      // 有名有姓的那位按自己的档案读数站场：血量走同一套曲线，
+      // 但再乘一次他自己的 hpMul —— RANK6 与 RANK47 不该一样硬。
+      ? Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage)
+        * rf.mul * TUNING.bossHpMul * named.hpMul)
+      : Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul * hpMul)
+    const axes: AxisSheet = named
+      // 五轴照档案：与档案页读的是同一组数（roster 的 SIDE_AXIS 口径）
+      ? {
+        破坏力: named.axes?.[0] ?? SIDE_AXIS[named.id]?.[0] ?? 0,
+        敏捷度: named.axes?.[1] ?? SIDE_AXIS[named.id]?.[1] ?? 0,
+        物理抗性: named.axes?.[2] ?? SIDE_AXIS[named.id]?.[2] ?? 0,
+        反现实亲和: named.axes?.[3] ?? SIDE_AXIS[named.id]?.[3] ?? 0,
+        意志力: named.axes?.[4] ?? SIDE_AXIS[named.id]?.[4] ?? 0,
+      }
+      : {
+        破坏力: Math.round((TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage) * atkMul),
+        敏捷度: Math.round(TUNING.enemySpdBase + m.stage * TUNING.enemySpdPerStage),
+        物理抗性: Math.round(TUNING.enemyResistBase + m.stage * TUNING.enemyResistPerStage),
+        反现实亲和: Math.round((10 + m.stage * 4) * rf.mul),
+        意志力: Math.round((10 + m.stage * TUNING.enemyWillPerStage) * willMul),
+      }
     const tag = tier === 'boss' ? '首领' : tier === 'elite' ? '精英' : ''
-    const ename = count > 1
-      ? `${prof.name} ${SUFFIX[i]}${tag ? ` · ${tag}` : ''}`
-      : tag ? `${prof.name} · ${tag}` : prof.name
+    const ename = named
+      ? named.name
+      : count > 1
+        ? `${prof.name} ${SUFFIX[i]}${tag ? ` · ${tag}` : ''}`
+        : tag ? `${prof.name} · ${tag}` : prof.name
     // 敌方体力随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
     const spMax = chSpMax(axes.意志力)
     out.push({
       id: `foe-${m.id}-${i}`,
       side: 'enemy',
       name: ename,
-      sigil: prof.sigil,
-      hue: prof.hue,
-      cls: prof.cls,
-      trait: m.nature,
+      sigil: named?.sigil ?? prof.sigil,
+      hue: named?.hue ?? prof.hue,
+      cls: named?.cls ?? prof.cls,
+      trait: named?.trait ?? m.nature,
       tier,
       hp: hpMax,
       hpMax,
       axes,
-      skills: [
+      passive: named?.passive,
+      skills: named ? [
+        // 指名首领：整套手都是他自己的（含兼任终结技能的到达点）。
+        // 不挂通用机制包，也不挂「未分类观测体」的那记大招 ——
+        // 他是谁，就该拿谁的招式打。
+        ...named.skills,
+      ] : [
         ...prof.skills.map((k) => ({
           id: k.id, name: k.name, kind: k.kind, desc: k.desc,
           cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
@@ -791,7 +821,7 @@ export function enemiesOf(m: Mission): Combatant[] {
             } satisfies SkillSpec]
           : []),
       ],
-      fx: prof.fx,
+      fx: named?.skills[0]?.fx ?? prof.fx,
       rated: true,
       bar: 0,
       spd: speedOf(axes),

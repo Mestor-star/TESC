@@ -14,7 +14,10 @@ import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply } from '../lib/plot'
-import { listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth, readStamina } from '../lib/battle/store'
+import {
+  effectiveGrowth, listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth,
+  readLevels, readStamina,
+} from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
 import { battleMissionOf } from '../lib/battle/from-directive'
 import { periodProgress } from '../lib/battle/derive'
@@ -214,6 +217,8 @@ export function Plot() {
   } | null>(null)
   const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
   const [growth, setGrowth] = useState<Record<string, number>>({})
+  /** 买来的终末等级（与任务成长合流后才进战斗 —— 见 store 的 effectiveGrowth） */
+  const [levels, setLevels] = useState<Record<string, number>>({})
   const [coin, setCoin] = useState(0)
   const [gearBag, setGearBag] = useState<Record<string, number>>({})
   const [equip, setEquip] = useState<Record<string, string>>({})
@@ -221,11 +226,13 @@ export function Plot() {
   const eventsDone = Object.keys(epDone).length
 
   const loadKit = useCallback(async () => {
-    const [sp, g, c, gb, eq, bg] = await Promise.all([
+    const [sp, g, c, gb, eq, bg, lv] = await Promise.all([
       readStamina(eventsDone), readGrowth(), readCoin(), readGearBag(), readEquip(), readBag(),
+      readLevels(),
     ])
     setStamina(sp)
     setGrowth(g)
+    setLevels(lv)
     setCoin(c)
     setGearBag(gb)
     setEquip(eq)
@@ -1580,7 +1587,7 @@ export function Plot() {
           /* 「变成他人」可借的档案：已遇见、且不在这支队伍里 */
           morphPool={PERSON_IDS.filter((id) => id !== OPERATOR_ID && isMet(id) && !plotBattle.squad.includes(id))}
           progress={periodProgress(epDone)}
-          growth={growth}
+          growth={effectiveGrowth(growth, levels)}
           stamina={stamina}
           equip={equip}
           owned={gearBag}

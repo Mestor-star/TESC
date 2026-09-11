@@ -419,6 +419,13 @@
 /* 带∞的满格读数（条纹在组件内联 background 完成，此处仅收边框高亮） */
 .infFill { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
 
+/* 越过量表基准的读数：基准不是上限，这只提醒「读数已在常规量表之外」 */
+.overMark {
+  margin-left: 4px; padding: 0 4px; border-radius: 3px;
+  font-style: normal; font-size: 9px; letter-spacing: 0.06em; vertical-align: 1px;
+  color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
 /* ---- 立绘全图查看器（大图 contain + 半透明幕） ---- */
 .lightbox {
   position: fixed;
@@ -673,3 +680,8 @@
 }
 .combatSkillTop .tiny { margin-left: auto; }
 .combatSkill p { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }
+/* 效果那一行：比描述更硬一点，它是引擎真在算的数 */
+.combatEffect {
+  padding-top: 3px; border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent);
+  font-family: var(--font-mono); font-size: 10px; line-height: 1.65; color: var(--ink-dim);
+}
