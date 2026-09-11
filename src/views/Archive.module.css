@@ -46,6 +46,12 @@
   box-shadow: var(--glow-red);
   clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
 }
+/* 那一格换成他的胸像时：外形照旧（同一个斜切、同一圈红光），只是字换成人。
+   截取用 charimg.BUST_FOCUS —— 整身稿的头在画面上方，缺省的取景会切掉头顶。 */
+.opFace {
+  box-shadow: var(--glow-red);
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
 .opBannerMain h2 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.02em; }
 .opBannerMain h2 em { font-style: normal; color: var(--red); }
 .opBannerMain p { margin: 6px 0 12px; color: var(--ink-mute); font-size: 13.5px; max-width: 640px; }
@@ -498,6 +504,64 @@
   border-left: 3px solid var(--amber);
   border-radius: var(--radius);
   background: var(--bg-1);
+}
+/* 有立绘：左一栏整身、右一栏原来的那些块（与其它角色档案的左三分之一同一路数）。
+   无立绘（data-op-art='none'）不加这一档，整页仍是一列 —— 别为一张没有的图留白。 */
+.opArcBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.opArc[data-op-art='img'] {
+  display: grid;
+  grid-template-columns: minmax(180px, 232px) 1fr;
+  align-items: start;
+  gap: 16px;
+}
+.opArt {
+  position: relative;
+  align-self: stretch;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--red) 14%, transparent), transparent 72%),
+    var(--bg-2);
+}
+/* 整身完整可见（contain），铺满这一栏靠 inset，不靠 Portrait 的像素尺寸 */
+.opArtImg {
+  position: absolute;
+  inset: 0 0 54px 0;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius);
+}
+/* 下缘渐隐：立绘的脚化进「查看全图」那一条，不是硬切 */
+.opArtFade {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 92px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, var(--bg-2) 84%);
+}
+.opArtCap {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 12px 10px;
+}
+.opArtCap .btn { cursor: pointer; }
+
+/* 窄屏 / 小屏：左栏并不下，退回一列（立绘摆在最上面，限高） */
+@media (max-width: 860px) {
+  .opArc[data-op-art='img'] { grid-template-columns: 1fr; }
+  .opArt { min-height: 0; height: 280px; }
+  .opArtImg { inset: 0 0 54px 0; }
 }
 
 .opArcAxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 9px; }

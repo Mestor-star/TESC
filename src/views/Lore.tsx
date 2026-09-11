@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { LORE } from '../data/lore'
 import { MANUAL } from '../data/manual'
 import type { LoreCat } from '../data/types'
+import { FoldAll, FoldHead, useFolds } from '../components/Fold'
 import { LoreManager } from './lorebook/LoreManager'
 
 import css from './Lore.module.css'
@@ -25,8 +26,14 @@ const secKicker: CSSProperties = {
   textTransform: 'uppercase', marginRight: 'auto',
 }
 
+/** 手册各节的折叠键（= 节的 id），给 FoldAll 用 */
+const MANUAL_KEYS = MANUAL.map((s) => s.id)
+
 export function Lore() {
   const [cat, setCat] = useState<LoreCat>('世界观')
+  /* 手册是「按需查阅」的文档，不是要通读的文章：默认折着，先给九行标题，
+     要点哪一节再摊开哪一节。（canon 速览那一栏不折 —— 那本来就是本页要读的东西。） */
+  const folds = useFolds()
 
   const list = useMemo(() => LORE.filter((l) => l.cat === cat), [cat])
   const counts = useMemo(() => {
@@ -71,21 +78,26 @@ export function Lore() {
           共 {MANUAL.length} 节 · 可照着做
         </span>
       </div>
+      <FoldAll folds={folds} keys={MANUAL_KEYS} label={`${MANUAL.length} 节`}
+        className={css.manualBar}
+        hint={`${MANUAL.length} 节默认都折着：先看标题，点哪一节的抬头就摊开哪一节。`} />
       <div className={css.grid} data-manual>
         {MANUAL.map((s) => (
           <article key={s.id} className={css.card} data-sub={s.no} data-manual-section={s.id}
             style={{ '--c': 'var(--amber)' } as CSSProperties}>
-            <div className={css.cardHead}>
+            <FoldHead k={s.id} open={folds.isOpen(s.id)} folds={folds} className={css.cardHead} plain>
               <h3 className={css.cardTitle}>{s.title}</h3>
               <span className={css.cardSub}>{s.no}</span>
               <span className={css.cardRef}>{s.at}</span>
+            </FoldHead>
+            <div className={css.mBody} data-fold-body>
+              <p className={css.cardBody}><b>{s.lead}</b></p>
+              <ol className={css.mList}>
+                {s.items.map((t) => (
+                  <li key={t} className={css.mItem}>{t}</li>
+                ))}
+              </ol>
             </div>
-            <p className={css.cardBody}><b>{s.lead}</b></p>
-            <ol className={css.mList}>
-              {s.items.map((t) => (
-                <li key={t} className={css.mItem}>{t}</li>
-              ))}
-            </ol>
           </article>
         ))}
       </div>

@@ -25,6 +25,7 @@ import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
 import { Portrait, useCharImg } from '../components/Portrait'
+import { BUST_FOCUS } from '../lib/charimg'
 
 import css from './Archive.module.css'
 
@@ -103,6 +104,9 @@ interface Row {
   stationNote?: string
   page?: string
 }
+
+/** 立绘全图查看器看的是谁。档案角色丢一个 Row 就够；操作员没有 Row，故只取这四个字段 */
+type ViewTarget = Pick<Row, 'id' | 'name' | 'hue' | 'sigil'>
 
 function buildRows(): Row[] {
   const core = new Map(CHARACTERS.map((c) => [c.id, c]))
@@ -483,7 +487,10 @@ export function Archive() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
-  const [viewer, setViewer] = useState(false)
+  /* 立绘全图查看器：看的那个人（档案里点开的那位，或操作员自己）。
+     从前是个 bool —— 只有档案弹窗会用到；主角专档也要看全图之后，
+     得记下「看的是谁的」，否则关弹窗那一刻图就没了。 */
+  const [viewer, setViewer] = useState<ViewTarget | null>(null)
   const dlgRef = useRef<HTMLDivElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -495,6 +502,13 @@ export function Archive() {
   const opArc = opPeriodAt(epDone)
   /** 他身上自带的那件东西（露娜的丝线 —— 第一卷走完才系上手腕） */
   const opBuiltin = opBuiltinAt(opArc, epDone)
+  /* 操作员自己的素材（public/charimg/operator.*）。
+     两档分开探：'face' 是方框（横幅的胸像），'full' 是竖框（专档左栏的整身）。
+     缺图时对应的版位各自退回原样 —— 横幅回到字块、专档不摆左栏，不留空洞。 */
+  const opFace = useCharImg('operator', 'face')
+  const opArt = useCharImg('operator', 'full')
+  /** 全图查看器要看的那个人（没有 Row 可借，就地拼一个） */
+  const opTarget: ViewTarget = { id: 'operator', name, hue: '#ff2e43', sigil: '心' }
   const [opOpen, setOpOpen] = useState(false)
   /** 作战中装的装具：档案里的面板要把当前编成一并算上 */
   const [equip, setEquip] = useState<Record<string, string>>({})
@@ -527,10 +541,10 @@ export function Archive() {
     const el = e.currentTarget as HTMLElement
     setOpenRect(el.getBoundingClientRect())
     setPos(null)
-    setViewer(false)
+    setViewer(null)
     setOpenId(id)
   }, [])
-  const close = useCallback(() => { setOpenId(null); setViewer(false); setOpenRect(null); setPos(null) }, [])
+  const close = useCallback(() => { setOpenId(null); setViewer(null); setOpenRect(null); setPos(null) }, [])
 
   /* 打开后测量真实尺寸再就近落位。
      尺寸**要跟着长**：落位那一刻量到的高度未必是最终高度（立绘解码、装具区与作战面板随后撑开），
@@ -632,9 +646,24 @@ export function Archive() {
           红条只在极限确实高于常态时露出——重合处仍读常态；两值皆不可测者记『∞/∞』。未登记极限的轴退回单值。
         </div>
 
-        {/* 操作员横幅 */}
+        {/* 操作员横幅。左侧那一格：有立绘就摆他的胸像（裁自整身稿，见 charimg.BUST_FOCUS），
+            没有才回到「姓」的字块 —— 字块是缺图时的占位，不是常态。 */}
         <div className={css.opBanner}>
-          <div className={css.opGlyph}>{name.slice(0, 1).toUpperCase()}</div>
+          {opFace ? (
+            <Portrait
+              avatarId="operator"
+              name={name}
+              fit="cover"
+              focus={BUST_FOCUS}
+              width={84}
+              height={84}
+              eager
+              className={css.opFace}
+              style={{ borderRadius: 0 }}
+            />
+          ) : (
+            <div className={css.opGlyph}>{name.slice(0, 1).toUpperCase()}</div>
+          )}
           <div className={css.opBannerMain}>
             <h2>言万心叶 <em>（你 · 操作员本人）</em></h2>
             <div className={css.opArcLine} data-op-arc={opArc.at}>
@@ -662,9 +691,33 @@ export function Archive() {
           </div>
         </div>
 
-        {/* 主角档案：五轴 · 武装 · 所能做的事 · 已经历的时期 */}
+        {/* 主角档案：五轴 · 武装 · 所能做的事 · 已经历的时期。
+            有立绘时左边多一栏整身（其余角色档案的左三分之一也是这个）；没立绘就整页一列。 */}
         {opOpen ? (
-          <section className={css.opArc} data-op-arc-panel data-op-card={opArc.at}>
+          <section className={css.opArc} data-op-arc-panel data-op-card={opArc.at} data-op-art={opArt ? 'img' : 'none'}>
+            {opArt ? (
+              <div className={css.opArt} data-op-portrait>
+                <Portrait
+                  avatarId="operator"
+                  name={name}
+                  fit="contain"
+                  variant="full"
+                  width={200}
+                  height={280}
+                  eager
+                  style={{ width: 'auto', height: 'auto' }}
+                  className={css.opArtImg}
+                />
+                <span className={css.opArtFade} aria-hidden />
+                <div className={css.opArtCap}>
+                  <span className="vhead__kicker" style={{ fontSize: 9 }}>PORTRAIT / 全身</span>
+                  <button className="btn btn--ghost" style={{ fontSize: 12 }} data-op-portrait-view onClick={() => setViewer(opTarget)}>
+                    查看全图
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div className={css.opArcBody}>
             <div className={css.opCardHead}>
               <div className={css.opCardGlyph}>心</div>
               <div className={css.opCardTitle}>
@@ -742,6 +795,7 @@ export function Archive() {
             <div className="tiny muted" style={{ lineHeight: 1.7 }}>
               他也是战斗人员：上面的五轴、武装与技能就是他在该时期的面板，
               编队时可以直接把他放进小队（作战位置仍兼指挥与观测）。观测每推进一步，这一页就换一次。
+            </div>
             </div>
           </section>
         ) : null}
@@ -864,7 +918,7 @@ export function Archive() {
           >
             <div className={css.dossier}>
               {/* 左三分之一：立绘整身。右缘渐隐进档案底色，两张纸拼成一张 */}
-              <DossierArt focus={focus} onView={() => setViewer(true)} />
+              <DossierArt focus={focus} onView={() => setViewer(focus)} />
 
               <div className={css.dossierText}>
                 <div className={css.dialogHead}>
@@ -987,23 +1041,24 @@ export function Archive() {
         </>
       ) : null}
 
-      {/* 立绘全图查看器（大尺寸、contain，关闭即还原） */}
-      {viewer && focus ? (
-        <div className={css.lightbox} data-archive-lightbox onClick={() => setViewer(false)} role="dialog" aria-modal="true">
+      {/* 立绘全图查看器（大尺寸、contain，关闭即还原）。
+          看的是 viewer 记下的那位 —— 档案弹窗里的人，或主角专档里的操作员自己。 */}
+      {viewer ? (
+        <div className={css.lightbox} data-archive-lightbox onClick={() => setViewer(null)} role="dialog" aria-modal="true">
           <div className={css.lightboxStage} onClick={(e) => e.stopPropagation()}>
             <Portrait
-              avatarId={focus.id}
-              name={focus.name}
-              hue={focus.hue}
-              sigil={focus.sigil}
+              avatarId={viewer.id}
+              name={viewer.name}
+              hue={viewer.hue}
+              sigil={viewer.sigil}
               fit="contain"
               width={Math.min(760, window.innerWidth - 48)}
               height={Math.min(720, window.innerHeight - 120)}
             />
             <div className={css.lightboxMeta}>
-              <b>{focus.name}</b>
+              <b>{viewer.name}</b>
               <span className="tiny muted">立绘全图 · 点按任意处合上</span>
-              <button className={css.dialogClose} onClick={() => setViewer(false)} aria-label="关闭">
+              <button className={css.dialogClose} onClick={() => setViewer(null)} aria-label="关闭">
                 <X size={18} weight="bold" />
               </button>
             </div>

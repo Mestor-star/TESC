@@ -76,6 +76,13 @@
 
 /* ---------- 观测终端操作手册（智库 · 文本教程） ---------- */
 
+/* 「全部展开 / 全部收起」那一条（组件是 components/Fold.tsx 的 FoldAll） */
+.manualBar { margin-bottom: 12px; }
+
+/* 一节的栏体（等于 cardHead 之下那整块，折叠时靠这条配对规则整块收起）。
+   手册的卡片是 flex 列，所以这里得自己撑出一格来，否则里面的 .cardBody 拿不到 flex: 1。 */
+.mBody { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
 .mList {
   margin: 10px 0 0;
   padding-left: 0;

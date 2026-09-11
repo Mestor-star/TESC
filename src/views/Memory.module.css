@@ -87,6 +87,8 @@
 
 .grow { flex: 1 1 auto; }
 
+/* 七栏的收合样式在 components/Fold.module.css（全终端共用一套，见那里的抬头） */
+
 .no {
   font-family: var(--font-mono);
   font-size: 11px;

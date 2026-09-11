@@ -18,6 +18,7 @@ import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
 import type { SillyTavernLorebookExport } from '../lib/tavernlike/types'
 import { AUDIO_DEFAULTS, setAudio, setBeds, sfx, useAudioSettings } from '../lib/audio'
+import { PanelHead, useFolds } from '../components/Fold'
 
 import css from './Settings.module.css'
 
@@ -157,6 +158,8 @@ function AiLogPanel() {
   const [open, setOpen] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  /* 日志是一长条流水，攒到三十条翻起来累；默认摊开（打开设置就是为了看它），随手能收掉。 */
+  const folds = useFolds(true)
 
   const copy = (id: string, text: string) => {
     void navigator.clipboard?.writeText(text).then(
@@ -167,11 +170,12 @@ function AiLogPanel() {
 
   return (
     <section className="panel">
-      <div className="panel__head">
+      <PanelHead k="set-ailog" folds={folds}>
         <span className="panel__title"><ClockCounterClockwise size={15} weight="bold" /> 通联日志</span>
         <span className="muted tiny">最近 {rows.length} 次推演的去向</span>
-      </div>
-      <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      </PanelHead>
+      <div className="panel__body" data-fold-body
+        style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className={css.note}>
           <b>用来核对后台 AI 有没有真的吃到你配的东西。</b><br />
           每一趟请求都留一条：通道、模型、生效预设**实际进了哪几条**指令、世界书命中多少字、提示词全文、回来的字数与耗时。

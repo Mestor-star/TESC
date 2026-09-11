@@ -152,6 +152,19 @@ input, textarea, select { font-family: inherit; }
 }
 .panel__body { padding: 14px; }
 
+/* 折叠：栏头是按钮，收起时紧随其后的栏体不占版面。
+   配对靠两个 data 属性（不是类名）—— 各页的栏体往往有自己的模块类，
+   这里只认「它是某一栏的体」这一件事。机制见 components/Fold.tsx。
+   注意：是**不占版面**，不是从 DOM 里拿掉 —— 条数与可见性照旧读得到。 */
+[data-fold-head][aria-expanded='false'] + [data-fold-body] { display: none; }
+/* 栏头那一行里还有别的控件时（比如「全部 →」），整行不能当按钮 —— 按钮套按钮。
+   于是开关退成行右端的一个箭头，成了栏头的**孙子**，上面那条「紧跟的下一个兄弟」
+   就够不着栏体了。这一条补上那一种：由面板自己去找「哪一栏折着」。
+   （:has() 要 Chromium 105+；本终端跑在自带内核里，不向下兼容旧版浏览器。） */
+.panel:has(> .panel__head [data-fold-head][aria-expanded='false']) > .panel__body {
+  display: none;
+}
+
 /* 边框四角括号（终端 HUD） */
 .brc::before, .brc::after {
   content: "";

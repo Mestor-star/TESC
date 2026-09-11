@@ -515,7 +515,7 @@ export function Plot() {
    * userMsg 可选：操作员发言（正常回合）；baseOverride 可选：重写时用截断后的历史当 base。
    */
   const pushTurn = useCallback(
-    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean }) => {
+    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean; idle?: boolean }) => {
       const ev = TIMELINE.find((e) => e.id === evId)
       if (!ev || busy || !ready) return
       setBusy(true)
@@ -555,8 +555,10 @@ export function Plot() {
       }
 
       /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
-         这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。 */
-      const myTurn = userMsg ?? lastActOf(baseOverride ?? logs[evId])
+         这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。
+         空输入那一趟（opts.idle）**不能**退到「上一条」：那会把他上一回合说过的话
+         当成这一回合的意志再摆一遍，等于替他又说了一次。没写就是没写，交给 idleSection。 */
+      const myTurn = userMsg ?? (opts?.idle ? '' : lastActOf(baseOverride ?? logs[evId]))
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
@@ -569,6 +571,8 @@ export function Plot() {
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
         operatorAction: myTurn || undefined,
+        /* 空输入的那一趟：提示词末尾换成「他没有指示」，别让模型停下来等他 */
+        idle: opts?.idle === true,
       })
       const base = toTurns(baseOverride ?? logs[evId])
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
@@ -704,16 +708,24 @@ export function Plot() {
     [busy, ready, cfgMain, operatorName, bondNow, world.flags, world.ends, epDone, logs, appendMsg, applyReply, reaskDirective, push],
   )
 
+  /**
+   * 送出这一回合。**输入框可以是空的。**
+   * 空不是「什么都没发生」，而是「这一回合他不发话」——终端照当下的场面与上下文
+   * 往下推一回合（在场者自己动，局势往前走一步），提示词里会明说这一点
+   * （见 lib/plot.ts 的 idleSection）。所以这里不拦空输入：
+   * 只有「没有当前事件」和「正在推演」才拦 —— 推进不是非得先打字。
+   */
   const send = async () => {
     const text = draft.trim()
-    if (!focusEv || busy || !text) return
-    // 收束态下继续发话 = 留在本事件继续推演 → 取消收束标记
+    if (!focusEv || busy || !ready) return
+    // 收束态下继续推进 = 留在本事件继续推演 → 取消收束标记
     setConcluded(null)
     // 若「AI 起草」仍在跑，先中断它，让位给操作员的实际发言
     if (drafting) { draftAbortRef.current?.abort(); setDrafting(false) }
     setDraft('')
-    appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
-    await pushTurn(focusEv.id, text)
+    /* 空输入不落「他说了什么」——这一回合他确实没说话，别替他记一条空发言 */
+    if (text) appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
+    await pushTurn(focusEv.id, text || undefined, undefined, { idle: !text })
   }
 
   /** 「AI 起草」：让模型从言万心叶视角草拟下一步行动候选 → 点选填入输入框（可编辑后再发送） */
@@ -1658,7 +1670,7 @@ export function Plot() {
                   <div className={css.composer}>
                     <input
                       className="field"
-                      placeholder={`推进事件：向导演传达言万心叶的行动…（回车送出）`}
+                      placeholder={`推进事件：向导演传达言万心叶的行动…（回车送出；留空＝这一回合他不发话，照上下文往下推）`}
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -1685,11 +1697,14 @@ export function Plot() {
                         <Stop size={18} weight="bold" />
                       </button>
                     ) : (
+                      /* 空着也送得出去：那一趟是「这一回合他不发话」（见 send 的说明）。
+                         按钮因此不再按「有没有字」置灰 —— 那个灰按钮会让这条规矩永远用不上。 */
                       <button
                         className={`btn btn--primary ${css.composerBtn}`}
                         onClick={() => void send()}
-                        disabled={!draft.trim()}
-                        aria-label="发送"
+                        data-composer-send
+                        aria-label={draft.trim() ? '发送' : '不写也行 · 照上下文推进一回合'}
+                        title={draft.trim() ? '送出这一回合' : '输入框空着也能送：这一回合他不发话，终端照上下文往下推'}
                       >
                         <PaperPlaneTilt size={18} weight="bold" />
                       </button>

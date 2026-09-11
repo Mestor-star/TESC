@@ -5,6 +5,7 @@ import {
 } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
+import { FoldAll, FoldHead, useFolds } from '../components/Fold'
 import { Portrait } from '../components/Portrait'
 import { Linkified } from '../components/Linkified'
 import { listTasks, subscribeTasks, tasksVersion } from '../lib/smstasks'
@@ -82,14 +83,21 @@ export function Memory() {
   const mindSealed = minds.reduce((n, g) => n + (g.done ? 0 : g.total), 0)
   const displayOp = operatorName.trim() ? operatorName : '言万心叶'
 
+  /* 七栏的收合。**默认全收起** —— 七栏叠起来是本很长的账，一屏放不下，
+     先给目录与栏头（每栏都有计数），要看哪栏点哪栏。
+     折这件事的机制是公用的（components/Fold.tsx）：栏头是按钮，栏体是它紧跟的
+     下一个兄弟并标着 data-fold-body，收起由 tokens.css 的一条规则办。 */
+  const folds = useFolds()
+  /** 目录跳过去：那一栏若还收着，先展开再滚 —— 否则跳过去只剩一条栏头 */
   const jump = useCallback((s: MemSection) => {
+    if (!folds.isOpen(s)) folds.toggle(s)
     const el = document.getElementById(`mem-${MEM_SECTIONS.indexOf(s)}`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [])
+  }, [folds])
 
-  /* 七栏的头：序号 + 名 + 一句「这一栏是什么」+ 计数 */
+  /* 七栏的头：序号 + 名 + 一句「这一栏是什么」+ 计数（整行可点，点它就折叠 / 展开） */
   const head = (s: MemSection, n: number, extra?: ReactNode) => (
-    <div className="panel__head">
+    <FoldHead k={s} open={folds.isOpen(s)} folds={folds} className="panel__head">
       <span className="panel__title">
         <i className={css.secIc}>{SEC_ICON[s]}</i>
         {s}
@@ -99,7 +107,7 @@ export function Memory() {
       <span className={css.grow} />
       {extra}
       <span className={`chip ${n > 0 ? 'chip--on' : 'chip--off'}`} data-mem-count={s}>{n}</span>
-    </div>
+    </FoldHead>
   )
 
   return (
@@ -141,10 +149,13 @@ export function Memory() {
         </aside>
 
         <div className={css.col}>
+          {/* 折叠条：七栏默认都折着，这里一键摊开 / 收回（栏头自己也能逐栏点） */}
+          <FoldAll folds={folds} keys={MEM_SECTIONS} label="七栏" />
+
           {/* —————————— 一、人物关系 —————————— */}
           <section className="panel" id="mem-0" data-mem-section="人物关系">
             {head('人物关系', rels.length)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               {rels.length === 0 ? (
                 <div className={css.empty}>
                   <b>还没有遇见谁</b>
@@ -196,7 +207,7 @@ export function Memory() {
           {/* —————————— 二、事迹 —————————— */}
           <section className="panel" id="mem-1" data-mem-section="事迹">
             {head('事迹', deeds.length)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               {deeds.length === 0 ? (
                 <div className={css.empty}>
                   <b>还没有做下什么</b>
@@ -231,7 +242,7 @@ export function Memory() {
           {/* —————————— 三、伏笔 —————————— */}
           <section className="panel" id="mem-2" data-mem-section="伏笔">
             {head('伏笔', threads.length)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               {threads.length === 0 ? (
                 <div className={css.empty}>
                   <b>眼下没有悬着的事</b>
@@ -261,7 +272,7 @@ export function Memory() {
           {/* —————————— 四、见闻 —————————— */}
           <section className="panel" id="mem-3" data-mem-section="见闻">
             {head('见闻', sights.length)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               {sights.length === 0 ? (
                 <div className={css.empty}>
                   <b>还没有登记过终末</b>
@@ -292,7 +303,7 @@ export function Memory() {
             {head('心迹', mindRows, mindSealed > 0 ? (
               <span className="chip chip--off" title="整卷读完才回放">封存 {mindSealed} 条</span>
             ) : null)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               {minds.length === 0 ? (
                 <div className={css.empty}>
                   <b>还没有读到谁的心声</b>
@@ -333,7 +344,7 @@ export function Memory() {
           {/* —————————— 六、技能 —————————— */}
           <section className="panel" id="mem-5" data-mem-section="技能">
             {head('技能', skills.skills.length)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               <div className={css.skillTop}>
                 <div className={css.skillPeriod}>
                   <span className="vhead__kicker" style={{ fontSize: 9 }}>{skills.vol}</span>
@@ -373,7 +384,7 @@ export function Memory() {
           {/* —————————— 七、大事记 —————————— */}
           <section className="panel" id="mem-6" data-mem-section="大事记">
             {head('大事记', counts.大事记, <span className="chip chip--off">共 {TIMELINE.length} 段</span>)}
-            <div className="panel__body">
+            <div className="panel__body" data-fold-body>
               <div className={css.chronList}>
                 {chron.map((g) => (
                   <div key={g.group} className={css.chronGroup}>

@@ -62,6 +62,7 @@ import {
 } from '../../src/lib/memory'
 import type { MemInput } from '../../src/lib/memory'
 import { SCENES } from '../../src/data/scenes'
+import { MANUAL } from '../../src/data/manual'
 import { CHARACTERS } from '../../src/data/chars'
 import { castOf } from '../../src/lib/cast'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
@@ -2716,14 +2717,18 @@ export function run(): MechReport {
     const ACT = '我直接开枪打穿舱门，把露娜抱走。'
     const ctxNext = { ...ctx, nextEvent: TIMELINE[1], operatorAction: ACT }
     const withWill = buildDirectorSystem(ev0, ctxNext)
-    const iWill = withWill.indexOf('【本回合 · 言万心叶的意志')
+    /* 认那一节要看**完整的抬头**（带破折号那一截）：大纲与细则里都写着
+       「细则见末尾【本回合 · 言万心叶的意志】」这样一句指路，短标题先在那里就出现了；
+       拿短标题 indexOf，量到的是那句指路，不是那一节本身。 */
+    const WILL_HEAD = '【本回合 · 言万心叶的意志 ——'
+    const iWill = withWill.indexOf(WILL_HEAD)
     const before = ['【事件大纲 · 原文走向', '【本事件实施细则】', '四、原文里这一段的落点',
       '【收束衔接 · 后接事件'].map((h) => withWill.indexOf(h))
     ok('详纲：操作员的原话逐字摆在提示词最末一节（大纲/情节线/落点/后接事件全都之后）',
       iWill > 0 && withWill.includes(`「${ACT}」`) && before.every((i) => i > 0 && iWill > i),
       `意志节 ${iWill}｜大纲 ${before[0]}｜细则 ${before[1]}｜落点 ${before[2]}｜后接 ${before[3]}｜全文 ${withWill.length}`)
     ok('详纲：最末那一节写明让位（他推去别处就以别处收束 · 那正是 diverged 的时候）',
-      withWill.includes('这一节压过以上一切') && withWill.includes('全部让位')
+      withWill.includes('这一节压过以上一切') && withWill.includes('那条线让位')
       && withWill.includes('把 diverged 置 true'),
       '压过一切／让位／diverged 三句都在')
     /* 主语得是言万心叶：显示名（这里刻意取成「操作员」）是终端界面上的标签，不是第二个人。
@@ -2733,9 +2738,48 @@ export function run(): MechReport {
       && !withWill.includes('操作员的意志')
       && withWill.includes('显示名「操作员」'),
       withWill.includes('显示名「操作员」') ? '主语=言万心叶 · 显示名另注' : '缺显示名注记')
+    const bare2 = (s: string) => !s.includes(WILL_HEAD) && !s.includes('【本回合 · 他没有指示】')
     ok('详纲（对照）：没有本回合输入时，整节不出现（不摆空节，也不塞上一轮的话）',
-      !full.includes('【本回合 · ') && !lit.includes('【本回合 · '),
-      `有输入的对照节=${withWill.includes('【本回合 · ')}　无输入=${full.includes('【本回合 · ')}`)
+      bare2(full) && bare2(lit),
+      `有输入的对照节=${!bare2(withWill)}　无输入=${!bare2(full)}`)
+    /* 指路那一句是另一回事：它本来就该在（读到大纲时就该知道末尾有这么一节），
+       所以这里把它单独钉住 —— 免得日后有人为了「整节不出现」把指路也一并删了。 */
+    ok('详纲：大纲与细则里各留一句指路（读到那里就知道末尾有一节细则）',
+      full.includes('细则见末尾【本回合 · 言万心叶的意志】')
+      || full.includes('见末尾【本回合 · 言万心叶的意志】'),
+      '')
+
+    /* ③f 七比三：他写的那一笔与大纲相违时，让位有个**分量**，不是「全废」也不是「全听」。
+       两个极端都试过：全听大纲 → 他写的白写；全听他的 → 地点、在场者、谁知道什么一起被换掉，
+       写出来的人就不是原文那个人了。所以那句铁律被量化成七三开，而且必须在**大纲、细则、
+       原文走向、落点**这几处先各自说一遍 —— 只在最末一节冒出来，模型读到大纲时就已经定势了。 */
+    const n733 = (withWill.match(/七比三/g) ?? []).length
+    ok('详纲：相违时按七比三分（七成是他写的行动与话语 · 三成是非情节的那一半）',
+      withWill.includes('七比三分') && withWill.includes('七分给')
+      && withWill.includes('三分留给') && withWill.includes('情节顺序'),
+      `「七比三」在大纲/细则/走向/落点与最末一节共出现 ${n733} 次`)
+    ok('详纲：相合时照原文案（逐字 · 不改写不润色不续写）',
+      withWill.includes('· 相合 —— 照**原文案**写') && withWill.includes('逐字，不改写、不润色、不续写'),
+      '')
+    ok('详纲：这条规矩在读到大纲之前就已写明（不能只在最末一节才冒出来）',
+      n733 >= 4, `全文出现 ${n733} 次`)
+
+    /* ③g 空操作栏那一趟：同一位置、同一分量，方向相反 —— 不摆「他的意志」，
+       改摆「他没有指示」；说的还是同一件事：这一段自己往前走一步。 */
+    const idleSys = buildDirectorSystem(ev0, { ...ctx, nextEvent: TIMELINE[1], idle: true })
+    const iIdle = idleSys.indexOf('【本回合 · 他没有指示】')
+    ok('详纲：空操作栏那一趟摆「本回合 · 他没有指示」，仍在最末一节（与有输入时同一位置）',
+      iIdle > 0 && !idleSys.includes(WILL_HEAD)
+      && before.every((i) => i > 0 && iIdle > i),
+      `指示节 ${iIdle}｜大纲 ${idleSys.indexOf('【事件大纲 · 原文走向')}｜落点 ${idleSys.indexOf('四、原文里这一段的落点')}｜全文 ${idleSys.length}`)
+    ok('详纲：那一节挡住的是「反客为主」—— 不许把话头递回去、不许重演上一回合、照大纲推一步',
+      idleSys.includes('不要停下来问他') && idleSys.includes('不要重演上一回合')
+      && idleSys.includes('往下推一步') && idleSys.includes('照【事件大纲 · 原文走向】'),
+      '')
+    const bothSys = buildDirectorSystem(ev0, { ...ctx, operatorAction: ACT, idle: true })
+    ok('详纲：两者同时成立时以「他写的那一笔」为准（idle 是没有输入时的替身，不并列出现）',
+      bothSys.includes(WILL_HEAD) && !bothSys.includes('【本回合 · 他没有指示】'),
+      '')
 
     /* 收束的闸门不许再挂回大纲上：eventDone 是「往下推进」的唯一开关，
        而它最后被读到的那句定义就在 schema 注释里 —— 若写成「大纲关键收束达成才置 true」，
@@ -3258,6 +3302,60 @@ export function run(): MechReport {
         TIMELINE.reduce<Record<string, true>>((m, e) => (m[e.id] = true, m), {}))))}`)
   } catch (e) {
     fail.push('情景记忆库段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 25) 观测终端操作手册：文档不许骗人 ----------
+     手册是照终端现在的样子写的（官方口径、纯文本）。它最容易出的毛病不是文笔，
+     是**漂移**：终端加了模块、改了控件，手册还是上一版 —— 上一版就漏过情景记忆库，
+     还写过一颗终端里根本不存在的「推进一步」按钮。所以这里不读手册自己怎么讲，
+     去读源码里那一行 NAV 与引擎里那七栏，当场对一遍。 */
+  try {
+    const appSrc = readFileSync('src/App.tsx', 'utf8')
+    const navStart = appSrc.indexOf('const NAV')
+    /* 从 `= [` 之后量到行首那个 `]` —— 类型标注里也有一个 `[]`，
+       直接找第一个 `]` 会停在类型上，量出来是空的（这一版就是这么翻的车）。 */
+    const navNames = [...appSrc.slice(appSrc.indexOf('= [', navStart), appSrc.indexOf('\n]', navStart))
+      .matchAll(/cn: '([^']+)'/g)].map((m) => m[1])
+    const listed = (MANUAL.find((s) => s.id === 'm-overview')?.items
+      .find((t) => t.includes('左侧模块栏列出全部模块')) ?? '')
+      .replace(/^[^：]*：/, '').replace(/。$/, '').split('、').filter(Boolean)
+    ok('手册 · 模块索引：书上列的就是左侧栏真有的那些模块（不多不少，连顺序都对）',
+      navNames.length > 6 && listed.length === navNames.length && listed.every((x, i) => x === navNames[i]),
+      `手册 ${listed.length}：${listed.join('、')}\n      实际 ${navNames.length}：${navNames.join('、')}`)
+
+    /* 记忆库那一节列的那七栏，就是引擎真排出来的七栏 —— 改一栏的名字，手册得跟着改 */
+    const memLine = MANUAL.find((s) => s.id === 'm-memory')?.items
+      .find((t) => t.includes('人物关系')) ?? ''
+    ok('手册 · 记忆库那一节：书上列的七栏 = 记忆库真排的那七栏',
+      MEM_SECTIONS.every((k) => memLine.includes(k)) && memLine.includes('共七栏'),
+      memLine.slice(0, 52) + '…')
+
+    /* 编号：01… 连着排、不重号（陈列按它排，重号就会有两节顶同一个位置） */
+    const nos = MANUAL.map((s) => s.no)
+    const ids = MANUAL.map((s) => s.id)
+    ok('手册 · 章节号 01 起连排且不重（陈列按号排，重号就是两节顶一个位置）',
+      new Set(nos).size === MANUAL.length && new Set(ids).size === MANUAL.length
+      && MANUAL.every((s, i) => Number(s.no) === i + 1),
+      `${nos.join(' ')}`)
+
+    /* 官方口径：委员会发的文档，不是梅芙在讲话 —— 陈述句、无人称、不带语气。
+       （件数正文字数这种断言放到冒烟里按渲染结果查，这里只查文字本身。） */
+    const body = MANUAL.flatMap((s) => [s.title, s.lead, ...s.items]).join('\n')
+    ok('手册 · 官方口径：无人称（不出现「你 / 我」）· 不借梅芙的口 · 不带语气助词',
+      !body.includes('梅芙') && !/[你我]/.test(body) && !/[！？]/.test(body),
+      `正文 ${body.length} 字`)
+
+    /* 每条都写着「主要落在哪个模块」，那个模块名得在模块索引里出现过 ——
+       否则读者照着「落在 XX」去找，找不着那一格。 */
+    const areas = [...new Set(MANUAL.map((s) => s.at))]
+    const strayArea = areas.filter((a) => !navNames.includes(a) && !['作战现场', '存读档'].includes(a))
+    ok('手册 · 每节标出的落点都是终端里真有的地方（模块名取自模块栏 · 场内与存档除外）',
+      strayArea.length === 0, strayArea.length ? `对不上：${strayArea.join('、')}` : `${areas.length} 个落点：${areas.join('、')}`)
+
+    info.push(`手册：${MANUAL.length} 节 · ${MANUAL.reduce((n, s) => n + s.items.length, 0)} 条 · `
+      + `覆盖 ${areas.length} 个模块（对左侧栏 ${navNames.length} 个模块）`)
+  } catch (e) {
+    fail.push('操作手册段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

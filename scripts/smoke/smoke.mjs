@@ -249,6 +249,19 @@ plotReplies.push(
   '【DIR8】心叶把餐巾纸折好收进口袋。\n\n—— 事件指令 ——\n```json\n{"flag":{"manual_ok":true}}\n```',
 )
 let plotReq = 0
+/* 空操作栏的那一趟（C10）：请求体里带着「本回合 · 他没有指示」这一节，
+   回执另走一条固定文案，**不占用 plotReplies 的序号** —— 否则后面每一段
+   导演回执都要错位一格。 */
+let idleReq = 0
+let idlePrompt = ''
+/** 认「空操作栏那一趟」：提示词里带着 idleSection 那一节的，就是它。
+    认出来顺手把整份提示词留着 —— 断言要查的正是「这一节真的送出去了」。 */
+function idleHit(j) {
+  const p = (j.messages || []).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n')
+  if (!p.includes('【本回合 · 他没有指示】')) return ''
+  idlePrompt = p
+  return p
+}
 const stub = http.createServer((req, res) => {
   const send = (obj, status = 200) => {
     res.writeHead(status, {
@@ -270,6 +283,11 @@ const stub = http.createServer((req, res) => {
       let content
       if (model === 'stub-sms') {
         content = '【SMS】你今晚还留在工房街？……布丁倒是还剩半盒，下次带给你。\n\n```json\n{"bond":[{"char":"hikari","delta":10}]}\n```'
+      } else if (idleHit(j)) {
+        // 空操作栏那一趟：提示词里带着「他没有指示」这一节，回一条自己的文案，不占序号
+        idleReq++
+        content = '【IDLE1】他没有开口。浪声又近了一层，终端的光在指缝里晃了一下，谁都没有先动。\n\n'
+          + '—— 事件指令 ——\n```json\n{"flag":{"idle_ok":true}}\n```'
       } else {
         const idx = plotReq++
         content = plotReplies[Math.min(idx, plotReplies.length - 1)]
@@ -615,6 +633,26 @@ try {
   ok('C9b 交战成文进推演：以「交战 · 成文」分栏渲染，不混进导演叙述',
     cStory.n === 1 && cStory.cap === '交战 · 成文' && cStory.txt.includes('【战斗开始】'), JSON.stringify(cStory).slice(0, 160))
 
+  /* 空操作栏也能推：一个字都不写，直接按发送 —— 请求照发，那一趟带的是
+     「本回合 · 他没有指示」（照上下文自己往前推一步），而不是把上一回合的动作再当一遍意志。 */
+  const idleClick = await ev(`(()=>{const b=document.querySelector('[data-composer-send]');
+    if(!b)return 'no-btn';const i=document.querySelector('input[placeholder^="推进事件"]');
+    if(i&&i.value)return 'draft-left:'+i.value;b.click();return 'clicked'})()`)
+  ok('C10 操作栏空着也送得出去（发送键不再要求先写字）', idleClick === 'clicked', 'click=' + idleClick)
+  await poll(`(${wState}).fl.idle_ok===true`, 40000, 'C idle turn landed')
+  const cIdle = await ev(`(()=>{const t=document.body.innerText;
+    let msgs=[];try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');
+      const k=Object.keys(o).find(x=>Array.isArray(o[x])&&o[x].length);msgs=o[k]||[]}catch(e){}
+    return {on:t.includes('【IDLE1】'),
+      blank:msgs.filter(m=>m.from==='user'&&!String(m.text||'').trim()).length}})()`)
+  ok('C10b 空送那一趟：提示词带「本回合 · 他没有指示」· 不写空的操作员消息 · 回执上屏',
+    idleReq === 1 && /【本回合 · 他没有指示】/.test(idlePrompt)
+    // 认「他的意志」那一节要看完整抬头：大纲里那句指路也带着短标题
+    && !/【本回合 · 言万心叶的意志 ——/.test(idlePrompt)
+    && /【事件大纲 · 原文走向】/.test(idlePrompt)
+    && cIdle.on === true && cIdle.blank === 0,
+    `idleReq=${idleReq} 上屏=${cIdle.on} 空消息=${cIdle.blank}`)
+
   /* ============ Phase D：短信 —— 新线程初始没有消息 / 旧线程延续（zts-tavern:v1） ============ */
   console.log('\n[Phase D] 短信新线程初始没有消息 / 旧线程延续（zts-tavern:v1）')
   /* D0 先验「初始没有消息」：把会话表清空过一遍。点开一个已经遇见过的角色，
@@ -707,6 +745,29 @@ try {
   // 智库里的文本教程（操作手册）：整页陈列、节数与条目都不为空
   const manual = await ev(`(()=>{const s=[...document.querySelectorAll('[data-manual-section]')];return {n:s.length,items:s.reduce((a,x)=>a+x.querySelectorAll('li').length,0)}})()`)
   ok('E7b 智库 · 观测终端操作手册陈列（章节齐 · 条目非空）', manual.n >= 8 && manual.items >= 30, `sections=${manual.n} items=${manual.items}`)
+  // 手册默认折着：先给一行行标题，点哪一节摊开哪一节（顶上有「全部展开 / 全部收起」）
+  const mFold = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
+      return s.display!=='none'&&el.getBoundingClientRect().height>0};
+    const secs=[...document.querySelectorAll('[data-manual-section]')];
+    const rows=secs.map(x=>{const h=x.querySelector('[data-fold-head]');const b=x.querySelector('[data-fold-body]');
+      return {open:h?h.getAttribute('aria-expanded'):null,body:vis(b)}});
+    return {n:secs.length,hasAll:!!document.querySelector('[data-fold-expand-all]'),
+      hasCollapse:!!document.querySelector('[data-fold-collapse-all]'),
+      allFolded:rows.every(r=>r.open==='false'&&r.body===false),rows}})()`)
+  ok('E7c 手册各节默认都折着（先看标题 · 顶上有全部展开/全部收起）',
+    mFold.n >= 8 && mFold.hasAll === true && mFold.hasCollapse === true && mFold.allFolded === true,
+    JSON.stringify(mFold.rows))
+  await ev(`(()=>{const b=document.querySelector('[data-fold-expand-all]');if(b)b.click();return true})()`)
+  await poll(`[...document.querySelectorAll('[data-manual-section] [data-fold-head]')].every(h=>h.getAttribute('aria-expanded')==='true')`, 8000, 'E manual all expanded')
+  // 官方口径：这是委员会发的文档，不是梅芙在讲话 —— 陈述句、无人称、不带语气
+  const mTone = await ev(`(()=>{const s=[...document.querySelectorAll('[data-manual-section]')];
+    const t=s.map(x=>x.innerText).join('\\n');
+    return {len:t.length,items:s.reduce((a,x)=>a+x.querySelectorAll('li').length,0),
+      mai:t.includes('梅芙'),you:(t.match(/你/g)||[]).length,me:(t.match(/我/g)||[]).length,
+      bang:(t.match(/[！？]/g)||[]).length}})()`)
+  ok('E7d 手册全摊开后是官方口径：无人称（不出现「你 / 我」）· 不借梅芙的口 · 不带语气',
+    mTone.len > 600 && mTone.items >= 30 && mTone.mai === false
+    && mTone.you === 0 && mTone.me === 0 && mTone.bang === 0, JSON.stringify(mTone))
   await ev(clickTxt('浏览 / 编辑'))
   await poll(`document.body.innerText.includes('选择或新增一个词条')`, 10000, 'E lore editor open')
   await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('新增词条'));if(!b)return false;b.click();return true})()`)
@@ -1111,7 +1172,10 @@ try {
   await goto('剧情推进')
   await poll(`!!document.querySelector('.tag')`, 15000, 'I plot tag')
   const fid = await ev(`(()=>{const t=document.querySelector('.tag');return t?t.textContent.trim().toLowerCase():''})()`)
-  const seedOk = await ev(`(()=>{try{const k=${JSON.stringify(fid)};if(!k)return 'no-key';const text=['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。','露娜：别走神，先听我说。','她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n');const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');o[k]=[{id:'p6-'+Date.now().toString(36),from:'them',text:text,time:'20:00'}];localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true}catch(e){return String(e)}})()`)
+  /* 台词那一行**故意写长**（远超一行，且中间夹一对「」引号 → 拆出多个兄弟 span）：
+     一行以内的短句看不出气泡的排版毛病，超过一行才见分晓（见 I2b）。 */
+  const sayLong = '露娜：别走神，先听我说。你手里那台终端的读数一直在跳，跳得比昨夜还快；他临走前说的那句「不许回头」，你最好也一并记着，别装作没听懂，也别急着替他找理由，先把这一段听完。'
+  const seedOk = await ev(`(()=>{try{const k=${JSON.stringify(fid)};if(!k)return 'no-key';const text=['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。',${JSON.stringify(sayLong)},'她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n');const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');o[k]=[{id:'p6-'+Date.now().toString(36),from:'them',text:text,time:'20:00'}];localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true}catch(e){return String(e)}})()`)
   ok('I1 预置含台词行的叙述到当前会话', seedOk === true, 'seed=' + seedOk)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
@@ -1128,6 +1192,24 @@ try {
   ok('I2 台词行拆成左头像气泡（say 含说话人+正文）',
     !!sayProbe && sayProbe.hasAvatar === true && (sayProbe.text || '').includes('别走神')
     && sayProbe.forWho === 'luna', JSON.stringify(sayProbe))
+  /* 气泡超过一行不许散成并排窄柱：正文那一格必须是整格、行是接着排的。
+     判据不看类名，只看版面 —— 一格正文里，最宽的那一小段该占满整格宽度；
+     真散了的话，每一段各自成列，最宽的一段只剩整格的 1/N。（I2 那条长台词正是为此写的。） */
+  const bub = await ev(`(()=>{const row=[...document.querySelectorAll('[data-say]')].find(x=>x.innerText.includes('别走神'));
+    if(!row)return {err:'no-row'};
+    const cands=[...row.querySelectorAll('span')].filter(s=>s.children.length>=2&&!s.getAttribute('role'));
+    cands.sort((a,b)=>b.getBoundingClientRect().width-a.getBoundingClientRect().width);
+    const bubble=cands[0];if(!bubble)return {err:'no-bubble'};
+    const cs=getComputedStyle(bubble),r=bubble.getBoundingClientRect();
+    const lh=parseFloat(cs.lineHeight)||parseFloat(cs.fontSize)*1.6;
+    const kids=[...bubble.children].map(k=>k.getBoundingClientRect());
+    if(!kids.length)return {err:'no-kids'};
+    const widest=Math.max(...kids.map(k=>k.width));
+    return {disp:cs.display,spans:kids.length,w:Math.round(r.width),h:Math.round(r.height),
+      lines:+(r.height/lh).toFixed(2),ratio:+(widest/r.width).toFixed(2)}})()`)
+  ok('I2b 气泡超过一行不再散成并排窄柱（正文占满整格 · 第二行接着排）',
+    !!bub && !bub.err && bub.disp !== 'flex' && bub.disp !== 'inline-flex' && bub.disp !== 'grid'
+    && bub.spans >= 2 && bub.lines >= 2 && bub.ratio >= 0.7, JSON.stringify(bub))
   // 点旁白中的图鉴名 → 图鉴页自动展开该条目
   const lnk = await ev(`(()=>{const s=[...document.querySelectorAll('span[role="link"]')].find(x=>x.textContent==='灵魂蓄积器TM');if(!s)return false;s.click();return true})()`)
   ok('I3 旁白图鉴名可点（Linkified）', lnk === true, 'lnk=' + lnk)
@@ -1289,6 +1371,33 @@ try {
   await boot()
   await goto('情景记忆库')
   await poll(`!!document.querySelector('[data-mem]') && document.querySelectorAll('[data-mem-section]').length===7`, 20000, 'K2 mem mounted')
+  /* 七栏默认都折着（这一页是长账本：先给目录与栏头，要看哪一栏再摊开）。
+     折是 display:none，innerText 取不到 —— 所以这里先验折态，再「全部展开」，
+     底下那一段读数照旧在摊开之后取。 */
+  const k2f = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
+      return s.display!=='none'&&el.getBoundingClientRect().height>0};
+    const rows=['人物关系','事迹','伏笔','见闻','心迹','技能','大事记'].map(k=>{
+      const h=document.querySelector('[data-fold-head="'+k+'"]');
+      return {k,open:h?h.getAttribute('aria-expanded'):null,body:vis(h?h.nextElementSibling:null)}});
+    return {rows,hasAll:!!document.querySelector('[data-fold-expand-all]'),
+      hasCollapse:!!document.querySelector('[data-fold-collapse-all]')}})()`)
+  ok('K2-F1 七栏默认都折着（先给栏头与条数 · 顶上有全部展开/全部收起）',
+    k2f.rows.length === 7 && k2f.hasAll === true && k2f.hasCollapse === true
+    && k2f.rows.every(r=>r.open === 'false' && r.body === false), JSON.stringify(k2f.rows))
+  await ev(`(()=>{const b=document.querySelector('[data-fold-expand-all]');if(b)b.click();return true})()`)
+  await poll(`[...document.querySelectorAll('[data-fold-head]')].length===7 && [...document.querySelectorAll('[data-fold-head]')].every(h=>h.getAttribute('aria-expanded')==='true')`, 8000, 'K2 all expanded')
+  // 点栏头只收自己那一栏；收起来的那一栏，账还在 DOM 里（条数与出处都还数得出来）
+  await ev(`(()=>{const h=document.querySelector('[data-fold-head="技能"]');if(h)h.click();return true})()`)
+  await poll(`document.querySelector('[data-fold-head="技能"]').getAttribute('aria-expanded')==='false'`, 6000, 'K2 skill collapsed')
+  const k2t = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
+      return s.display!=='none'&&el.getBoundingClientRect().height>0};
+    return {self:vis(document.querySelector('[data-fold-head="技能"]').nextElementSibling),
+      other:vis(document.querySelector('[data-fold-head="事迹"]').nextElementSibling),
+      n:document.querySelectorAll('[data-mem-skill]').length}})()`)
+  ok('K2-F2 点栏头只收自己那一栏（其余的照旧 · 收起来的那一栏账仍在 DOM 里）',
+    k2t.self === false && k2t.other === true && k2t.n > 0, JSON.stringify(k2t))
+  await ev(`(()=>{const h=document.querySelector('[data-fold-head="技能"]');if(h)h.click();return true})()`)
+  await poll(`document.querySelector('[data-fold-head="技能"]').getAttribute('aria-expanded')==='true'`, 6000, 'K2 skill reopened')
   const k2m = await ev(`(()=>{
     const secs=[...document.querySelectorAll('[data-mem-section]')];
     const bodyOf=s=>document.querySelector('[data-mem-section="'+s+'"] .panel__body')||document.querySelector('[data-mem-section="'+s+'"]');
@@ -2234,6 +2343,104 @@ try {
   const o4 = await ev(`(()=>{const k=document.querySelector('[data-op-kv]');const t=k?k.innerText:'';
     return {standing:/苍之学园|临时访问/.test(t),pos:/低语者|化身之枪|灵魂共奏/.test(t),pot:/Stage4|未测定/.test(t),txt:t.slice(0,180)}})()`)
   ok('O4 专档口径随观测进度（学园身份 · 战斗定位 · 终末潜力）', o4.standing === true && o4.pos === true && o4.pot === true, JSON.stringify(o4))
+  /* 主角立绘：public/charimg/operator.* 一放进去，专档就该自己亮 —— 左栏整幅立绘 + 点得开大图。
+     文件不在时走字形兜底（那也是对的），所以这条以「盘上有没有这个文件」为前提：
+     文件在，图就必须真的加载出来（naturalWidth > 0，不是张 404 的空壳）。 */
+  const opFile = ['webp', 'png', 'jpg']
+    .map((e) => path.join(CNM, 'public', 'charimg', `operator.${e}`)).find(existsSync) || ''
+  const o5 = await ev(`(()=>{const box=document.querySelector('[data-op-portrait]');
+    const img=box?box.querySelector('img'):null;const art=document.querySelector('[data-op-art]');
+    return {art:art?art.getAttribute('data-op-art'):null,box:!!box,src:img?img.getAttribute('src'):null,
+      loaded:img?img.naturalWidth>0:false,view:!!document.querySelector('[data-op-portrait-view]')}})()`)
+  if (opFile) {
+    ok('O5 主角立绘接进专档：左栏整幅立绘真的加载出来（并留着点开大图的入口）',
+      o5.art === 'img' && o5.box === true && /operator/.test(o5.src || '') && o5.loaded === true && o5.view === true,
+      JSON.stringify(o5))
+  } else {
+    skip('O5 主角立绘：盘上没有 public/charimg/operator.*，专档走字形兜底', '')
+  }
+
+  /* 总览八块面板各带折叠：默认摊开（这一屏就是一眼扫的），随手能收掉不看的那一块。 */
+  await goto('终端总览')
+  await poll(`document.querySelectorAll('[data-fold-head^="dash-"]').length===8`, 12000, 'O dash fold heads')
+  const dFold = await ev(`(()=>{const heads=[...document.querySelectorAll('[data-fold-head^="dash-"]')];
+    const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
+      return s.display!=='none'&&el.getBoundingClientRect().height>0};
+    const bodyOf=h=>{const p=h.closest('.panel');return p?p.querySelector('.panel__body'):null};
+    return {n:heads.length,allOpen:heads.every(h=>h.getAttribute('aria-expanded')==='true'),
+      allVisible:heads.every(h=>vis(bodyOf(h))===true),
+      boundary:!!document.querySelector('[data-error-boundary]'),
+      equip:(document.body.innerText.match(/装配[\s\S]{0,40}/)||[''])[0].replace(/\s+/g,' ')}})()`)
+  /* boundary 那一条是这一趟**顺带逮到的另一个毛病**：装具的持有人不一定是同伴名册里的人 ——
+     言万心叶自己上阵也穿装具，而他不在 CHARACTERS。早先那版「装配」只滤了装具、
+     没滤持有人，主角一穿装具整页就崩（在这一条断言之前，这一页只能靠没人来看它蒙过去）。 */
+  ok('O6 总览八块面板各带一个折叠开关，默认都摊开（一屏照旧一眼扫完 · 主角穿装具也不崩）',
+    dFold.n === 8 && dFold.allOpen === true && dFold.allVisible === true && dFold.boundary === false,
+    JSON.stringify(dFold))
+  // 收掉一块（整行可点的那一种）：只动那一块
+  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-scan"]');if(h)h.click();return true})()`)
+  await poll(`document.querySelector('[data-fold-head="dash-scan"]').getAttribute('aria-expanded')==='false'`, 6000, 'O dash scan collapsed')
+  const dFold2 = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
+      return s.display!=='none'&&el.getBoundingClientRect().height>0};
+    const q=k=>{const h=document.querySelector('[data-fold-head="'+k+'"]');
+      return h&&h.closest('.panel')?h.closest('.panel').querySelector('.panel__body'):null};
+    return {scan:vis(q('dash-scan')),squad:vis(q('dash-squad'))}})()`)
+  ok('O6b 收掉一块只动那一块（这一块的体不占版面，别块照旧）',
+    dFold2.scan === false && dFold2.squad === true, JSON.stringify(dFold2))
+  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-scan"]');if(h)h.click();return true})()`)
+  // 再收一块「栏头里有跳转按钮」的（开关退在行右端，栏体的配对靠 :has()）
+  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-rec"]');if(h)h.click();return true})()`)
+  await poll(`document.querySelector('[data-fold-head="dash-rec"]').getAttribute('aria-expanded')==='false'`, 6000, 'O dash rec collapsed')
+  const dFold3 = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
+      return s.display!=='none'&&el.getBoundingClientRect().height>0};
+    const p=document.querySelector('[data-fold-head="dash-rec"]').closest('.panel');
+    const link=p?p.querySelector('.linkGo'):null;
+    return {body:vis(p?p.querySelector('.panel__body'):null),
+      link:!!link,title:document.querySelector('[data-fold-head="dash-rec"]').getAttribute('title')}})()`)
+  ok('O6c 栏头里带跳转按钮的那一块也收得起来（开关在行右端 · 跳转按钮不受影响）',
+    dFold3.body === false && dFold3.link === true && !!dFold3.title, JSON.stringify(dFold3))
+  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-rec"]');if(h)h.click();return true})()`)
+
+  /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
+     —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */
+  if (process.env.SHOT) {
+    const shot = async (name) => {
+      const r = await cdp.send('Page.captureScreenshot', { format: 'png' })
+      writeFileSync(path.join(process.env.SHOT, name + '.png'), Buffer.from(r.data, 'base64'))
+    }
+    await sleep(600)
+    await shot('o1-dashboard')
+    await goto('情景记忆库'); await sleep(1000); await shot('o2-memory-folded')
+    await ev(`(()=>{const b=document.querySelector('[data-fold-expand-all]');if(b)b.click();return true})()`)
+    await sleep(600); await shot('o3-memory-open')
+    await goto('智库'); await sleep(1600)
+    // 手册在世界书管理器下面，得滚过去；不滚，截到的只是版面顶上那一截。
+    await ev(`(()=>{const m=document.querySelector('[data-manual]');if(m)m.scrollIntoView({block:'start'});return !!m})()`)
+    await sleep(600); await shot('o4-manual-folded')
+    await ev(`(()=>{const b=document.querySelector('[data-fold-expand-all]');if(b)b.click();return true})()`)
+    await sleep(600); await shot('o5-manual-open')
+    await goto('角色档案'); await sleep(1200)
+    await shot('o6-archive-banner')
+    await ev(`(()=>{const t=document.querySelector('[data-op-arc-toggle]');if(t)t.click();return true})()`)
+    await sleep(900); await shot('o7-archive-operator')
+    /* 台词气泡：把 I2b 那条长台词再预置一次，截下来看第二行有没有错位。 */
+    await goto('剧情推进')
+    await poll(`!!document.querySelector('.tag')`, 15000, 'shot plot tag')
+    const shotFid = await ev(`(()=>{const t=document.querySelector('.tag');return t?t.textContent.trim().toLowerCase():''})()`)
+    if (shotFid) {
+      const shotLine = '露娜：别走神，先听我说。你手里那台终端的读数一直在跳，跳得比昨夜还快；他临走前说的那句「不许回头」，你最好也一并记着，别装作没听懂，也别急着替他找理由，先把这一段听完。'
+      await ev(`(()=>{const k=${JSON.stringify(shotFid)};const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');
+        o[k]=[{id:'shot-'+Date.now().toString(36),from:'them',time:'20:00',
+        text:['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。',${JSON.stringify(shotLine)},'她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n')}];
+        localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true})()`)
+      await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+      await goto('剧情推进')
+      await poll(`!!document.querySelector('[data-say]')`, 15000, 'shot say bubble')
+      await ev(`(()=>{const el=[...document.querySelectorAll('[data-say]')].find(x=>x.innerText.includes('别走神'));
+        if(el)el.scrollIntoView({block:'center'});return !!el})()`)
+      await sleep(500); await shot('o8-plot-bubble')
+    }
+  }
 
 } catch (e) {
   passAll = false

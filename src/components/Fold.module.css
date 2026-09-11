@@ -1,0 +1,64 @@
+/* components/Fold.tsx 的样式：栏头按钮 + 全开/全收那一条。
+   「收起时不占版面」那一条不在这里 —— 它得能盖住各页自己的栏体选择器，
+   故写在 styles/tokens.css 里（全局、按 data-fold-head + data-fold-body 配对）。 */
+
+/* 栏头整行是按钮：排版交给所在页（全局 .panel__head 或各页自己的类），
+   这里只把按钮自带的那点样式抹平。
+   border / background / padding 写成与全局 .panel > .panel__head **同样的值**：
+   两处权重相当，谁盖谁要看打包顺序，写成一样的就没有歧义。 */
+.headBtn {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.012);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.headBtn:hover { background: rgba(255, 255, 255, 0.035); }
+.headBtn:focus-visible { outline: 1px solid var(--line-3); outline-offset: -1px; }
+
+/* 卡片式栏头（智库的手册那一节、图鉴的分类……）：
+   卡片自己已经有内边距与边框，栏头只要「整行可点 + 一个箭头」，
+   再叠一层边框底色就成了卡里套卡。 */
+.headBtn.plain {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.headBtn.plain:hover { background: none; }
+.headBtn.plain:hover .chev { color: var(--ink); }
+
+/* 只在栏头右端留一个箭头（栏头那一行里还有别的控件时用，见 Fold.tsx 的 IconFold） */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin: 0;
+  padding: 3px 5px;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+.iconBtn:hover { background: rgba(255, 255, 255, 0.06); }
+.iconBtn:hover .chev { color: var(--ink); }
+.iconBtn:focus-visible { outline: 1px solid var(--line-3); outline-offset: -1px; }
+
+.chev { flex: none; color: var(--ink-faint); transition: transform 0.18s ease; }
+.headBtn[aria-expanded='true'] .chev { transform: rotate(180deg); }
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+.bar .btn { cursor: pointer; }
+.bar .btn[disabled] { opacity: 0.4; cursor: default; }
+.grow { flex: 1 1 auto; }

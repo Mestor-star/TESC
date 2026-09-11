@@ -271,9 +271,11 @@
   background: linear-gradient(180deg, #14141c 0%, #0a0a11 100%);
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
 }
+/* 一行是「立绘 + 正文」两格，垂直居中在框里；立绘自带 align-self: stretch 铺满整框，
+   所以这里改成 center 只挪正文那一格，不会把立绘缩掉。 */
 .frameRow {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   min-height: 52px;
 }
 
@@ -294,7 +296,12 @@
 .sayFrame .dlgName { left: 16px; }
 .youFrame .dlgName { right: 16px; color: var(--steel); }
 
-/* 正文区：立绘对面一侧，垂直居中 */
+/* 正文区：立绘对面一侧，垂直居中。
+   这里**不能**是 flex —— 正文由 Linkified 拼出来，一段话会拆成好几个相邻的
+   span（引号里的台词、可点的人名词条各是一个），一进 flex 容器它们就各自成了
+   flex item：彼此并排、各按自己那一份宽度折行，整段不再按行流走。
+   短句看不出来，一旦超过一行就散成并排的几条窄柱 —— 所以交给普通块级排版，
+   垂直居中由 .frameRow 的 align-items: center 负责。 */
 .bubble {
   flex: 1 1 auto;
   min-width: 0;
@@ -304,8 +311,6 @@
   line-height: 1.85;
   white-space: pre-line;
   word-break: break-word;
-  display: flex;
-  align-items: center;
 }
 
 /* 立绘方块：贴靠外缘、顶/外/底三边与框边贴合，内缘以淡化渐变「融入」文本区 */

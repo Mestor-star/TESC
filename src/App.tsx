@@ -27,6 +27,8 @@ import { Tavern } from './views/Tavern'
 import { Plot } from './views/Plot'
 import { Settings } from './views/Settings'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { Portrait, useCharImg } from './components/Portrait'
+import { BUST_FOCUS } from './lib/charimg'
 import { VariablePanel } from './components/VariablePanel'
 import { SaveDialog } from './components/SaveDialog'
 import { Guide } from './components/Guide'
@@ -111,6 +113,8 @@ function NavRail() {
 
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const avatarText = name.slice(0, 1).toUpperCase()
+  /* 侧栏身份卡那一格：有立绘就摆他的胸像，没有才是「姓」的字块（缺图占位） */
+  const opFace = useCharImg('operator', 'face')
 
   const handleReset = () => {
     if (!confirmReset) {
@@ -184,7 +188,21 @@ function NavRail() {
           </div>
         ) : (
           <div className={css.opCard} title={operatorTitle}>
-            <div className={css.opAvatar}>{avatarText}</div>
+            {opFace ? (
+              <Portrait
+                avatarId="operator"
+                name={name}
+                fit="cover"
+                focus={BUST_FOCUS}
+                width={34}
+                height={34}
+                eager
+                className={css.opAvatar}
+                style={{ borderRadius: 0 }}
+              />
+            ) : (
+              <div className={css.opAvatar}>{avatarText}</div>
+            )}
             <div className={css.opMeta}>
               <b>{name}</b>
               <i>{operatorTitle}</i>

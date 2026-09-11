@@ -5,6 +5,7 @@ import {
   NoteBlank, Package, PaperPlaneTilt, ShieldChevron, Target,
 } from '@phosphor-icons/react'
 
+import { PanelHead, useFolds } from '../components/Fold'
 import { Portrait } from '../components/Portrait'
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
@@ -79,6 +80,9 @@ export function Dashboard() {
   } = useTerminal()
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const sit = opSituation(epDone)
+  /* 总览上的八块面板都挂了折叠（默认摊开 —— 这一屏就是给人一眼扫的，
+     折是随手收掉不看的那几块，不是默认藏起来）。 */
+  const folds = useFolds(true)
   const sev = rSeverity(focusRegion.r)
   const doneEvents = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).slice(-4).reverse(), [epDone])
   const f = clamp((focusRegion.r - 0.8) / 0.3, 0, 1)
@@ -197,9 +201,17 @@ export function Dashboard() {
     () => Object.entries(live.gearBag).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]),
     [live.gearBag],
   )
+  /* 装配那一行：**装具的持有人不一定是 CHARACTERS 里的人** —— 言万心叶自己就上阵、
+     也穿装具，而他不在 CHARACTERS（那是同伴名册）。所以这里只按「装具认得出来」过滤，
+     名字走 personOf 兜底（主役与登场者都在 castmeta 里）：
+     早先那版只滤了 g，一旦主角穿了装具，c 就是 undefined，整页当场崩掉。 */
   const equipRows = useMemo(
     () => Object.entries(live.equip)
-      .map(([cid, gid]) => ({ c: CHARACTERS.find((x: Character) => x.id === cid), g: GEAR_OF[gid] }))
+      .map(([cid, gid]) => ({
+        id: cid,
+        name: CHARACTERS.find((x: Character) => x.id === cid)?.name ?? personOf(cid)?.name ?? cid,
+        g: GEAR_OF[gid],
+      }))
       .filter((r) => !!r.g),
     [live.equip],
   )
@@ -417,13 +429,13 @@ export function Dashboard() {
       <div className="grid grid--3" style={{ gap: 18, alignItems: 'start' }}>
         {/* 小队状态 */}
         <section className="panel">
-          <div className="panel__head">
+          <PanelHead k="dash-squad" folds={folds}>
             <span className="panel__title">出击小队 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               {lastSquad.length ? '最近出战名单' : '尚未出战 · 名录前四人'}
             </span>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             <div className={css.stack}>
               {squadShown
                 .map((id) => CHARACTERS.find((x: Character) => x.id === id))
@@ -468,15 +480,15 @@ export function Dashboard() {
 
         {/* 区域 R 值 */}
         <section className="panel">
-          <div className="panel__head">
+          <PanelHead k="dash-scan" folds={folds}>
             <span className="panel__title">区域干涉扫描 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               {focusId
                 ? <><MapPin size={11} weight="bold" /> 已钉住观测点</>
                 : <><Crosshair size={11} weight="bold" /> 跟随剧情</>}
             </span>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             <div className={css.stack} data-dash-scan>
               {/* 观测点示意图：六个标定区摆在一张图上，点一格就等于换了观测地点。
                   摆法见 data/regions.ts 的 xy —— 相邻是「走得近」，不是距离测绘。 */}
@@ -633,11 +645,11 @@ export function Dashboard() {
 
         {/* 最近推进 */}
         <section className="panel">
-          <div className="panel__head">
+          <PanelHead k="dash-timeline" folds={folds}
+            extra={<button className="linkGo" onClick={() => navigate('saga')}>全部 <ArrowRight size={11} /></button>}>
             <span className="panel__title">时间线 · 最近推进 <span className="slash" /></span>
-            <button className="linkGo" onClick={() => navigate('saga')}>全部 <ArrowRight size={11} /></button>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             {doneEvents.length === 0 ? (
               <div className="tiny muted" style={{ lineHeight: 1.8, padding: '4px 0' }}>
                 尚未推进任何事件。前往「剧情推进」视图，在线推演或离线通读，第一段收束后这里就会长出记录。
@@ -666,15 +678,15 @@ export function Dashboard() {
       <div className="grid grid--3" style={{ gap: 18, alignItems: 'start', marginTop: 18 }}>
         {/* 通讯中枢 */}
         <section className="panel" data-dash-msg>
-          <div className="panel__head">
+          <PanelHead k="dash-msg" folds={folds}>
             <span className="panel__title">通讯中枢 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               {unreadTotal > 0
                 ? <span style={{ color: 'var(--red)' }}>{unreadTotal} 条未读</span>
                 : `${metCount} 位可联络`}
             </span>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             <div className={css.stack}>
               {metCount === 0 ? (
                 <div className="tiny muted" style={{ lineHeight: 1.8 }}>
@@ -713,13 +725,11 @@ export function Dashboard() {
 
         {/* 最近战报 */}
         <section className="panel" data-dash-rec>
-          <div className="panel__head">
+          <PanelHead k="dash-rec" folds={folds}
+            extra={<button className="linkGo" onClick={() => navigate('missions')}>简报板 <ArrowRight size={11} /></button>}>
             <span className="panel__title">最近战报 <span className="slash" /></span>
-            <button className="linkGo" onClick={() => navigate('missions')}>
-              简报板 <ArrowRight size={11} />
-            </button>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             {live.rec.length === 0 ? (
               <div className="tiny muted" style={{ lineHeight: 1.8, padding: '4px 0' }}>
                 尚无战报。前往「出击任务」选一处出阵，胜了这一栏会记下番号、历时与出力最重的人。
@@ -747,13 +757,11 @@ export function Dashboard() {
 
         {/* 军需与装具 */}
         <section className="panel" data-dash-supply>
-          <div className="panel__head">
+          <PanelHead k="dash-supply" folds={folds}
+            extra={<button className="linkGo" onClick={() => navigate('missions')}>军需处 <ArrowRight size={11} /></button>}>
             <span className="panel__title">军需与装具 <span className="slash" /></span>
-            <button className="linkGo" onClick={() => navigate('missions')}>
-              军需处 <ArrowRight size={11} />
-            </button>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             <div className={css.kv}>
               <span className={css.kvKey}>终末点数</span>
               <span className={css.kvVal}>
@@ -797,9 +805,9 @@ export function Dashboard() {
               <span className={css.kvVal}>
                 {equipRows.length === 0 ? (
                   <span className="tiny muted">全队均未装配 · 每人至多一件</span>
-                ) : equipRows.map(({ c, g }) => (
-                  <span key={c!.id} className={css.gearTag} title={g!.desc}>
-                    {c!.name} · {g!.name}
+                ) : equipRows.map((r) => (
+                  <span key={r.id} className={css.gearTag} title={r.g!.desc}>
+                    {r.name} · {r.g!.name}
                   </span>
                 ))}
               </span>
@@ -812,13 +820,13 @@ export function Dashboard() {
       <div className="grid grid--2" style={{ gap: 18, alignItems: 'start', marginTop: 18 }}>
         {/* 观测通报 */}
         <section className="panel" data-dash-feed>
-          <div className="panel__head">
+          <PanelHead k="dash-feed" folds={folds}>
             <span className="panel__title">观测通报 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               <ClockCounterClockwise size={11} weight="bold" /> 收束与归档
             </span>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             {feed.length === 0 ? (
               <div className="tiny muted" style={{ lineHeight: 1.8, padding: '4px 0' }}>
                 通报栏空着。剧情每收束一段、每归档一场作战，这里会自己长出一条。
@@ -842,13 +850,13 @@ export function Dashboard() {
 
         {/* 收录进度 */}
         <section className="panel" data-dash-collect>
-          <div className="panel__head">
+          <PanelHead k="dash-collect" folds={folds}>
             <span className="panel__title">收录进度 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               <ShieldChevron size={11} weight="bold" /> 三本册子
             </span>
-          </div>
-          <div className="panel__body">
+          </PanelHead>
+          <div className="panel__body" data-fold-body>
             {[
               { k: '终末图鉴', n: codexDone, all: CODEX.length, go: 'codex' as const, c: 'var(--red)' },
               { k: '角色档案', n: metCount, all: PERSON_IDS.length, go: 'archive' as const, c: 'var(--steel)' },
