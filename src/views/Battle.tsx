@@ -1052,14 +1052,35 @@ function Bar({ c }: { c: Combatant }) {
 }
 
 function BuffTags({ c }: { c: Combatant }) {
-  if (!c.buffs.length && !c.shield && !c.taunt) return null
+  const guard = c.guardAxis ? c.guardPts : 0
+  if (!c.buffs.length && !c.shield && !c.taunt && !guard && !c.broken && !c.ward && c.charge <= 1) return null
   const label: Record<string, string> = {
-    atk: '攻势', spd: '加速', evade: '闪避', acc: '命中', shield: '护罩', mark: '破绽', slow: '减速',
-    // 敌方向我方挂的三种：标签直说后果，不必让玩家去翻说明
+    /* `mark` 读作「易伤」不是「破绽」——
+       它是一条「被打更重」的减益，而「破绽」是反现实实体身上那层轴护盾
+       （guardPts / guardAxis，见下面单独那一条）。两个词从前混用过，这里分开。 */
+    atk: '攻势', spd: '加速', evade: '闪避', acc: '命中', shield: '护罩', mark: '易伤', slow: '减速',
+    // 敌方向我方挂的：标签直说后果，不必让玩家去翻说明
     silence: '沉默', bleed: '流血', frail: '减攻',
+    stasis: '停滞', lockdown: '观测封锁', stall: '断拍',
   }
   return (
     <div className={css.buffs}>
+      {/* 破绽：反现实实体身上那层「只有对上这条轴才削得动」的护盾。
+          轴名直接挂在标签上 —— 这一条的全部意义就是让玩家**读**出来它怕什么，
+          藏起来的话，五轴里另外四条就永远只是面板上的装饰。 */}
+      {c.guardAxis && guard > 0 ? (
+        <span className={css.buff} data-buff="guard" data-guard-axis={c.guardAxis}
+          data-guard-left={guard}
+          title={`破绽护盾：只有「${c.guardAxis}」这一路的攻击削得动（每段削 1 点），削穿它停一拍且挨打更重。还剩 ${guard} 点`}>
+          破绽 · {c.guardAxis}<i className={css.buffT}>{guard}</i>
+        </span>
+      ) : null}
+      {c.broken > 0 ? (
+        <span className={css.buff} data-buff="broken" data-debuff="1"
+          title={`破绽已成立 —— 它停 ${c.broken} 拍，这期间挨打 ×${TUNING.breakAmp}`}>
+          破绽成立<i className={css.buffT}>{c.broken}</i>
+        </span>
+      ) : null}
       {c.buffs.map((b, i) => (
         <span key={`${b.k}-${i}`} className={css.buff} data-buff={b.k} data-debuff={isDebuff(b.k) ? '1' : undefined}>
           {label[b.k] ?? b.k}{b.v > 0 ? `+${Math.round(b.v * 100)}%` : ''}
@@ -1067,6 +1088,18 @@ function BuffTags({ c }: { c: Combatant }) {
         </span>
       ))}
       {c.taunt > 0 ? <span className={css.buff} data-buff="taunt">引仇</span> : null}
+      {c.ward > 0 ? (
+        <span className={css.buff} data-buff="ward"
+          title={`护持：接下来 ${c.ward} 次负面效果整条无效`}>
+          护持<i className={css.buffT}>{c.ward}</i>
+        </span>
+      ) : null}
+      {c.charge > 1 ? (
+        <span className={css.buff} data-buff="charge"
+          title={`蓄力：下一手伤害 ×${c.charge}（挨到最大生命 10% 的一下即中断）`}>
+          蓄力 ×{c.charge}
+        </span>
+      ) : null}
     </div>
   )
 }

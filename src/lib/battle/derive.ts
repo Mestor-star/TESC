@@ -320,6 +320,12 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       passive: per.passive,
       endured: 0,
       gone: 0,
+      // 破绽 / 护持 / 蓄力：主角三样都没有 —— 破绽是敌方那层「打不穿」
+      guardPts: 0,
+      guardMax: 0,
+      broken: 0,
+      ward: 0,
+      charge: 0,
       morph: null,
       sp: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
       spMax: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
@@ -373,6 +379,12 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     passive: role?.passive,
     endured: 0,
     gone: 0,
+    // 破绽 / 护持 / 蓄力：同主角那一支，我方默认三样都没有
+    guardPts: 0,
+    guardMax: 0,
+    broken: 0,
+    ward: 0,
+    charge: 0,
     morph: null,
     sp: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
     spMax: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
@@ -453,10 +465,13 @@ const foeAtk = (id: string, name: string, desc: string, axis: AxisKey, power: nu
  * 在自己本就有的那几手之外，再挂上这一套「观测机构级别的处置手段」——
  * 普通遭遇战里的小股敌人永远见不到这些。
  *
- * 四手分别对应四种不同的压迫：
+ * 五手分别对应五种不同的压迫：
  *   停滞   —— 冻结行动条。名字就叫终末停滞，这是它最本位的一手
  *   归档   —— 把人从战场上收走几拍，等于临时少一个人
  *   封锁   —— 压命中：看不见的东西打不准
+ *   断拍   —— 把你这一拍从记录里划掉：轮到了也打不出来（与停滞互补：
+ *             停滞冻的是条，断拍删的是那一手 —— 被冻住的人还可以先攒着，
+ *             被划掉的人条是满的，就那么没了）
  *   回响   —— 把我方刚用过的那招原样打回来
  */
 const BOSS_MOVES: FoeSkill[] = [
@@ -466,6 +481,13 @@ const BOSS_MOVES: FoeSkill[] = [
     cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 4,
     line: '「——」它把谁从记录里按住了，那个人就动不了。',
     effect: { stasis: 2 }, turns: 2,
+  },
+  {
+    id: 'foe-boss-stall', name: '断拍 · 观测中止', kind: '技能',
+    desc: '把某个人这一拍从记录里划掉：轮到他了也打不出来，条照样扣掉。',
+    cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 4,
+    line: '「——」它把那一拍划掉了。轮到你了，可你打不出来。',
+    effect: { stall: 1 },
   },
   {
     id: 'foe-boss-archive', name: '归档 · 静默收容', kind: '技能',
@@ -708,6 +730,30 @@ const FOE_ULT: Record<string, NonNullable<FoeProfile['ult']>> = {
 /** 兜底：性质对不上任何型别时，按「未分类观测体」处理 */
 const FALLBACK_PROFILE = ENEMY_PROFILE[ENEMY_PROFILE.length - 1]
 
+/**
+ * 破绽：每一型反现实实体「怕哪条轴」。
+ * ------------------------------------------------------------
+ * 反现实实体的难缠不该只写成血厚 —— 血厚只是「多打几下」，
+ * 而它该是「打不穿」：身上挂着一层护盾，只有**对上这条轴**的攻击才削得动。
+ * 削穿之后它停一拍、且这一拍里挨打加成（见 engine 的破绽三段）。
+ *
+ * 这么定是为了让五轴各自有活干：从前除了破坏力，另外四条轴只影响
+ * 充能、减伤、克制系数这些「背后的数」；有了破绽，「它怕什么」就成了
+ * 一件要读、要记、要带对的人上场的事 —— 也正好是委员会的本职动作（观测）。
+ *
+ * 轴照型别本身的质地取，不掷骰子 —— 同一型每一场都一样，
+ * 这样玩家才学得会，balance.mjs 也才复现得了。
+ */
+const GUARD_AXIS: Record<string, AxisKey> = {
+  漆黑的影: '意志力',       // 魔王之影压的是人心：撑住它的不是拳头，是不肯低头
+  异端显形: '反现实亲和',   // 不成形的东西，得用同一条轴去够它
+  反现实制成品: '破坏力',   // 图纸造得再精，也是被砸坏的那一类
+  反现实残渣: '意志力',     // 磨人的不是痛，是「它一直在」—— 拼的是谁先烦
+  低语聚合体: '意志力',     // 万声齐鸣：只要还听得见自己那一句，就散不了
+  异界龙花: '破坏力',       // 花开花落是物理的事，斩下去就断
+  未分类观测体: '反现实亲和', // 观测体本身是「被看见」才成立的，那就用亲和对上它
+}
+
 const SUFFIX = ['甲', '乙', '丙', '丁']
 
 /**
@@ -764,6 +810,16 @@ export function enemiesOf(m: Mission): Combatant[] {
         : tag ? `${prof.name} · ${tag}` : prof.name
     // 敌方体力随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
     const spMax = chSpMax(axes.意志力)
+    /* 破绽：型别定轴、档位定点数。
+       指名首领**只认自己写的那一份** —— 不能回退到型别那张表：
+       天空竞技祭那几位是同行、是弹痕持有者，不是「打不穿的反现实实体」，
+       给他们糊一层护盾等于替他们新造了机制（bosses.ts 的规矩：
+       每一个名字、每一句台词、每一手机制都得有原文依据）。
+       所以 named 在场时，没写 guardAxis 就是没有破绽。 */
+    const guardAxis = named ? named.guardAxis : GUARD_AXIS[prof.name]
+    const guardPts = !guardAxis ? 0
+      : named?.guardPts
+        ?? (tier === 'boss' ? TUNING.guardBoss : tier === 'elite' ? TUNING.guardElite : TUNING.guardMinion)
     out.push({
       id: `foe-${m.id}-${i}`,
       side: 'enemy',
@@ -832,6 +888,15 @@ export function enemiesOf(m: Mission): Combatant[] {
       down: false,
       endured: 0,
       gone: 0,
+      /* 破绽：反现实实体身上那层「只有对上这条轴才削得动」的护盾。
+         轴由型别定（见 GUARD_AXIS），点数按档位给：小兵一层、精英三层、首领五层 ——
+         越像样的对手，越值得先读懂它怕什么。指名首领可以自带自己那份。 */
+      guardPts: guardPts,
+      guardMax: guardPts,
+      guardAxis: guardAxis,
+      broken: 0,
+      ward: 0,
+      charge: 0,
       morph: null,
       startUsed: 0,
       unsealedAt: 0,

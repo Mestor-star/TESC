@@ -255,8 +255,11 @@ export const ROSTER: Record<string, RoleDef> = {
         id: 'youshihan-fate', name: '留级的直觉', axis: '意志力', target: 'self',
         // 她不是拿来疗伤的（凶兽只负责打），所以把这一类自带的回复与解厄按住，
         // 只留「站到不该站的地方」那一半。
-        fx: 'guard', effect: { evade: 0.5, heal: 0, cleanse: false, shield: 0.25 },
-        desc: '懒得挪步，却总能站到不该站的地方：自身闪避提升，顺手把这一拍硬接下来。',
+        // 加 ward：她的「直觉」是**先一步**躲开，不是挨完了再治 ——
+        // 所以是护持（挡还没中的），不是解除负面（洗已经中的）。解厄那一半照旧按掉。
+        fx: 'guard', effect: { evade: 0.5, heal: 0, cleanse: false, shield: 0.25, ward: 2 },
+        desc: '懒得挪步，却总能站到不该站的地方：自身闪避提升，顺手把这一拍硬接下来，'
+          + '接下来两次负面也一并落空（她早一步就不在那儿了）。',
         line: '「呼啊……这是哪？陌生的天花板？久违一年的阳光，好刺眼啊……」',
       }),
       place('到达点', {
@@ -423,8 +426,11 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('重压', {
         id: 'nana-heavy', name: '大麻烦 · 增重', axis: '物理抗性', fx: 'blast',
-        effect: { slow: 0.55 },
-        desc: '把敌方全体的自重提到数十倍：它们几乎挪不动，充能大幅滞后。',
+        // 她的原话就是「寸步难行」—— 那不是充能变慢（slow），是这一拍真的抬不起手（stall）。
+        // 两样一起写才对得上那句：重到动不了，也重到攒不起来。
+        effect: { slow: 0.55, stall: 1 },
+        desc: '把敌方全体的自重提到数十倍：它们几乎挪不动，充能大幅滞后 ——'
+          + '重到那个份上，下一拍是真的抬不起手。',
         line: '「吃我一招——『大麻烦』！」',
       }),
       place('驱逐', {
@@ -526,8 +532,11 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('牵制', {
         id: 'isis-scoop', name: '独家取材', axis: '反现实亲和', fx: 'drone',
-        effect: { mark: 0.35, slow: 0.35 },
-        desc: '把目标的破绽写进稿子：全队打它更重，它的充能也跟着慢下来。',
+        // 反现实实体身上那层「打不穿」，靠的是没人知道它怕什么；
+        // 而她是记者 —— 拆破绽这件事本来就该由写下来的人干（见 engine 的 stripGuard）。
+        effect: { mark: 0.35, slow: 0.35, breakGuard: 2 },
+        desc: '把目标的破绽写进稿子：护盾被削掉两成，全队打它更重，它的充能也跟着慢下来。'
+          + '被记录下来的东西没有秘密 —— 也没有那层挡着的东西。',
         line: '「这可是一条超级劲爆的独家新闻☆我绝对会揪住你的尾巴，将真相公之于众！」',
       }),
       place('提速', {
@@ -628,8 +637,13 @@ export const ROSTER: Record<string, RoleDef> = {
       }),
       place('增益', {
         id: 'phidra-stake', name: '赌注', axis: '意志力', fx: 'seal',
-        effect: { atkUp: 0.35, cleanse: true },
-        desc: '为全队垫上一笔底气：攻击上扬，并解除负面。',
+        // 「赌注」本来就该是压上去的一笔，不是白拿的一份 —— 所以这一类自带的攻击加成
+        // 按掉（atkUp: 0），换成「这一拍不出手，换下一手一次结清」。
+        // 与他的到达点「赌局结算」正好配成一对：先押，后结。
+        target: 'self', cd: 3,
+        effect: { atkUp: 0, charge: 1.8, cleanse: true },
+        desc: '把这一拍整个押上去：本手不造成伤害，换下一手伤害 ×1.8 ——'
+          + '但押出去的东西也可能被打散（期间挨到最大生命 10% 的一下就没了）。',
         line: '「——世界正处于毁灭的边缘。我当然要拼死战斗。这是理所当然的吧？」',
       }),
       place('到达点', {
@@ -667,9 +681,11 @@ export const ROSTER: Record<string, RoleDef> = {
       place('到达点', {
         id: 'maria-end', name: '安可 · 最后一句', power: 0, axis: '反现实亲和',
         target: 'allyAll', fx: 'heal',
-        effect: { heal: 0.65, atkUp: 0.45, cleanse: true, evade: 0.2 },
+        // 「一起躲开下一轮」写在描述里很久了，只是一直只有闪避在兑现 ——
+        // 补上 ward：接下来两次负面整条咽下去，这才是「躲开」该有的样子。
+        effect: { heal: 0.65, atkUp: 0.45, cleanse: true, evade: 0.2, ward: 2 },
         desc: '把整场演唱会一次唱完：台下的心跳全部变成现实，全队一起站起来 ——'
-          + '也一起躲开下一轮。',
+          + '也一起躲开下一轮（接下来两次负面无效）。',
         line: '「我会以向您请教的心情全力迎战！来吧——『天下无双的公主大人』！」',
       }),
     ],

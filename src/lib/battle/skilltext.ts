@@ -51,6 +51,12 @@ export function effectTextsOf(k: SkillSpec): string[] {
   if (e.evade) out.push(`闪避 +${pct(e.evade)}`)
   if (e.accUp) out.push(`命中 +${pct(e.accUp)}`)
   if (e.cleanse) out.push('解除负面')
+  /* 护持与解除负面是两头：一个挡还没中的，一个洗已经中的。
+     写清楚各自管哪一头，免得读的人以为两条是同一件事的强弱版。 */
+  if (e.ward) out.push(`护持：接下来 ${e.ward} 次负面无效`)
+  /* 蓄力写的是「这一拍存起来」而不是「打得更重」——
+     顺带把中断条件也写出来，不然玩家不知道还能被打散。 */
+  if (e.charge) out.push(`蓄力：本手不出手，下一手伤害 ×${e.charge}（挨到最大生命 10% 即中断）`)
   if (e.taunt) out.push(`引仇 ${k.turns ?? 2} 拍`)
   if (e.selfToo) out.push('增益同时及于自身')
   if (e.pierce) out.push('无视闪避与减伤')
@@ -59,6 +65,9 @@ export function effectTextsOf(k: SkillSpec): string[] {
   if (e.pushBack) out.push(`击退行动条 ${pct(e.pushBack)}`)
   if (e.clearBar) out.push('清空行动条 · 打断咏唱')
   if (e.silence) out.push('沉默：只余普攻与防御')
+  /* 断拍与停滞读起来像，得把界限写死：停滞冻的是**条**，断拍删的是**那一手** */
+  if (e.stall) out.push(`断拍：取消接下来 ${e.stall} 次出手（条照扣）`)
+  if (e.breakGuard) out.push(`削破绽 ${e.breakGuard} 点`)
   if (e.bleed) out.push(`流血：每拍掉最大生命 ${pct(e.bleed)}`)
   if (e.frail) out.push(`减攻 ${pct(e.frail)}`)
   if (e.stasis) out.push(`停滞 ${e.stasis} 拍`)

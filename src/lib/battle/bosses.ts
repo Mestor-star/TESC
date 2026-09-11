@@ -21,7 +21,7 @@
    ============================================================ */
 
 import { place } from './atlas'
-import type { PassiveSpec, SkillSpec } from './types'
+import type { AxisKey, PassiveSpec, SkillSpec } from './types'
 import { TUNING } from './tuning'
 
 export interface NamedBoss {
@@ -41,6 +41,14 @@ export interface NamedBoss {
   axes?: [number, number, number, number, number]
   /** 被动（有原文依据的才写） */
   passive?: PassiveSpec
+  /**
+   * 破绽：他怕哪条轴（对上这条轴才削得动那层护盾，削穿停一拍、挨打加成）。
+   * 缺省 = 不进破绽那一套 —— 「打不穿的反现实实体」得由设定说了算，
+   * 不能给每个对手都糊一层，否则「读懂它怕什么」会变成普遍作业而不是判断。
+   */
+  guardAxis?: AxisKey
+  /** 破绽点数（缺省按档位给：精英 3 / 首领 5） */
+  guardPts?: number
   /** 四手：普攻 / 技能两手 / 到达点（到达点兼任他的终结技能） */
   skills: SkillSpec[]
   /** 出处：为什么这一场该由他站（注释口径，界面不显示） */

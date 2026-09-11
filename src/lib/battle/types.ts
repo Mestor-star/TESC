@@ -39,8 +39,9 @@ export function toneOf(k: SkillSpec): FxTone {
   if (!e) return 'strike'
   if (e.heal || e.cleanse || e.revive) return 'mend'
   if (e.mark || e.slow || e.pushBack || e.silence || e.bleed || e.frail
-    || e.stasis || e.archive || e.lockdown) return 'hex'
-  if (e.atkUp || e.spdUp || e.shield || e.evade || e.accUp || e.pushBar || e.taunt) return 'ward'
+    || e.stasis || e.archive || e.lockdown || e.stall || e.breakGuard) return 'hex'
+  if (e.atkUp || e.spdUp || e.shield || e.evade || e.accUp || e.pushBar || e.taunt
+    || e.ward || e.charge) return 'ward'
   return 'strike'
 }
 
@@ -141,6 +142,18 @@ export interface SkillEffect {
   pierce?: boolean
   /** 解除负面 */
   cleanse?: boolean
+  /**
+   * 护持：接下来 N 次负面效果无效（用掉一层就少一次）。
+   * 与 cleanse 分工明确 —— cleanse 治**已经中了**的，ward 挡**还没中**的。
+   * 两者都想要就得都写；只写一个的话，面板上读得出来它管哪一头。
+   */
+  ward?: number
+  /**
+   * 蓄力：这一手本拍不出手，换下一手伤害 ×N。
+   * 是「把一拍存起来」而不是「这一拍打得更重」，所以通常配 power: 0。
+   * 存着的这一口气会被打散 —— 期间单次挨到最大生命 chargeBreak 的伤害即中断。
+   */
+  charge?: number
   /** 引仇：敌方优先打他（持续 turns） */
   taunt?: boolean
   /** 把目标的行动条清零（镇静剂一类） */
@@ -153,6 +166,19 @@ export interface SkillEffect {
   /* —— 敌方向我方施加的负面（持续拍数取 turns） —— */
   /** 沉默：这段时间里出不了技能，只剩普攻与防御 */
   silence?: boolean
+  /**
+   * 断拍：取消目标接下来 N 次出手 —— 轮到他了他也打不出来，条照扣。
+   * 与 stasis 的分工：stasis 冻的是**条**（攒不起来），断拍删的是**那一手**（条满了也白满）。
+   * 也因此它不动行动条 —— 不是「把他推后」，是「把他这一拍划掉」，
+   * 与「行动条只许梅芙和会长碰」那条约束不冲突（见 atlas.ts 头注）。
+   */
+  stall?: number
+  /**
+   * 削破绽：直接敲掉目标轴护盾这么多点，不看这一手的轴。
+   * 不写就按这一手自己的轴算（对上护盾轴才削得动，每次命中削 1）。
+   * 专门用来给「拆破绽」这一类辅助手一个位置。
+   */
+  breakGuard?: number
   /** 流血：每拍掉最大生命的这个比例，攒着不治会一路流下去 */
   bleed?: number
   /** 减攻：破坏力 −（比例） */
@@ -304,10 +330,22 @@ export type BuffKey =
   | 'stasis'
   /** 观测封锁：命中率被压下去 —— 看不见，就打不准 */
   | 'lockdown'
+  /** 断拍：轮到了也打不出来，这一次出手被划掉（条照扣） */
+  | 'stall'
 
-/** 负面减益一览：能喂终结技能、也能被「解除负面」一并清掉 */
+/**
+ * 负面减益一览：能喂终结技能、也能被「解除负面」一并清掉。
+ *
+ * ⚠️ 加新键前先答一个问题：**它算不算负面？**
+ *   · 算了就要进这张表 —— 于是敌人的每一次负面，都会削 boss 大招一截
+ *     （ultDebuffCut），玩家的「解除负面」也能洗掉它；
+ *   · 不算就别进 —— 但那就等于给了双方一样「boss 化解不掉」的免费压制。
+ * 两种裁法都成立，要的是**显式裁一次**，不能顺手漏掉：漏掉的那些键会安静地
+ * 变成平衡之外的东西。既有的两种先例：`skillMul` 乘算但刻意不算负面（它是规格，
+ * 不是压制）；`stall` 算（它确确实实是取消对方出手）。
+ */
 export const DEBUFF_KEYS: BuffKey[] = [
-  'mark', 'slow', 'silence', 'bleed', 'frail', 'stasis', 'lockdown',
+  'mark', 'slow', 'silence', 'bleed', 'frail', 'stasis', 'lockdown', 'stall',
 ]
 
 /** 这条 buff 是不是负面的 */
@@ -361,6 +399,24 @@ export interface Combatant {
   endured: number
   /** 合体蛰伏：>0 表示此人暂时不在场上（不充能、不可选、不算失能），归零即归位 */
   gone: number
+
+  /* —— 破绽（轴护盾）——
+     反现实实体不是「血厚」而是「打不穿」：它身上挂着一层护盾，只有**对上那条轴**
+     的攻击才削得动它。削到零即「观测成立」—— 它当场停一拍，且这一拍里受伤加成。
+     这是给「破坏力」之外那四条轴一个存在理由：读得懂它怕哪条轴，比堆伤害管用。 */
+  /** 护盾剩余点数（0 = 没有护盾，或已经被打穿重置中） */
+  guardPts: number
+  /** 护盾满点（打穿之后按它重置） */
+  guardMax: number
+  /** 削得动这层护盾的那条轴；缺省 = 这个人没有破绽层，谁打都照常 */
+  guardAxis?: AxisKey
+  /** 破绽成立：还剩几拍不出手（>0 即「已打穿」，这期间受伤加成） */
+  broken: number
+
+  /** 护持：还能挡掉几次负面（挡一次少一层） */
+  ward: number
+  /** 蓄力：>1 时下一手伤害乘这个数（打出去或被打断即清零） */
+  charge: number
   /**
    * 变身（noapusa）：借来的五轴 / 借来的名字 / 还剩几拍 / 变回来时该还到哪里。
    * 解除时把 base 还回 axes，并把 morphCd 记到 skillId 的冷却上。

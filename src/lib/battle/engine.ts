@@ -127,6 +127,21 @@ export function markOf(c: Combatant): number {
   return Math.max(0, buffOf(c, 'mark'))
 }
 
+/** 破绽成立中吗 —— 打穿的那几拍里它不出手，且挨打更重 */
+export function brokenOf(c: Combatant): boolean {
+  return c.broken > 0
+}
+
+/** 这一拍他要被划掉几次出手（断拍 + 破绽，取大的那个 —— 两种都由同一条路跳过） */
+export function skipOf(c: Combatant): number {
+  return Math.max(buffOf(c, 'stall') > 0 ? 1 : 0, c.broken > 0 ? 1 : 0)
+}
+
+/** 这个人身上还有没有削得动的破绽层 */
+export function guardLeft(c: Combatant): number {
+  return c.guardAxis ? Math.max(0, c.guardPts) : 0
+}
+
 /* ---------- 技能表 ---------- */
 
 /** 指令菜单排序：到达点先、启动次、技能再次、普攻最后 */
@@ -295,7 +310,9 @@ function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec):
     : 1
   // 倍率浮动：抽签一类「性能极端」的手，每次出去轻重差很多
   const sway = k.variance ? 1 + (Math.random() * 2 - 1) * k.variance : 1
-  const raw = atk.axes[k.axis] * k.power * sway * (1 + basic) * atkMulOf(atk) * ultCut + mate
+  // 蓄力：攒下来的那一口，在这一手上交出去（打完即清，见 resolve）
+  const chg = atk.charge > 1 ? atk.charge : 1
+  const raw = atk.axes[k.axis] * k.power * sway * (1 + basic) * atkMulOf(atk) * ultCut * chg + mate
   let mult = 1
   const anti = def.tags.includes('反现实')
   if (atk.scar) {
@@ -307,7 +324,8 @@ function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec):
   if (atk.side === 'ally' && s.overdrive) mult *= TUNING.overdrivePenalty
   let dmg = raw * mult * rollJitter() - def.axes.物理抗性 * TUNING.resistCut
   dmg = Math.max(TUNING.floor, Math.round(dmg))
-  dmg = Math.round(dmg * (1 + markOf(def)))
+  // 破绽成立：观测既已成立，打上去就是看得见的那种重（与「标记」同层，两者叠乘）
+  dmg = Math.round(dmg * (1 + markOf(def)) * (brokenOf(def) ? TUNING.breakAmp : 1))
   dmg = Math.round(dmg * (1 - shieldOf(def)))
   return Math.max(TUNING.floor, dmg)
 }
@@ -358,6 +376,42 @@ function addBuff(c: Combatant, k: BuffKey, v: number, turns: number) {
 }
 
 /**
+ * 削破绽。
+ * ------------------------------------------------------------
+ * 削到零 —— 「观测成立」：它当场停一拍，且这一拍里挨打加成（见 damageOf）。
+ * 抽成函数是因为有两条路进得来：伤害手走 hit（对上轴即削，多段多次削），
+ * 辅助手走 applyEffect 的 breakGuard（明写要削，不看轴）——
+ * 而「拆破绽」这件事本来就该有专门的人在干，不该只有打得动的人才拆得开。
+ */
+function stripGuard(s: BattleState, src: Combatant, t: Combatant, n: number) {
+  if (!t.guardAxis || n <= 0 || t.down || t.gone > 0 || t.guardPts <= 0) return
+  t.guardPts = Math.max(0, t.guardPts - n)
+  if (t.guardPts > 0 || t.broken > 0) return
+  t.broken = Math.max(1, TUNING.breakTicks)
+  // 打穿之后护盾重新凝起来：破绽给的是**一段窗口**，不是永久破防
+  t.guardPts = t.guardMax
+  pushLog(s, {
+    round: s.hand, actorId: t.id, actor: t.name, side: t.side,
+    skillId: 'break', skill: '破绽 · 观测成立', kind: '指令', fx: 'noise',
+    targetId: t.id, target: t.name,
+    note: `${src.name} 打穿了 ${t.name} 的破绽 —— 「${t.guardAxis}」这一路是对的。`
+      + `它停 ${t.broken} 拍，这期间挨打更重（×${TUNING.breakAmp}）。`,
+  })
+}
+
+/**
+ * 这一手有没有「打在别人身上的那一半」。
+ * 单独抽出来是因为两处都要问：resolve 用它决定要不要挑敌人当目标，
+ * applyEffect 用它决定护持挡不挡得住这一手。
+ */
+function hostileEffectOf(eff: SkillSpec['effect'] | undefined): boolean {
+  if (!eff) return false
+  return !!(eff.mark || eff.slow || eff.pushBack || eff.silence || eff.bleed
+    || eff.frail || eff.stasis || eff.lockdown || eff.archive || eff.stall
+    || eff.clearBar || eff.breakGuard)
+}
+
+/**
  * 一手的效果结算。
  * @param foes 受益方的敌方（用来施加压制）；缺省按施术者阵营取
  */
@@ -400,14 +454,44 @@ function applyEffect(
     if (eff.spdUp) addBuff(t, 'spd', fv(eff.spdUp), turns)
     if (eff.pushBar) t.bar = Math.min(TUNING.barMax * 1.6, t.bar + TUNING.barMax * fv(eff.pushBar))
     if (eff.taunt) t.taunt = Math.max(t.taunt, turns)
+    /* 护持：还没中的负面，接下来挡掉 N 次。与 cleanse 分工 ——
+       cleanse 洗的是**已经中了**的，ward 挡的是**还没中**的。 */
+    if (eff.ward) t.ward = Math.max(t.ward, Math.round(eff.ward * scale))
+    /* 蓄力：不是 buff，是「存在这个人身上的一口气」——
+       不按拍数走，只等他真的打出去（或被打散）。所以同一个人的蓄力取强者。 */
+    if (eff.charge && eff.charge > 1) {
+      t.charge = Math.max(t.charge, eff.charge)
+      pushLog(s, {
+        round: s.hand, actorId: src.id, actor: src.name, side: src.side,
+        skillId: 'charge', skill: '蓄力', kind: '指令', fx: 'seal',
+        targetId: t.id, target: t.name,
+        note: `${t.name} 把这一拍存了起来 —— 下一手伤害 ×${t.charge}，`
+          + `但期间挨到最大生命 ${Math.round(TUNING.chargeBreak * 100)}% 的一下就会散。`,
+      })
+    }
   }
   for (const t of hostileTargets) {
     if (t.down) continue
+    /* 护持：还没中的负面先挡掉一次。挡在**最前面**，且挡的是「这一手」而不是
+       「这一手里的某一条」—— 中了护持的那一下是整条被咽下去，不挑条目。 */
+    if (t.ward > 0 && hostileEffectOf(eff)) {
+      t.ward -= 1
+      pushLog(s, {
+        round: s.hand, actorId: t.id, actor: t.name, side: t.side,
+        skillId: 'ward', skill: '护持', kind: '指令', fx: 'guard',
+        targetId: t.id, target: t.name,
+        note: `${t.name} 的护持把这一手整个咽了下去 —— 还剩 ${t.ward} 次。`,
+      })
+      continue
+    }
     if (eff.clearBar) {
       t.bar = 0
       // 「镇静剂」压住的不只是行动条：正在咏唱的大招也一并哑掉
       if (resetChant(s, t, '镇静')) { /* 已入日志 */ }
     }
+    /* 削破绽：辅助手拆盾的那条路 —— 不看这一手的轴，写了就削。
+       （伤害手另有 hit 那条路：对上轴即削，多段多次削。） */
+    if (eff.breakGuard) stripGuard(s, src, t, Math.max(1, Math.round(eff.breakGuard * scale)))
     if (eff.mark) addBuff(t, 'mark', fv(eff.mark), turns)
     if (eff.slow) addBuff(t, 'slow', fv(eff.slow), turns)
     if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * fv(eff.pushBack))
@@ -416,6 +500,20 @@ function applyEffect(
     if (eff.bleed) addBuff(t, 'bleed', fv(eff.bleed), turns)
     if (eff.frail) addBuff(t, 'frail', fv(eff.frail), turns)
     if (eff.lockdown) addBuff(t, 'lockdown', fv(eff.lockdown), turns)
+    /* 断拍：取消接下来 N 次出手。条照扣 —— 所以它不是「推后」，是「划掉」，
+       也因此不碰行动条那一档（见 atlas.ts 头注）。上限压在 stallCap：
+       在本系统里「不出手」是复合惩罚（连携、冷却、印记、咏唱四条一起少一格），
+       放开了会变成唯一解。 */
+    if (eff.stall) {
+      const n = Math.max(1, Math.min(TUNING.stallCap, Math.round(eff.stall * scale)))
+      addBuff(t, 'stall', 1, n)
+      pushLog(s, {
+        round: s.hand, actorId: src.id, actor: src.name, side: src.side,
+        skillId: 'stall', skill: '断拍', kind: '指令', fx: 'seal',
+        targetId: t.id, target: t.name,
+        note: `${t.name} 的下一次出手被划掉了 —— 条照样扣，但这一拍他打不出来（${n} 次）。`,
+      })
+    }
 
     /* 停滞：不走 addBuff 那一套 —— 它的时长按「拍」算，而拍是要在
        心跳里自己往下数的（被冻住的人不会行动，也就没机会给自己减层）。
@@ -491,6 +589,22 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   const dmg = damageOf(s, atk, def, k)
   def.hp = Math.max(0, def.hp - dmg)
   breakChant(s, def, dmg)
+
+  /* 破绽：只有**对上那条轴**的攻击才削得动这层护盾（每一段削一点，
+     所以多段技天生是它的克星）；明写 breakGuard 的手另算，不看轴。 */
+  stripGuard(s, atk, def, (k.effect?.breakGuard ?? 0) + (def.guardAxis === k.axis ? 1 : 0))
+
+  // 蓄力被打散：攒着的那口气，挨到够重的一下就散了（轻碰不掉，重的才掉）
+  if (def.charge > 1 && dmg >= def.hpMax * TUNING.chargeBreak) {
+    const had = def.charge
+    def.charge = 0
+    pushLog(s, {
+      round: s.hand, actorId: def.id, actor: def.name, side: def.side,
+      skillId: 'charge-break', skill: '蓄力 · 中断', kind: '指令', fx: 'seal',
+      targetId: def.id, target: def.name,
+      note: `${def.name} 攒着的那一手被打散了 —— ×${had} 的那一下没能出手。`,
+    })
+  }
   let down = false
   if (def.hp === 0 && !def.down && def.gone <= 0) {
     // 战斗续行：原文里「心脏破了也照样站着」的人，致命伤只留一口气
@@ -600,6 +714,16 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
         pushLog(s, hit(s, atk, t, k))
       }
     }
+    /* 蓄力交出去了：攒的那一口只在这一手上兑现。打在第一个目标身上时就已经
+       进过 damageOf 了，所以这里只是把它清掉 —— 同一份力不该连吃两手。 */
+    if (atk.charge > 1) {
+      atk.charge = 0
+      pushLog(s, {
+        round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
+        skillId: 'charge-out', skill: '蓄力 · 交付', kind: '指令', fx: 'blast',
+        note: `${atk.name} 把存着的那一拍交了出去。`,
+      })
+    }
   } else if (k.kind !== '启动' && !k.echo && !k.copy) {
     // 不造成伤害的辅助手：调律、屏障、鼓舞之类（回响不在此列，它自己那一段会写日志）
     pushLog(s, {
@@ -686,18 +810,19 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     const friendly: typeof e = {
       heal: e.heal, cleanse: e.cleanse, shield: e.shield, evade: e.evade, accUp: e.accUp,
       atkUp: e.atkUp, skillMul: e.skillMul, spdUp: e.spdUp, pushBar: e.pushBar, taunt: e.taunt,
+      ward: e.ward, charge: e.charge,
     }
     const hostile: typeof e = {
       mark: e.mark, slow: e.slow, pushBack: e.pushBack,
       silence: e.silence, bleed: e.bleed, frail: e.frail,
       stasis: e.stasis, lockdown: e.lockdown, archive: e.archive,
+      stall: e.stall, clearBar: e.clearBar, breakGuard: e.breakGuard,
     }
     const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.accUp
-      || e.atkUp || e.skillMul || e.spdUp || e.pushBar || e.taunt)
-    const hasHostile = !!(
-      e.mark || e.slow || e.pushBack || e.silence || e.bleed || e.frail
-      || e.stasis || e.lockdown || e.archive
-    )
+      || e.atkUp || e.skillMul || e.spdUp || e.pushBar || e.taunt || e.ward || e.charge)
+    // 「打在别人身上的那一半」统一走一个判据 —— 两处各写一份的话，
+    // 加了新键只改一处，另一处就会安静地漏掉（护持也会跟着挡不住）。
+    const hasHostile = hostileEffectOf(e)
 
     if (k.target === 'all' || k.target === 'one') {
       if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, smul)
@@ -953,6 +1078,30 @@ export function advance(s: BattleState): BattleState {
       const back = ready.find((c) => c.id === s.again)
       s.again = null
       if (back) cur = back
+    }
+    /* 断拍 / 破绽：轮到他了，但这一拍被划掉。
+       不是「没轮到他」—— 他确实轮到了，所以条要照扣（否则他会一直堵在队首，
+       把后面所有人一起卡住）；但**不回冷却**，那正是这一手狠的地方。
+       放在这里而不是在 readyList 里过滤，就是为了让「条被扣掉」这件事真的发生。 */
+    if (skipOf(cur) > 0) {
+      // 两样可能同时挂着（先被断拍、又挨了破绽）。日志要把**在场的都念出来**，
+      // 只报头一个的话，玩家会以为自己那一下破绽没生效。
+      const stalled = buffOf(cur, 'stall') > 0
+      const broken = cur.broken > 0
+      const why = stalled && broken ? '断拍 · 破绽' : stalled ? '断拍' : '破绽'
+      cur.bar = Math.max(0, cur.bar - TUNING.barMax)
+      if (cur.taunt > 0) cur.taunt -= 1
+      cur.buffs = cur.buffs.filter((b) => { b.t -= 1; return b.t > 0 })
+      if (broken) cur.broken -= 1
+      pushLog(s, {
+        round: s.hand, actorId: cur.id, actor: cur.name, side: cur.side,
+        skillId: stalled ? 'stall-off' : 'break-off',
+        skill: why, kind: '指令', fx: 'seal',
+        targetId: cur.id, target: cur.name,
+        note: `${cur.name} 这一次出手没了 —— 条照扣，这一拍什么也没打出来`
+          + (broken ? '（身上还压着那道破绽）。' : '（断拍未解）。'),
+      })
+      continue
     }
     if (cur.side === 'enemy') {
       // 接通接口时，这一手不由引擎决定：停在 'think' 让视图去问，
