@@ -363,6 +363,21 @@
 }
 .hpBarBig i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
 
+/* 头目档的血量条 —— **只换外形，不换长短**。
+   首领那条要是拉得更长更粗，在屏上分出来的是「更宽」而不是「更强」，
+   同屏一比较，杂兵反而像被裁短了。所以宽高与杂兵一律同款（100% / 8px），
+   改的是两端的切角：首领是一条橄榄形（左右各切一个尖），杂兵仍是圆角直条。
+   一眼看得出，又不占地方。 */
+.hpBarBig[data-tier='boss'] {
+  border-radius: 0;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 50%, calc(100% - 7px) 100%, 7px 100%, 0 50%);
+}
+/* 精英：两端斜切一刀（比尖角收敛，与首领、杂兵三分） */
+.hpBarBig[data-tier='elite'] {
+  border-radius: 0;
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+
 /* ---------- 行动条（每个单位一条；满 100% 才能出手） ---------- */
 
 .atb {

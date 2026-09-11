@@ -54,6 +54,7 @@ import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 import { EVENT_BRIEFS } from '../../src/data/briefs'
 import { TEMPER, temperAt } from '../../src/data/temper'
 import { CHARACTERS } from '../../src/data/chars'
+import { castOf } from '../../src/lib/cast'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -2525,7 +2526,7 @@ export function run(): MechReport {
 
   /* ---------- 22) 性情锚：人物卡逐字进提示词，分期层按「读到哪」翻篇 ---------- */
   try {
-    const withLuna = TIMELINE.find((e) => e.chars.includes('luna'))!
+    const withLuna = TIMELINE.find((e) => castOf(e).includes('luna'))!
     const sys = buildDirectorSystem(withLuna, { operatorName: '言万心叶', presetPost: '' })
     ok('性情锚：在场角色的性格 / 说话方式逐字进提示词（对上的叮嘱没用，有用的是原文里他怎么说话）',
       sys.includes('【在场角色 · 性情锚】') && sys.includes('〔说话方式〕')
@@ -2535,16 +2536,51 @@ export function run(): MechReport {
     const absent = sys.slice(sys.indexOf('【在场角色 · 性情锚】'), sys.indexOf('【此刻的羁绊'))
     const strays = [...new Set(absent.match(/▸ (\S+)/g) ?? [])]
       .map((x) => x.slice(2))
-      .filter((n) => !withLuna.chars.some((id) => (CHARACTERS.find((c) => c.id === id)?.name ?? id) === n))
+      .filter((n) => !castOf(withLuna).some((id) => (CHARACTERS.find((c) => c.id === id)?.name ?? id) === n))
     ok('性情锚（对照）：只列在场的那些，台上没有的一个都不冒出来',
       strays.length === 0, strays.length ? `多出来的：${strays.join('、')}` : `${strays.length || 0} 个越界`)
 
-    /* 分期：同一个人，读到的位置不同 → 该叠的层不同；够不着的层不许提前生效 */
-    const far = TIMELINE.length - 1
-    ok('性情分期：够不着的那一层不会提前生效（读得早 → 不给后期的性情）',
-      temperAt('luna', 100, -1) === null && temperAt('luna', 0, far) === null,
-      `没开始读=${temperAt('luna', 100, -1) ? '有层' : '无层'}　读到底（当前无规则）=${temperAt('luna', 0, far) ? '有层' : '无层'}`)
-    info.push(`性情分期：TEMPER 现有 ${Object.keys(TEMPER).length} 个角色登记（内容待逐卷从原文摘录）`)
+    /* 分期：同一个人，读到的位置不同 → 该叠的层不同；够不着的层不许提前生效。
+       露娜是最典型的一个：使用者契约（v1-9）前后是两种样子。 */
+    const beforePact = temperAt('luna', 100, -1)
+    const afterPact = temperAt('luna', 100, TIMELINE.length - 1)
+    const idxPact = TIMELINE.findIndex((e) => e.id === 'v1-9')
+    ok('性情分期：契约之前叠的是前一段的性情（读得早 → 不给后期的样子）',
+      beforePact !== null && beforePact !== afterPact
+      && (beforePact.forbid ?? []).some((x) => x.includes('主人'))
+      && !(beforePact.note ?? '').includes('我将献上我的全部'),
+      `契约前那一段的禁忌 ${(beforePact?.forbid ?? []).length} 条`)
+
+    ok('性情分期：越过 v1-9 就翻篇（同一份人物卡，读到的位置不同 → 叠的层不同）',
+      temperAt('luna', 100, idxPact - 1) === beforePact
+      && temperAt('luna', 100, idxPact) === afterPact
+      && afterPact !== null && afterPact.note.includes('我的小主人'),
+      `v1-9 前一层=${temperAt('luna', 100, idxPact - 1)?.note.slice(0, 8)}…　`
+      + `v1-9 起一层=${afterPact?.note.slice(0, 8)}…`)
+
+    /* 分期层真的进了提示词才算数 —— 规则写得再对，没接上就是白写 */
+    // 两头都挑**露娜在台上**的那一段：不在台上就不画她的锚，
+    // 拿序章（船上只有黑之魔王）当样本会假失败 —— 她本来就不在那儿。
+    const earlyEv = TIMELINE.find((e) => castOf(e).includes('luna'))!
+    const lateEv = [...TIMELINE].reverse().find((e) => castOf(e).includes('luna'))!
+    // 翻篇由**读到哪**决定（furthestDone(epDone)），不给 epDone 就停在「还没开始读」，
+    // 两头的层会一样 —— 所以这里得把存档进度也摆出来，不然验的是空气。
+    const early = buildDirectorSystem(earlyEv, {
+      operatorName: '言万心叶', presetPost: '', bondNow: () => 24,
+      epDone: { [earlyEv.id]: true },
+    })
+    const late = buildDirectorSystem(lateEv, {
+      operatorName: '言万心叶', presetPost: '', bondNow: () => 100,
+      epDone: Object.fromEntries(TIMELINE.map((e) => [e.id, true])) as Record<string, true>,
+    })
+    ok('性情分期：翻篇前后进提示词的确实是两层（前面的叮嘱不许出现后期那套）',
+      early.includes('此刻的性情') && early.includes('不许她叫「主人」「小主人」')
+      && late.includes('不许再退回契约前那种'),
+      `读 ${earlyEv.id} 时=${early.includes('不许她叫「主人」「小主人」')}`
+      + `　读 ${lateEv.id} 时=${late.includes('不许再退回契约前那种')}`)
+
+    info.push(`性情分期：TEMPER 现有 ${Object.keys(TEMPER).length} 个角色登记`
+      + `（${Object.keys(TEMPER).map((k) => `${k}×${TEMPER[k as CharId]!.length} 段`).join('　')}）`)
   } catch (e) {
     fail.push('性情锚段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }

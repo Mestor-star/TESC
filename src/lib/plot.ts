@@ -12,7 +12,7 @@
    按事件逐字注入——那是项目「原文细节通道」，非自动喂正文。
    ============================================================ */
 
-import type { CharId, FlagValue, TimelineEvent } from '../data/types'
+import type { FlagValue, TimelineEvent } from '../data/types'
 import { CHARACTERS } from '../data/chars'
 import { eventNotesOf } from '../data/eventnotes'
 import { briefOf } from '../data/briefs'
@@ -22,6 +22,7 @@ import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { genderOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
+import { castOf } from './cast'
 import { bondName, clamp } from './format'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
@@ -818,8 +819,20 @@ function briefSection(ev: TimelineEvent): string {
  */
 const TEMPER_SECTIONS = ['性格', '说话方式', '禁忌·雷区']
 
+/**
+ * 本事件的在场者 —— **以 `ev.cast` 为准**（`lib/cast.castOf`，逐事件依原文判定的现场名册）。
+ *
+ * 从前这里读的是 `ev.chars`：那栏只有四位主役，且是「受影响」的口径，
+ * 于是序章的船上也会被塞进恋兔队四个人，而恋兔光本人在场的段落反而漏了她 ——
+ * 卡面与提示词两边都跟着错。名册为空时才退回全体主役。
+ */
+function presentOf(ev: TimelineEvent): string[] {
+  const ids = castOf(ev)
+  return ids.length ? ids : (CHARACTERS.map((c) => c.id) as string[])
+}
+
 function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
-  const present = ev.chars.length ? ev.chars : (CHARACTERS.map((c) => c.id) as CharId[])
+  const present = presentOf(ev)
   const done = furthestDone(ctx.epDone ?? {})
   const blocks: string[] = []
 
@@ -849,7 +862,7 @@ function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
 
 /** 拼装导演系统提示词（单事件） */
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
-  const present = ev.chars.length ? ev.chars : (CHARACTERS.map((c) => c.id) as CharId[])
+  const present = presentOf(ev)
   const roster = present
     .map((id) => relationLine(id, ev, ctx))
     .filter(Boolean)

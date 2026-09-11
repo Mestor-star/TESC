@@ -9,7 +9,28 @@ import {
   act, bossUltOf, chargeOf, createBattle, digestOf, enemysTurn, legalSkills, lootOddsOf, pendingFoe, rewardOf,
 } from '../lib/battle/engine'
 import type { Command } from '../lib/battle/engine'
-import { askEnemyIntent } from '../lib/battle/ai'
+import { intentOf, requestEnemyIntent } from '../lib/battle/ai'
+import type { RawIntent } from '../lib/battle/ai'
+
+/**
+ * 等一个请求，但**最多等这么久**。
+ *
+ * 敌方的这一手不该由模型的快慢说了算：到点还没回话就当没问过（返回 null），
+ * 调用方退回引擎自己的判断 —— 宁可敌体打得笨一点，也不让玩家干等。
+ * 超时会把请求 abort 掉，省得它回来时没人接、白烧一次 token。
+ */
+function withDeadline<T>(p: Promise<T>, ms: number, onTimeout: () => void): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    const timer = window.setTimeout(() => {
+      onTimeout()
+      resolve(null)
+    }, ms)
+    void p.then(
+      (v) => { window.clearTimeout(timer); resolve(v) },
+      () => { window.clearTimeout(timer); resolve(null) },
+    )
+  })
+}
 import { battleBed, sfx } from '../lib/audio'
 import type { SfxName } from '../lib/audio'
 import { isReady, loadProfile } from '../lib/api'
@@ -26,7 +47,7 @@ import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
 import { endOf, isDebuff } from '../lib/battle/types'
-import type { BattleRecord, BattleState, Combatant, FxKind, FxTone, SkillKind, SkillSpec, StaminaState } from '../lib/battle/types'
+import type { BattleRecord, BattleState, Combatant, EnemyIntent, FxKind, FxTone, SkillKind, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
@@ -130,6 +151,8 @@ export function Battle({
   /** 敌方指挥：接口接通了才由模型点这一手，否则引擎自己判断 */
   const [cfg, setCfg] = useState<ApiSettings | null>(null)
   const thinking = useRef(false)
+  /** 提前问回来的敌方那一手（敌体 id → 正在路上的回包），见下面两段 effect */
+  const prefetch = useRef(new Map<string, { p: Promise<RawIntent | null>; ctl: AbortController }>())
   /** 场上有没有 boss 级敌体 —— 有的话底也要跟着换 */
   const bossUp = st.enemies.some((c) => bossUltOf(c))
 
@@ -144,15 +167,66 @@ export function Battle({
     return () => { live = false }
   }, [])
 
-  /* ---- 敌方的这一手：轮到敌体时引擎交出「思考」相位，这里去问模型 ---- */
+  /* ---- 敌方的这一手，什么时候去问模型 ----
+     原来是在「思考」相位里现问现等：轮到敌体 → 发请求 → 等模型回话 → 才动。
+     于是一次往返（一两秒、慢的时候更久）全算在敌方头上，玩家看着就是
+     「敌人想了半天」。可这段时间本来是可以省掉的 —— 我方决定用哪一手的时候，
+     敌方的局面基本已经定了，那一手完全可以**提前问**。
+
+     所以分两步：
+       ① 轮到我方决定（phase=select）时就把在世敌体的这一手全要来，存着；
+       ② 真轮到敌体时先看存着的那份 —— 多半已经到了，**零等待**。
+     只有当提前问没赶上（刚开打、或上一手把局面整个推翻）才现问，
+     而且给一个**截止时间**：超过就用引擎自己的判断打，绝不为了等模型把仗卡住。
+
+     提前问回来的那一手，落地前一律过 `intentOf` 按**此刻**的局面重校验 ——
+     存的是局面，局面会变（技能可能冷却、它瞄的人可能已经倒了）。 */
+  useEffect(() => {
+    if (st.phase !== 'select') return
+    if (!cfg || !isReady(cfg)) return
+    for (const foe of st.enemies) {
+      if (foe.down) continue
+      // 已经有一份在路上 / 已经拿到，不重复问。
+      // 死掉的敌体留在表里也无妨：它的 id 不会再进入思考相位，不会有人去取。
+      if (prefetch.current.has(foe.id)) continue
+      const ctl = new AbortController()
+      const p = requestEnemyIntent(st, foe, cfg, { signal: ctl.signal }).catch(() => null)
+      prefetch.current.set(foe.id, { p, ctl })
+    }
+  }, [st.phase, st.enemies, cfg])
+
+  /* ---- 轮到敌体：先吃提前问好的那一手，吃不到就现问，但有个硬截止 ---- */
   useEffect(() => {
     if (st.phase !== 'think' || shown < st.log.length) return
     if (thinking.current) return
     thinking.current = true
     let live = true
     const foe = pendingFoe(st)
+    const cached = foe ? prefetch.current.get(foe.id) : undefined
+    // 用掉就作废：下一回我方决定时会重新问一份，免得一直拿开局那一手打到底
+    if (foe) prefetch.current.delete(foe.id)
+    const started = Date.now()
     const run = async () => {
-      const intent = foe && cfg ? await askEnemyIntent(st, foe, cfg) : null
+      let intent: EnemyIntent | null = null
+      if (foe && cfg && isReady(cfg)) {
+        if (cached) {
+          // 提前问好的那一份：多半已经到了，直接读完就出手。
+          // 仍在路上的话也只等到截止 —— 玩家出手快的时候，这一份可能还没回来。
+          const raw = await withDeadline(cached.p, TUNING.enemyAskMs, () => cached.ctl.abort())
+          intent = intentOf(st, foe, raw)
+        } else {
+          // 没赶上 —— 现问，但只给这么久；超时就用引擎自己的判断（intent=null）
+          const ctl = new AbortController()
+          const raw = await withDeadline(
+            requestEnemyIntent(st, foe, cfg, { signal: ctl.signal }), TUNING.enemyAskMs, () => ctl.abort(),
+          )
+          intent = intentOf(st, foe, raw)
+        }
+      }
+      // 提前问好的那一份是现成的，会**立刻**出手 —— 快得像瞬移，读不出「它决定了」。
+      // 补一个最短喘息：这一小段是演出，不是真在算，所以跟模型快慢无关。
+      const rest = TUNING.enemyThinkMs - (Date.now() - started)
+      if (rest > 0) await new Promise((r) => window.setTimeout(r, rest))
       if (!live) return
       thinking.current = false
       setSt((s) => (s.phase !== 'think' ? s : { ...enemysTurn(s, intent) }))
@@ -228,6 +302,29 @@ export function Battle({
       })
       .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
   }, [st])
+
+  /* ---- 敌阵的站位：最硬的那个站中间，其余分列两侧 ----
+     `st.enemies` 是**按生成序排的**（第一只是这一场的头目档，见 derive.enemiesOf），
+     照原样铺开就是「最强的杵在最左边」，越往后越弱 —— 眼睛会以为左边那个是杂兵。
+     所以只在这里重排**显示序**，不动 st.enemies 本身（引擎、存档、日志全按 id 找，
+     谁站哪一格与规则无关）：先把头一名摆进中线，剩下的从中间往两边交替铺开。 */
+  const foeLine = useMemo(() => {
+    const arr = st.enemies
+    const n = arr.length
+    if (n <= 2) return arr
+    const out: typeof arr = new Array(n)
+    const mid = Math.floor((n - 1) / 2)
+    out[mid] = arr[0]
+    let l = mid - 1
+    let r = mid + 1
+    for (let i = 1; i < n; i++) {
+      // 先右后左：奇数位补右边，偶数位补左边，两侧同时向外扩
+      if (i % 2 === 1 && r < n) out[r++] = arr[i]
+      else if (l >= 0) out[l--] = arr[i]
+      else out[r++] = arr[i]
+    }
+    return out
+  }, [st.enemies])
 
   /* ---- 「回手」的那一下 ----
      解封尽解的人会被引擎原位填满行动条、点名下一位还是他（见 engine 的 again）。
@@ -549,7 +646,7 @@ ${siteR.f.word}`}>
       {/* 敌阵 —— 居中、放大；名字在头顶，数值与状态在脚下 */}
       <div className={css.arena} data-enemy-field>
         <div className={css.enemyRow}>
-          {st.enemies.map((c) => (
+          {foeLine.map((c) => (
             <Foe
               key={c.id}
               c={c}
@@ -1336,7 +1433,10 @@ function Foe({
           脚下那行是给人看的（数字与标签拼在一起），要按血量挑目标得有个准头，
           别让谁去正则别人的屏上文案。 */}
       <div className={css.foeFoot} data-foe-foot data-foe-hp={c.hp} data-foe-hpmax={c.hpMax}>
-        <div className={css.hpBarBig}>
+        {/* 头目档只换**外形**，不换长短：条子的宽窄与杂兵一模一样
+            （见 Battle.module.css 的 .hpBarBig[data-tier='boss']）——
+            把首领那条拉得更长，在屏上分出来的是「更宽」，不是「更强」。 */}
+        <div className={css.hpBarBig} data-tier={c.tier}>
           <i style={{ width: `${hpPct}%` }} data-low={hpPct <= 30 ? '1' : undefined} />
         </div>
         <div className={`${css.foeMeta} mono`}>

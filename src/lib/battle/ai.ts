@@ -7,6 +7,10 @@
      · **AI**：接通接口时，把场上局面压成一小段 JSON 交给模型，
        只要它回一个 `{"skill":"…","target":"…"}`，这一手就按它打。
 
+   分两步，是为了**不让玩家等**（见 Battle.tsx 的两段 effect）：
+     requestEnemyIntent —— 问。轮到我方决定时就把敌体这一手都要回来存着。
+     intentOf           —— 用。真轮到它时按**此刻**的局面过一遍规则。
+
    约束写在提示词里也写在代码里：**模型只能在 legalSkills 里挑**。
    挑了个不存在的、体力不够的、目标已经倒下的 —— 整手退回离线判断。
    模型可以打得聪明，但不许打出规则外的一手。
@@ -26,6 +30,10 @@ const SYSTEM = `你在为一场回合制战斗指挥**敌方**。
 只能从给你的 skills 列表里挑一门，target 只能从 targets 列表里挑一个。
 打得像那个敌体本身：机械就盯着输出最高的打，魔王就先补掉血最少的，
 残渣就乱打。不要去猜规则、不要解说、不要道歉。
+
+**不要推演、不要权衡、不要展开思考** —— 看一眼局面，几秒内定下一手。
+你只需要给结论：谁打谁、用哪一门。想得越多打得越慢，这一手并不值得想那么久。
+
 只回一行 JSON，不要代码块，不要多余文字：
 {"skill":"技能id","target":"目标id","note":"一句话战意（12 字以内）"}`
 
@@ -95,16 +103,30 @@ function briefOf(s: BattleState, foe: Combatant) {
   }
 }
 
+/** 模型回包里的那一手（**未经规则校验**，可能挑了个打不出来的技能） */
+export interface RawIntent {
+  skill: string
+  target: string
+  note: string
+}
+
 /**
- * 问模型：这一手怎么打。
- * @returns 决定；接口没接通 / 调用失败 / 回包读不出来 —— 一律 null（调用方退回离线）
+ * 问模型：这一手怎么打（只负责**问**，不校验）。
+ *
+ * 与 `askEnemyIntent` 分开，是为了能**提前问**：
+ * 轮到我方决定时就把敌方这一手先要来存着，等真轮到敌体，
+ * 结果多半已经到了 —— 不必让玩家盯着「敌方指挥中…」等一次往返。
+ * 提前问回来的那一手，落地前照样要过 `intentOf` 的规则校验
+ * （存的是局面，局面会变：技能可能冷却、目标可能已经倒了）。
+ *
+ * @returns 回包；接口没接通 / 调用失败 / 读不出 JSON —— 一律 null（调用方退回离线）
  */
-export async function askEnemyIntent(
+export async function requestEnemyIntent(
   s: BattleState,
   foe: Combatant,
   cfg: ApiSettings,
   opts?: { signal?: AbortSignal },
-): Promise<EnemyIntent | null> {
+): Promise<RawIntent | null> {
   if (!isReady(cfg)) return null
   const messages: ChatTurn[] = [
     { role: 'system', content: SYSTEM },
@@ -127,19 +149,36 @@ export async function askEnemyIntent(
   } catch {
     return null
   }
-  const skillId = typeof parsed.skill === 'string' ? parsed.skill : ''
-  const targetId = typeof parsed.target === 'string' ? parsed.target : ''
-  // 规则内校验：技能得列得出来、目标得还站着 —— 不合规就整手退回离线
+  return {
+    skill: typeof parsed.skill === 'string' ? parsed.skill : '',
+    target: typeof parsed.target === 'string' ? parsed.target : '',
+    note: typeof parsed.note === 'string' ? parsed.note.trim().slice(0, 40) : '',
+  }
+}
+
+/**
+ * 把模型挑的那一手按**此刻**的规则校验一遍，落成能执行的意图。
+ *
+ * 提前问回来的回包，到用的时候局面可能已经不一样了：
+ * 技能冷却好了没有、体力还够不够、它瞄的人是否已经倒下 ——
+ * 所以校验用的是**当前**的 `s`，不是问的时候那份。
+ *
+ * @returns 合规的一手；挑了个出不来的、目标不对 —— 一律 null（调用方退回离线）
+ */
+export function intentOf(s: BattleState, foe: Combatant, raw: RawIntent | null | undefined): EnemyIntent | null {
+  if (!raw) return null
+  const skillId = raw.skill
+  const targetId = raw.target
   const legal = legalSkills(foe, s).some((k) => k.id === skillId && !k.ult && affordable(k, foe.sp))
   if (!legal) return null
   const t = targetId ? find(s, targetId) : undefined
   if (targetId && (!t || t.down || t.side !== 'ally')) return null
-  const note = typeof parsed.note === 'string' ? parsed.note.trim().slice(0, 40) : ''
   return {
     foeId: foe.id,
     skillId,
     targetId: t?.id,
     by: 'ai',
-    note: note ? `${foe.name} 的指挥：${note}` : undefined,
+    note: raw.note ? `${foe.name} 的指挥：${raw.note}` : undefined,
   }
 }
+
