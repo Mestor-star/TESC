@@ -809,7 +809,7 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
         skillId: 'unseal', skill: '解禁', kind: '指令', fx: 'noise',
         line: line || undefined,
         note: `封印尽解 —— 普攻与技能已可用（第 ${n}/${atk.startNeed} 重）。`
-          + '门开的这一拍他接着再动一手，不算在别人头上。',
+          + '门开的这一拍他顺势又出了一手。',
       })
     } else {
       pushLog(s, {
@@ -1092,7 +1092,7 @@ export function act(s: BattleState, cmd: Command): BattleState {
       + `，喘息回了一口气（体力 +${got}）`
       + (waiting.length
         ? `　—— ${waiting.every((b) => b.squad) ? '全员能量满' : '共鸣已满'}`
-          + `（${waiting.map((b) => b.name).join('、')}）：防御只蓄拍不接招，得有人出手才接得上。`
+          + `（${waiting.map((b) => b.name).join('、')}）：这一拍只是架着，得有人真打出去，他们才接得上。`
         : ''), 'guard')
   }
 
@@ -1188,9 +1188,6 @@ function linkReady(s: BattleState, b: Bond): boolean {
   return b.members.every((id) => (s.gauge?.[id] ?? 0) >= b.need)
 }
 
-/** 连携接上之后，日志与手册里都要说的那一句（见 fireLinks 末的补笔） */
-const REFUND = '接完这一手照样记进共鸣：参加者各添一笔，不是接一次就清空重攒。'
-
 /**
  * 槽满即接：出手者执手，其余参加者一起出力（linkPow），打最薄的那个。
  * 不占出手者的回合、不耗体力 —— 打熟了自然接得上，这一下是羁绊给的。
@@ -1238,8 +1235,8 @@ function fireLinks(s: BattleState, actorId: string) {
           + `接下来 ${TUNING.squadLinkTurns} 拍，参加者全体攻击 +${Math.round(TUNING.squadLinkAtk * 100)}%、`
           + `充能 +${Math.round(TUNING.squadLinkSpd * 100)}%、`
           + `减伤 ${Math.round(TUNING.squadLinkShield * 100)}%、`
-          + `闪避 +${Math.round(TUNING.squadLinkEvade * 100)}%。` + REFUND
-        : `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。` + REFUND,
+          + `闪避 +${Math.round(TUNING.squadLinkEvade * 100)}%。`
+        : `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。`,
       // 参加者与招式名整份带上：右侧那张连携牌直接照着这条日志立起来
       link: { id: b.id, name: b.link.name, members: live.map((c) => c.id) },
     })
