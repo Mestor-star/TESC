@@ -265,6 +265,15 @@ export async function buyGear(
   return { coin: coin - price, bag }
 }
 
+/**
+ * 清空作战域隐藏存档 —— 「重置世界进度 / 开新档」的收口。
+ * ------------------------------------------------------------
+ * 这一整库都是**当前这一轮**的东西：作战记录、终末点数、小队体力、
+ * 装具库存与装配、任务成长、已领取归档。clearRunStorage() 只管 localStorage
+ * 那几个 key，碰不到这里，所以重置路径必须显式调用本函数，
+ * 否则出现「进度已归零，点数还在、体力不回满、旧战报还挂着」。
+ * 手动存档（zts-slots:v1）不在此列，一律保留。
+ */
 export async function resetBattleStore(): Promise<void> {
   await safe(async () => {
     await db().records.clear()

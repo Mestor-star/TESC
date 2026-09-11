@@ -13,6 +13,7 @@ import { ensureSeeded } from '../lib/lorestore'
 import { ensureBuiltinPresets } from '../lib/builtin-presets'
 import { requestRemount } from '../lib/remount'
 import { sfx } from '../lib/audio'
+import { resetBattleStore } from '../lib/battle/store'
 import {
   applySnapshot,
   captureSnapshot,
@@ -440,8 +441,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录落到终端总览 */
-  const hardReset = useCallback((title: string, body: string) => {
+  const hardReset = useCallback(async (title: string, body: string) => {
     clearRunStorage()
+    // 军需（终末点数）/ 小队体力 / 作战记录 存在 IndexedDB 'zts-battle' 里，
+    // 不在 clearRunStorage 管的那几个 localStorage key 内 —— 不显式清，
+    // 重置后点数还留着、体力不回满、旧战报继续挂在任务简报板上。
+    // 必须 await 在 requestRemount 之前：重挂载后总览立刻读这几个读数，晚到的清空会让旧值先上屏。
+    await resetBattleStore()
     sessionAuthed = true
     sessionStage = 'game'
     sessionSetup = false
@@ -454,7 +460,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const startNew = useCallback(() => {
-    hardReset('行动开始', '新的观测记录已建立。手动存档（存读档）不受影响。')
+    void hardReset('行动开始', '新的观测记录已建立。手动存档（存读档）不受影响。')
   }, [hardReset])
 
   const enterSettings = useCallback(() => {
@@ -785,7 +791,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   /** 世界重置（NavRail 底部）：只清当前 run；手动存档（zts-slots:v1）保留 */
   const resetWorld = useCallback(() => {
-    hardReset('世界已重置', '进度归零。角色档案、终末图鉴与羁绊变量均已初始化，手动存档仍在「存读档」。')
+    void hardReset('世界已重置', '进度归零。角色档案、终末图鉴与羁绊变量均已初始化，手动存档仍在「存读档」。')
   }, [hardReset])
 
   // 未解锁却停留在锁定视图（如重置后）时自动送回剧情推进
