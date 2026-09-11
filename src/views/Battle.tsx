@@ -1332,8 +1332,10 @@ function Foe({
         ) : null}
       </div>
 
-      {/* 数值与状态在脚下 */}
-      <div className={css.foeFoot} data-foe-foot>
+      {/* 数值与状态在脚下。血量另挂 data-foe-hp 一份：
+          脚下那行是给人看的（数字与标签拼在一起），要按血量挑目标得有个准头，
+          别让谁去正则别人的屏上文案。 */}
+      <div className={css.foeFoot} data-foe-foot data-foe-hp={c.hp} data-foe-hpmax={c.hpMax}>
         <div className={css.hpBarBig}>
           <i style={{ width: `${hpPct}%` }} data-low={hpPct <= 30 ? '1' : undefined} />
         </div>

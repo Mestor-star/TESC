@@ -1514,7 +1514,11 @@ try {
   let sawFoeLine = false
   // 战报挂右栏：整场都没横在战场前面才算数
   let sawSideLog = false
-  while (steps++ < 200) {
+  // 步数预算：每一步是一次界面往返（一次出手），而这一场是「慢启动门全观测」那种
+  // 打法 —— 解封之前除恋兔光以外全员防御，敌人打不死、还一直召唤，仗本来就长。
+  // 早先给 200 步，随机看板抽到危险度 9 那一档就走不完（不是卡死：引擎那边
+  // 600 场 × 三档时期的复核里「卡死 0 场」，是这里的预算不够用）。
+  while (steps++ < 700) {
     const snap = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
       if(document.querySelector('[data-battle-result]'))return {r:1};
       const handEl=document.querySelector('[data-hand]');
@@ -1548,8 +1552,15 @@ try {
     if (!snap.actor) { await sleep(220); continue }
     if (snap.aim) {
       // 敌人的可点元素是脚下那张大字卡本体（[data-foe-body]）；我方的可点元素是 [data-unit][data-side="ally"] 根节点
-      const picked = await ev(`(()=>{const t=document.querySelector('[data-foe-card] [data-foe-body]:not([data-down])')
-        ||document.querySelector('[data-unit][data-side="ally"]:not([data-down])');
+      // 打谁：挑**血最少**的那个，不是牌面上第一个。
+      // 牌面第一个通常是头目（每场至少一个），机器人从头到尾敲头目，
+      // 杂兵就一直在旁边打人、还一直在召唤 —— 这场仗便是这么被拖到几百手的。
+      // 血量读 [data-foe-hp]，不从脚下那行文案里去猜。
+      const picked = await ev(`(()=>{const live=[...document.querySelectorAll('[data-foe-card] [data-foe-body]:not([data-down])')]
+          .map(b=>{const f=b.parentElement.querySelector('[data-foe-hp]');
+            return {b,hp:f?Number(f.getAttribute('data-foe-hp')):1e9}})
+          .sort((x,y)=>x.hp-y.hp);
+        const t=(live[0]&&live[0].b)||document.querySelector('[data-unit][data-side="ally"]:not([data-down])');
         if(t){t.click();return true}return false})()`)
       if (!picked) {
         const back = await ev(`(()=>{const b=document.querySelector('[data-sub-back]');if(b)b.click();return true})()`)
