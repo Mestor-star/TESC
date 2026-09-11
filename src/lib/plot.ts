@@ -15,6 +15,7 @@
 import type { CharId, FlagValue, TimelineEvent } from '../data/types'
 import { CHARACTERS } from '../data/chars'
 import { eventNotesOf } from '../data/eventnotes'
+import { briefOf } from '../data/briefs'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { genderOf, PERSON_IDS } from '../data/castmeta'
 import { addressOf } from '../data/address'
@@ -751,6 +752,49 @@ function notesSectionFor(ev: TimelineEvent): string {
   return `\n\n【本事件补充设定 · 原文摘录】\n${notes.map((n) => `· ${n}`).join('\n')}`
 }
 
+/**
+ * 当前事件的**详细大纲**（EVENT_BRIEFS 通道；与 eventnotes 同一条路：逐字、直读、每回合必达）。
+ *
+ * 为什么单开这一节、且要压在概述之后：
+ *   概述只有两三句。模型拿到两三句去写一整段正文，人物关系、谁知道什么、关键台词
+ *   长什么样，全得它自己补 —— 补出来的当然不是原文里那个人（这就是 OOC 的来源）。
+ *   这一节把「怎么走、谁说什么、谁不知道什么、什么算走完」逐条摊开。
+ *
+ * 缺这一份的事件整节不出现，导演照旧只看概述（零副作用）。
+ */
+function briefSection(ev: TimelineEvent): string {
+  const b = briefOf(ev.id)
+  if (!b) return ''
+  const seg: string[] = []
+
+  if (b.beats.length) {
+    seg.push(`一、情节线（按原文先后，逐拍）\n${b.beats.map((x, i) => ` ${i + 1}. ${x}`).join('\n')}`)
+  }
+  if (b.lines?.length) {
+    seg.push('二、关键台词（原文逐字。该由谁说的照说、不要换词，也不要把语气改成别的性子）\n'
+      + b.lines.map((l) => ` ${l.who}：${l.text}`).join('\n'))
+  }
+  if (b.knows?.length) {
+    const rows = b.knows.map((k) => {
+      const yes = k.knows?.length ? `知道：${k.knows.join('；')}` : ''
+      const no = k.unknown?.length ? `还不知道：${k.unknown.join('；')}` : ''
+      return ` ${k.char} —— ${[yes, no].filter(Boolean).join('　｜　')}`
+    })
+    seg.push('三、在场的谁知道什么、还不知道什么（越过这条线就是写错——'
+      + '让他说出「还不知道」里的任何一件，都算这一节崩了）\n' + rows.join('\n'))
+  }
+  if (b.done?.length) {
+    seg.push(`四、收束条件（这几条都达成，eventDone 才可以置 true）\n${b.done.map((x) => ` · ${x}`).join('\n')}`)
+  }
+  if (b.taboo?.length) {
+    seg.push(`五、禁忌（明确不要写出去的方向）\n${b.taboo.map((x) => ` · ${x}`).join('\n')}`)
+  }
+
+  if (!seg.length) return ''
+  return `\n\n【本事件实施细则】（比上面那句概述细一个数量级；两者不一致时，以本节为准）\n\n`
+    + seg.join('\n\n')
+}
+
 /** 拼装导演系统提示词（单事件） */
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
   const present = ev.chars.length ? ev.chars : (CHARACTERS.map((c) => c.id) as CharId[])
@@ -797,7 +841,7 @@ ${varList}
 标题：${ev.title}
 
 【事件大纲 · 唯一事实来源】
-${ev.summary}${notesSection}
+${ev.summary}${briefSection(ev)}${notesSection}
 
 【本事件相关实体】
 ${entList}

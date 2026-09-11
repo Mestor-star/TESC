@@ -12,6 +12,7 @@ import { API_DEFAULTS, chatCompletion, isReady, listModels, readProfiles, savePr
 import * as lore from '../lib/lorestore'
 import { applySchemeTo, captureFrom, listSchemes, parseChatPreset, parseSchemeFile, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
 import { ensureBudgetFloor, ensureBuiltinPresets } from '../lib/builtin-presets'
+import { activePresetId } from '../lib/preset'
 import type { Scheme, SchemePart } from '../lib/schemes'
 import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
@@ -316,7 +317,11 @@ export function Settings() {
   const [confirmAct, setConfirmAct] = useState<'clear' | 'restore' | null>(null)
   const [loreInfo, setLoreInfo] = useState<{ books: number; active: number }>({ books: -1, active: -1 })
   const [schemes, setSchemes] = useState<Scheme[]>(listSchemes)
-  const [schemeSel, setSchemeSel] = useState<string | null>(null)
+  /* 金边画在**正在生效**的那一行上，而不是点过的那一行。
+     这两件事以前是同一件（点一下 = 选中 + 加金边），于是「生效中的是哪一份」
+     在界面上根本没有落点 —— 列表里没有金边的那一份照样在喂提示词。
+     现在两本账分开：activeId 读的是生效快照，点击即套用（见下面 applyScheme）。 */
+  const [activeId, setActiveId] = useState<string | null>(activePresetId)
   /** 预设调配：正在调配条目滤网的方案（null = 未开面板） */
   const [manageOf, setManageOf] = useState<Scheme | null>(null)
   const [newSchemeName, setNewSchemeName] = useState('')
@@ -354,11 +359,12 @@ export function Settings() {
     生效预设一起重读，否则界面上显示的还是自动启动之前的那套参数。
   */
   useEffect(() => {
-    void ensureBudgetFloor()
-      .then((raised) => ensureBuiltinPresets().then((did) => raised || did))
+    void ensureBuiltinPresets()
+      .then((did) => ensureBudgetFloor().then((raised) => raised || did))
       .then((did) => {
         if (!did) return
         setSchemes(listSchemes())
+        setActiveId(activePresetId())
         readCfg()
         void refreshLoreInfo()
       })
@@ -511,7 +517,6 @@ export function Settings() {
       const next = [...schemes, scheme]
       setSchemes(next)
       storeSchemes(next)
-      setSchemeSel(scheme.id)
       let cfg = await applySchemeTo(cfgs, scheme)
       // 预设里的流式开关（酒馆 stream_openai）一并落到两通道
       if (typeof r.stream === 'boolean') {
@@ -519,6 +524,7 @@ export function Settings() {
         await Promise.all([saveProfile('main', cfg.main), saveProfile('sms', cfg.sms)])
       }
       setCfgs(cfg)
+      setActiveId(activePresetId())
       const streamNote = typeof r.stream === 'boolean' ? ` · 流式${r.stream ? '开' : '关'}` : ''
       push('success', '已导入并应用 ChatPreset', `${scheme.name}${model ? ` · ${model}` : ''}${note ? `（${note}）` : ''}${streamNote}`, false)
     } catch (e) {
@@ -581,7 +587,6 @@ export function Settings() {
     setSchemes(next)
     storeSchemes(next)
     setNewSchemeName('')
-    setSchemeSel(s.id)
     push('success', '已存为方案', `${n}（不含接口密钥）`, false)
   }
 
@@ -589,6 +594,7 @@ export function Settings() {
     if (!cfgs) return
     const cfg = await applySchemeTo(cfgs, s)
     setCfgs(cfg)
+    setActiveId(activePresetId())
     push('success', '已应用方案', `${s.name} · 两通道参数与世界书启用已套用`, false)
     void refreshLoreInfo()
   }
@@ -608,7 +614,8 @@ export function Settings() {
     const next = schemes.filter((x) => x.id !== id)
     setSchemes(next)
     storeSchemes(next)
-    if (schemeSel === id) setSchemeSel(null)
+    // 删掉的正是生效中的那一份 → 金边跟着走（提示词那边由下次首启补一份）
+    setActiveId(activePresetId())
     push('info', '已删除方案', '', false)
   }
 
@@ -932,11 +939,20 @@ export function Settings() {
             ) : (
               <div className={css.schemeList}>
                 {schemes.map((s) => {
-                  const isSel = schemeSel === s.id
+                  const isOn = activeId === s.id
                   const chip = (p: SchemePart) => (p.model ? `${p.model} · ${p.temperature.toFixed(2)}` : '未配置')
                   return (
-                    <div key={s.id} className={`${css.schemeRow} ${isSel ? css.isSel : ''}`} onClick={() => setSchemeSel(s.id)}>
-                      {isSel ? <span className={css.selMark}>已选中</span> : null}
+                    <div
+                      key={s.id}
+                      className={`${css.schemeRow} ${isOn ? css.isOn : ''}`}
+                      data-scheme-row={s.id}
+                      data-scheme-on={isOn ? '1' : undefined}
+                      /* 点这一行 = 让它生效。以前这里只是「选中」，还得再点一次「应用」；
+                         而界面上真正要紧的信息（哪一份在喂提示词）反倒没有落点。 */
+                      title={isOn ? '正在生效' : '点击启用这一份预设'}
+                      onClick={() => { if (!isOn) void applyScheme(s) }}
+                    >
+                      {isOn ? <span className={css.onMark}>生效中</span> : null}
                       <div className={css.schemeMain}>
                         <b>{s.name}</b>
                         {/* 内置的那两份随终端一起来；手动导入的没有这个标 */}
@@ -946,8 +962,13 @@ export function Settings() {
                         </span>
                       </div>
                       <div className={css.rowActs} onClick={(e) => e.stopPropagation()}>
-                        <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 9px' }} onClick={() => void applyScheme(s)}>
-                          <Play size={12} weight="bold" /> 应用
+                        <button
+                          className="btn btn--ghost"
+                          style={{ fontSize: 11, padding: '5px 9px' }}
+                          disabled={isOn}
+                          onClick={() => void applyScheme(s)}
+                        >
+                          <Play size={12} weight="bold" /> {isOn ? '已应用' : '应用'}
                         </button>
                         <button
                           className="btn btn--ghost"

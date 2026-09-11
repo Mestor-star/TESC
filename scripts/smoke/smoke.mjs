@@ -369,11 +369,15 @@ try {
   ok('AQ2 对照：两份内置预设都在列表里，而生效的只有协议那一份 ——「入库」不等于「生效」',
     aq.schemes >= 2 && aq.builtins.length === 2 && aq.activeId === 'builtin-ts-protocol',
     JSON.stringify({ schemes: aq.schemes, builtins: aq.builtins }))
-  const wantBudget = 30000
-  ok('AQ3 输出预算随预设落到两通道：一条通道都不留在旧缺省上（够写一段正文）',
+  /* 与 presets/终末停滞-*.json 的 openai_max_tokens、以及 src/lib/budget.ts 的
+     MAX_BUDGET 同值：这个数管的是**单次生成最多吐多少 token**，要一次给足 ——
+     留在建议值上时思考型通道先花掉一部分，正文就在半句上被长度掐断，
+     而界面上看不出异常（它能生成）。三处改了要一起改。 */
+  const wantBudget = 65536
+  ok('AQ3 输出预算随预设落到两通道，且落在上限那一档（够写一整段正文，不是「够回一句」）',
     aq.main.maxTokens === wantBudget && aq.sms.maxTokens === wantBudget,
     JSON.stringify({ main: aq.main, sms: aq.sms }))
-  ok('AQ4 两件首启事各记一本账（记账在先、套用在后：不会下次开机再覆盖一遍）',
+  ok('AQ4 预算抬顶留了账（只认我们自己塞过的值，用户手打的一概不动）',
     aq.floor === true && aq.main.has === true,
     JSON.stringify({ floor: aq.floor, from: aq.floorFrom }))
 
@@ -781,6 +785,17 @@ try {
   ok('F2d 内置预设开箱即在方案列表（两条 · 指令条目齐 · 带激活世界书 · 挂「内置」标）',
     bp.n === 2 && bp.entries.split('/').every((x) => Number(x) >= 1) && bp.lore > 0 && bp.seen === 2 && bp.tag >= 2,
     JSON.stringify(bp))
+  /* 金边画在**生效中**的那一份上，而不是鼠标点过的那一份。
+     曾经这两件事是同一个状态（点一下 = 选中 + 金边），于是「现在用的是哪一份」
+     在界面上根本没有落点：没有金边的那一份照样在喂提示词。 */
+  const onRow = await ev(`(()=>{const rows=[...document.querySelectorAll('[data-scheme-row]')];
+    const on=rows.filter(r=>r.dataset.schemeOn==='1');
+    const act=(()=>{try{const v=JSON.parse(localStorage.getItem('zts-active-preset:v1')||'null');return v&&v.id||null}catch(e){return null}})();
+    return {rows:rows.length,on:on.length,onId:on[0]?on[0].dataset.schemeRow:null,act,
+      mark:on[0]?on[0].innerText.includes('生效中'):false}})()`)
+  ok('F2g 金边画在「生效中」那一份上（有且只有一行，且正是生效快照里的那个 id）',
+    onRow.rows >= 2 && onRow.on === 1 && onRow.onId === onRow.act && onRow.mark === true,
+    JSON.stringify(onRow))
   // 输出预算编辑并保存 → 随通道配置持久（思考型模型需调大预算时走这里）
   await ev(`(()=>{const i=document.querySelector('input[type="number"]');if(!i)return false;const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;set.call(i,'2000');i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`)
   await sleep(200)

@@ -173,14 +173,17 @@
   vertical-align: middle;
 }
 
-/* 选中态：金框 + 左沿金条 + 淡金底 —— 只换边框颜色太容易被旁边的 hover 盖过去 */
-.schemeRow.isSel {
+/* 生效态：金框 + 左沿金条 + 淡金底 —— 只换边框颜色太容易被旁边的 hover 盖过去。
+   注意这一笔画的是**正在喂提示词的那一份**，不是鼠标点过的那一份：
+   点一下就会让它生效（见 Settings.tsx 里那一行 onClick），所以两者本来就该合一，
+   而金边必须跟着「生效」走 —— 否则列表上亮着的那一行和实际生效的那一份能对不上。 */
+.schemeRow.isOn {
   border-color: var(--amber);
   background: linear-gradient(90deg, rgba(255, 181, 46, 0.10), rgba(255, 181, 46, 0.02) 55%, var(--bg-1));
   box-shadow: inset 0 0 0 1px rgba(255, 181, 46, 0.35), 0 0 14px rgba(255, 181, 46, 0.16);
   position: relative;
 }
-.schemeRow.isSel::before {
+.schemeRow.isOn::before {
   content: '';
   position: absolute;
   left: 0;
@@ -189,7 +192,7 @@
   width: 3px;
   background: linear-gradient(180deg, var(--amber), var(--amber-deep));
 }
-.selMark {
+.onMark {
   flex: none;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -200,7 +203,8 @@
   padding: 1px 6px;
 }
 .schemeRow:hover { border-color: var(--line-3); }
-.schemeRow.isSel:hover { border-color: var(--amber); }
+.schemeRow.isOn { cursor: default; }
+.schemeRow.isOn:hover { border-color: var(--amber); }
 .schemeMain {
   flex: 1;
   min-width: 0;

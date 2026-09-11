@@ -247,6 +247,8 @@ export function Plot() {
   const [draftErr, setDraftErr] = useState<string | null>(null)
   /** 内嵌预设条：本机方案列表 + 存当前参数用的命名输入 */
   const [schemes, setSchemes] = useState<Scheme[]>(listSchemes)
+  /** 正在生效的那一份（下拉里标「生效中」；套用/删除后重读） */
+  const [schemeOn, setSchemeOn] = useState<string | null>(activePresetId)
   const [presetName, setPresetName] = useState('')
   /** 正在「管理预设」的方案（null = 未开面板） */
   const [manageOf, setManageOf] = useState<Scheme | null>(null)
@@ -872,6 +874,7 @@ export function Plot() {
     try {
       const cfg = await applySchemePersisted(s)
       if (cfg && cfgMain !== undefined) setCfgMain(cfg.main)
+      setSchemeOn(activePresetId())
       push('success', '已应用方案', `${s.name} · 主线/短信两通道参数与世界书启用已套用`, false)
     } catch (e) {
       push('danger', '应用失败', e instanceof Error ? e.message : String(e), false)
@@ -1176,23 +1179,24 @@ export function Plot() {
       {/* 内嵌预设条：套用/另存/导入方案（不含密钥；随时可在「设置」里做更细的方案管理） */}
       <div className={css.presetBar}>
         <span className={`tiny muted ${css.presetKicker}`}>方案 · PRESET</span>
+        {/* 显示的就是**正在生效**的那一份（而不是空占位）：这一格平常看着像
+            「选一份来套用」，其实它同时是「现在用的是哪一份」的唯一落点。 */}
         <select
           className="field"
-          style={{ width: 'auto', maxWidth: 220, fontSize: 12 }}
+          style={{ width: 'auto', maxWidth: 240, fontSize: 12 }}
           aria-label="套用终端方案"
           title="把方案参数一键套用到主线/短信两通道（不含密钥）"
-          defaultValue=""
+          value={schemeOn && schemes.some((x) => x.id === schemeOn) ? schemeOn : ''}
           onFocus={refreshSchemes}
           onChange={(e) => {
             const id = e.currentTarget.value
-            e.currentTarget.value = ''
             const s = schemes.find((x) => x.id === id)
             if (s) void applySchemePreset(s)
           }}
         >
           <option value="">{schemes.length ? `选择方案套用（${schemes.length}）…` : '暂无终端方案'}</option>
           {schemes.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
+            <option key={s.id} value={s.id}>{s.name}{s.id === schemeOn ? '（生效中）' : ''}</option>
           ))}
         </select>
         <span className={css.presetDivider} />

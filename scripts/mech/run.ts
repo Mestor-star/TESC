@@ -47,8 +47,9 @@ import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
 import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/lib/budget'
 import { API_DEFAULTS } from '../../src/lib/api'
-import { BUILTIN_IDS, BUILTIN_SOURCE, needsBudgetFloor, shouldAutoStart } from '../../src/lib/builtin-presets'
+import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, shouldAutoStart } from '../../src/lib/builtin-presets'
 import { parseChatPreset } from '../../src/lib/schemes'
+import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -1968,6 +1969,20 @@ export function run(): MechReport {
          而 1500 那一档在思考型通道上会被内部思考吃光，正文一个字没写就被掐断。
      这些都不是打开界面能看出来的，所以钉在这里。每条都配对照。 */
   try {
+    /* 生效快照 / 方案列表都落在 localStorage 上，Node 里没有这一号。
+       下面要拿真账本走一遍「列表里有、快照是空的」那条路，所以先补一块最小的。 */
+    const store = new Map<string, string>()
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => { store.set(k, v) },
+        removeItem: (k: string) => { store.delete(k) },
+        clear: () => { store.clear() },
+      },
+    })
+
     const cfg = (budget = DEFAULT_BUDGET): ChannelCfg => ({
       main: { ...API_DEFAULTS, maxTokens: budget },
       sms: { ...API_DEFAULTS, maxTokens: budget },
@@ -2018,37 +2033,83 @@ export function run(): MechReport {
       forced.ok && forced.scheme.main.model === '预设点名的模型' && forced.scheme.sms.model === '预设点名的模型',
       forced.ok ? `主=${forced.scheme.main.model} 短信=${forced.scheme.sms.model}` : '解析失败')
 
-    /* ② 自动启动的判据（纯函数）四种情形都要对：该启动的启动，不该动的一律不动 */
+    /* ② 自动启动的判据（纯函数）：只要没有一份**确实在生效**的预设，就该自己补上。
+       四种情形都要对 —— 「用户自己配好的」绝不动，「空的」一次都不许漏。 */
     const ids = [BUILTIN_IDS[0], BUILTIN_IDS[1], 'user-made']
     const cases = [
-      { name: '从没套过任何预设', state: { activeId: null, started: false, ids }, want: BUILTIN_IDS[0] },
-      { name: '已经套用过别的预设', state: { activeId: 'user-made', started: false, ids }, want: null },
-      { name: '已经自动启动过一次', state: { activeId: null, started: true, ids }, want: null },
-      { name: '内置那份已被删掉', state: { activeId: null, started: false, ids: ['user-made'] }, want: null },
+      { name: '从没套过任何预设', state: { activeId: null, ids }, want: BUILTIN_IDS[0] },
+      { name: '已经生效着别的预设', state: { activeId: 'user-made', ids }, want: null },
+      { name: '生效的那份已被删掉（快照成了孤儿）', state: { activeId: 'gone', ids }, want: BUILTIN_IDS[0] },
+      { name: '内置那份已被删掉', state: { activeId: null, ids: ['user-made'] }, want: null },
     ]
     const wrong = cases.filter((c) => shouldAutoStart(c.state) !== c.want)
-    ok('首启：自带预设自动启动 —— 只对新机器做，且只做一次（不覆盖用户自己的预设）',
+    ok('首启：自带预设自动启动 —— 空着就自己补上，生效着的那份一概不碰（不必用户自己去点套用）',
       wrong.length === 0,
       wrong.length ? wrong.map((c) => c.name).join('；')
         : cases.map((c) => `${c.name}→${c.want ?? '不动'}`).join('　'))
 
-    /* 对照：判据有牙 —— 三处闸门任缺其一，都会在该拦的时候启动 */
-    ok('首启（对照）：把任一条件放开，都会在「本该不动」的机器上启动',
-      shouldAutoStart({ activeId: null, started: false, ids }) !== null
-      && shouldAutoStart({ activeId: 'user-made', started: false, ids }) === null
-      && shouldAutoStart({ activeId: null, started: true, ids }) === null,
-      '已套用过 / 已启动过 两条各自单独就能拦住')
+    /* 对照：判据有牙 —— 闸门若写成「有没有在生效」以外的任何一条，
+       下面这三种里至少有一种会判错（漏补孤儿快照，或去覆盖用户自己的预设） */
+    ok('首启（对照）：判据的闸门就是「有没有在生效」—— 孤儿快照补得上，用户的预设拦得住',
+      shouldAutoStart({ activeId: null, ids }) !== null
+      && shouldAutoStart({ activeId: 'user-made', ids }) === null
+      && shouldAutoStart({ activeId: 'not-in-list', ids }) !== null,
+      '生效着 → 不动；空着 / 生效目标已不在列表 → 自动补')
 
-    /* ②b 预算抬底：只认我们自己塞进去过的值，用户自己打的数一个都不动 */
+    /* ②a 生效快照补落：方案列表与生效快照是两本账，套用只写后者、之后改的却可能只动前者。
+       「列表里那一行看着好好的、提示词里一条没进」就是这么来的，界面上没有任何提示。
+       这里拿真账本摆三种情形：空快照要补、已落好的不许重写、方案本身没条目的不该瞎补。 */
+    {
+      const SCH = 'zts-schemes:v1'
+      const entry = { id: 'e1', name: '叙述人称', kind: '行为' as const, position: 'pre' as const, content: '以第三人称限知视角叙述。', enabled: true, constant: true, keys: [], order: 10 }
+      const mkScheme = (id: string, entries: typeof entry[] | undefined) =>
+        ({ id, name: id, main: { baseUrl: '', model: '', temperature: 0.7, maxTokens: 30000 }, sms: { baseUrl: '', model: '', temperature: 0.7, maxTokens: 30000 }, activeLoreIds: [], ...(entries ? { entries } : {}) })
+
+      // 情形一：列表里有方案、快照空着 → 补
+      store.clear()
+      store.set(SCH, JSON.stringify([mkScheme('s1', [entry])]))
+      store.set(ACTIVE_PRESET_KEY, JSON.stringify({ id: 's1', name: 's1', entries: [] }))
+      const fixed = ensureActiveSnapshot()
+
+      const after = JSON.parse(store.get(ACTIVE_PRESET_KEY) ?? '{}') as { entries?: unknown[] }
+
+      // 情形二：快照已经落好了 → 一个字节都不动（重写会覆盖用户手改过的开关）
+      const before = store.get(ACTIVE_PRESET_KEY)
+      const again = ensureActiveSnapshot()
+      const untouched = store.get(ACTIVE_PRESET_KEY) === before
+
+      // 情形三：方案自己就没条目（合法的空预设）→ 不该被「补」成有
+      store.clear()
+      store.set(SCH, JSON.stringify([mkScheme('s2', undefined)]))
+      store.set(ACTIVE_PRESET_KEY, JSON.stringify({ id: 's2', name: 's2', entries: [] }))
+      const noop = ensureActiveSnapshot()
+
+      ok('首启：方案列表里有、生效快照却是空的 —— 补落一次（这就是「看着生效、其实一条没进」）',
+        fixed === true && Array.isArray(after.entries) && after.entries.length === 1,
+        `补落=${fixed}　补后快照条目=${Array.isArray(after.entries) ? after.entries.length : '—'}`)
+      ok('首启（对照）：快照已经落好时不重写，方案自己没条目时也不凭空补',
+        again === false && untouched && noop === false,
+        `已落好再调=${again}（账本未动=${untouched}）　空方案=${noop}`)
+    }
+
+    /* ②b 预算抬顶：只认我们自己塞进去过的值，用户自己打的数一个都不动 */
     const floor = [
       [0, true, '从没设过'], [NaN, true, '非数字'], [undefined, true, '缺字段'], [1500, true, '旧缺省'],
-      [2000, false, '用户自己填的'], [4096, false, '预设带进来的'], [30000, false, '已经是建议值'],
+      [30000, true, '上一代建议值'], [2000, false, '用户自己填的'], [4096, false, '用户按上游上限填的'],
     ] as const
     const badFloor = floor.filter(([n, want]) => needsBudgetFloor(n) !== want)
-    ok('首启：预算抬底只认自己塞过的值（0 / 非数字 / 旧缺省 1500），别人填的一概不动',
+    ok('首启：预算抬顶只认自己塞过的值（0 / 非数字 / 1500 / 30000），用户自己打的数一概不动',
       badFloor.length === 0,
       badFloor.length ? badFloor.map(([, , why]) => why).join('；')
         : floor.map(([n, want, why]) => `${why}(${String(n)})→${want ? '抬' : '不动'}`).join('　'))
+
+    /* ②c 抬到的是**上限**那一档，不是建议值：单次生成的预算只会在正文写完之前用完，
+       留在建议值上时，思考型通道先花掉一部分，正文就在半句上被长度掐断 —— 界面上看不出异常。
+       直接认内置预设自己带的那个数，比认常量更结实：预设被改小了这里就红。 */
+    ok('首启：内置预设自带输出预算就是上限那一档（不是建议值 30000）',
+      parsed.every((p) => p.r.ok && p.r.scheme.main.maxTokens === MAX_BUDGET && p.r.scheme.sms.maxTokens === MAX_BUDGET),
+      parsed.map((p) => `${p.id} ${p.r.ok ? p.r.scheme.main.maxTokens : '解析失败'}`).join('　')
+        + `　上限=${MAX_BUDGET}）`)
 
     /* ③ 预算区间由 lib/budget.ts 一处说了算：缺省落在区间内、收口函数认得上下限 */
     const bounds = MIN_BUDGET < DEFAULT_BUDGET && DEFAULT_BUDGET < MAX_BUDGET

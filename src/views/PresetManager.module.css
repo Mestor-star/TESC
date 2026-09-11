@@ -110,7 +110,12 @@
 .row b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row:hover { background: var(--bg-1); }
+/* 选中态：只留一层淡底 —— 那是「操作焦点」，不是「状态」 */
 .row.isActive { background: var(--bg-1); border-color: var(--line-2); }
+/* 启用态：左沿一道金条。这一列里真正要一眼看出的是**哪几条在喂提示词**，
+   而不是哪一条被点开了 —— 被点开的那一条恰恰可能是关着的。
+   与词条树那边「启用的图标是金色」是同一套读法。 */
+.row:not(.isOff):not(.isPh) { box-shadow: inset 2px 0 0 var(--amber, #ffb347); }
 .row.isOff { opacity: 0.45; }
 .row.isOff b { text-decoration: line-through; }
 .row.isPh { opacity: 0.5; }

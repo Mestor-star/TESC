@@ -8,66 +8,82 @@
 
    **播进来还不算数，得能用上**：光把两份预设摆进列表，用户还得自己找到那一行、
    点一下「套用」，此前生成读到的仍是空快照（没有导演指令、预算还是通道缺省）。
-   所以这里再走一步：本机**从没套用过任何预设**时，自动把协议预设套上（见 autoStart）。
-   判据是纯函数（shouldAutoStart），好让复核把四种情形都摆一遍。
+   所以这里再走一步：**只要列表里没有一份真正在生效的预设**，就把协议预设套上
+   （见 autoStart）。判据是纯函数（shouldAutoStart），好让复核把各种情形都摆一遍。
 
-   只播一次、也只自动启动一次：两件事各记一本账。之后你自己把它删了、
-   或换成别的预设，都不会下次开机又冒出来
-   （想找回来就清掉这两个 key，或直接从 presets/ 重新导入 json）。
+   分寸在于「生效着的那一份永远归用户」：你自己套过别的预设、或者你把它删了，
+   这里一律不动 —— 直接生效不等于自动覆盖。反过来，本机没有生效目标时
+   （从没套过、生效的那份被删了、快照没落成），它就自己补上，
+   用户不必先找到那一行、更不必知道有「套用」这个按钮。
    ============================================================ */
 
 import protocolJson from '../../presets/终末停滞-协议预设.json'
 import styleJson from '../../presets/终末停滞-文风参照原著.json'
 import { readProfiles, saveProfile } from './api'
-import { DEFAULT_BUDGET } from './budget'
+import { DEFAULT_BUDGET, MAX_BUDGET } from './budget'
 import { ensureSeeded, getActiveLorebookIds } from './lorestore'
-import { activePresetId } from './preset'
+import { activePresetId, readActivePreset, snapshotActivePreset } from './preset'
 import { applySchemePersisted, listSchemes, parseChatPreset, storeSchemes } from './schemes'
 import type { Scheme } from './schemes'
 
 export const BUILTIN_KEY = 'zts-builtin-presets:v1'
-/** 自动启动那一步的账：只做一次，且只对「从没套过任何预设」的机器做 */
-export const BUILTIN_START_KEY = 'zts-builtin-start:v1'
-/** 预算抬底那一步的账：同样只做一次 */
+/**
+ * 预算抬顶那一步的账。**记版本号**：抬的目标值改过一代（30000 → 上限），
+ * 老账本（v1）记的是一次已经过时的动作，得让它再走一遍；
+ * 记到 v2 之后才真的只做一次。
+ */
 export const BUDGET_FLOOR_KEY = 'zts-budget-floor:v1'
+const BUDGET_FLOOR_V = 2
 
 /**
- * 这个通道上存的输出预算该不该抬到缺省那一档 —— **纯函数**，好让复核把各种值摆一遍。
+ * 这个通道上存的输出预算该不该抬到**上限**那一档 —— **纯函数**，好让复核把各种值摆一遍。
  *
- * 只认**我们自己写进去过的**那些值：0 / 非数字（从没设过）与 1500（旧缺省）。
- * 用户自己打的数（比如 4096）一律不动 —— 那是他选的，不是我们塞的。
+ * 只认**我们自己写进去过的**那些值：0 / 非数字（从没设过）、1500（旧缺省）、
+ * 30000（上一代建议值）。用户自己打的数（比如 4096）一律不动 —— 那是他选的，
+ * 不是我们塞的；他若嫌小，界面上那一格随时改。
+ *
+ * 为什么抬到上限而不是建议值：这个数管的是**单次生成最多吐多少 token**。
+ * 思考型通道先花掉一部分，正文再被长度掐断时，界面上看不出异常 ——
+ * 它能生成，只是每一段都在半句上停住。留足比掐住强；真超过某条通道自己的
+ * 输出上限时，上游会明确报错（照它说的往下调即可），而不是悄悄截断。
  */
 export function needsBudgetFloor(n: unknown): boolean {
-  return typeof n !== 'number' || !Number.isFinite(n) || n === 0 || n === 1500
+  return typeof n !== 'number' || !Number.isFinite(n) || n === 0 || n === 1500 || n === DEFAULT_BUDGET
+}
+
+function readFloorLedger(): number {
+  try {
+    const raw = localStorage.getItem(BUDGET_FLOOR_KEY)
+    if (!raw) return 0
+    const p = JSON.parse(raw) as { v?: unknown }
+    return typeof p?.v === 'number' && Number.isFinite(p.v) ? p.v : 1
+  } catch {
+    /* 隐私模式：读不到账就当作没做过 —— 下面写账也会失败，下次开机再来一遍，无害 */
+    return 0
+  }
 }
 
 /**
- * 把还停在旧缺省上的输出预算抬到建议值（一次性）。
+ * 把还停在我们自己写的缺省上的输出预算抬到上限（每台机器只做一次，按版本号记账）。
  *
- * 为什么要有这一步：自动启动只对「从没套过任何预设」的机器生效（那是它的分寸）。
- * 已经套用过别的预设的机器，预算留在旧缺省 1500 上 —— 那条通道上什么都写不出来，
- * 而界面上看不出异常（它能生成，只是每一段都被长度掐断）。所以这里单独补一次。
+ * 为什么要有这一步：自动启动只认「没有生效目标」的机器（那是它的分寸）。
+ * 已经套用过别的预设的机器，预算可能留在旧缺省上 —— 那条通道上正文很容易
+ * 被长度掐断，而界面上看不出异常。所以这里单独补一次。
  */
 export async function ensureBudgetFloor(): Promise<boolean> {
-  let done = false
-  try {
-    done = localStorage.getItem(BUDGET_FLOOR_KEY) !== null
-  } catch {
-    /* 隐私模式：读不到账就当作没做过 —— 下面写账也会失败，下次开机再来一遍，无害 */
-  }
-  if (done) return false
+  if (readFloorLedger() >= BUDGET_FLOOR_V) return false
   try {
     const p = await readProfiles()
     const raiseMain = needsBudgetFloor(p.main.maxTokens)
     const raiseSms = needsBudgetFloor(p.sms.maxTokens)
     if (raiseMain || raiseSms) {
       await Promise.all([
-        raiseMain ? saveProfile('main', { ...p.main, maxTokens: DEFAULT_BUDGET }) : Promise.resolve(),
-        raiseSms ? saveProfile('sms', { ...p.sms, maxTokens: DEFAULT_BUDGET }) : Promise.resolve(),
+        raiseMain ? saveProfile('main', { ...p.main, maxTokens: MAX_BUDGET }) : Promise.resolve(),
+        raiseSms ? saveProfile('sms', { ...p.sms, maxTokens: MAX_BUDGET }) : Promise.resolve(),
       ])
     }
     localStorage.setItem(BUDGET_FLOOR_KEY, JSON.stringify({
-      v: 1, at: Date.now(), from: { main: p.main.maxTokens, sms: p.sms.maxTokens },
+      v: BUDGET_FLOOR_V, at: Date.now(), to: MAX_BUDGET, from: { main: p.main.maxTokens, sms: p.sms.maxTokens },
     }))
     return raiseMain || raiseSms
   } catch {
@@ -103,32 +119,43 @@ function readSeeded(): string[] {
 /**
  * 该不该自动启动内置预设 —— **纯函数**，把「本机状态」整个作为输入。
  *
- * 三处都要拦住：
- *   · 已经套用过任何预设（active 非空）→ 不动。用户自己配好的东西，
- *     不该被一份「自带的」在下次开机时盖掉 —— 自动启动不是自动覆盖。
- *   · 这个机制此前做过一次 → 不再做。只对新机器生效。
- *   · 列表里根本没有内置那一份（被删了）→ 无事可做。
+ * 只有一条闸门：**本机有没有一份确实在生效的预设**。
+ *   · 有（active 非空且那一份还在列表里）→ 不动。用户自己配好的东西，
+ *     不该被一份「自带的」在下次开机时盖掉 —— 直接生效不是自动覆盖。
+ *   · 没有 → 启动。从没套过、生效的那份被你删了，都算「没有」：
+ *     这两种情形下提示词里读到的都是空快照，界面上却看不出少了什么。
+ *   · 列表里根本没有内置那一份（被删了）→ 无事可做（尊重这个删除）。
  * @returns 要自动启动的那一份的 id；不该启动时为 null
  */
 export function shouldAutoStart(state: {
   /** 本机当前生效的预设 id（没套过任何预设为 null） */
   activeId: string | null
-  /** 本机制此前自动启动过没有 */
-  started: boolean
   /** 方案列表里现有的 id */
   ids: string[]
 }): string | null {
-  if (state.started) return null
-  if (state.activeId) return null
+  if (state.activeId && state.ids.includes(state.activeId)) return null
   return state.ids.includes(BUILTIN_IDS[0]) ? BUILTIN_IDS[0] : null
 }
 
-function readStarted(): boolean {
-  try {
-    return localStorage.getItem(BUILTIN_START_KEY) !== null
-  } catch {
-    return false
-  }
+/**
+ * 生效目标在列表里，快照却是空的 —— 补落一次。
+ *
+ * 「方案列表里躺着、提示词里一条没进」是本终端最难自查的一种失效：
+ * 界面上那一行看着好好的，生成时却既没有导演指令、也没有预填充。
+ * 成因是快照与方案列表两本账，套用只写前者、后来改的却只动后者。
+ * 这里不猜是哪一步漏的，只认事实：**方案里有条目，快照里没有**，就重落一遍。
+ * @returns 有没有补落
+ */
+export function ensureActiveSnapshot(): boolean {
+  const id = activePresetId()
+  if (!id) return false
+  const s = listSchemes().find((x) => x.id === id)
+  if (!s) return false
+  const entries = s.entries ?? []
+  if (!entries.length) return false
+  if (readActivePreset().length) return false
+  snapshotActivePreset(s.id, s.name, entries, s.prefill ?? '')
+  return true
 }
 
 /**
@@ -189,7 +216,8 @@ async function seedBuiltins(): Promise<boolean> {
     }
   }
 
-  return (await autoStart(kept)) || changed
+  // 顺序要紧：先自动启动（它会把快照整个写一遍），再看有没有「有方案、没快照」的漏
+  return (await autoStart(kept)) || ensureActiveSnapshot() || changed
 }
 
 /**
@@ -201,21 +229,10 @@ async function seedBuiltins(): Promise<boolean> {
  * @returns 有没有真的启动
  */
 async function autoStart(list: Scheme[]): Promise<boolean> {
-  const id = shouldAutoStart({
-    activeId: activePresetId(),
-    started: readStarted(),
-    ids: list.map((s) => s.id),
-  })
+  const id = shouldAutoStart({ activeId: activePresetId(), ids: list.map((s) => s.id) })
   if (!id) return false
   const target = list.find((s) => s.id === id)
   if (!target) return false
-  // 先落账再套用：套用中途失败（配额、隐私模式）不该在下次开机重来一遍 ——
-  // 那时用户可能已经配好了别的东西，重来就是覆盖。
-  try {
-    localStorage.setItem(BUILTIN_START_KEY, JSON.stringify({ v: 1, id, at: Date.now() }))
-  } catch {
-    /* 记不上账就当作已启动过：宁可少启动一次，也不要以后每次都来覆盖一遍 */
-  }
   await applySchemePersisted(target)
   return true
 }
