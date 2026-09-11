@@ -1125,21 +1125,29 @@ export function act(s: BattleState, cmd: Command): BattleState {
 /* ---------- 连携 · 自动触发 ---------- */
 
 /**
- * 共鸣槽：羁绊里每有人出一手就 +1（满则封顶）。
- * 「恋兔队必须全员都在才能触发」不是提示文案 —— 是槽要满编的人一人添一笔才满。
+ * 冷却按「我方出手」计（与槽同一口径），与是谁出手无关。
  *
- * 冷却也在这里走：`link.cd` 本来就在每条连携上写着（黄金狮子 cd 4、恋兔队 cd 5），
+ * `link.cd` 本来就在每条连携上写着（黄金狮子 cd 4、恋兔队 cd 5），
  * 但 fireLinks 从来没读过它 —— 于是羁绊一深，合击就能一手接一手地连，
  * 一场仗打成了连续合击。冷却是这套东西真正的节拍器，槽只是「够不够格」。
+ *
+ * 与 chargeGauge 拆开是为了让连携**自己**那一手也能蓄槽（见 fireLinks）：
+ * 蓄槽要能单叫，不然接完连携再补一笔，会顺手把自己刚上的冷却减掉一拍。
  */
-function chargeLinks(s: BattleState, actorId: string) {
-  s.link = s.link ?? {}
-  s.gauge = s.gauge ?? {}
+function tickLinkCd(s: BattleState) {
   s.linkCd = s.linkCd ?? {}
-  // 冷却按「我方出手」计（与槽同一口径），与是谁出手无关
   for (const id of Object.keys(s.linkCd)) {
     if (s.linkCd[id] > 0) s.linkCd[id] -= 1
   }
+}
+
+/**
+ * 某个人出了一手 —— 把他参加的那几条羁绊各添一笔。
+ * 「恋兔队必须全员都在才能触发」不是提示文案 —— 是槽要满编的人一人添一笔才满。
+ */
+function chargeGauge(s: BattleState, actorId: string) {
+  s.link = s.link ?? {}
+  s.gauge = s.gauge ?? {}
   const bonds = bondsOf(s.allies.map((c) => c.id), s.bond)
   if (!bonds.length) return
   for (const b of bonds) {
@@ -1151,6 +1159,11 @@ function chargeLinks(s: BattleState, actorId: string) {
       s.link[b.id] = Math.min(b.need, (s.link[b.id] ?? 0) + 1)
     }
   }
+}
+
+function chargeLinks(s: BattleState, actorId: string) {
+  tickLinkCd(s)
+  chargeGauge(s, actorId)
 }
 
 /**
@@ -1175,6 +1188,9 @@ function linkReady(s: BattleState, b: Bond): boolean {
   return b.members.every((id) => (s.gauge?.[id] ?? 0) >= b.need)
 }
 
+/** 连携接上之后，日志与手册里都要说的那一句（见 fireLinks 末的补笔） */
+const REFUND = '接完这一手照样记进共鸣：参加者各添一笔，不是接一次就清空重攒。'
+
 /**
  * 槽满即接：出手者执手，其余参加者一起出力（linkPow），打最薄的那个。
  * 不占出手者的回合、不耗体力 —— 打熟了自然接得上，这一下是羁绊给的。
@@ -1184,6 +1200,8 @@ function fireLinks(s: BattleState, actorId: string) {
   if (!bonds.length) return
   s.link = s.link ?? {}
   s.linkCd = s.linkCd ?? {}
+  /** 这一手接上了连携的人 —— 收尾时按「他们也出了场」给共鸣补笔（见函数末） */
+  const tookPart: string[] = []
   for (const b of bonds) {
     if ((s.linkCd[b.id] ?? 0) > 0) continue          // 还在冷却 —— 槽满了也接不上
     const live = b.members
@@ -1220,8 +1238,8 @@ function fireLinks(s: BattleState, actorId: string) {
           + `接下来 ${TUNING.squadLinkTurns} 拍，参加者全体攻击 +${Math.round(TUNING.squadLinkAtk * 100)}%、`
           + `充能 +${Math.round(TUNING.squadLinkSpd * 100)}%、`
           + `减伤 ${Math.round(TUNING.squadLinkShield * 100)}%、`
-          + `闪避 +${Math.round(TUNING.squadLinkEvade * 100)}%。`
-        : `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。`,
+          + `闪避 +${Math.round(TUNING.squadLinkEvade * 100)}%。` + REFUND
+        : `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。` + REFUND,
       // 参加者与招式名整份带上：右侧那张连携牌直接照着这条日志立起来
       link: { id: b.id, name: b.link.name, members: live.map((c) => c.id) },
     })
@@ -1239,7 +1257,13 @@ function fireLinks(s: BattleState, actorId: string) {
       linkUnits: live.filter((c) => c.id !== actor.id).map((c) => c.id),
       linkPow: b.link.linkPow,
     }, target.id)
+    tookPart.push(...live.map((c) => c.id))
   }
+  /* 接上连携的这一手，本身也算参加者出过场 —— 所以连携**也**往共鸣里添笔。
+     不然连携就是纯消耗：攒满、清空、再从零攒，接得越勤越像一次性的。
+     补在整轮之后：同一条连携在一手里最多自己把自己续回一格，不会当场连着接第二下
+     （冷却才是节拍器，见 tickLinkCd）。 */
+  for (const id of new Set(tookPart)) chargeGauge(s, id)
 }
 
 /**
