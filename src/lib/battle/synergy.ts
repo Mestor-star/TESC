@@ -86,8 +86,11 @@ export const TRAITS: Trait[] = [
     ],
     squadLink: {
       name: '恋兔队 · 全面出动',
-      desc: '几个人一起上——恋兔开路、梅芙收口、喵呜钻缝、小琳把退路拆掉，'
-        + '心叶读位、露娜牵线，学姐的凶兽压阵。参加者各自按同一轴出力，合击为一手。'
+      desc: '整队连携 —— 与双人那条不是一回事：不看一条共享的共鸣槽，'
+        + '看的是名单上每个人自己的能量。各人出一手就给自己添一笔（防御也算），'
+        + '全员都蓄满的那一刻，由当下出手的那一位带出去 ——'
+        + '恋兔开路、梅芙收口、喵呜钻缝、小琳拆退路、心叶读位、露娜牵线、学姐压阵，'
+        + '合击为一手，且之后几拍全队一起吃一份巨量加成（攻击、充能、减伤、闪避一并抬）。'
         + `（凑够 ${TUNING.traitMax} 个人就成立 —— 与档位天花板是同一个数：`
         + '名单七个人，一队上不了这么多，所以「到齐」指的是把最高那一档凑满）',
       line: '「队长！」「梅芙、喵呜、心叶！这里就交给你们了！」「了解！」',
@@ -380,6 +383,14 @@ export interface Bond {
   need: number
   /** 满槽后由谁执手（成员里第一个还在场上的人） */
   link: BondLink
+  /**
+   * 整队连携（特殊连携）。
+   * 与双人那条的分野在**槽记在谁头上**：
+   *   双人 —— 一条共享的槽，谁出手都添一笔，满了就接（见 engine 的 s.link）。
+   *   整队 —— 每人一条自己的能量，**全员都满**才成立（见 engine 的 s.gauge）。
+   * 所以整队那条不是「凑够拍数」，是「每个人都把自己那份攒满」。
+   */
+  squad?: boolean
 }
 
 /*
@@ -417,6 +428,7 @@ export function bondsOf(ids: string[], bond?: Record<string, number>): Bond[] {
       id: `${t.trait.id}-full`, name: l.name, members: t.members,
       need: linkNeed(t.members, cap, bond),
       link: { ...l },
+      squad: true,
     })
   }
   return out

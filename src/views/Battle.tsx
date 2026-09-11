@@ -197,7 +197,17 @@ export function Battle({
         link: b && base !== undefined
           ? {
             name: b.link.name, desc: b.link.desc, need: b.need, base,
-            cur: Math.min(b.need, st.link?.[b.id] ?? 0),
+            // 双人看共享的槽；整队（特殊连携）看各人自己的能量 —— 取最落后的那一个，
+            // 因为「全员满」才算数，最慢的那个人就是这条连携的进度。
+            cur: b.squad
+              ? Math.min(b.need, Math.min(...b.members.map((id) => st.gauge?.[id] ?? 0)))
+              : Math.min(b.need, st.link?.[b.id] ?? 0),
+            squad: !!b.squad,
+            // 整队那条还要报「几个人已经满了」—— 只看最落后的那一个，
+            // 玩家不知道是卡在谁身上。
+            full: b.squad
+              ? b.members.filter((id) => (st.gauge?.[id] ?? 0) >= b.need).length
+              : 0,
             members: b.members,
           }
           : null,
@@ -444,22 +454,32 @@ ${siteR.f.word}`}>
                   data-synergy={t.id}
                   title={`${t.desc}${t.link
                     ? `　连携：${t.link.name} —— ${t.link.desc}`
-                      + `　共鸣：每人各出一手（防御也算一手），蓄满 ${t.link.need} 拍等着接`
-                      + (t.link.base > t.link.need ? `（交情够了，本要 ${t.link.base} 拍）` : '')
-                      + `　接法：槽满后谁出手，这一手就跟着谁出去 —— 防御只蓄拍、不接招`
+                      + (t.link.squad
+                        ? `　共鸣：整队连携 —— 名单上每个人各出一手（防御也算一手）把自己的能量蓄满，`
+                          + `一人 ${t.link.need} 拍，全员都满才成立`
+                          + (t.link.base > t.link.need ? `（交情够了，本要 ${t.link.base} 拍）` : '')
+                          + '　接法：全员满能量的那一刻，由当下出手的那一位带出去，全队一起吃加成'
+                        : `　共鸣：每人各出一手（防御也算一手），蓄满 ${t.link.need} 拍等着接`
+                          + (t.link.base > t.link.need ? `（交情够了，本要 ${t.link.base} 拍）` : '')
+                          + `　接法：槽满后谁出手，这一手就跟着谁出去 —— 防御只蓄拍、不接招`)
                     : ''}`}
                 >
                   <b>{t.name}</b>
                   {t.link ? (
                     <>
-                      <i className={css.linkGauge} data-link-gauge={t.id} data-full={t.link.cur >= t.link.need ? '1' : undefined} data-cut={t.link.base > t.link.need ? '1' : undefined}>
+                      <i className={css.linkGauge} data-link-gauge={t.id} data-squad={t.link.squad ? '1' : undefined} data-full={t.link.cur >= t.link.need ? '1' : undefined} data-cut={t.link.base > t.link.need ? '1' : undefined}>
                         {t.link.cur}/{t.link.need}
+                        {/* 整队那条的槽是「最落后的那个人」的读数 —— 再报一句几个人满了，
+                            否则玩家只看得到一个卡住不动的数字，不知道是卡在谁身上 */}
+                        {t.link.squad ? <em className={css.linkCut} data-link-full>{t.link.full}/{t.link.members.length} 人满</em> : null}
                         {t.link.base > t.link.need ? <em className={css.linkCut}>羁绊</em> : null}
                       </i>
                       {/* 槽满不等于接上了 —— 防御不算出手，光架盾是接不上的。这一格就是把话说明白 */}
                       {t.link.cur >= t.link.need ? (
-                        <em className={css.linkHint} data-link-hint={t.id} title="共鸣已蓄满：谁出手，这一手就跟谁出去；防御只蓄拍、不接招">
-                          出手即接
+                        <em className={css.linkHint} data-link-hint={t.id} title={t.link.squad
+                          ? '全员能量已满：谁出手，这一记整队连携就跟谁出去，全队一起吃加成'
+                          : '共鸣已蓄满：谁出手，这一手就跟谁出去；防御只蓄拍、不接招'}>
+                          {t.link.squad ? '全员满 · 出手即接' : '出手即接'}
                         </em>
                       ) : null}
                     </>

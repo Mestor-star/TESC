@@ -512,6 +512,13 @@ export interface BattleState {
    */
   link: Record<string, number>
   /**
+   * 各人自己的共鸣能量（角色 id → 已蓄拍数）。**只有整队连携（特殊连携）读它**。
+   * 双人连携看的是 s.link 那条共享的槽；整队那条不一样 ——
+   * 名单上每个人都得把自己的能量攒满，一手都不许少，这才凑得出「全员到齐」。
+   * 见 engine 的 chargeLinks / fireLinks、synergy 的 Bond.squad。
+   */
+  gauge: Record<string, number>
+  /**
    * 连携冷却（羁绊 id → 还剩几拍）：每条连携自带 cd（见 synergy 的 BondLink.cd），
    * 接完一手就进冷却，我方每出一手减一。槽满不等于能接 —— 冷却没走完也接不上。
    */

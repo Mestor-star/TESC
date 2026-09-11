@@ -27,6 +27,15 @@ export const TUNING = {
   affinityWeight: 0.55,  // 反现实亲和每满 200 提供的加成
   downWillSave: true,    // 意志力高者被打倒时有一次「不倒」
 
+  /* —— 整队连携（特殊连携）——
+     触发口径与双人连携不同：双人那条看一条共享的槽，整队这条看**每个人自己的能量**——
+     全员都蓄满了才成立。所以它给的不是「再补一脚」，是全队一起吃的那一份巨量加成。 */
+  squadLinkTurns: 3,     // 加成持续几拍（按各人自己出场计）
+  squadLinkAtk: 0.85,    // 攻击 +85%
+  squadLinkSpd: 0.5,     // 充能 +50%
+  squadLinkShield: 0.3,  // 减伤 30%
+  squadLinkEvade: 0.12,  // 闪避 +12%
+
   /* —— 行动条（ATB） —— */
   barMax: 100,           // 满 100% 才能行动；出手后扣除一整条，余量保留
   spdBase: 4.2,          // 每节拍的基础充能量

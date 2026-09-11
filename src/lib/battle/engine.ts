@@ -12,6 +12,7 @@
    ============================================================ */
 
 import { LION_PAIR_ID, applySynergies, bondsOf } from './synergy'
+import type { Bond } from './synergy'
 import { lineFor, poolFor } from './banter'
 import { TUNING } from './tuning'
 import { combatantOf, enemiesOf, speedOf } from './derive'
@@ -240,6 +241,7 @@ export function createBattle(opts: CreateOpts): BattleState {
     fleeOdds: 0,
     morphPool: opts.morphPool ?? [],
     link: {},
+    gauge: {},
     linkCd: {},
     bond,
     progress,
@@ -1084,12 +1086,13 @@ export function act(s: BattleState, cmd: Command): BattleState {
     // 防御只把这一拍交给搭档（照样蓄槽），**接**招要有人真的出手；
     // 不写这一句，玩家只看到槽停在上限，不知道差在哪。
     const waiting = bondsOf(s.allies.map((c) => c.id), s.bond).filter(
-      (b) => (s.link?.[b.id] ?? 0) >= b.need && (s.linkCd?.[b.id] ?? 0) <= 0,
+      (b) => linkReady(s, b) && (s.linkCd?.[b.id] ?? 0) <= 0,
     )
     cmdLog(s, me, '防御', `架势架起 —— 减伤 ${Math.round(TUNING.guardCut * 100)}%`
       + `，喘息回了一口气（体力 +${got}）`
       + (waiting.length
-        ? `　—— 共鸣已满（${waiting.map((b) => b.name).join('、')}）：防御只蓄拍不接招，得有人出手才接得上。`
+        ? `　—— ${waiting.every((b) => b.squad) ? '全员能量满' : '共鸣已满'}`
+          + `（${waiting.map((b) => b.name).join('、')}）：防御只蓄拍不接招，得有人出手才接得上。`
         : ''), 'guard')
   }
 
@@ -1131,6 +1134,7 @@ export function act(s: BattleState, cmd: Command): BattleState {
  */
 function chargeLinks(s: BattleState, actorId: string) {
   s.link = s.link ?? {}
+  s.gauge = s.gauge ?? {}
   s.linkCd = s.linkCd ?? {}
   // 冷却按「我方出手」计（与槽同一口径），与是谁出手无关
   for (const id of Object.keys(s.linkCd)) {
@@ -1140,8 +1144,35 @@ function chargeLinks(s: BattleState, actorId: string) {
   if (!bonds.length) return
   for (const b of bonds) {
     if (!b.members.includes(actorId)) continue
-    s.link[b.id] = Math.min(b.need, (s.link[b.id] ?? 0) + 1)
+    if (b.squad) {
+      // 整队那条：添的是**出手者自己**那条能量 —— 别人替他攒不了
+      s.gauge[actorId] = Math.min(b.need, (s.gauge[actorId] ?? 0) + 1)
+    } else {
+      s.link[b.id] = Math.min(b.need, (s.link[b.id] ?? 0) + 1)
+    }
   }
+}
+
+/**
+ * 这条连携此刻够不够门槛。
+ *
+ * 两条口径分开：
+ *   双人 —— 看一条共享的共鸣槽（s.link[b.id]），谁出手都添一笔，满了就接。
+ *   整队（特殊连携）—— 看的不是拍数，是**名单上每个人自己的能量**：
+ *     一人一条，别人替他攒不了，所以必须全员都满才成立；少一个人在场也凑不齐。
+ *
+ * 防御那一条提示与 fireLinks 都得读它。两处各写一遍的话，
+ * 「槽满了」的提示与实际接不接得上迟早会打架 —— 玩家只信日志，日志不能撒谎。
+ */
+function linkReady(s: BattleState, b: Bond): boolean {
+  if (!b.squad) return (s.link?.[b.id] ?? 0) >= b.need
+  // 先要「全员到场」：缺一个就凑不齐 —— 与双人那条同一个道理
+  for (const id of b.members) {
+    const c = find(s, id)
+    if (!c || c.down || c.gone > 0) return false
+  }
+  // 再要「每个人都把自己那份攒满」：一人一条能量，别人替他攒不了
+  return b.members.every((id) => (s.gauge?.[id] ?? 0) >= b.need)
 }
 
 /**
@@ -1155,25 +1186,42 @@ function fireLinks(s: BattleState, actorId: string) {
   s.linkCd = s.linkCd ?? {}
   for (const b of bonds) {
     if ((s.linkCd[b.id] ?? 0) > 0) continue          // 还在冷却 —— 槽满了也接不上
-    if ((s.link[b.id] ?? 0) < b.need) continue
     const live = b.members
       .map((id) => find(s, id))
       .filter((c): c is Combatant => !!c && !c.down && c.gone <= 0)
     if (live.length < b.members.length) continue
-    // 执手的人必须是这条羁绊的参加者 —— 这一手是「他们俩」接上的，
+    // 执手的人必须是这条羁绊的参加者 —— 这一手是「他们」接上的，
     // 旁人出招接不上（否则槽一满，随便谁动一下都能替他们打出来）。
     const actor = live.find((c) => c.id === actorId)
     if (!actor) continue
     const foes = aliveOf(s.enemies)
     if (!foes.length) continue
     const target = [...foes].sort((a, c) => a.hp - c.hp)[0]
-    s.link[b.id] = 0
+    if (!linkReady(s, b)) continue                    // 门槛分开算，见 linkReady
+    if (b.squad) for (const c of live) s.gauge[c.id] = 0
+    else s.link[b.id] = 0
     s.linkCd[b.id] = b.link.cd
+    if (b.squad) {
+      /* 整队连携（特殊连携）：它不是「再补一脚」，是全队一起吃的那一份。
+         把巨量加成按各人自己的持续拍数落下去 —— 全员到场、全员满能量才换得来的那几拍。 */
+      for (const c of live) {
+        addBuff(c, 'atk', TUNING.squadLinkAtk, TUNING.squadLinkTurns)
+        addBuff(c, 'spd', TUNING.squadLinkSpd, TUNING.squadLinkTurns)
+        addBuff(c, 'shield', TUNING.squadLinkShield, TUNING.squadLinkTurns)
+        addBuff(c, 'evade', TUNING.squadLinkEvade, TUNING.squadLinkTurns)
+      }
+    }
     pushLog(s, {
       round: s.hand, actorId: actor.id, actor: actor.name, side: actor.side,
       skillId: `link-${b.id}`, skill: `连携 · ${b.name}`, kind: '技能', fx: b.link.fx,
-      tone: 'strike', scope: 'one',
-      note: `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。`,
+      tone: 'strike', scope: b.squad ? 'all' : 'one',
+      note: b.squad
+        ? `全员能量满 —— ${live.map((c) => c.name).join('、')} 一起压了上去。`
+          + `接下来 ${TUNING.squadLinkTurns} 拍，参加者全体攻击 +${Math.round(TUNING.squadLinkAtk * 100)}%、`
+          + `充能 +${Math.round(TUNING.squadLinkSpd * 100)}%、`
+          + `减伤 ${Math.round(TUNING.squadLinkShield * 100)}%、`
+          + `闪避 +${Math.round(TUNING.squadLinkEvade * 100)}%。`
+        : `共鸣满了 —— ${live.map((c) => c.name).join('、')} 自己接上了这一手。`,
       // 参加者与招式名整份带上：右侧那张连携牌直接照着这条日志立起来
       link: { id: b.id, name: b.link.name, members: live.map((c) => c.id) },
     })
