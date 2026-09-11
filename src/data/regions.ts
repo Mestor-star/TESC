@@ -9,6 +9,11 @@ import type { RegionReading } from './types'
  * 分区为光明会侦察网标定的观测点（FLK-），编号沿用终端分区代码。
  * 表里没有的地点不代表 R 值为 1：原文明写了数的读原文（CN-，见 data/rreadings.ts），
  * 其余由 lib/battle/rvalue.ts 按现场危险度推算（EST-）。三者界面挂牌不同，不许混印。
+ *
+ * `xy` 是这六区在总览那张观测点示意图上的落点（0~100）。
+ * 摆法按故事里的走动关系：苍之学园第 12 区三个点在西侧成一片（本校舍—山道宿舍—旧集市—东侧废屋街），
+ * 第 6 区两个点在东侧（工房街—女神神殿遗址），中间那条长线就是「从第 12 区去第 6 区」的行程。
+ * 是示意图不是测绘 —— 相邻表示走得近，不表示距离。
  */
 export const REGIONS: RegionReading[] = [
   {
@@ -20,6 +25,7 @@ export const REGIONS: RegionReading[] = [
     threatStage: 0,
     threatName: null,
     note: '基准稳定。白墙蓝顶的浮空校舍一切如常，骑士团的木制面具正与日常安静地共存。',
+    xy: [18, 22],
   },
   {
     id: 'drm',
@@ -30,6 +36,7 @@ export const REGIONS: RegionReading[] = [
     threatStage: 0,
     threatName: null,
     note: '栖身之所。鸡舍与山羊正常，门口晾着某位副官的战斗服——以及不知谁留下的狗爪印。',
+    xy: [10, 54],
   },
   {
     id: 'mkt',
@@ -40,6 +47,7 @@ export const REGIONS: RegionReading[] = [
     threatStage: 1,
     threatName: null,
     note: '东侧早已无人光顾的集市，反现实旧物残留着轻微的「低语」，野狗在成排卷帘门前游荡。',
+    xy: [26, 82],
   },
   {
     id: 'ewd',
@@ -50,6 +58,7 @@ export const REGIONS: RegionReading[] = [
     threatStage: 3,
     threatName: null,
     note: '铁皮屋顶的废屋与零星路灯。夜间偶有「不该存在的脚步声」折返，正由恋兔队加派夜间巡哨。',
+    xy: [44, 52],
   },
   {
     id: 'wsh',
@@ -60,6 +69,7 @@ export const REGIONS: RegionReading[] = [
     threatStage: 4,
     threatName: null,
     note: '境界领域商会的制品暗中流通的街区。反现实机械的嗡鸣比昨日更近，光明会已派员盯梢。',
+    xy: [70, 74],
   },
   {
     id: 'ruin',
@@ -70,5 +80,6 @@ export const REGIONS: RegionReading[] = [
     threatStage: 5,
     threatName: null,
     note: '灵魂蓄积器TM 被讨伐后的清点区。被恋兔光砸成碎屑的「女神」脚下，仍有细碎反现实正缓缓聚拢。',
+    xy: [84, 34],
   },
 ]

@@ -442,3 +442,67 @@
 }
 .pickRow code { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
 .pickRow i { font-style: normal; font-family: var(--font-mono); font-size: 12px; font-weight: 700; min-width: 46px; text-align: right; }
+
+/* ---------- 观测点示意图 ----------
+   svg 是 0~100 的归一化坐标（点位在 data/regions.ts 的 xy），
+   所以字号也按同一套单位给 —— 换容器宽度时整张图等比缩放，不用重算。
+   点一格 = 换观测地点，与下面那张列表同一件事。 */
+.mapWrap {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background:
+    radial-gradient(120% 90% at 30% 20%, color-mix(in srgb, var(--steel) 7%, transparent), transparent 70%),
+    var(--bg-1);
+}
+.mapSvg { width: 100%; height: auto; aspect-ratio: 100 / 74; overflow: visible; }
+.mapEdge { stroke: var(--line-2); stroke-width: 0.4; stroke-dasharray: 1.6 1.4; }
+.mapNode { cursor: pointer; }
+.mapHalo {
+  fill: color-mix(in srgb, var(--c) 12%, transparent);
+  stroke: color-mix(in srgb, var(--c) 45%, transparent);
+  stroke-width: 0.5;
+  transition: fill var(--t-fast), stroke var(--t-fast);
+}
+.mapDot { fill: var(--c); transition: r var(--t-fast); }
+.mapNode:hover .mapHalo { fill: color-mix(in srgb, var(--c) 26%, transparent); }
+.mapNode[data-on='1'] .mapHalo {
+  fill: color-mix(in srgb, var(--c) 30%, transparent);
+  stroke: var(--c); stroke-width: 0.9;
+  animation: mapPing 2.4s ease-out infinite;
+}
+.mapNode[data-on='1'] .mapDot { fill: #fff; }
+.mapLabel {
+  fill: var(--ink-2, #b6b3ae);
+  font-size: 3.1px; font-weight: 700; letter-spacing: 0.06px;
+}
+.mapNode[data-on='1'] .mapLabel { fill: var(--ink, #e8e6e3); }
+.mapR { fill: var(--ink-faint); font-family: var(--font-mono); font-size: 2.6px; }
+/* 「在此」= 剧情此刻走到哪，跟选中态（data-on 那圈呼吸光）不是一回事。
+   单开一圈收容色慢转虚线环，名字一并染上 —— 钉在别的格子上查数时，
+   也一眼看得见自己站哪儿。这条排在 data-on 之后：选中时 jade 不被 ink 顶掉。 */
+.mapHere {
+  fill: none; stroke: var(--jade); stroke-width: 0.5; stroke-dasharray: 1.3 1;
+  opacity: 0.9;
+  transform-box: fill-box; transform-origin: center;
+  animation: mapSpin 24s linear infinite;
+}
+.mapNode[data-here='1'] .mapLabel { fill: var(--jade); }
+.mapNode[data-here='1'] .mapR { fill: color-mix(in srgb, var(--jade) 78%, var(--ink-faint)); }
+/* 「下一段」压在「在此」之上：两样都占着同一格时（剧情就停在这一格、下一段也在这儿），
+   那句话说的是更该照着办的事 —— 环照旧画，字读 amber。 */
+.mapNode[data-next='1'] .mapR { fill: var(--amber); }
+.mapFoot { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.mapFoot > span { display: inline-flex; align-items: center; gap: 4px; }
+@keyframes mapPing {
+  0% { r: 9.5; opacity: 1; }
+  70% { r: 14; opacity: 0; }
+  100% { r: 14; opacity: 0; }
+}
+@keyframes mapSpin { to { transform: rotate(360deg); } }
+/* 动画里改的是 r（几何属性），prefers-reduced-motion 下直接停掉 */
+@media (prefers-reduced-motion: reduce) {
+  .mapNode[data-on='1'] .mapHalo { animation: none; }
+  .mapHere { animation: none; }
+}

@@ -12,7 +12,7 @@ import { REGIONS } from '../data/regions'
 import { TIMELINE } from '../data/timeline'
 import { clamp, rSeverity } from '../lib/format'
 import { opSituation, furthestDone } from '../lib/operator'
-import { manifestOf, rBadgeOf, rFactor } from '../lib/battle/rvalue'
+import { manifestOf, rBadgeOf, rFactor, regionOfPlace } from '../lib/battle/rvalue'
 import { GEAR_OF, ITEM_OF } from '../lib/battle/gear'
 import {
   listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth, readStamina,
@@ -27,6 +27,39 @@ import css from './Dashboard.module.css'
 const ALL_DONE = '时间线上的六卷正传与外传插曲均已归档。'
 
 const CIRC = 2 * Math.PI * 90
+
+/**
+ * 观测点示意图上的连线：按故事里的走动关系连，不按距离。
+ * 第 12 区那一片内部来回走（本校舍—山道宿舍—旧集市—东侧废屋街），
+ * 出了废屋街往东才到第 6 区（工房街—女神神殿遗址）。
+ * 坐标写在 data/regions.ts 的 xy 上 —— 这里只管谁连着谁。
+ */
+const MAP_EDGES: Array<[string, string]> = [
+  ['gcn', 'drm'], ['drm', 'mkt'], ['mkt', 'ewd'], ['gcn', 'ewd'],
+  ['ewd', 'wsh'], ['wsh', 'ruin'],
+]
+
+/** 图上用短名：全名（「苍之学园 · 第12区 本校舍」）摊在节点边上会把图压没 */
+const shortPlace = (name: string) => name.split('·').pop()?.trim() ?? name
+
+/**
+ * 地点名 → 图上那一格（没有落点的返回 null，宁可不标也不指错地方）。
+ * 先用标定表那把严格尺子（regionOfPlace：区号与地名两段都得对上，
+ * 「苍之学园 · 异端审问室」不许顶用本校舍的读数）；
+ * 剧情地点比标定表细得多，对不上就退一步按地名前半截认（「苍之学园 · 学生会室」→ 苍之学园那一区），
+ * 多个候选取前半截最长的那个 —— 短的（「第12区」）容易把整片都吞掉。
+ */
+function mapRegionOf(place: string): string | null {
+  if (!place) return null
+  const strict = regionOfPlace(place)
+  if (strict?.xy) return strict.id
+  const seg = place.split('·')[0]?.trim() ?? ''
+  if (!seg) return null
+  const stems = REGIONS.filter((g) => g.xy).map((g) => ({ id: g.id, s: g.name.split('·')[0]?.trim() ?? '' }))
+  const exact = stems.find((x) => x.s && x.s === seg)
+  if (exact) return exact.id
+  return stems.filter((x) => x.s && seg.includes(x.s)).sort((a, b) => b.s.length - a.s.length)[0]?.id ?? null
+}
 
 /** epoch ms → 「08-14 21:07」；0（legacy 旧档回填）显示 — */
 function stamp(ts: number): string {
@@ -63,12 +96,20 @@ export function Dashboard() {
   const volNow = TIMELINE[furthest]?.group ?? '卷1'
   const nextEv = useMemo(() => TIMELINE.find((e) => !epDone[e.id]), [epDone])
   const nextPlace = nextEv?.place ?? focusRegion.name
+  /* 剧情此刻站在哪：最近收束那一段的地点，一段都没推过就取下一段的地点 */
+  const storyPlace = (furthest >= 0 ? TIMELINE[furthest]?.place : nextEv?.place) ?? null
   /* 下一段的现场分级取该段的终末（entities ＋ 在场的人型终末，卷号不是危险度，见 manifestOf） */
   const nextSite = useMemo(() => manifestOf(nextEv ?? {}), [nextEv])
   const nextStage = nextSite.stage
   const nextR = useMemo(() => rBadgeOf(nextPlace, nextStage, nextSite.names), [nextPlace, nextStage, nextSite])
   /* 下一段所在的地点，若在侦察网标定表里就把它标出来（「下一段」角标） */
-  const nextRegion = useMemo(() => REGIONS.find((g) => nextPlace.includes(g.name.split(' · ')[0])), [nextPlace])
+  const nextRegion = useMemo(() => (mapRegionOf(nextPlace)), [nextPlace])
+  /**
+   * 剧情**此刻**落在图上哪一格。
+   * 取的是**剧情**的地点，不是 focusRegion —— 后者被手动点选钉住之后会跟着手指走，
+   * 那再拿来当「你在这儿」就成了「点到哪算哪」，与箭头指的下一段也对不上了。
+   */
+  const hereRegion = useMemo(() => (mapRegionOf(storyPlace ?? '')), [storyPlace])
 
   /* ---- 作战域的活读数（点数 / 体力 / 记录 / 装具 / 补给 / 成长） ---- */
   const [live, setLive] = useState<{
@@ -434,13 +475,75 @@ export function Dashboard() {
           </div>
           <div className="panel__body">
             <div className={css.stack} data-dash-scan>
+              {/* 观测点示意图：六个标定区摆在一张图上，点一格就等于换了观测地点。
+                  摆法见 data/regions.ts 的 xy —— 相邻是「走得近」，不是距离测绘。 */}
+              <div className={css.mapWrap} data-scan-map>
+                <svg viewBox="0 0 100 100" className={css.mapSvg} role="img" aria-label="观测点示意图">
+                  {MAP_EDGES.map(([a, b]) => {
+                    const ra = REGIONS.find((g) => g.id === a)
+                    const rb = REGIONS.find((g) => g.id === b)
+                    if (!ra?.xy || !rb?.xy) return null
+                    return (
+                      <line
+                        key={`${a}-${b}`}
+                        className={css.mapEdge}
+                        x1={ra.xy[0]} y1={ra.xy[1]} x2={rb.xy[0]} y2={rb.xy[1]}
+                      />
+                    )
+                  })}
+                  {REGIONS.filter((reg) => reg.xy).map((reg) => {
+                    const [x, y] = reg.xy!
+                    const rs = rSeverity(reg.r)
+                    const on = focusRegion.id === reg.id
+                    const here = hereRegion === reg.id
+                    const isNext = nextRegion === reg.id
+                    return (
+                      <g
+                        key={reg.id}
+                        className={css.mapNode}
+                        data-map-region={reg.id}
+                        data-on={on ? '1' : undefined}
+                        data-here={here ? '1' : undefined}
+                        data-next={isNext ? '1' : undefined}
+                        style={{ '--c': rs.color } as CSSProperties}
+                        onClick={() => { setFocusId(reg.id); setPickerOpen(false) }}
+                      >
+                        <title>{`${reg.name}（${reg.code}）· R ${reg.r.toFixed(3)} · 危险度 S${reg.threatStage}\n${reg.note}`}</title>
+                        {/* 「在此」这一圈不是选中态（选中是 data-on 那圈呼吸光），
+                            是剧情现在走到哪；转得慢，跟 R 值高低的配色各说各的。 */}
+                        {here ? <circle className={css.mapHere} cx={x} cy={y} r={6.4} /> : null}
+                        <circle className={css.mapHalo} cx={x} cy={y} r={9.5} />
+                        <circle className={css.mapDot} cx={x} cy={y} r={on ? 3.4 : 2.6} />
+                        <text className={css.mapLabel} x={x} y={y - 6} textAnchor="middle">
+                          {shortPlace(reg.name)}
+                        </text>
+                        <text className={css.mapR} x={x} y={y + 10.5} textAnchor="middle">
+                          {reg.r.toFixed(3)}
+                          {isNext ? ' · 下一段' : here ? ' · 在此' : ''}
+                        </text>
+                      </g>
+                    )
+                  })}
+                </svg>
+                <div className={css.mapFoot}>
+                  <span className="tiny muted">
+                    侦察网标定 · 六区 · 点位按走动关系摆，不是测绘
+                  </span>
+                  <span className="tiny muted">
+                    {focusId
+                      ? <><MapPin size={11} weight="bold" /> 已钉住 —— 点「恢复跟随剧情」放回</>
+                      : <><Crosshair size={11} weight="bold" /> 跟随剧情 · 与箭头同一处</>}
+                  </span>
+                </div>
+              </div>
+
               {/* 默认只列**当前观测点**这一个读数 —— 一次铺开六区是噪声不是情报。
-                  要换地方，点下面的按钮展开选择。 */}
+                  要换地方，点上面的图，或按下面的按钮展开列表。 */}
               <div className={css.nowSite}>
                 <span className={css.nowSiteBody}>
                   <b>
                     {focusRegion.name}
-                    {nextRegion?.id === focusRegion.id ? <i className={css.nextMark}>下一段</i> : null}
+                    {nextRegion === focusRegion.id ? <i className={css.nextMark}>下一段</i> : null}
                   </b>
                   <small>
                     {focusRegion.code} · 敌方 {facTag}
@@ -498,7 +601,7 @@ export function Dashboard() {
                   {REGIONS.map((reg) => {
                     const rs = rSeverity(reg.r)
                     const on = focusRegion.id === reg.id
-                    const isNext = nextRegion?.id === reg.id
+                    const isNext = nextRegion === reg.id
                     const amp = rBadgeOf(reg.name, nextStage)
                     return (
                       <button
