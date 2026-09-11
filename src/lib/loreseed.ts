@@ -407,8 +407,9 @@ export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
  *   v5 → v6 = 主角档案收成三段（低语者 / 化身之枪 / 灵魂共奏），并把 canon 库的激活集整份并回（全开）
  *   v6 → v7 = 新增「文风 · 终末停滞委员会」canon 库（三条常驻词条），并把主角专档改成与角色档案同一副面孔
  *   v7 → v8 = 文风三条按原作实测口径重写（第 1 / 第 6 卷对读：段长、句长、对白占比、标点习惯、称呼式样）
+ *   v8 → v9 = 伊西斯层卡补回状态卡专名行【号外号外】［斩击］（「铭刻记忆」是效果说明槽位，不是斩击名）
  */
-export const CANON_SEED_VERSION = 8
+export const CANON_SEED_VERSION = 9
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'
