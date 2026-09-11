@@ -361,7 +361,11 @@ export interface SagaChoice {
 
 /** 一个时间线段的现场：开场白（按原文第三人称）+ 可选抉择 */
 export interface SagaScene {
-  open: string            // 开场白
+  /**
+   * 开场白。**可选**，且只有第一卷第一章（v1-1）写 —— 那一段是逐字原文的排印。
+   * 其余段不给：开场白顶着「· 原文」的名头注入到会话最前，转述一摆出来就是伪原文。
+   */
+  open?: string
   /** 开场白是否「自足完整」：注入后停在开场等操作员回话，不再自动让导演续写 */
   standby?: boolean
   openTag?: string        // 出处/章节标注，如「— 第1卷 序章」

@@ -213,7 +213,7 @@ export function Battle({
         if (cached) {
           // 提前问好的那一份：多半已经到了，直接读完就出手。
           // 仍在路上的话也只等到截止 —— 玩家出手快的时候，这一份可能还没回来。
-          const raw = await withDeadline(cached.p, TUNING.enemyAskMs, () => cached.ctl.abort())
+          const raw = await withDeadline(cached.p, TUNING.enemyWaitMs, () => cached.ctl.abort())
           intent = intentOf(st, foe, raw)
         } else {
           // 没赶上 —— 现问，但只给这么久；超时就用引擎自己的判断（intent=null）

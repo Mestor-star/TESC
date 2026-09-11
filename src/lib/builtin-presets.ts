@@ -28,64 +28,94 @@ import type { Scheme } from './schemes'
 
 export const BUILTIN_KEY = 'zts-builtin-presets:v1'
 /**
- * 预算抬顶那一步的账。**记版本号**：抬的目标值改过一代（30000 → 上限），
- * 老账本（v1）记的是一次已经过时的动作，得让它再走一遍；
- * 记到 v2 之后才真的只做一次。
+ * 内置预设**内容**的版本号。账本上记的比它小，就说明列表里躺着的是上一代的内置预设 ——
+ * 那时照着 presets/*.json 重读一遍，把内容换上去（不是重播一份新的：id 是固定的，
+ * 换的是那一份里的条目）。不这么做的话，改过的 JSON 只有**新装机**看得见，
+ * 已经开过机的用户永远停在装机那天的旧稿上 —— 而界面上完全看不出差别。
+ */
+const BUILTIN_V = 2
+/**
+ * 预算归位那一步的账。**记版本号**：目标值改过两代
+ * （1500 → 上限 65536 → 30000），老账本记的是一次已经过时的动作，
+ * 得让它再走一遍；记到当前这一版之后才真的只做一次。
  */
 export const BUDGET_FLOOR_KEY = 'zts-budget-floor:v1'
-const BUDGET_FLOOR_V = 2
+const BUDGET_FLOOR_V = 3
 
 /**
- * 这个通道上存的输出预算该不该抬到**上限**那一档 —— **纯函数**，好让复核把各种值摆一遍。
+ * 这个通道上存的输出预算该不该归到**目标值**（30000）—— **纯函数**，好让复核把各种值摆一遍。
  *
- * 只认**我们自己写进去过的**那些值：0 / 非数字（从没设过）、1500（旧缺省）、
- * 30000（上一代建议值）。用户自己打的数（比如 4096）一律不动 —— 那是他选的，
- * 不是我们塞的；他若嫌小，界面上那一格随时改。
+ * 只认**我们自己写进去过的**那些值：0 / 非数字（从没设过）、1500（旧缺省）。
+ * 用户自己打的数（比如 4096 或 65536）一律不动 —— 那是他选的，不是我们塞的；
+ * 他若嫌小，界面上那一格随时改。
  *
- * 为什么抬到上限而不是建议值：这个数管的是**单次生成最多吐多少 token**。
- * 思考型通道先花掉一部分，正文再被长度掐断时，界面上看不出异常 ——
- * 它能生成，只是每一段都在半句上停住。留足比掐住强；真超过某条通道自己的
- * 输出上限时，上游会明确报错（照它说的往下调即可），而不是悄悄截断。
+ * 为什么是 30000 而不是上限：这个数管的是**单次生成最多吐多少 token**。
+ * 太低（1500）在思考型通道上会被内部思考吃光，正文一个字没写就被长度掐断；
+ * 太高又会被一些通道自己的输出上限顶回来、报错。30000 是两边都留了余量的那一档。
  */
 export function needsBudgetFloor(n: unknown): boolean {
-  return typeof n !== 'number' || !Number.isFinite(n) || n === 0 || n === 1500 || n === DEFAULT_BUDGET
+  return typeof n !== 'number' || !Number.isFinite(n) || n === 0 || n === 1500
 }
 
-function readFloorLedger(): number {
+export type FloorLedger = { v?: number; to?: number; from?: { main?: number; sms?: number } }
+
+function readFloorLedger(): FloorLedger {
   try {
     const raw = localStorage.getItem(BUDGET_FLOOR_KEY)
-    if (!raw) return 0
-    const p = JSON.parse(raw) as { v?: unknown }
-    return typeof p?.v === 'number' && Number.isFinite(p.v) ? p.v : 1
+    if (!raw) return {}
+    return JSON.parse(raw) as FloorLedger
   } catch {
     /* 隐私模式：读不到账就当作没做过 —— 下面写账也会失败，下次开机再来一遍，无害 */
-    return 0
+    return {}
   }
 }
 
 /**
- * 把还停在我们自己写的缺省上的输出预算抬到上限（每台机器只做一次，按版本号记账）。
+ * 列表里躺着的那一份是不是**上一代的内置稿** —— **纯函数**，好让复核把各种值摆一遍。
+ *
+ * 判据两条，缺一不可：
+ *   · 账本版本号比当前的小（这台机器上播过的是旧稿）；
+ *   · 列表里**确实有**内置那一份（用户把它删了就不该再塞回来）。
+ * 只要这两条成立，就照 presets/*.json 重读一遍换上内容。
+ */
+export function needsContentRefresh(ledgerV: number, idsInList: string[]): boolean {
+  return ledgerV < BUILTIN_V && BUILTIN_SOURCE.some((b) => idsInList.includes(b.id))
+}
+
+/**
+ * 这台机器上这一格（存的是上一代我们抬上去的**上限**）该不该收回目标值。
+ * 只认「账上记着那次抬顶、且当前值仍是抬上去的那个数」—— 值没被人动过，才收。
+ */
+export function shouldSettleDown(n: number, led: FloorLedger): boolean {
+  return n === MAX_BUDGET && led.to === MAX_BUDGET
+}
+
+/**
+ * 把输出预算归到目标值（每台机器只做一次，按版本号记账）：
+ * 还停在我们自己写的旧缺省（0 / 1500）上的抬上来，上一代被我们抬到上限的收回来。
  *
  * 为什么要有这一步：自动启动只认「没有生效目标」的机器（那是它的分寸）。
- * 已经套用过别的预设的机器，预算可能留在旧缺省上 —— 那条通道上正文很容易
- * 被长度掐断，而界面上看不出异常。所以这里单独补一次。
+ * 已经套用过别的预设的机器，预算可能停在旧值上 —— 要么太短（正文被长度掐断），
+ * 要么是上一代抬过头的上限，而界面上都看不出异常。所以这里单独补一次。
  */
 export async function ensureBudgetFloor(): Promise<boolean> {
-  if (readFloorLedger() >= BUDGET_FLOOR_V) return false
+  const led = readFloorLedger()
+  if (typeof led.v === 'number' && led.v >= BUDGET_FLOOR_V) return false
   try {
     const p = await readProfiles()
-    const raiseMain = needsBudgetFloor(p.main.maxTokens)
-    const raiseSms = needsBudgetFloor(p.sms.maxTokens)
-    if (raiseMain || raiseSms) {
+    const fix = (n: number) => needsBudgetFloor(n) || shouldSettleDown(n, led)
+    const fixMain = fix(p.main.maxTokens)
+    const fixSms = fix(p.sms.maxTokens)
+    if (fixMain || fixSms) {
       await Promise.all([
-        raiseMain ? saveProfile('main', { ...p.main, maxTokens: MAX_BUDGET }) : Promise.resolve(),
-        raiseSms ? saveProfile('sms', { ...p.sms, maxTokens: MAX_BUDGET }) : Promise.resolve(),
+        fixMain ? saveProfile('main', { ...p.main, maxTokens: DEFAULT_BUDGET }) : Promise.resolve(),
+        fixSms ? saveProfile('sms', { ...p.sms, maxTokens: DEFAULT_BUDGET }) : Promise.resolve(),
       ])
     }
     localStorage.setItem(BUDGET_FLOOR_KEY, JSON.stringify({
-      v: BUDGET_FLOOR_V, at: Date.now(), to: MAX_BUDGET, from: { main: p.main.maxTokens, sms: p.sms.maxTokens },
+      v: BUDGET_FLOOR_V, at: Date.now(), to: DEFAULT_BUDGET, from: { main: p.main.maxTokens, sms: p.sms.maxTokens },
     }))
-    return raiseMain || raiseSms
+    return fixMain || fixSms
   } catch {
     return false
   }
@@ -104,15 +134,18 @@ export function isBuiltinScheme(id: string): boolean {
   return (BUILTIN_IDS as readonly string[]).includes(id)
 }
 
-function readSeeded(): string[] {
+/** 账本：播过哪些 id，以及**照哪一版内置稿播的**（版本号小 = 列表里那份是旧稿） */
+function readLedger(): { v: number; seeded: string[] } {
   try {
     const raw = localStorage.getItem(BUILTIN_KEY)
-    const p = raw ? (JSON.parse(raw) as { seeded?: unknown }) : null
-    return p && Array.isArray(p.seeded)
+    const p = raw ? (JSON.parse(raw) as { v?: unknown; seeded?: unknown }) : null
+    const seeded = p && Array.isArray(p.seeded)
       ? (p.seeded as unknown[]).filter((x): x is string => typeof x === 'string')
       : []
+    const v = typeof p?.v === 'number' && Number.isFinite(p.v) ? p.v : (seeded.length ? 1 : 0)
+    return { v, seeded }
   } catch {
-    return []
+    return { v: 0, seeded: [] }
   }
 }
 
@@ -174,7 +207,8 @@ export function ensureBuiltinPresets(): Promise<boolean> {
 }
 
 async function seedBuiltins(): Promise<boolean> {
-  const seeded = readSeeded()
+  const led = readLedger()
+  const seeded = led.seeded
   const list = listSchemes()
 
   // 一、先平账：同一个内置 id 只认第一份 —— 早先播重过的档，在这里顺手清掉多余的
@@ -191,33 +225,77 @@ async function seedBuiltins(): Promise<boolean> {
   const todo = BUILTIN_SOURCE.filter((b) => !seeded.includes(b.id) && !seen.has(b.id))
   const done = [...new Set([...seeded, ...BUILTIN_IDS.filter((id) => seen.has(id))])]
 
-  if (todo.length) {
-    // 世界书先落库：内置预设要带上「当前激活集」，
-    // 否则套用它会把 canon 世界书整片关掉（applySchemeTo 以方案里的集合为准）
-    await ensureSeeded()
-    const [cfgs, active] = [await readProfiles(), await getActiveLorebookIds()]
-    for (const b of todo) {
-      const r = parseChatPreset(b.json, cfgs)
-      // 解析不出来（字段形状变了）就不记账，留待下次再试，别把一份空预设塞进列表
-      if (!r.ok) continue
-      // 固定 id + 补上激活集：内置的那份与手动导入的那份差别只在这里
-      kept.push({ ...r.scheme, id: b.id, builtin: true, activeLoreIds: active, ...(typeof r.stream === 'boolean' ? { stream: r.stream } : {}) })
-      done.push(b.id)
-      changed = true
+  // 三、换稿：列表里那份还是**旧版内置稿**时，照 presets/*.json 重读一遍换上内容。
+  // 只换内置那一份的内容，用户自己导的预设一律不动；换的也不是新的一行 —— id 固定，
+  // 换完列表里还是原来那一行，用户套用的仍是它。
+  const stale = needsContentRefresh(led.v, kept.map((s) => s.id)) && !todo.length
+    ? BUILTIN_SOURCE.filter((b) => kept.some((s) => s.id === b.id))
+    : []
+
+  /** 补种/换稿这一步有没有走完。没走完就不记版本号 —— 记了就等于认定「已经换过了」，
+      而列表里躺着的仍是旧稿，用户再也等不到那一次换稿。 */
+  let seededOk = true
+  if (todo.length || stale.length) {
+    try {
+      // 世界书先落库：内置预设要带上「当前激活集」，
+      // 否则套用它会把 canon 世界书整片关掉（applySchemeTo 以方案里的集合为准）
+      await ensureSeeded()
+      const [cfgs, active] = [await readProfiles(), await getActiveLorebookIds()]
+      for (const b of todo) {
+        const r = parseChatPreset(b.json, cfgs)
+        // 解析不出来（字段形状变了）就不记账，留待下次再试，别把一份空预设塞进列表
+        if (!r.ok) continue
+        // 固定 id + 补上激活集：内置的那份与手动导入的那份差别只在这里
+        kept.push({ ...r.scheme, id: b.id, builtin: true, activeLoreIds: active, ...(typeof r.stream === 'boolean' ? { stream: r.stream } : {}) })
+        done.push(b.id)
+        changed = true
+      }
+      for (const b of stale) {
+        const i = kept.findIndex((s) => s.id === b.id)
+        const r = parseChatPreset(b.json, cfgs)
+        if (i < 0 || !r.ok) continue
+        const old = kept[i]
+        // 换的是内容（条目、预填充、通道参数），留下的是这一份在本机的归属：
+        // 它开着的世界书（用户可能自己调过），以及「内置」这个标
+        kept[i] = {
+          ...r.scheme, id: b.id, builtin: true,
+          activeLoreIds: old.activeLoreIds ?? active,
+          ...(typeof r.stream === 'boolean' ? { stream: r.stream } : {}),
+        }
+        changed = true
+      }
+    } catch {
+      /* 读世界书 / 读通道配置这一段落空（存储不可用、还没初始化完）：
+         这一轮就不播不换，列表原样留着、账本也不记，下次开机再来一遍。
+         **但绝不能因此跳过下面的自动启动** —— 「一份在生效的预设」是这条链上
+         真正要紧的那一步，前面是补料，后面是让它起作用。 */
+      seededOk = false
     }
   }
 
-  if (changed) {
+  const writeV = seededOk ? BUILTIN_V : led.v
+  if (changed || writeV !== led.v) {
     storeSchemes(kept)
     try {
-      localStorage.setItem(BUILTIN_KEY, JSON.stringify({ v: 1, seeded: done }))
+      localStorage.setItem(BUILTIN_KEY, JSON.stringify({ v: writeV, seeded: done }))
     } catch {
       /* 隐私模式：下次开机重播一遍 —— 上面两道闸（闩 + 按 id 平账）兜着，不会再翻倍 */
     }
   }
 
+  // 换成稿子的那一份若正生效着，快照还停在旧内容上 —— 补落一次，否则生成读到的仍是旧指令
+  if (stale.length) refreshActiveSnapshot(kept)
+
   // 顺序要紧：先自动启动（它会把快照整个写一遍），再看有没有「有方案、没快照」的漏
   return (await autoStart(kept)) || ensureActiveSnapshot() || changed
+}
+
+/** 生效的那一份刚换了内容：重落一次快照（套用的仍是同一份，只是内容新了） */
+function refreshActiveSnapshot(list: Scheme[]): void {
+  const id = activePresetId()
+  if (!id || !list.some((s) => s.id === id)) return
+  const s = list.find((x) => x.id === id)!
+  snapshotActivePreset(s.id, s.name, s.entries ?? [], s.prefill ?? '')
 }
 
 /**

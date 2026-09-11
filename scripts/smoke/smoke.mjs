@@ -223,6 +223,10 @@ plotReplies.push(
   '【DIR3】骑士的刀锋停在心叶眼前。他护在露娜身前，断锁骨、夺枪、读心成底牌——会长艾莉芙笑着拍板：苍之学园，收下你们了。\n\n—— 事件指令 ——\n```json\n{"digest":"在异端审问室的刀剑下，言万心叶护住露娜并以底牌赢得裁定。两人以「苍之学园体验入学」名义被收留，正式成为终末停滞委员会的一员。","eventDone":true}\n```',
   '【DIR4】世界观与「欢迎会」。艾莉芙说起宇宙与「终末」，小柴拉着两人逛集市，宿舍里飘起晚饭的香气。\n（本回合无指令——用于验证未解析提示与补发按钮）',
   '【DIR5】心叶放下碗筷，屋里的灯把四个人的影子拉得很长。\n\n—— 事件指令 ——\n```json\n{"flag":{"resend_ok":true}}\n```',
+  // DIR6 / DIR7 连着两条「无指令」：用来验「自动补收也拿不到 → 补发按钮兜住」那一路
+  '【DIR6】小柴把明天的路线画在餐巾纸上，横穿工房街，再绕到旧钟楼底下。\n（本回合无指令——自动补收这一趟也拿不到）',
+  '【DIR7】钟楼底下什么都没有，只有风从砖缝里过。\n（本回合仍无指令——两条路都没拿到，补发按钮该在）',
+  '【DIR8】心叶把餐巾纸折好收进口袋。\n\n—— 事件指令 ——\n```json\n{"flag":{"manual_ok":true}}\n```',
 )
 let plotReq = 0
 const stub = http.createServer((req, res) => {
@@ -291,6 +295,12 @@ const eStub = http.createServer((req, res) => {
       let content
       if (String(j.model || '').includes('sms')) {
         content = '【SMS-E】夜风凉，早点回去。\n\n```json\n{"bond":[]}\n```'
+      } else if (JSON.stringify((j.messages || []).slice(-1)[0]?.content || '').includes('请补发本回合的事件指令')) {
+        /* 终端在「回执没带指令」时会**当场自动补收一次**（只问指令、不重写正文）。
+           这一趟不占用 eReplies 的序号、也不更新 eLast —— 台账数的是**叙事回合**，
+           补收是终端的动作，不是玩家推的一回合。这里恒定回一条「仍无指令」，
+           于是那一路走到「不落地、不误归档」的结论照旧成立。 */
+        content = '（补发）本回合仍无指令。'
       } else {
         eLast = j
         eSeq++
@@ -370,14 +380,15 @@ try {
     aq.schemes >= 2 && aq.builtins.length === 2 && aq.activeId === 'builtin-ts-protocol',
     JSON.stringify({ schemes: aq.schemes, builtins: aq.builtins }))
   /* 与 presets/终末停滞-*.json 的 openai_max_tokens、以及 src/lib/budget.ts 的
-     MAX_BUDGET 同值：这个数管的是**单次生成最多吐多少 token**，要一次给足 ——
-     留在建议值上时思考型通道先花掉一部分，正文就在半句上被长度掐断，
-     而界面上看不出异常（它能生成）。三处改了要一起改。 */
-  const wantBudget = 65536
-  ok('AQ3 输出预算随预设落到两通道，且落在上限那一档（够写一整段正文，不是「够回一句」）',
+     DEFAULT_BUDGET 同值：这个数管的是**单次生成最多吐多少 token**，要一次给足 ——
+     太低（1500）时思考型通道先把预算花在内部思考上，正文一个字没写就被长度掐断，
+     而界面上看不出异常（它能生成）；太高又会被一些通道自己的输出上限顶回来。
+     30000 是两边都留了余量的那一档。三处改了要一起改。 */
+  const wantBudget = 30000
+  ok('AQ3 输出预算随预设落到两通道，且落在缺省那一档（够写一整段正文，不是「够回一句」）',
     aq.main.maxTokens === wantBudget && aq.sms.maxTokens === wantBudget,
     JSON.stringify({ main: aq.main, sms: aq.sms }))
-  ok('AQ4 预算抬顶留了账（只认我们自己塞过的值，用户手打的一概不动）',
+  ok('AQ4 预算归位留了账（只认我们自己塞过的值，用户手打的一概不动）',
     aq.floor === true && aq.main.has === true,
     JSON.stringify({ floor: aq.floor, from: aq.floorFrom }))
 
@@ -530,22 +541,34 @@ try {
   ok('C3 三段全部在线归档', st.rec.length === 3 && st.rec.every((r) => r.mode === 'online'), JSON.stringify(st.rec))
   ok('C4 v1-3 后解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
   // v1-3 点按后自动衔接 v1-4 → 叙述-only（无指令）→ 未解析提示 + 补发按钮（v1-4 未被归档）
-  await poll(`document.body.innerText.includes('未解析到事件指令') || document.body.innerText.includes('要求补发指令')`, 30000, 'C needDir notice')
+  await poll(`document.body.innerText.includes('未解析到事件指令')`, 30000, 'C needDir notice')
+  // DIR4 叙述-only：终端**当场自动补收**一次（只问指令、不重写正文）→ 拿到 DIR5 的 flag，
+  // 不必玩家先意识到缺了什么、再去点按钮。
+  await poll(`(${wState}).fl.resend_ok===true`, 30000, 'C auto resend_ok')
   const bodyC = await ev(`document.body.innerText`)
-  ok('C5 无指令回包 → 提示 + 补发按钮', bodyC.includes('未解析到事件指令') && bodyC.includes('要求补发指令'), '')
+  ok('C5 无指令回包 → 当场自动补收一次，flag 静默落地（不必手点）',
+    bodyC.includes('未解析到事件指令') && bodyC.includes('已自动补收事件指令'), '')
   // DIR4 叙述-only 不触碰 lastEnded → 「上一事件已收束(v1-3)」横幅此刻是稳定态（焦点已落到 v1-4，无收束栏）
   const stEnded = await ev(`(()=>{const t=document.body.innerText;return {bar:t.includes('上一事件已收束'), digest:t.includes('苍之学园'), noBar:!document.querySelector('[data-concluded]')}})()`)
   ok('C5b 收束横幅稳定呈现（上一事件已收束 · 含收束解读 · 无收束栏）', stEnded.bar === true && stEnded.digest === true && stEnded.noBar === true, JSON.stringify(stEnded))
   st = await state()
   ok('C6 v1-4 未误归档', st.rec.length === 3, 'rec=' + st.rec.length)
-  // 补发指令 → flag 落地
+  // 再推一回合：连回两个「无指令」（DIR6 / DIR7）—— 主回执与自动补收都没拿到，
+  // 这时才轮到手动补发。同时验通联日志里留了痕（这一种失效界面看不出来，只能靠日志事后查）。
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我把碗收进水槽，问小柴明天几点出门。')
+  await poll(`document.body.innerText.includes('补收仍未拿到事件指令')`, 40000, 'C reask miss')
+  await poll(`document.body.innerText.includes('要求补发指令')`, 10000, 'C manual button')
+  const misses = await ev(`(()=>{try{const l=JSON.parse(localStorage.getItem('zts-ailog:v1')||'[]');return l.filter(x=>x.channel==='事件指令').length}catch(e){return -1}})()`)
+  ok('C6b 自动补收也拿不到时，补发按钮兜住', true, '')
+  ok('C6c 指令解析失败在通联日志里留痕（channel=事件指令）', misses >= 2, 'log=' + misses)
+  // 手动补发 → DIR8 的 flag 落地
   await goto('要求补发指令')
-  await poll(`(${wState}).fl.resend_ok===true`, 30000, 'C flag resend_ok')
+  await poll(`(${wState}).fl.manual_ok===true`, 40000, 'C flag manual_ok')
   st = await state()
-  ok('C7 补发后 flag 落地', st.fl.resend_ok === true, JSON.stringify(st.fl))
+  ok('C7 手动补发后 flag 落地', st.fl.manual_ok === true, JSON.stringify(st.fl))
   // 变量自动更新 toast（主角行为 → 回执 flag → 行内提示上屏）
-  await poll(`document.body.innerText.includes('变量已自动更新') && document.body.innerText.includes('resend_ok = true')`, 12000, 'C var toast')
-  ok('C7b 变量自动更新 toast（resend_ok = true）', true)
+  await poll(`document.body.innerText.includes('变量已自动更新') && document.body.innerText.includes('manual_ok = true')`, 12000, 'C var toast')
+  ok('C7b 变量自动更新 toast（manual_ok = true）', true)
   // 短信：自动选中 hikari → 发一条 → bond +10 被 clamp 到 +3
   await goto('短信')
   await poll(`document.body.innerText.includes('角色短信')`, 20000, 'C sms view')

@@ -48,7 +48,8 @@ import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
 import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/lib/budget'
 import { API_DEFAULTS } from '../../src/lib/api'
-import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, shouldAutoStart } from '../../src/lib/builtin-presets'
+import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, needsContentRefresh, shouldAutoStart, shouldSettleDown } from '../../src/lib/builtin-presets'
+import type { FloorLedger } from '../../src/lib/builtin-presets'
 import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 import { EVENT_BRIEFS } from '../../src/data/briefs'
@@ -2115,24 +2116,67 @@ export function run(): MechReport {
         `已落好再调=${again}（账本未动=${untouched}）　空方案=${noop}`)
     }
 
-    /* ②b 预算抬顶：只认我们自己塞进去过的值，用户自己打的数一个都不动 */
+    /* ②b 预算归位：只认我们自己塞进去过的值，用户自己打的数一个都不动 */
     const floor = [
       [0, true, '从没设过'], [NaN, true, '非数字'], [undefined, true, '缺字段'], [1500, true, '旧缺省'],
-      [30000, true, '上一代建议值'], [2000, false, '用户自己填的'], [4096, false, '用户按上游上限填的'],
+      [30000, false, '目标值本身（已经对，不再动）'], [2000, false, '用户自己填的'], [4096, false, '用户按上游上限填的'],
     ] as const
     const badFloor = floor.filter(([n, want]) => needsBudgetFloor(n) !== want)
-    ok('首启：预算抬顶只认自己塞过的值（0 / 非数字 / 1500 / 30000），用户自己打的数一概不动',
+    ok('首启：预算归位只认自己塞过的值（0 / 非数字 / 1500），用户自己打的数与目标值 30000 一概不动',
       badFloor.length === 0,
       badFloor.length ? badFloor.map(([, , why]) => why).join('；')
-        : floor.map(([n, want, why]) => `${why}(${String(n)})→${want ? '抬' : '不动'}`).join('　'))
+        : floor.map(([n, want, why]) => `${why}(${String(n)})→${want ? '归位' : '不动'}`).join('　'))
 
-    /* ②c 抬到的是**上限**那一档，不是建议值：单次生成的预算只会在正文写完之前用完，
-       留在建议值上时，思考型通道先花掉一部分，正文就在半句上被长度掐断 —— 界面上看不出异常。
-       直接认内置预设自己带的那个数，比认常量更结实：预设被改小了这里就红。 */
-    ok('首启：内置预设自带输出预算就是上限那一档（不是建议值 30000）',
-      parsed.every((p) => p.r.ok && p.r.scheme.main.maxTokens === MAX_BUDGET && p.r.scheme.sms.maxTokens === MAX_BUDGET),
+    /* ②b2 上一代被抬到**上限**的那一份要收回来 —— 但只收账上记着那次抬顶、且值没被人动过的。
+       判据是「账」而不是「值」：用户在界面上自己填了上限，不该被我们顺手改掉。 */
+    const settle: Array<[number, FloorLedger, boolean, string]> = [
+      [MAX_BUDGET, { to: MAX_BUDGET }, true, '上一代我们抬上去的'],
+      [MAX_BUDGET, {}, false, '账上没记过抬顶（用户自己填的上限）'],
+      [MAX_BUDGET, { to: DEFAULT_BUDGET }, false, '账上记的是目标值那一代'],
+      [DEFAULT_BUDGET, { to: MAX_BUDGET }, false, '值已经是目标值了'],
+      [4096, { to: MAX_BUDGET }, false, '值被人改小了'],
+    ]
+    const badSettle = settle.filter(([n, led, want]) => shouldSettleDown(n, led) !== want)
+    ok('首启：上一代抬到上限的那一份收回来，用户自己写的上限一分不动',
+      badSettle.length === 0,
+      badSettle.length ? badSettle.map(([, , , why]) => why).join('；')
+        : settle.map(([, , want, why]) => `${why}→${want ? '收' : '不动'}`).join('　'))
+
+    /* ②c 内置预设自带的目标值就是**缺省那一档**（30000）：单次生成的预算只在正文写完之前用完，
+       太低会被思考型通道的内部思考吃光、正文在半句上被长度掐断；太高又会被一些通道
+       自己的输出上限顶回来。直接认内置预设自己带的那个数，比认常量更结实：预设被改小了这里就红。 */
+    ok('首启：内置预设自带输出预算就是缺省那一档（30000，与通道缺省同源）',
+      parsed.every((p) => p.r.ok && p.r.scheme.main.maxTokens === DEFAULT_BUDGET && p.r.scheme.sms.maxTokens === DEFAULT_BUDGET),
       parsed.map((p) => `${p.id} ${p.r.ok ? p.r.scheme.main.maxTokens : '解析失败'}`).join('　')
-        + `　上限=${MAX_BUDGET}）`)
+        + `　目标=${DEFAULT_BUDGET}`)
+
+    /* ②d 换稿：已经播过内置预设的机器，presets/*.json 改了内容之后也得看得见 ——
+       否则改 JSON 只有新装机有效，老用户永远停在装机那天的旧稿上，而界面看不出差别。 */
+    const refresh: Array<[number, string[], boolean, string]> = [
+      [1, [BUILTIN_IDS[0], 'user-made'], true, '旧账本 + 内置那份还在'],
+      [2, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
+      [1, ['user-made'], false, '用户把内置那份删了（尊重这个删除）'],
+      [0, [], false, '列表是空的（没有可换的）'],
+    ]
+    const badRefresh = refresh.filter(([v, idsIn, want]) => needsContentRefresh(v, idsIn) !== want)
+    ok('首启：账本比当前版本旧、且内置那份还在列表里 —— 才换稿（删掉的不塞回来）',
+      badRefresh.length === 0,
+      badRefresh.length ? badRefresh.map(([, , , why]) => why).join('；')
+        : refresh.map(([, , want, why]) => `${why}→${want ? '换' : '不动'}`).join('　'))
+
+    /* ②e 预设自己带着两条硬要求，改预设时不许顺手删掉：
+       「思考纪律」（思考要收得住、不想一出是出）与「说话一律『人物名字：』」。
+       代码里那一条（speechContract）管的是最后一道收口，预设这一层是让模型**一开始**就这么写。 */
+    const p0 = BUILTIN_SOURCE[0].json as { prompts?: Array<{ identifier?: string; content?: string }> }
+    const entryOf = (id: string) => p0.prompts?.find((x) => x.identifier === id)
+    const think = entryOf('ts-think')
+    const fmt = entryOf('ts-format')
+    ok('预设：带「思考纪律」一条（思考要收得住 —— 想清楚就写，不推翻已定、不翻来覆去）',
+      !!think?.content && think.content.includes('先定后写') && think.content.includes('不推翻已定'),
+      think ? `字数 ${think.content.length}` : '缺 ts-think')
+    ok('预设：正文格式一条里写明「人物名字：」起行（终端靠行首切角色气泡）',
+      !!fmt?.content && fmt.content.includes('人物名字：') && fmt.content.includes('另起一行'),
+      fmt ? `字数 ${fmt.content.length}` : '缺 ts-format')
 
     /* ③ 预算区间由 lib/budget.ts 一处说了算：缺省落在区间内、收口函数认得上下限 */
     const bounds = MIN_BUDGET < DEFAULT_BUDGET && DEFAULT_BUDGET < MAX_BUDGET
@@ -2554,6 +2598,12 @@ export function run(): MechReport {
      整行会连前缀一起掉回旁白，版面上就多出一行「某某：……」的叙述。两头都要拦。 */
   try {
     const rows = Object.entries(SCENES).filter(([, v]) => !!v?.open)
+    /* 开场白只许出现在第一卷第一章（v1-1）：那一段的文本是逐字原文的排印。
+       别的段若也写 open，注入到会话最前的那一段就是转述顶着「· 原文」的名头 —— 那是伪原文。 */
+    const stray = rows.map(([k]) => k).filter((k) => k !== 'v1-1')
+    ok('开场白：只有第一卷第一章（v1-1）有，别的段一律不给',
+      stray.length === 0 && !!SCENES['v1-1']?.open,
+      stray.length ? `多出来的：${stray.join('、')}` : `1 段（v1-1），其余 ${Object.keys(SCENES).length - 1} 段无`)
     /** 行首的「名字：」——名字取 2～6 个汉字/间隔号，够像人名即可 */
     const LEAD_NAME = /^[一-龥][一-龥·]{1,5}：/
     const leaks: string[] = []

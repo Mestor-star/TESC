@@ -7,7 +7,7 @@
   "top_k": 0,
   "repetition_penalty": 1.05,
   "openai_max_context": 200000,
-  "openai_max_tokens": 65536,
+  "openai_max_tokens": 30000,
   "wrap_in_quotes": false,
   "names_behavior": 0,
   "send_if_empty": "",

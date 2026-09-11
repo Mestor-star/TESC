@@ -13,7 +13,7 @@ import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
-import type { ChatMsg, RecordMode } from '../data/types'
+import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
 import {
   effectiveGrowth, listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth,
@@ -37,7 +37,7 @@ import type { PresetEntry } from '../lib/preset'
 import { activePresetId } from '../lib/preset'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
 import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, readActivePreset } from '../lib/preset'
-import { loreHitsOf } from '../lib/ailog'
+import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
 import { Linkified } from '../components/Linkified'
@@ -74,6 +74,30 @@ const CONTINUE_PROMPT =
   '（接续开场）上面那条「开场白 · 原文」即是本事件的起点。请接着它继续铺陈此刻的局势：写清言万心叶身在何地、'
   + '在场者的状态与正悬而未决的局面，然后停在言万心叶可以回应、可以行动的地方。不要重复或改写过开场白本身；'
   + '先不要收束事件；本回合若无变量变化，指令块给 {} 即可。'
+
+/**
+ * 指令没解析出来 —— 在通联日志里留一条。
+ *
+ * 这一种失效是本终端最难自查的：正文照常上屏、气泡照常切、界面看不出少了什么，
+ * 少的只是「变量、羁绊、收束、图鉴」那一层。等玩家发现时已经过去好几回合，
+ * 而那时原始报文早被环形缓冲冲掉了。所以失败当场留痕，且**记结尾那一截** ——
+ * 指令块是在末尾的，看结尾才知道是压根没写、还是写了但 JSON 在半途坏掉。
+ */
+function traceDirectiveMiss(raw: string, where: string): void {
+  const tail = raw.trim().slice(-400)
+  pushAiLog({
+    channel: '事件指令',
+    act: where,
+    model: '', baseUrl: '', stream: false, temperature: 0, maxTokens: 0,
+    turns: 1, chars: raw.length, prompt: '',
+    ok: false, ms: 0, replyChars: raw.length, replyHead: '',
+    error: `未解析到事件指令（结尾既无 \`\`\`json 围栏，也无 <vars> 标签）。回执结尾：${tail}`,
+  })
+}
+
+/** 补收指令的请求语 —— 自动补收与手动「要求补发指令」共用同一句，两条路问的是同一件事 */
+const DIRECTIVE_REASK =
+  '（终端自动请求）请补发本回合的事件指令（JSON 围栏或 <vars> 标签皆可）：仅输出指令本身，无需展开叙述；若无任何变化则输出 {}。'
 
 /** 事件衔接请求：上一事件已收束，用其解读式收束 + 言万心叶最后发言，让导演为下一事件生成自然开场（同一段故事的余波延续） */
 function bridgePrompt(prevTitle: string, prevGroup: string, digest: string, diverged: boolean, lastUser?: string): string {
@@ -151,6 +175,22 @@ function persistMsg(evId: string, m: ChatMsg): Record<string, ChatMsg[]> {
 function retextMsg(evId: string, id: string, text: string): Record<string, ChatMsg[]> {
   const next = { ...loadLogs() }
   next[evId] = (next[evId] ?? []).map((m) => (m.id === id ? { ...m, text } : m))
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(next))
+  } catch {
+    /* 隐私模式下降级为仅内存 */
+  }
+  return next
+}
+
+/**
+ * 撤掉一条开场白。开场白只在**它真是原文**的那一段（第一卷第一章）才留着；
+ * 别的段曾经铺过的那一条是转述，顶着「· 原文」的名头摆在最前，比干脆没有更糟。
+ * 代码里那一项已经删了，存档里这条就不该再挂着 —— 只撤这一条，后面的话照旧。
+ */
+function dropMsg(evId: string, id: string): Record<string, ChatMsg[]> {
+  const next = { ...loadLogs() }
+  next[evId] = (next[evId] ?? []).filter((m) => m.id !== id)
   try {
     localStorage.setItem(LOG_KEY, JSON.stringify(next))
   } catch {
@@ -275,6 +315,8 @@ export function Plot() {
   const skipAutoOpen = useRef(false)
   const lastOpen = useRef<string | null>(null)
   const needDir = useRef(false)
+  /** 正在自动补收指令：一次回合只补一次，免得模型连着不回时反复发问 */
+  const dirRetry = useRef(false)
   const [foldOpen, setFoldOpen] = useState<ReadonlySet<string>>(() => new Set())
   const toggleFold = useCallback((id: string) => {
     setFoldOpen((prev) => {
@@ -406,6 +448,51 @@ export function Plot() {
       }
     },
     [meetChar, bumpBond, registerEnd, setFlag, push],
+  )
+
+  /**
+   * 补收指令：正文已经写完、指令却没解析出来时，**只再问一次指令**。
+   *
+   * 为什么要自动问：这一种失效在界面上看不出来 —— 正文照常上屏、气泡照常切，
+   * 少的只是「变量、羁绊、图鉴、收束」那一层，玩家往往几回合之后才发现，
+   * 而那时原始报文早被环形缓冲冲掉了。手动按钮一直在，但要玩家先意识到缺了什么。
+   *
+   * 为什么不会重复写一段：报文里明说「仅输出指令本身，无需展开叙述」，
+   * 而回来的东西只走 applyReply（落变量），不走 appendMsg（不写正文）。
+   * @returns 有没有真的补到
+   */
+  const reaskDirective = useCallback(
+    async (ev: TimelineEvent, prior: ChatTurn[], shownText: string, where: string): Promise<boolean> => {
+      if (dirRetry.current || !cfgMain || !isReady(cfgMain)) return false
+      dirRetry.current = true
+      try {
+        const system = buildDirectorSystem(ev, {
+          operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+        })
+        const res = await chatCompletion(cfgMain, [
+          { role: 'system', content: system },
+          ...prior,
+          ...(shownText ? [{ role: 'assistant' as const, content: shownText }] : []),
+          { role: 'user', content: DIRECTIVE_REASK },
+        ], { maxTokens: 2048 })
+        const again = parseDirectorReply(res)
+        if (again.found) {
+          needDir.current = false
+          applyReply(again, ev.id)
+          push('success', '已自动补收事件指令', '本回合的变量、羁绊与收束已按补发的指令落地。', false)
+          return true
+        }
+        traceDirectiveMiss(res, `${where} · 补收`)
+        push('warn', '补收仍未拿到事件指令', '可点「要求补发指令」再试，或继续发消息推进。', false)
+        return false
+      } catch {
+        /* 补收是补救、不是主线：失败就维持「待补发」，交给手动按钮 —— 绝不因此打断这一回合 */
+        return false
+      } finally {
+        dirRetry.current = false
+      }
+    },
+    [applyReply, push, cfgMain, operatorName, bondNow, epDone, world.flags],
   )
 
   /**
@@ -542,7 +629,10 @@ export function Plot() {
             const parsed = parseDirectorReply(full)
             needDir.current = !parsed.found
             if (!parsed.found) {
-              push('warn', '未解析到事件指令', '叙述已上屏；本回合无变量自动落地，下一回会附带补发提醒。', false)
+              // 先留痕再补收：留痕是为了**事后**能查出是哪种失败，补收是为了**当场**把它救回来
+              traceDirectiveMiss(full, opts?.long ? '事件衔接' : '回合推演')
+              push('warn', '未解析到事件指令 · 正在自动补收', '叙述已上屏；已自动向通道补问一次指令（只问指令、不重写正文）。收到即静默落地。', false)
+              void reaskDirective(ev, outbox, full, opts?.long ? '事件衔接' : '回合推演')
             }
             const shown = replyDisplayText(parsed, acc)
             if (shown) {
@@ -592,7 +682,7 @@ export function Plot() {
         setBusy(false)
       }
     },
-    [busy, ready, cfgMain, operatorName, bondNow, world.flags, world.ends, epDone, logs, appendMsg, applyReply, push],
+    [busy, ready, cfgMain, operatorName, bondNow, world.flags, world.ends, epDone, logs, appendMsg, applyReply, reaskDirective, push],
   )
 
   const send = async () => {
@@ -769,7 +859,7 @@ export function Plot() {
     const messages: ChatTurn[] = [
       { role: 'system', content: system },
       ...toTurns(logs[ev.id]),
-      { role: 'user', content: '（终端自动请求）请补发本回合的事件指令（JSON 围栏或 <vars> 标签皆可）：仅输出指令本身，无需展开叙述；若无任何变化则输出 {}。' },
+      { role: 'user', content: DIRECTIVE_REASK },
     ]
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -780,6 +870,7 @@ export function Plot() {
       if (parsed.found) {
         push('success', '已收到事件指令', '指令已自动落地。', false)
       } else {
+        traceDirectiveMiss(res, '手动补发')
         push('warn', '仍未解析到事件指令', '可再试一次，或继续发消息推进。', false)
       }
       applyReply(parsed, ev.id)
@@ -796,6 +887,8 @@ export function Plot() {
 
   /* —— 在线开场：某事件尚无实质会话且刚进入在线时 ——
      优先注入原文「开场白」（SCENES.open，无 AI 参与、随会话持久化）作为首条；
+     但**只有第一卷第一章有开场白**（其余段的 open 已删）：开场白是原文排印，
+     转述顶这个名头就是伪原文，所以那些段（含旧存档里已注入的一条）一律走自拟开场；
      只有「开场白」而尚无 AI/操作员回合，视为未开篇：若未被收束跳过，仍让导演接着开场续写；
      事件收束推进后自动铺的下一段开场白（skipAutoOpen）则只注入、等操作员发话；
      无开场白的段沿用导演自拟开场。 */
@@ -813,6 +906,16 @@ export function Plot() {
     const auto = TIMELINE.findIndex((e) => e.id === evId) <= AUTO_OPEN_THRU_IDX
 
     const scOpen = SCENES[evId]?.open?.trim()
+
+    /* 开场白只认「第一卷第一章」那一段（它才是逐字原文的排印）。别的段以前铺过开场白 ——
+       那些是转述，顶着「· 原文」的名头摆在最前。代码里那一项已经删了，存档里这条就撤掉；
+       撤完若这一段还没开篇，就按「无开场白」的段走（该自动开篇的由导演自拟）。 */
+    if (!scOpen && lg.length && lg[0].meta?.opening) {
+      const rest = dropMsg(evId, lg[0].id)
+      setLogs(rest)
+      if (!rest[evId].length && auto && !skipAutoOpen.current) void pushTurn(evId, OPEN_PROMPT, [])
+      return
+    }
 
     /* 只有一条开场白、别无他物 —— 这一段还没开篇，存档里存的就是代码里那段原文。
        此时若文本与现行版本不同（改了排印的旧存档），按现行文本换掉：观测者看到的

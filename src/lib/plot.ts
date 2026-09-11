@@ -72,6 +72,10 @@ const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
   'met', 'bond', 'ends', 'flag', 'diverged', 'eventDone', 'digest', 'battle',
+  // 短信/群聊的「托付」用这一条。漏在名单外的话，sanitizeDirective 末尾那道
+  // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
+  // 任务却永远落不了地，而且一声不吭。
+  'task',
 ])
 
 /** 把「图鉴 id 或原文实体标注」归一化为图鉴条目 id；无法识别返回 null */
@@ -299,16 +303,48 @@ function firstBalancedJsonCandidate(text: string): string | null {
 /* 字符串原样留着；字符串外的注释删掉；} 或 ] 之前的尾逗号删掉 —— 分组 1 是字符串 */
 const JSON_NOISE_RE = /("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\/|,(\s*[}\]])/g
 
+/* 字符串外头的这些全角标点，模型（尤其中文模型）一顺手就写出来了：
+   {"met"：["luna"]}、{"bond":[{"char"："luna"，"delta"：2}]}。
+   JSON.parse 见了直接抛，抛了整块指令就丢 —— 玩家看到的就是「事件指令出错」。
+   弯引号也算在内：模型拿它当字符串定界符时，得先换成直引号，
+   后面那道「字符串里不许动」才认得出哪儿是字符串。 */
+const FULLWIDTH_STRUCT: Record<string, string> = {
+  '：': ':', '，': ',', '｛': '{', '｝': '}', '［': '[', '］': ']',
+  '“': '"', '”': '"', '＂': '"',
+}
+/* 字符串原样留着，字符串外逐字替换 —— 分组 1 是字符串，分组 2 是待换的全角标点 */
+const OUTSIDE_STRING_RE = /("(?:[^"\\]|\\.)*")|([：，｛｝［］“”＂])/g
+
+/** `<vars>` 里那块 JSON：按上面那套容错解一遍；解不动返回 null（交给上游的兜底） */
+function parseVarsRaw(raw: string): Record<string, unknown> | null {
+  const t = raw.trim()
+  if (!t) return null
+  try {
+    const v: unknown = JSON.parse(repairJson(t))
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function fixFullwidthStruct(m: string, str?: string, ch?: string): string {
+  if (str !== undefined) return str
+  if (ch !== undefined) return FULLWIDTH_STRUCT[ch] ?? ch
+  return m
+}
+
 /**
- * 修「差一点点」的 JSON：尾逗号、`//` 注释、BOM 与零宽字符。
+ * 修「差一点点」的 JSON：全角结构标点、尾逗号、`//` 注释、BOM 与零宽字符。
  * 这几样在 JSON.parse 那里是直接抛的，抛了整块指令就丢 —— 正文照旧上屏，
  * 玩家看到的是「叙述有了、变量没落地」，也就是「事件指令出错」。
- * 只修格式，不猜语义：不动键名、不改字符串里的一个字。
+ * 只修格式，不猜语义：不动键名、不改字符串里的一个字（全角标点也只换字符串外头的）。
  */
 function repairJson(s: string): string {
   return s
     .replace(/^\uFEFF/, '')
     .replace(/[\u200b-\u200d\u2060]/g, '')
+    // 先把全角结构标点归正：下面那道「认字符串」靠的是直引号，定界符得先摆正
+    .replace(OUTSIDE_STRING_RE, fixFullwidthStruct)
     .replace(JSON_NOISE_RE, (_m, str: string | undefined, tail: string | undefined) => {
       if (str !== undefined) return str
       if (tail !== undefined) return tail
@@ -498,7 +534,12 @@ export function parseDirectorReply(raw: string): DirectorReply {
   let directive: PlotDirective | null
   let found: boolean
   if (hasVars) {
-    directive = sanitizeDirective(parsed.varsCommands.merge)
+    /* <vars> 里那块 JSON 走**本终端同一套容错**（全角标点、尾逗号、注释、零宽）。
+       tavernlike 那边的 parseVarsBlock 是通用件、只认标准 JSON，坏了就当空补丁 ——
+       坏在「found 仍然是 true、directive 是 {}」：面板报「已收到指令」，什么也没落地，
+       查都没处查。这里自己再解一遍，解得动就用它。 */
+    const loose = parseVarsRaw(varsRaw)
+    directive = sanitizeDirective(loose ?? parsed.varsCommands.merge)
     found = true
   } else {
     directive = json.directive
