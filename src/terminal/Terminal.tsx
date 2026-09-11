@@ -12,6 +12,7 @@ import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
 import { ensureSeeded } from '../lib/lorestore'
 import { ensureBudgetFloor, ensureBuiltinPresets } from '../lib/builtin-presets'
+import { ensureBuiltinGroups } from '../lib/smsthreads'
 import { requestRemount } from '../lib/remount'
 import { sfx } from '../lib/audio'
 import { resetBattleStore } from '../lib/battle/store'
@@ -422,6 +423,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       （②只认我们自己塞过的那些值，用户手打的数一概不碰。）
     */
     void ensureBuiltinPresets().then(() => ensureBudgetFloor())
+    /* 内置群聊与上面几位分开走：短信页的名册是同步读 localStorage 的，
+       这一步只写盘；真正的重读在 Tavern 挂载时（见 views/Tavern.tsx）。 */
+    ensureBuiltinGroups()
   }, [])
 
   /* 重挂载后落地一条重置/读档的反馈通知（冷启动为 null 则跳过） */

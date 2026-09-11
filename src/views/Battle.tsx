@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import {
-  ArrowLeft, Backpack, CaretRight, Crosshair, Lightning, Shield, Sneaker, Swap, X,
+  ArrowLeft, Backpack, CaretRight, Crosshair, Info, Lightning, Shield, Sneaker, Swap, X,
 } from '@phosphor-icons/react'
 
 import {
@@ -43,7 +43,7 @@ import { passiveText } from '../lib/battle/roster'
 import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
-import { foeLineOrder } from '../lib/battle/derive'
+import { enemyFormation } from '../lib/battle/derive'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
@@ -143,6 +143,9 @@ export function Battle({
   const [panel, setPanel] = useState<Panel>('root')
   /** 待选目标的指令（攻击 / 单体技能 / 单体道具 / 单体装具技） */
   const [pending, setPending] = useState<Command | null>(null)
+  /** 翻开的是哪一只敌体的「信息」（id）—— 看信息不占回合、也不挑目标：
+      头顶那块简介撤了之后，性质 / 来历 / 技能全在这一处。 */
+  const [foeInfo, setFoeInfo] = useState<string | null>(null)
   const [rec, setRec] = useState<BattleRecord | null>(null)
   const [narrating, setNarrating] = useState(false)
   const [filed, setFiled] = useState(false)
@@ -304,8 +307,17 @@ export function Battle({
       .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
   }, [st])
 
-  /* ---- 敌阵的站位：最硬的那个站中间，其余分列两侧（见 derive.foeLineOrder）---- */
-  const foeLine = useMemo(() => foeLineOrder(st.enemies), [st.enemies])
+  /* ---- 敌阵的站位：头目档站正中、召唤物分列两翼（见 derive.enemyFormation）----
+     分三列而不是排成一行：行内中位会随人数漂移，窄屏折行还会把折下去的那张裁掉半截，
+     点不中（挑目标点的是卡本体）。三列各自贴向中列，中列因此恒在正中。 */
+  const foeLine = useMemo(() => enemyFormation(st.enemies), [st.enemies])
+
+  /* 信息面板翻开的是哪一只 —— 手上只存 id，读数每次从当前这一局现取：
+     存下整只的话，面板一开着、场上它挨了一刀，那一页写的还是翻开时那份血。 */
+  const infoFoe = useMemo(
+    () => (foeInfo ? st.enemies.find((c) => c.id === foeInfo) ?? null : null),
+    [foeInfo, st.enemies],
+  )
 
   /* ---- 「回手」的那一下 ----
      解封尽解的人会被引擎原位填满行动条、点名下一位还是他（见 engine 的 again）。
@@ -624,21 +636,61 @@ ${siteR.f.word}`}>
         </div>
       </div>
 
-      {/* 敌阵 —— 居中、放大；名字在头顶，数值与状态在脚下 */}
+      {/* 敌阵 —— 头目档居中、召唤物分列两翼；数值与状态在脚下（头顶不挂简介）。
+          两翼各自向中列收（左翼右对齐、右翼左对齐），所以中列永远在正中，
+          不因为场上是 1 只还是 6 只而左右漂。 */}
       <div className={css.arena} data-enemy-field>
         <div className={css.enemyRow}>
-          {foeLine.map((c) => (
-            <Foe
-              key={c.id}
-              c={c}
-              fx={fx}
-              active={!over && actor?.id === c.id}
-              targetable={aimEnemies && !c.down && !playing}
-              onPick={() => pickTarget(c.id)}
-            />
-          ))}
+          <div className={`${css.foeWing} ${css.foeWingL}`} data-foe-wing="left">
+            {foeLine.left.map((c) => (
+              <Foe
+                key={c.id}
+                c={c}
+                fx={fx}
+                active={!over && actor?.id === c.id}
+                targetable={aimEnemies && !c.down && !playing}
+                onPick={() => pickTarget(c.id)}
+                onInfo={() => setFoeInfo(c.id)}
+              />
+            ))}
+          </div>
+          <div className={css.foeMid} data-foe-mid>
+            {foeLine.mid ? (
+              <Foe
+                c={foeLine.mid}
+                fx={fx}
+                active={!over && actor?.id === foeLine.mid.id}
+                targetable={aimEnemies && !foeLine.mid.down && !playing}
+                onPick={() => pickTarget(foeLine.mid!.id)}
+                onInfo={() => setFoeInfo(foeLine.mid!.id)}
+              />
+            ) : null}
+          </div>
+          <div className={`${css.foeWing} ${css.foeWingR}`} data-foe-wing="right">
+            {foeLine.right.map((c) => (
+              <Foe
+                key={c.id}
+                c={c}
+                fx={fx}
+                active={!over && actor?.id === c.id}
+                targetable={aimEnemies && !c.down && !playing}
+                onPick={() => pickTarget(c.id)}
+                onInfo={() => setFoeInfo(c.id)}
+              />
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* 敌人信息 —— 看它从哪儿来、是什么性质、会使哪几手。
+          单开一层压在整个作战屏上（不是指令窗里的子面板）：敌人不是只在
+          「轮到我方出手」时才有的东西，敌方回合、结算回放里都得翻得动。 */}
+      {infoFoe ? (
+        <FoeInfoPanel
+          c={infoFoe}
+          onClose={() => setFoeInfo(null)}
+        />
+      ) : null}
 
       {/* 观测频道 —— 右侧一栏竖排战报：谁出了哪一手、说了什么、打在谁身上，一眼扫得到，
           又不会压在敌阵脚下挡视野 */}
@@ -1345,16 +1397,20 @@ function Unit({
   )
 }
 
-/* ---------- 单位卡：敌方（居中放大 · 名在头上 · 数值在脚下） ---------- */
+/* ---------- 单位卡：敌方（居中放大 · 数值在脚下 · 头顶不挂简介） ----------
+   头顶原先挂着一整块「名字 + 精英/首领 + 定位 + 机制」的简介：敌阵一多，
+   那几行字比人还高，挡着自己也挡着隔壁。现在头顶留空 ——
+   谁是谁、什么来历、会使哪几手，点卡上的「信息」看（见 FoeInfoPanel）。*/
 
 function Foe({
-  c, fx, active, targetable, onPick,
+  c, fx, active, targetable, onPick, onInfo,
 }: {
   c: Combatant
   fx: FxView | null
   active?: boolean
   targetable?: boolean
   onPick?: () => void
+  onInfo?: () => void
 }) {
   const hit = !!fx && fx.targetId === c.id
   /** 单体演出就落在他身上（全体技走全屏那一层，这里只留飘字） */
@@ -1362,24 +1418,13 @@ function Foe({
   const hpPct = (c.hp / c.hpMax) * 100
   const ready = c.bar >= TUNING.barMax
   return (
-    <div className={css.foe} data-unit={c.id} data-side="enemy" data-foe-card={c.id}>
-      {/* 名字在头上 */}
-      <div className={css.foeName} data-foe-name>
-        {/* 头目档：每场至少一个。徽标只是把名册上的分层摆到明面上 ——
-            精英是硬骨头，首领还带一记要防的终结技。 */}
-        {c.tier ? (
-          <span
-            className={`${css.foeTier} ${c.tier === 'boss' ? css.foeTierBoss : ''}`}
-            data-foe-tier={c.tier}
-          >
-            {c.tier === 'boss' ? '首领' : '精英'}
-          </span>
-        ) : null}
-        <b>{c.name}</b>
-        <i>{c.cls}</i>
-        {c.trait ? <em className="tiny muted">{c.trait}</em> : null}
-      </div>
-
+    <div
+      className={css.foe}
+      data-unit={c.id}
+      data-side="enemy"
+      data-foe-card={c.id}
+      data-foe-down={c.down ? '1' : undefined}
+    >
       <div
         data-foe-body
         className={`${css.foeBody} ${c.down ? css.unitDown : ''} ${active ? css.unitActive : ''} ${targetable ? css.unitAim : ''}`}
@@ -1392,6 +1437,9 @@ function Foe({
         <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
           <span style={{ fontSize: 30 }}>{c.sigil}</span>
         </span>
+        {/* 倒下的那一下：化开、收进去，人留在原位当个空壳 ——
+            位置不能塌，一塌两翼就跟着挪，玩家刚记住的排面全乱。 */}
+        {c.down ? <span className={css.vanish} data-foe-vanish={c.id} aria-hidden /> : null}
         {hit && fx.dmg ? <span key={fx.n} className={css.dmgNumBig}>{fx.dmg}</span> : null}
         {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
         {onMe ? (
@@ -1417,18 +1465,139 @@ function Foe({
         {/* 头目档只换**外形**，不换长短：条子的宽窄与杂兵一模一样
             （见 Battle.module.css 的 .hpBarBig[data-tier='boss']）——
             把首领那条拉得更长，在屏上分出来的是「更宽」，不是「更强」。 */}
-        <div className={css.hpBarBig} data-tier={c.tier}>
+        <div className={css.hpBarBig} data-tier={c.tier} data-foe-hpbar={c.tier ?? 'grunt'}>
           <i style={{ width: `${hpPct}%` }} data-low={hpPct <= 30 ? '1' : undefined} />
         </div>
+        {/* 名字与头目档挪到脚下 —— 头顶那块简介撤了，但排面上还得认得出谁是谁
+            （同一型别的两只观测体长相一样，只靠名册上的「甲/乙」分得开）。
+            性质、来历、会使哪几手，点「信息」看。 */}
         <div className={`${css.foeMeta} mono`}>
+          <span className={css.foeMetaName} data-foe-name>{c.name}</span>
           <span>{c.hp} / {c.hpMax}</span>
-          <span className="muted">{c.tags.join(' · ')}</span>
+          {/* 头目档：每场至少一个。徽标把名册上的分层摆在明面上 ——
+              精英是硬骨头，首领还带一记要防的终结技。 */}
+          {c.tier ? (
+            <span
+              className={`${css.foeTier} ${c.tier === 'boss' ? css.foeTierBoss : ''}`}
+              data-foe-tier={c.tier}
+            >
+              {c.tier === 'boss' ? '首领' : '精英'}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className={css.foeInfoBtn}
+            data-foe-info={c.id}
+            title="敌人信息 · 性质 / 来历 / 技能"
+            onClick={onInfo}
+          >
+            <Info size={12} weight="bold" />
+            <span>信息</span>
+          </button>
         </div>
         <div className={css.atb} data-atb={c.id} data-ready={ready ? '1' : undefined}>
           <i style={{ width: `${Math.min(100, (c.bar / TUNING.barMax) * 100)}%` }} />
         </div>
         <UltChant c={c} />
         <BuffTags c={c} />
+      </div>
+    </div>
+  )
+}
+
+/* ---------- 敌人信息：性质 · 来历 · 技能 ----------
+   头顶那块简介撤了之后，认人的东西得有个去处。原先挂着的是「名字 + 精英/首领 +
+   定位 + 机制」一行行字，敌阵一多就比人还高；现在归到这一页里，还能多写几样
+   原先放不下的：它从原文哪一段来、怕哪条轴、手里有哪几手、出手时说什么。
+
+   写进这一页的每一个字都从敌体自己身上与 bosses.ts 取，不另编：
+   没有档案的那种（现推的观测体）就照实说没有档案。 */
+
+const AXIS_LABEL: Record<string, string> = {
+  破坏力: '破坏力', 敏捷度: '敏捷度', 物理抗性: '物理抗性',
+  反现实亲和: '反现实亲和', 意志力: '意志力',
+}
+
+function FoeInfoPanel({ c, onClose }: { c: Combatant; onClose: () => void }) {
+  const nb = namedBossOf(c.namedId)
+  const tier = c.tier === 'boss' ? '首领' : c.tier === 'elite' ? '精英' : '杂兵'
+  const rows: Array<[string, string]> = [
+    ['性质', [c.cls, ...c.tags].filter(Boolean).join(' · ') || '未分类'],
+    /* 来历：有档案的指名首领写他站这一场的出处（bosses.ts 的 from，取自原文）；
+       没有档案的就是这一场现推的观测体 —— 照实说，不给他编一份履历。 */
+    ['来历', nb
+      ? nb.from
+      : `观测体 · 按这一场的地点 R 值与危险度现推的通用件${c.note ? `（${c.note}）` : ''}`],
+    ['当前', `${c.hp} / ${c.hpMax} 生命　·　体力 ${c.sp} / ${c.spMax}　·　${tier}`],
+  ]
+  if (c.trait) rows.push(['机制', c.trait])
+  rows.push(['破绽', c.guardMax > 0 && c.guardAxis
+    ? `${c.guardAxis} —— 只有对上这条轴的攻击削得动那层护盾（现余 ${c.guardPts} / ${c.guardMax}）。` +
+      '削穿即「观测成立」：它当场停一拍，且这一拍里挨打加成。'
+    : '没有破绽层：哪条轴打上去都一样。'])
+
+  return (
+    <div
+      className={css.foeInfoMask}
+      data-foe-info-panel={c.id}
+      role="dialog"
+      aria-label={`敌人信息 · ${c.name}`}
+      onClick={onClose}
+    >
+      {/* 卡片自己吃掉点击：点边上关、点内容不关 */}
+      <div className={css.foeInfoCard} onClick={(e) => e.stopPropagation()}>
+        <div className={css.foeInfoHead}>
+          <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
+            <span style={{ fontSize: 26 }}>{c.sigil}</span>
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <b data-foe-info-name>{c.name}</b>
+            <span className="tiny muted" style={{ display: 'block' }}>
+              {c.tier ? `${tier} · ` : ''}{c.cls}
+            </span>
+          </span>
+          <button className={css.x} type="button" data-foe-info-close onClick={onClose} title="关闭">
+            <X size={13} />
+          </button>
+        </div>
+
+        <div className={css.foeInfoRows}>
+          {rows.map(([k, v]) => (
+            <div className={css.foeInfoRow} key={k}>
+              <span className={css.foeInfoKey}>{k}</span>
+              <span className={css.foeInfoVal}>{v}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* 五轴：与档案页同一个读数（这里是他站到对面来的那份面板） */}
+        <div className={css.foeInfoCap}>五轴</div>
+        <div className={css.foeInfoAxes}>
+          {Object.entries(c.axes).map(([k, v]) => (
+            <span className={css.axisChip} key={k} data-foe-axis={k}>
+              {AXIS_LABEL[k] ?? k} <b>{v}</b>
+            </span>
+          ))}
+        </div>
+
+        <div className={css.foeInfoCap}>技能 · {c.skills.length} 手</div>
+        <div className={`${css.list} ${css.foeInfoList}`} data-foe-info-skills>
+          {c.skills.map((k) => (
+            <div className={css.row} key={k.id} data-foe-skill={k.id} data-kind={k.kind}>
+              <SkillIcon id={k.id} />
+              <span className={css.rowName}>
+                <span>{k.name}</span>
+                <i className={css.rowSub}>{k.kind}</i>
+              </span>
+              <span className={css.rowCost}>{k.power > 0 ? `×${k.power}` : '—'}</span>
+              {k.desc ? <span className={css.rowDesc}>{k.desc}</span> : null}
+              {k.line ? <span className={css.foeSkillLine}>「{k.line}」</span> : null}
+              <span className={css.rowNotes}>
+                {notesOf(k).map((t) => <i key={t}>{t}</i>)}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -1050,31 +1050,50 @@ export function minionOf(a: {
 }
 
 /**
- * 敌阵的**站位**：最硬的那个站中间，其余从中间往两边交替铺开。
+ * 敌阵的三列站位：**头目档站正中，其余分列两翼**。
  *
- * 为什么单拎成一支纯函数：`enemiesOf` 是按生成序排的（头一名是这一场的头目档），
- * 照原样铺开就是「最强的杵在最左边」，越往右越弱 —— 眼睛会以为左边那个是杂兵。
- * 所以显示时重排一次。**只动显示序**，`st.enemies` 本身不动：
+ * 早先的做法是「编个先后序、排成一行」，中位落在「第 ⌊(n-1)/2⌋ 格」上。
+ * 两处都站不住：一发召唤把人从 3 只推到 4 只，中位就跟着挪一格，
+ * 首领当场往边上滑；窄屏一行铺不下就折行，而战场是 `overflow: hidden`，
+ * 折下去的那几张被裁掉半截 —— **看得见一点、却点不中**
+ * （挑目标点的是卡本体，被裁掉的一半不在可命中区里，按了没反应）。
+ *
+ * 所以改由**三列**定死：两翼各自贴向中列（左翼右对齐、右翼左对齐），
+ * 中列便永远在正中，与场上有几只无关；翼上的卡随宽度自己收窄，
+ * 不再折行。中列优先取**此刻还站着的**头目档 —— 第二阶段的首领是顶上来的
+ * 一位（见 `nextBossOf`），排位在阵尾，照 `arr[0]` 摆会把一具尸首供在正中。
+ *
+ * 两翼按原位分列（头目前面的去左翼、后面的去右翼），多出来的一只从外侧
+ * 匀到少的那边，两翼张角尽量对称。只动显示，`st.enemies` 本身不动：
  * 引擎、存档、战报全按 id 找，谁站哪一格与规则无关。
  *
- * 两只及以下不重排：两个位置没有「中间」，硬排反而把主次弄反。
- * 三只 → [二, 一, 三]；四只 → [三, 一, 二, 四]（中线偏左，两侧同时向外扩）。
+ * 中列依次退让：**还站着的头目档 → 还站着的任意一个 → 任意一个头目档 → 头一名**。
+ * 中间那两级是给「头目倒了、杂兵还在」留的 —— 那种时候正中摆一具尸首
+ * （`tier` 还在，`down` 已是 true）比空着更糟：两翼会在它两边对着站，
+ * 看着像被围，其实是中间没人了。
  */
-export function foeLineOrder<T>(arr: readonly T[]): T[] {
-  const n = arr.length
-  if (n <= 2) return [...arr]
-  const out: T[] = new Array(n)
-  const mid = Math.floor((n - 1) / 2)
-  out[mid] = arr[0]
-  let l = mid - 1
-  let r = mid + 1
-  for (let i = 1; i < n; i++) {
-    // 先右后左：奇数位补右边，偶数位补左边
-    if (i % 2 === 1 && r < n) out[r++] = arr[i]
-    else if (l >= 0) out[l--] = arr[i]
-    else out[r++] = arr[i]
-  }
-  return out
+export function enemyFormation<T extends { down?: boolean; tier?: string }>(
+  arr: readonly T[],
+): { left: T[]; mid: T | null; right: T[] } {
+  if (!arr.length) return { left: [], mid: null, right: [] }
+  let k = arr.findIndex((c) => !c.down && !!c.tier)
+  if (k < 0) k = arr.findIndex((c) => !c.down)
+  if (k < 0) k = arr.findIndex((c) => !!c.tier)
+  if (k < 0) k = 0
+  const left = arr.slice(0, k)
+  const right = arr.slice(k + 1)
+  /*
+    匀平：两翼差超过一只，就从多的一侧挪一只到少的一侧。
+
+    挪的恒是**离中列最远的那一个**（左翼取头、右翼取尾），落到另一侧的**最远端**
+    —— 于是「离中列越近、排位越靠前」这条读法两翼都成立：
+    `[...right, ...left]` 拼出来永远等于原阵去掉中列那一位。
+    召唤物是带排行字的（甲乙丙丁，见 minionOf），排位一乱就分不清谁是谁了；
+    按这条挪，两边各自内部保序，只是整体绕中列摆成雁形。
+  */
+  while (left.length - right.length > 1) right.push(left.shift() as T)
+  while (right.length - left.length > 1) left.unshift(right.pop() as T)
+  return { left, mid: arr[k] as T, right }
 }
 
 /**

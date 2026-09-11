@@ -25,6 +25,15 @@ function ok(name, cond, extra = '') {
   return cond
 }
 
+/* 这一场没走到那个情形，没得量 —— 不算过、也不算败，单独报一行。
+   拿 ok(cond || 没走到) 混过去比 FAIL 更糟：那是一条永远绿的断言。 */
+let skips = 0
+function skip(name, why) {
+  skips++
+  console.log(`  SKIP  ${name} ${why}`)
+  return false
+}
+
 /* ---------- 简易 CDP 客户端 ---------- */
 class Cdp {
   constructor(ws) {
@@ -1512,17 +1521,144 @@ try {
   await poll(`!!document.querySelector('[data-battle]')`, 12000, 'N battle mounted')
   const nFoe = await ev(`(()=>{const f=document.querySelector('[data-foe-card]');const a=document.querySelector('[data-atb]');
     const p=document.querySelector('[data-party-field]');
-    return {foe:!!f,name:!!document.querySelector('[data-foe-card] [data-foe-name]'),foot:!!document.querySelector('[data-foe-card] [data-foe-foot]'),
+    return {foe:!!f,name:!!document.querySelector('[data-foe-card] [data-foe-foot] [data-foe-name]'),
+      head:!!document.querySelector('[data-foe-name]')&&!!document.querySelector('[data-foe-card] > [data-foe-name]'),
+      foot:!!document.querySelector('[data-foe-card] [data-foe-foot]'),
+      info:!!document.querySelector('[data-foe-card] [data-foe-info]'),
       atb:!!a,party:!!p,op:!!document.querySelector('[data-party-field] [data-unit="operator"]')}})()`)
-  ok('N3 出击 → 全屏作战界面：敌人居中大字卡（名在头上 · 血量在脚下）+ 行动条 + 我方队列（主角在场）',
-    nFoe.foe === true && nFoe.name === true && nFoe.foot === true && nFoe.atb === true && nFoe.op === true, JSON.stringify(nFoe))
+  ok('N3 出击 → 全屏作战界面：敌人居中大字卡（名字与血量都在脚下 · 头顶不挂简介）+ 信息按钮 + 行动条 + 我方队列（主角在场）',
+    nFoe.foe === true && nFoe.name === true && nFoe.head === false
+    && nFoe.foot === true && nFoe.info === true && nFoe.atb === true && nFoe.op === true, JSON.stringify(nFoe))
 
   // N3c：每一场敌阵至少有一个头目档（低危是精英，危险度到顶是首领）
   const nTier = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-foe-card]')];
     const tiers=cards.map(c=>{const t=c.querySelector('[data-foe-tier]');return t?t.getAttribute('data-foe-tier'):null});
     return {n:cards.length,tiers,has:tiers.some(x=>x==='elite'||x==='boss')}})()`)
-  ok('N3c 每场敌阵至少一个精英／首领（头目档标在名字上方）',
+  ok('N3c 每场敌阵至少一个精英／首领（头目档标在脚下的读数行里）',
     nTier.n >= 1 && nTier.has === true, JSON.stringify(nTier))
+
+  /* N3e：敌人信息 —— 头顶那块简介撤了，认人的东西得在别处翻得到。
+     点「信息」开一页：性质（名册上的 tags）、来历（有档案的写 bosses.ts 的 from，
+     没有的照实说自己是现推的观测体）、技能（名字 · 说明 · 出手台词 · 要点）。
+     这一页不占回合、也不挑目标：开它、读它、关它，战局一点都不动。 */
+  await sleep(300)
+  const nInfoBefore = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
+    return {hand:document.querySelector('[data-hand]')?document.querySelector('[data-hand]').getAttribute('data-hand'):'',
+      actor:c?c.getAttribute('data-actor'):null}})()`)
+  await ev(`(()=>{const b=document.querySelector('[data-foe-card] [data-foe-info]');if(b)b.click();return true})()`)
+  const nInfo = await ev(`(async()=>{
+    const p=document.querySelector('[data-foe-info-panel]');
+    if(!p)return {open:false};
+    const keys=[...p.querySelectorAll('[data-foe-info-panel] .foeInfoKey')].map(e=>e.innerText.trim());
+    const rows=[...p.querySelectorAll('[data-foe-info-panel] > div > div')];
+    const txt=p.innerText;
+    const skills=[...p.querySelectorAll('[data-foe-skill]')].map(e=>({id:e.getAttribute('data-foe-skill'),
+      kind:e.getAttribute('data-kind'),note:(e.querySelector('[data-skill]')?1:0)||e.innerText.replace(/\\s+/g,' ').trim().length}));
+    return {open:true,name:!!p.querySelector('[data-foe-info-name]'),
+      label:p.getAttribute('aria-label')||'',keys,rows:rows.length,
+      hasTags:txt.includes('性质'),hasFrom:txt.includes('来历'),hasSkills:txt.includes('技能'),
+      fromLine:(txt.match(/来历[^\\n]*\\n([^\\n]*)/)||[])[1]||'',
+      nSkills:skills.length,kinds:[...new Set(skills.map(s=>s.kind))],
+      close:!!p.querySelector('[data-foe-info-close]')}})()`)
+  ok('N3e 敌人信息：点「信息」翻开一页（性质 · 来历 · 技能），有名字与关闭钮',
+    nInfo.open === true && nInfo.name === true && nInfo.close === true
+    && nInfo.hasTags === true && nInfo.hasFrom === true && nInfo.hasSkills === true
+    && nInfo.nSkills >= 1 && nInfo.label.includes('敌人信息'),
+    JSON.stringify({keys: nInfo.keys, n: nInfo.nSkills, kinds: nInfo.kinds, label: nInfo.label}))
+  ok('N3e2 敌人信息：来历一栏确实有出处（指名首领写原文哪一段，观测体照实说自己是现推的）',
+    typeof nInfo.fromLine === 'string' && nInfo.fromLine.trim().length >= 4,
+    `来历 → ${String(nInfo.fromLine).slice(0, 60)}`)
+  await ev(`(()=>{const b=document.querySelector('[data-foe-info-close]');if(b)b.click();return true})()`)
+  await sleep(200)
+  const nInfoAfter = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
+    return {gone:!document.querySelector('[data-foe-info-panel]'),
+      hand:document.querySelector('[data-hand]')?document.querySelector('[data-hand]').getAttribute('data-hand'):'',
+      actor:c?c.getAttribute('data-actor'):null,
+      cards:document.querySelectorAll('[data-foe-card]').length,
+      menu:!!document.querySelector('[data-command-menu]')||!!document.querySelector('[data-sub-panel]')}})()`)
+  ok('N3e3 敌人信息（对照）：看完关掉不占回合、不动战局（手数不变 · 敌阵与指令原样）',
+    nInfoAfter.gone === true && nInfoAfter.hand === nInfoBefore.hand
+    && nInfoAfter.cards === nTier.n, JSON.stringify({before: nInfoBefore, after: nInfoAfter}))
+
+  /* N3f：敌阵版式 —— 这一条是踩过的坑：
+     .arena 是 overflow: hidden，敌阵原先允许折行，小怪一多就折到第二行，
+     那半截被裁掉 —— **看得见、点不中**（挑目标点的是卡本体本身）。
+     所以钉住三件事：每张卡都在战场框里、两两不横向重叠、头目那张在正中。
+     机器人的点击走 DOM 的 .click()，绕过了命中判定 —— 它永远发现不了这个坑，
+     只有量矩形才看得见。 */
+  const nGeo = await ev(`(()=>{
+    const A=document.querySelector('[data-enemy-field]');
+    const cards=[...document.querySelectorAll('[data-foe-card]')];
+    if(!A||!cards.length)return {ok:false,why:'没有战场或没有卡'};
+    const ar=A.getBoundingClientRect();
+    const rects=cards.map(c=>({id:c.getAttribute('data-foe-card'),r:c.getBoundingClientRect(),
+      mid:c.closest('[data-foe-mid]')?1:0,tier:(c.querySelector('[data-foe-tier]')||{}).getAttribute?c.querySelector('[data-foe-tier]').getAttribute('data-foe-tier'):null}));
+    const out=rects.filter(x=>x.r.left<ar.left-1||x.r.right>ar.right+1||x.r.top<ar.top-1||x.r.bottom>ar.bottom+1)
+      .map(x=>x.id);
+    const over=[];
+    for(let i=0;i<rects.length;i++)for(let j=i+1;j<rects.length;j++){
+      const a=rects[i].r,b=rects[j].r;
+      const vOverlap=Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
+      const hOverlap=Math.min(a.right,b.right)-Math.max(a.left,b.left)>1;
+      if(vOverlap&&hOverlap)over.push(rects[i].id+'×'+rects[j].id);
+    }
+    const bars=[...document.querySelectorAll('[data-foe-hpbar]')].map(e=>{const r=e.getBoundingClientRect();
+      return {t:e.getAttribute('data-foe-hpbar'),w:Math.round(r.width),h:Math.round(r.height)}});
+    const mids=rects.filter(x=>x.mid);
+    const midC=mids.length?mids[0].r.left+mids[0].r.width/2:null;
+    const midTier=mids.length?mids[0].tier:null;
+    return {ok:true,arity:cards.length,outside:out,overlap:over,
+      midCount:mids.length,midTier,midC,arenaC:ar.left+ar.width/2,
+      bars,barSame:bars.length>0&&bars.every(b=>b.w===bars[0].w&&b.h===bars[0].h),
+      downCards:cards.filter(c=>c.getAttribute('data-foe-down')==='1').length}})()`)
+  ok('N3f 敌阵版式：每张敌卡都在战场框内（不被 overflow 裁掉 —— 裁掉的那半截点不中）',
+    nGeo.ok === true && nGeo.outside.length === 0,
+    nGeo.ok ? `${nGeo.arity} 张卡，越界 ${JSON.stringify(nGeo.outside)}` : nGeo.why)
+  ok('N3f2 敌阵版式：敌卡两两不重叠（叠在一起的那张点不到）',
+    nGeo.ok === true && nGeo.overlap.length === 0, JSON.stringify(nGeo.overlap))
+  ok('N3f3 敌阵版式：中列恒是头目档，且落在战场正中（小怪多一只也不左右漂）',
+    nGeo.ok === true && nGeo.midCount === 1
+    && (nGeo.midTier === 'boss' || nGeo.midTier === 'elite')
+    && Math.abs(nGeo.midC - nGeo.arenaC) <= 2,
+    JSON.stringify({midCount: nGeo.midCount, midTier: nGeo.midTier, midC: nGeo.midC, arenaC: nGeo.arenaC}))
+  ok('N3f4 血量条：敌阵每一条都一样大小（血量不同而已），头目那条只换外形',
+    nGeo.ok === true && nGeo.bars.length >= 1 && nGeo.barSame === true,
+    JSON.stringify(nGeo.bars))
+  /* N3f5 挤满：召唤物是打出来的，机器人不一定凑得齐六只 —— 那就在 DOM 里把敌卡临时补到六只，
+     量完立刻撤。量的是真布局（overflow: hidden 的战场 + 两翼一列），所以「六只挤不挤得下」
+     是当场验的，不是等运气。 */
+  const nDense = await ev(`(()=>{
+    const row=document.querySelector('[data-enemy-field]');if(!row)return {why:'没有战场'};
+    const src=row.querySelector('[data-foe-card]');if(!src)return {why:'没有敌卡'};
+    const wings=[...row.querySelectorAll('[data-foe-wing]')];
+    if(wings.length!==2)return {why:'翼数 '+wings.length};
+    const made=[];
+    try{
+      let n=row.querySelectorAll('[data-foe-card]').length,i=0;
+      while(n<6){const c=src.cloneNode(true);c.setAttribute('data-foe-clone','1');
+        wings[(i++)%2].appendChild(c);made.push(c);n++}
+      const ar=row.getBoundingClientRect();
+      const cards=[...row.querySelectorAll('[data-foe-card]')];
+      const rs=cards.map(c=>c.getBoundingClientRect());
+      const outside=cards.filter((c,k)=>{const r=rs[k];
+        return r.left<ar.left-1||r.right>ar.right+1||r.bottom>ar.bottom+1}).length;
+      let ov=0;
+      for(let a=0;a<rs.length;a++)for(let b=a+1;b<rs.length;b++){
+        const A=rs[a],B=rs[b];
+        if(Math.min(A.bottom,B.bottom)-Math.max(A.top,B.top)>1
+          &&Math.min(A.right,B.right)-Math.max(A.left,B.left)>1)ov++}
+      const mids=[...row.querySelectorAll('[data-foe-mid] [data-foe-card]')];
+      const midOk=mids.length===1&&Math.abs((mids[0].getBoundingClientRect().left
+        +mids[0].getBoundingClientRect().width/2)-(ar.left+ar.width/2))<=2;
+      const wn=wings.map(w=>w.querySelectorAll('[data-foe-card]').length);
+      return {n:cards.length,outside,ov,midOk,wings:wn,bal:Math.abs(wn[0]-wn[1])<=1,
+        minW:Math.round(Math.min.apply(null,rs.map(r=>r.width)))};
+    } finally { made.forEach(c=>c.remove()) }
+  })()`)
+  ok('N3f5 挤满：敌卡补到六只时仍不越界 · 不叠压 · 中列仍在正中 · 两翼差不超过一只（临时补的卡量完即撤）',
+    nDense.why === undefined && nDense.outside === 0 && nDense.ov === 0
+    && nDense.midOk === true && nDense.bal === true,
+    JSON.stringify(nDense))
 
   // N3b：敌方怎么出手 —— 本段已掐掉 api:main，必须落在离线判断上
   const nCmd = await ev(`(()=>{const c=document.querySelector('[data-enemy-command]');const r=document.querySelector('[data-battle]');
@@ -1628,6 +1764,31 @@ try {
         side:(()=>{const l=document.querySelector('[data-battle-log]'),a=document.querySelector('[data-enemy-field]');
           if(!l||!a)return false;const L=l.getBoundingClientRect(),A=a.getBoundingClientRect();
           return L.left>=A.right-1&&L.width>=200&&L.height>=A.height*0.6})(),
+        // 倒下：化开那一层得挂在**倒下的那些**身上。它只闪那么一下，
+        // 所以每一帧都数：这一帧有几只倒下、其中几只挂着化开层、有没有哪只漏了。
+        vanish:(()=>{const down=[...document.querySelectorAll('[data-foe-card]')]
+            .filter(c=>c.getAttribute('data-foe-down')==='1');
+          if(down.length)window.__vanishSaw=(window.__vanishSaw||0)+1;
+          if(document.querySelector('[data-foe-vanish]'))window.__sawVanish=1;
+          if(down.some(c=>!c.querySelector('[data-foe-vanish]')))window.__vanishBad=(window.__vanishBad||0)+1;
+          return window.__sawVanish||0 })(),
+        // 敌阵版式：从两只起就量 —— 两翼已经分得出来了。门槛原先卡在三只，
+        // 而这一场未必召得出杂兵，于是整段一帧都没量到、断言空着。
+        geo:(()=>{const cards=[...document.querySelectorAll('[data-foe-card]')];
+          if(cards.length<2)return 0;
+          const A=document.querySelector('[data-enemy-field]');if(!A)return 0;
+          const ar=A.getBoundingClientRect();
+          window.__geoSaw=(window.__geoSaw||0)+1;
+          window.__geoMaxCards=Math.max(window.__geoMaxCards||0,cards.length);
+          const bad=cards.some(c=>{const r=c.getBoundingClientRect();
+            return r.left<ar.left-1||r.right>ar.right+1||r.top<ar.top-1||r.bottom>ar.bottom+1});
+          const mids=[...document.querySelectorAll('[data-foe-mid] [data-foe-card]')];
+          const midOk=mids.length===1
+            && Math.abs((mids[0].getBoundingClientRect().left+mids[0].getBoundingClientRect().width/2)-(ar.left+ar.width/2))<=2;
+          const wings=[...document.querySelectorAll('[data-foe-wing]')].map(w=>w.querySelectorAll('[data-foe-card]').length);
+          const bal=wings.length===2&&Math.abs(wings[0]-wings[1])<=1;
+          if(bad||!midOk||!bal)window.__geoBad=(window.__geoBad||0)+1;
+          return 1})(),
         kinds:[...document.querySelectorAll('[data-skill-list] [data-skill]')].map(b=>b.getAttribute('data-kind'))}})()`)
     if (!snap || snap.r) break
     if (snap.hand) handNow = Math.max(handNow, Number(snap.hand) || 0)
@@ -1780,6 +1941,40 @@ try {
   // 战报是右栏，不是压在战场脚下的横条
   ok('N5f4 观测频道挂在右侧栏（与战场横向不重叠，不再挡视野）',
     sawSideLog === true, `side=${sawSideLog}`)
+  /* 敌阵版式（整场复核）—— N3f 那几条是开局量的一张快照，这条盯的是整场每一帧：
+     血量掉下去、有人倒下、召唤物上场之后，版式还站不站得住。
+     同上：机器人点的是 DOM 的 .click()，绕过命中判定 —— 只有量矩形才看得见。
+     六只挤在一起的极版式由 N3f5 当场补卡量，不指望这一场正好召出来。 */
+  const geoRun = await ev(`({saw:window.__geoSaw||0,bad:window.__geoBad||0,max:window.__geoMaxCards||0})`)
+  const geoTail = `两只以上的帧 ${geoRun.saw} 帧 · 越界/偏中/失衡 ${geoRun.bad} 帧 · 场上最多 ${geoRun.max} 只`
+  if (geoRun.saw === 0) skip('N5f5 敌阵版式（整场）：两只以上的每一帧，敌卡都不越界 · 中列在正中 · 两翼差不超过一只',
+    `这一场没走到两只以上，没得量 · ${geoTail}`)
+  else ok('N5f5 敌阵版式（整场）：两只以上的每一帧，敌卡都不越界 · 中列在正中 · 两翼差不超过一只',
+    geoRun.bad === 0, geoTail)
+  /* 倒下：化开那一层只挂在倒下的那些身上 —— 一只不多、一只不少。
+     拿「倒下的卡」与「化开层」两个数对着数，比「见过一次就算数」结实：
+     后者在「一只都没倒下」的场里也能过，等于没测。
+     这一场最后要是没人倒下（撤出/失败），就退回整场逐帧攒下的那两个数；
+     两级都没有（整场一只都没倒过）才算没得量 —— 报 SKIP，不报 PASS。 */
+  const nDown = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-foe-card]')];
+    const down=cards.filter(c=>c.getAttribute('data-foe-down')==='1');
+    return {cards:cards.length,down:down.length,
+      vanish:document.querySelectorAll('[data-foe-vanish]').length,
+      marks:down.filter(c=>c.querySelector('[data-foe-vanish]')).length,
+      footDim:down.filter(c=>{const f=c.querySelector('[data-foe-foot]');
+        return f&&Number(getComputedStyle(f).opacity)<0.9}).length,
+      saw:window.__sawVanish||0,sawDown:window.__vanishSaw||0,badDown:window.__vanishBad||0}})()`)
+  const nDownName = 'N5f6 倒下的怪各自化开（化开层与倒下的卡一一对应 · 脚下读数跟着淡出）'
+  if (nDown.down > 0) {
+    ok(nDownName, nDown.down === nDown.vanish && nDown.down === nDown.marks
+      && nDown.footDim === nDown.down && nDown.sawDown > 0,
+      JSON.stringify(nDown))
+  } else if (nDown.sawDown > 0) {
+    ok(`${nDownName}（收场时已无倒下的卡，改为整场逐帧核对）`,
+      nDown.badDown === 0 && nDown.saw === 1, JSON.stringify(nDown))
+  } else {
+    skip(nDownName, `整场没有敌人倒下，没得量 ${JSON.stringify(nDown)}`)
+  }
   // 槽满 ≠ 接上了：防御只蓄拍、不接招。牌上要挂「出手即接」，防御时日志要把这句说白
   ok('N5f2b 槽满时牌上挂「出手即接」提示（否则玩家只看到槽停在上限）',
     sawGaugeFull === false || sawHint === true, `gaugeFull=${sawGaugeFull} hint=${sawHint} 槽最高蓄到=${gmax}`)
@@ -1931,7 +2126,7 @@ try {
     console.error('--- page text head ---\n' + dbg)
   } catch { /* ignore */ }
 } finally {
-  console.log(`\n=== ${failures === 0 && passAll ? 'SMOKE PASS' : 'SMOKE FAIL'} · failures=${failures} ===`)
+  console.log(`\n=== ${failures === 0 && passAll ? 'SMOKE PASS' : 'SMOKE FAIL'} · failures=${failures} · skipped=${skips} ===`)
   try { edge.kill() } catch { /* ignore */ }
   try { preview.kill() } catch { /* ignore */ }
   try { stub.close() } catch { /* ignore */ }

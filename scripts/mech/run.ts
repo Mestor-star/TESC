@@ -22,7 +22,7 @@ import {
   act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, createBattle,
   endureCap, enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
 } from '../../src/lib/battle/engine'
-import { combatantOf, enemiesOf, foeLineOrder, minionOf } from '../../src/lib/battle/derive'
+import { combatantOf, enemiesOf, enemyFormation, minionOf } from '../../src/lib/battle/derive'
 import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
 import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
@@ -50,6 +50,8 @@ import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/l
 import { API_DEFAULTS } from '../../src/lib/api'
 import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, needsContentRefresh, shouldAutoStart, shouldSettleDown } from '../../src/lib/builtin-presets'
 import type { FloorLedger } from '../../src/lib/builtin-presets'
+import { BUILTIN_GROUPS, BUILTIN_GROUP_IDS, needsGroupRefresh, shouldSeedGroup } from '../../src/lib/smsthreads'
+import { charOf } from '../../src/data/personas'
 import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 import { EVENT_BRIEFS } from '../../src/data/briefs'
@@ -1563,22 +1565,64 @@ export function run(): MechReport {
       strangers.length === 0,
       strangers.length ? strangers.join('、') : `逐段核对 ${codexEvents.length} 段`)
 
-    /* 敌阵站位：最硬的站中间（见 derive.foeLineOrder）。
-       拿字母当单位验**形状**：a 是这一场的头目档（enemiesOf 把最硬的那个生成在头一名）。 */
-    const line3 = foeLineOrder(['a', 'b', 'c'])
-    const line4 = foeLineOrder(['a', 'b', 'c', 'd'])
-    const line5 = foeLineOrder(['a', 'b', 'c', 'd', 'e'])
-    ok('敌阵站位：三只时头一名落在中线，另两只分列两侧',
-      line3.join('') === 'cab', `三只 → ${line3.join('')}`)
-    ok('敌阵站位：四只、五只时头一名仍在中线附近，其余从中间往两边交替铺开',
-      line4.join('') === 'cabd' && line5.join('') === 'ecabd',
-      `四只 → ${line4.join('')}　五只 → ${line5.join('')}`)
-    ok('敌阵站位（对照）：两只及以下不重排 —— 两个位置没有「中间」，硬排反而把主次弄反',
-      foeLineOrder(['a', 'b']).join('') === 'ab' && foeLineOrder(['a']).join('') === 'a',
-      `两只 → ${foeLineOrder(['a', 'b']).join('')}　一只 → ${foeLineOrder(['a']).join('')}`)
-    ok('敌阵站位（对照）：重排只动显示序，人数与成员一毫不差（不是把谁弄丢了）',
-      [...line5].sort().join('') === 'abcde' && line5.length === 5,
-      `五只排序后 → ${[...line5].sort().join('')}`)
+    /* 敌阵站位：头目站正中、召唤物分列两翼（见 derive.enemyFormation）。
+       拿带档位的单位验**形状**：tier 有值的就是头目档（enemiesOf 把最硬的那个
+       生成在头一名，召唤物一律 tier 为空）。
+
+       为什么非得分三列不可 —— 这一条是踩过的坑：
+       原先敌阵排成一行、允许折行，而 .arena 是 overflow: hidden。
+       小怪一多就折到第二行，那半截被裁掉：**看得见、点不中**
+       （挑目标点的是卡本体，被裁的部分不在可命中区里）。
+       所以「不折行」不是版式偏好，是可玩性 —— 两翼要能自己收窄到排得下。 */
+    const F = (id: string, tier?: string) => ({ id, tier })
+    const shape = (arr: { id: string }[]) => arr.map((x) => x.id).join('')
+    const f3 = enemyFormation([F('a', 'boss'), F('b'), F('c')])
+    const f5 = enemyFormation([F('a', 'boss'), F('b'), F('c'), F('d'), F('e')])
+    const f6 = enemyFormation([F('a', 'boss'), F('b'), F('c'), F('d'), F('e'), F('f')])
+    ok('敌阵站位：头目档恒在中列 —— 1 只到 6 只都不动',
+      f3.mid?.id === 'a' && f5.mid?.id === 'a' && f6.mid?.id === 'a'
+      && enemyFormation([F('a', 'boss')]).mid?.id === 'a',
+      `三只 → 中列 ${f3.mid?.id}　五只 → ${f5.mid?.id}　六只 → ${f6.mid?.id}`)
+    ok('敌阵站位：召唤物分列两翼，且两翼只差一只（不会一边堆成一坨）',
+      Math.abs(f5.left.length - f5.right.length) <= 1
+      && Math.abs(f6.left.length - f6.right.length) <= 1
+      && f3.left.length === 1 && f3.right.length === 1,
+      `三只 → 左${f3.left.length}／右${f3.right.length}　五只 → 左${f5.left.length}／右${f5.right.length}`
+      + `　六只 → 左${f6.left.length}／右${f6.right.length}`)
+    ok('敌阵站位：一个人都没弄丢、也没多出来（两翼并起来就是原阵去掉中列那位）',
+      shape(f6.right) + shape(f6.left) === 'bcdef'
+      && shape(f5.right) + shape(f5.left) === 'bcde'
+      && f6.left.length + f6.right.length + 1 === 6
+      && [...f6.left, ...f6.right, f6.mid!].map((x) => x.id).sort().join('') === 'abcdef',
+      `六只 → 右 ${shape(f6.right)}／左 ${shape(f6.left)}／中 ${f6.mid?.id}`)
+    /* 上面那条「右接左」不是随便定的：它说的是**离中列越近、排位越靠前**。
+       召唤物带排行字（甲乙丙丁，见 minionOf），排位一乱就分不清谁是谁 ——
+       所以两翼各自内部必须保序，只能整体绕中列摆开。 */
+    ok('敌阵站位：两翼各自内部保序（中列排在阵尾时，也是从远端往中列数，不把甲乙丙丁打乱）',
+      shape(f6.left) === 'ef' && shape(f6.right) === 'bcd'
+      && shape(f5.left) === 'de' && shape(f5.right) === 'bc',
+      `六只 → 左 ${shape(f6.left)}／右 ${shape(f6.right)}　五只 → 左 ${shape(f5.left)}／右 ${shape(f5.right)}`)
+    ok('敌阵站位（对照）：空阵不硬塞一个中列出来（零敌时 <Foe> 不该被渲染）',
+      enemyFormation([]).mid === null && enemyFormation([]).left.length === 0
+      && enemyFormation([]).right.length === 0,
+      '零敌 → 中列 null')
+    /* 二阶段：首领换人站中间 —— 旧首领倒下后，站中列的必须是**顶上的那个**
+       （masked-kokonoha 的 BLACK 是 push 到 enemies 尾上的，不是换掉头一名）。 */
+    const two = enemyFormation<{ id: string; tier?: string; down?: boolean }>([
+      { id: 'a', tier: 'boss', down: true }, F('b'), F('c'), F('d', 'boss'),
+    ])
+    ok('敌阵站位：二阶段顶上的首领站中列（换人不换列 —— 不是让倒掉的旧首领占着中间）',
+      two.mid?.id === 'd'
+      && [...two.left, ...two.right].map((x) => x.id).sort().join('') === 'abc',
+      `旧首领 a 已倒、新首领 d 顶上 → 中列 ${two.mid?.id}　两翼 ${[...two.left, ...two.right].map((x) => x.id).join('')}`)
+    /* 头目档倒光了：中列退回第一个还站着的，别把一具尸首供在正中 */
+    const dead: { id: string; tier?: string; down?: boolean }[] = [
+      { id: 'a', tier: 'boss', down: true }, { id: 'b' }, { id: 'c' },
+    ]
+    const downed = enemyFormation(dead)
+    ok('敌阵站位：中列那位倒下时中列仍有人（改取第一个还站着的，不让两翼在中间对穿）',
+      downed.mid?.id === 'b',
+      `首领 a 已倒 → 中列 ${downed.mid?.id}`)
 
     /* ④ 那一位真的站到 enemies[0] 上去 —— 两条路各走一遍。
        主线牌面走 mainlineMissions（要先把前面几段标记成已归档，牌面才翻到这一段）；
@@ -2164,6 +2208,42 @@ export function run(): MechReport {
       badRefresh.length ? badRefresh.map(([, , , why]) => why).join('；')
         : refresh.map(([, , want, why]) => `${why}→${want ? '换' : '不动'}`).join('　'))
 
+    /* ②d2 内置群聊：名单只有两个，且名单里的人必须真的存在。
+       「群聊」这一层最容易悄悄长出来的毛病是**凭空多一个群或一个人** ——
+       编出来的人名不会在任何档案里报错，只会在系统提示里被当作真人写台词。
+       所以两头都钉：群名就是正文里那两个，成员必须过 charOf。 */
+    ok('短信：内置群聊只有「恋兔队」与「苍之学园」两个（不额外播任何群）',
+      BUILTIN_GROUPS.length === 2
+      && BUILTIN_GROUPS.map((g) => g.name).join('｜') === '恋兔队｜苍之学园',
+      BUILTIN_GROUPS.map((g) => `${g.name}(${g.charIds.length})`).join('　'))
+    const ghost = BUILTIN_GROUPS.flatMap((g) => g.charIds.filter((id) => !charOf(id)).map((id) => `${g.name}:${id}`))
+    const tooFew = BUILTIN_GROUPS.filter((g) => g.charIds.length < 2).map((g) => g.name)
+    ok('短信：内置群聊成员都在册（无凭空的成员名），且都不少于两人',
+      ghost.length === 0 && tooFew.length === 0 && BUILTIN_GROUP_IDS.length === new Set(BUILTIN_GROUP_IDS).size,
+      ghost.length ? `不在册：${ghost.join('、')}` : tooFew.length ? `不足两人：${tooFew.join('、')}` : '成员全部在册')
+
+    /* 补种与换稿：删掉的那个不许塞回来 —— 否则「解散群」在这个终端里不算数。 */
+    const seedCases: Array<[string[], string, string[], boolean, string]> = [
+      [[], BUILTIN_GROUP_IDS[0], ['user-made'], true, '账上没记、列表里也没有'],
+      [[BUILTIN_GROUP_IDS[0]], BUILTIN_GROUP_IDS[0], ['user-made'], false, '账上记过（用户删了）'],
+      [[], BUILTIN_GROUP_IDS[0], [BUILTIN_GROUP_IDS[0]], false, '列表里已经有'],
+    ]
+    const badSeed = seedCases.filter(([s, id, inList, want]) => shouldSeedGroup(s, id, inList) !== want)
+    ok('短信：内置群聊只补不重播，用户解散过的不塞回来',
+      badSeed.length === 0,
+      badSeed.length ? badSeed.map(([, , , , why]) => why).join('；')
+        : seedCases.map(([, , , want, why]) => `${why}→${want ? '补' : '不动'}`).join('　'))
+    const grpRefresh: Array<[number, string[], boolean, string]> = [
+      [0, [BUILTIN_GROUP_IDS[0]], true, '旧账本 + 群还在'],
+      [1, [BUILTIN_GROUP_IDS[0]], false, '账本已是当前版本'],
+      [0, [], false, '用户解散了这个群'],
+    ]
+    const badGrp = grpRefresh.filter(([v, inList, want]) => needsGroupRefresh(v, BUILTIN_GROUP_IDS[0], inList) !== want)
+    ok('短信：内置群聊改了名单，老装机下一轮启动换得上稿（解散过的不动）',
+      badGrp.length === 0,
+      badGrp.length ? badGrp.map(([, , , why]) => why).join('；')
+        : grpRefresh.map(([, , want, why]) => `${why}→${want ? '换' : '不动'}`).join('　'))
+
     /* ②e 预设自己带着两条硬要求，改预设时不许顺手删掉：
        「思考纪律」（思考要收得住、不想一出是出）与「说话一律『人物名字：』」。
        代码里那一条（speechContract）管的是最后一道收口，预设这一层是让模型**一开始**就这么写。 */
@@ -2735,6 +2815,48 @@ export function run(): MechReport {
       && late.includes('不许再退回契约前那种'),
       `读 ${earlyEv.id} 时=${early.includes('不许她叫「主人」「小主人」')}`
       + `　读 ${lateEv.id} 时=${late.includes('不许再退回契约前那种')}`)
+
+    /* 全体登记角色的通则（不止露娜一个）。
+       分期是**按读到的位置**换层的：分界点写错一个字母，那一层就永远够不着 ——
+       敲成表外的 id 时，`temperAt` 一路回退到第一段，读到最后还是初期的样子，
+       屏上不会报错，只会「越读越不像话」。所以逐条钉死：
+         · 分界点必须是真事件（`from` 敲错 = 那一段永远不生效）
+         · 分界点必须**递增**（写反了等于后面那段被前面压住）
+         · 第一段不带 `from`（它是「读到这里之前的全部」）
+         · 每一段都得有 note 与 forbid —— 没有禁忌的分期等于没分 */
+    const badFrom: string[] = []
+    const badOrder: string[] = []
+    const thin: string[] = []
+    const lateMiss: string[] = []
+    for (const [id, stages] of Object.entries(TEMPER)) {
+      if (!stages?.length) continue
+      if (stages[0]!.from) badFrom.push(`${id} 首段也写了 from=${stages[0]!.from}`)
+      let prev = -1
+      for (const s of stages) {
+        if (s.from) {
+          const i = TIMELINE.findIndex((e) => e.id === s.from)
+          if (i < 0) badFrom.push(`${id} 的 from=${s.from} 不在时间线上`)
+          else if (i <= prev) badOrder.push(`${id} 的 from=${s.from} 没有往后走`)
+          else prev = i
+          /* 分界那一段真的翻得动才算数：读到分界点前一节还是上一段，
+             读到分界点当节就换成这一段（边界差一格是最常见的错法）。 */
+          const before = temperAt(id as CharId, 100, i - 1)
+          const at = temperAt(id as CharId, 100, i)
+          if (at !== s || before === s) lateMiss.push(`${id} @${s.from}`)
+        }
+        if (!s.note?.trim() || !(s.forbid ?? []).length) thin.push(`${id} 有一段缺 note/forbid`)
+      }
+    }
+    ok('性情分期：分界点都是真事件，且首段不带分界（敲错一个 id，那一段就永远够不着）',
+      badFrom.length === 0, badFrom.length ? badFrom.join('、') : `逐角色核对 ${Object.keys(TEMPER).length} 位`)
+    ok('性情分期：同一个人身上，分界点依次往后（写反了就是后面那层被前面压住）',
+      badOrder.length === 0, badOrder.length ? badOrder.join('、') : '顺序逐条递增')
+    ok('性情分期：每一段都带 note 与 forbid（没有禁忌的分期等于没分）',
+      thin.length === 0, thin.length ? thin.join('、') : '逐段齐全')
+    ok('性情分期：读到分界点前仍叠上一段、到分界点当节才翻篇（边界差一格是最常见的错法）',
+      lateMiss.length === 0,
+      lateMiss.length ? `翻篇位置不对：${lateMiss.join('、')}`
+        : `逐段核对边界 ${Object.values(TEMPER).reduce((n, s) => n + (s?.filter((x) => x.from).length ?? 0), 0)} 处`)
 
     info.push(`性情分期：TEMPER 现有 ${Object.keys(TEMPER).length} 个角色登记`
       + `（${Object.keys(TEMPER).map((k) => `${k}×${TEMPER[k as CharId]!.length} 段`).join('　')}）`)

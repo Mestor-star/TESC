@@ -1,4 +1,4 @@
-import type { Character } from './types'
+import type { Character, CharId } from './types'
 
 /**
  * 苍之学园 · 终末停滞委员会（恋兔队）核心成员档案
@@ -14,6 +14,12 @@ import type { Character } from './types'
  * 注：常态 '∞' 者极限亦记 '∞'，UI 显示「∞/∞」。
  * 言万心叶（低语者持有者 / 登记为 Stage4『活性化』）为操作员本人，不在此列表，由终端状态动态渲染。
  */
+/** 是不是主役那四位（`CharId`）。名单收得住的地方（托付的「来自谁」、聊天气泡的落位）
+    用它把宽表里的人物 id 收回来 —— 猜是猜不出来的，只能查表。 */
+export function isCharId(id: string): id is CharId {
+  return CHARACTERS.some((c) => c.id === id)
+}
+
 export const CHARACTERS: Character[] = [
   {
     id: 'hikari',

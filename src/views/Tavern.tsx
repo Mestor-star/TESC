@@ -3,6 +3,7 @@ import { Lock, PaperPlaneTilt, Stop, Eraser, Plus, Check, Trash, UsersThree, Lis
 
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
+import { isCharId } from '../data/chars'
 import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -19,7 +20,7 @@ import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/p
 import { loreHitsOf } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import type { GroupThread } from '../lib/smsthreads'
-import { listGroups, makeGroup, nameOf, storeGroups } from '../lib/smsthreads'
+import { ensureBuiltinGroups, listGroups, makeGroup, nameOf, storeGroups } from '../lib/smsthreads'
 import {
   groupSystemPrompt, isGroupThread, loadSmsLogs, markRead, newMsgId,
   parseGroupReply, smsLogVersion, smsTurns, subscribeSmsLog, subscribeUnread, systemPrompt,
@@ -72,6 +73,13 @@ export function Tavern() {
 
   useEffect(() => {
     loadProfile('sms').then(setSettings).catch(() => setSettings(null))
+  }, [])
+
+  /* 内置群聊（恋兔队 / 苍之学园）在这里入册：名册是同步读 localStorage 的，
+     启动那一步写在别的页面上也可能还没走过（直接开短信页时），所以这里再兜一次 ——
+     播种幂等，走过就不再写盘。 */
+  useEffect(() => {
+    if (ensureBuiltinGroups()) setGroups(listGroups())
   }, [])
 
   /* 会话落盘一律经 lib/sms.ts（写入即落盘，不再靠 state 副作用回写）——
@@ -424,18 +432,21 @@ ${preset.post}` : '')
         const sd = smsDirective(parsed.directive, '')
         const bondFx: { name: string; delta: number }[] = []
         for (const b of parsed.directive?.bond ?? []) {
-          if (!g.charIds.includes(b.char as CharId)) continue
+          if (!g.charIds.includes(b.char)) continue
           const delta = Math.max(-3, Math.min(3, Math.round(b.delta)))
           if (!delta) continue
-          bumpBond(b.char as CharId, delta)
+          bumpBond(b.char, delta)
           bondFx.push({ name: charOf(b.char)?.name ?? b.char, delta })
         }
         const flags = Object.entries(sd.flag ?? {})
         for (const [k, v] of flags) setFlag(k, v)
         const newTasks = parsed.directive?.task ?? []
         const speakerId = lines.find((l) => l.who)?.who
-        const from = (speakerId && g.charIds.find((id) => charOf(id)?.name === speakerId)) || g.charIds[0]
-        for (const task of newTasks) addTask(task.title, { detail: task.detail, from })
+        /* 托付的「来自谁」照旧只认主役那四位（SmsTask.from 是 CharId，电话页那枚头像照它取立绘）。
+           群里由会长或副官托付时，落到第一位主役成员名下 —— 是谁说的，正文里写着，不丢。 */
+        const spoke = speakerId ? g.charIds.find((id) => charOf(id)?.name === speakerId) : undefined
+        const from = (spoke && isCharId(spoke) ? spoke : g.charIds.find(isCharId))
+        for (const task of newTasks) addTask(task.title, { detail: task.detail, ...(from ? { from } : {}) })
 
         const hasFx = bondFx.length > 0 || flags.length > 0 || newTasks.length > 0
         for (const line of lines) {
