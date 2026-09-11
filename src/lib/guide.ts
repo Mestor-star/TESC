@@ -39,6 +39,12 @@ export interface GuideTour {
   id: string
   /** 只在某个模块里出现；不给 = 全局 */
   view?: string
+  /**
+   * 绑在哪个**界面**上（不是模块）：只认 'battle'。
+   * 用它的那一段（boss 讲解）不是讲某个模块怎么用，而是讲**这一场怎么打** ——
+   * 所以它既不该在切模块时撤、也不该在退出作战屏之后赖着不走（见 Guide 的轮询）。
+   */
+  field?: 'battle'
   steps: GuideStep[]
 }
 
@@ -501,6 +507,7 @@ const MODULES: GuideTour[] = [
 /** —— 教程之外唯一的例外：boss 这一仗怎么打（终结技能 + 它自己的机制） —— */
 const BOSS: GuideTour = {
   id: 'boss-ult',
+  field: 'battle',
   steps: [
     {
       at: '[data-chant]',

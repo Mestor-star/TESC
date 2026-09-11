@@ -4,9 +4,19 @@
  * 方形头像 + 对话气泡，锚在界面上某个元素旁边，底下一层把其余部分压暗。
  * 讲的是操作，不是剧情：一句一步，「下一步」走完，「跳过教程」直接闭嘴。
  * 文案与出场顺序全在 lib/guide.ts，这里只管怎么摆。
+ *
+ * **必须 portal 到 document.body**（和存读档 / 变量面板 / 作战屏同一个写法）：
+ * App 根挂着开屏动画 `.bootPop`，它的 `animation-fill-mode: both` 让 100% 帧里的
+ * `transform` / `filter` 在动画结束后继续生效 —— 而那两样只要不是 `none`，
+ * 就会把 App 根变成**层叠上下文**。气泡的 `z-index: 900` 是 App 根的后代，
+ * 只能在这个上下文内部比大小；作战屏是 portal 到 body、`z-index: 90` 的兄弟节点，
+ * 在 body 那一层稳稳压住整个 App 根。于是「讲这一场怎么打」的 boss 讲解
+ * 一进作战屏就被整块盖住 —— 讲了，但一个字也看不见。
+ * 换到 body 这一层之后 900 与 90 才真的同场竞技。
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { markDone, nextTour, skipTutorial } from '../lib/guide'
 import type { GuideTour } from '../lib/guide'
@@ -72,6 +82,13 @@ export function Guide() {
   useEffect(() => {
     if (tour?.view && view !== startedIn.current) setTour(null)
   }, [view, tour])
+
+  /* ---- 绑界面的那一段（boss 讲解）退出作战屏就撤 ----
+     它没有 view，上面那条 `tour?.view` 的守卫对它整个短路；
+     玩家打到一半撤退，气泡会赖在终端菜单上不走。 */
+  useEffect(() => {
+    if (tour?.field === 'battle' && !field.inBattle) setTour(null)
+  }, [tour, field.inBattle])
 
   const step = tour && i < tour.steps.length ? tour.steps[i] : undefined
 
@@ -153,7 +170,7 @@ export function Guide() {
     setI(0)
   }
 
-  return (
+  return createPortal(
     <div className={css.layer} data-guide-layer={tour.id} data-guide-step={i}>
       {spot ? (
         <div
@@ -196,6 +213,7 @@ export function Guide() {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
