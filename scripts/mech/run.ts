@@ -1309,10 +1309,11 @@ export function run(): MechReport {
       }
       const links = w.log.filter((l) => /^link-/.test(l.skillId ?? ''))
       return {
-        hits: links.filter((l) => l.skillId === 'link-rival-session').length,
+        hits: links.filter((l) => l.skillId === 'link-rival-vow').length,
         ids: [...new Set(links.map((l) => l.skillId))],
         who: links[0]?.actor ?? '',
         faces: links[0]?.link?.members ?? [],
+        name: links[0]?.link?.name ?? '',
       }
     }
     const withReiya = linkRun('reiya')
@@ -1322,8 +1323,14 @@ export function run(): MechReport {
     ok('面具心叶（对照）：场上换成正对里的别人就接不起来 —— 这一条只认她',
       without.hits === 0, `换 emei 上场　接上 ${without.hits} 次`)
     ok('面具心叶：对面自始至终只有这一条连携（没有第二条掺进来）',
-      withReiya.ids.length === 1 && withReiya.ids[0] === 'link-rival-session',
+      withReiya.ids.length === 1 && withReiya.ids[0] === 'link-rival-vow',
       `日志里出现过的连携：${withReiya.ids.join('、') || '（一条也没有）'}`)
+
+    /* 名字得是**原文里那一件事**，不是自拟的招式名：v4 特典
+       『与少女许下永恒的约定的那一天』。改名字的人先过这一条。 */
+    ok('面具心叶：那一记连携取的是 v4 特典的回目（不是自拟的招式名）',
+      withReiya.name === '与少女许下永恒的约定的那一天',
+      `牌面上写的是「${withReiya.name}」`)
 
     /* 牌面那一笔：members 交回视图的是**人**（档案 id），不是场上的位次号。
        视图拿它查档案 / 取头像（Battle 的 LinkPop）——喂 `foe-mst-v4x1-0` 进去，
