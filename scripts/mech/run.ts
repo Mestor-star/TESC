@@ -694,5 +694,80 @@ export function run(): MechReport {
     fail.push('敌阵段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
+  /* ---------- 9) 会长（艾莉芙・安纳托利亚）：数值天花板不许回涨 ----------
+     这一节钉的不是「机制对不对」，是「这一轮削下去的数有没有被悄悄加回来」。
+     她的问题从来不是打不痛 —— 是「一手把整场拉走」，所以削的是效果量与回转。
+     钉上限而不是钉死值：哪天有人想再松一点，得先来这里把话说清楚。 */
+  try {
+    const alive = ROSTER['alive-anatolia']
+    ok('会长：名册里有这个人', !!alive, alive ? alive.cls : '缺')
+    if (alive) {
+      const at = (id: string) => alive.skills.find((k) => k.id === id)
+      const basic = at('alive-atk')
+      const past = at('alive-past')
+      const edit = at('alive-edit')
+      const burst = at('alive-burst')
+
+      // 击退：抹掉对面一条行动条的那一手，天花板 0.4 条
+      ok('会长：「贯穿过去」的击退不超过 0.4 条',
+        (past?.effect?.pushBack ?? 0) <= 0.4, `pushBack=${past?.effect?.pushBack}`)
+      // 增益：攻击加成天花板 15%，充能 20%
+      ok('会长：「撰写」的攻击加成不超过 15%',
+        (edit?.effect?.atkUp ?? 0) <= 0.15, `atkUp=${edit?.effect?.atkUp}`)
+      ok('会长：「撰写」的充能加成不超过 20%',
+        (edit?.effect?.spdUp ?? 0) <= 0.2, `spdUp=${edit?.effect?.spdUp}`)
+      // 回转：三手冷却都不低于 6 拍（她另有 cdCut 1 折回来，所以门槛不设更高）
+      const cds = [past, edit, burst].map((k) => k?.cd ?? 0)
+      ok('会长：三手冷却都不低于 6 拍（回转不许回到「一手接一手」）',
+        cds.every((c) => c >= 6), `冷却 ${cds.join('／')}`)
+      // 身份：普攻压得比技能低一档
+      ok('会长：普攻压得比技能低一档（她该靠技能吃饭）',
+        (basic?.power ?? 0) <= 1.2 && (basic?.power ?? 0) < (burst?.power ?? 0),
+        `普攻 ×${basic?.power}　到达点 ×${burst?.power}`)
+      // 代价那一栏：效果量加过的东西，体力也得跟着涨
+      const costs = [past, edit, burst].map((k) => k?.cost ?? 0)
+      info.push(`会长读数：普攻 ×${basic?.power}　`
+        + `贯穿过去 击退 ${past?.effect?.pushBack}／体力 ${past?.cost}　`
+        + `撰写 atkUp ${edit?.effect?.atkUp}　spdUp ${edit?.effect?.spdUp}／体力 ${edit?.cost}　`
+        + `到达点 ×${burst?.power}／体力 ${burst?.cost}　冷却 ${cds.join('／')}`)
+      ok('会长：三手的体力消耗都不为 0（效果是买的，不是白送的）',
+        costs.every((c) => c > 0), costs.join('／'))
+    }
+
+    // 冷却计数口径：只在「她自己出手」时往下走 —— 这是 #14 的第三条要求
+    const s = createBattle({
+      mission: MISSIONS.slice().sort((a, b) => a.stage - b.stage)[0]!,
+      squad: ['alive-anatolia', 'mefisa'], progress: 1, growth: {},
+      sp: 100, spMax: 100, bond: {},
+    })
+    const her = find(s, 'alive-anatolia')!
+    const mate = find(s, 'mefisa')!
+    const freeze = () => { for (const f of s.enemies) f.bar = -1e6 }
+    const turnOf = (who: Combatant, skillId: string) => {
+      who.sp = 999
+      freeze()
+      s.actor = who.id
+      s.phase = 'select'
+      act(s, { t: 'skill', skillId, targetId: who.id })
+    }
+    turnOf(her, 'alive-edit')
+    const afterCast = her.cds['alive-edit'] ?? 0
+    const mateSkill = mate.skills.find((k) => k.kind === '技能' && k.cost <= 8) ?? mate.skills[0]!
+    for (let i = 0; i < 3; i++) turnOf(mate, mateSkill.id)
+    const afterMate = her.cds['alive-edit'] ?? 0
+    ok('会长：冷却只在「她自己出场」时递减（别人的出手不算数）',
+      afterCast > 0 && afterMate === afterCast,
+      `甩完 ${afterCast} → 同伴出手三次之后 ${afterMate}`)
+    const beforeHer = her.cds['alive-edit'] ?? 0
+    turnOf(her, 'alive-past')
+    const afterHer = her.cds['alive-edit'] ?? 0
+    ok('会长：轮到她自己出手，冷却才真的往下走',
+      afterHer < beforeHer, `${beforeHer} → ${afterHer}（被动 cdCut 1 使它每拍走 2）`)
+    info.push(`冷却口径：会长甩「撰写」后 ${afterCast}，同伴出手三次仍 ${afterMate}，`
+      + `她自己再出一手落到 ${afterHer}`)
+  } catch (e) {
+    fail.push('会长段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
   return { pass, fail, info }
 }
