@@ -745,6 +745,67 @@ try {
     afterReboot.n === 0 && afterReboot.badge === 0 && afterReboot.seen === 2,
     JSON.stringify(afterReboot))
 
+  /* ============ Phase P：背景音（六段现场合成的底噪） ============
+     这里量的是**真浏览器的 Web Audio**：假上下文验得了数值，验不了「这么排会不会被拒」。
+     底噪默认关着，所以要先把它打开 —— 一辈子不听音乐的人不该被这一相影响。
+     做法是把 createOscillator / createBufferSource 数起来（挂在原型上，已建立的上下文也认），
+     再把 window 上的 error 接住：调度器跑在 setInterval 里，它抛错只走这一条路。 */
+  console.log('\n[Phase P] 背景音：底噪开关 · 六段床各排得动 · 调度器不抛错')
+  await goto('终端设置')
+  await sleep(700)
+  const pArm = await ev(`(()=>{
+    window.__au = { src: 0, err: [] };
+    const A = window.AudioContext || window.webkitAudioContext;
+    if (!A) return { ac: false };
+    const co = A.prototype.createOscillator, cb = A.prototype.createBufferSource;
+    A.prototype.createOscillator = function(){ window.__au.src++; return co.apply(this, arguments) };
+    A.prototype.createBufferSource = function(){ window.__au.src++; return cb.apply(this, arguments) };
+    window.addEventListener('error', (e) => window.__au.err.push(String(e.message)));
+    window.addEventListener('unhandledrejection', (e) => window.__au.err.push('rej ' + String(e.reason)));
+    return { ac: true };
+  })()`)
+  ok('P1 页面上是**真** Web Audio（计数已挂上）', pArm.ac === true, JSON.stringify(pArm))
+
+  // 对照：底噪关着、人也不动 —— 计数一点不涨。不立这一条，
+  // 下面涨了多少都说明不了它涨的原因是底噪。
+  const pQuiet0 = await ev(`window.__au.src`)
+  await sleep(1600)
+  const pQuiet1 = await ev(`window.__au.src`)
+  ok('P2 对照：底噪关着且无人操作时，一个音都不合成', pQuiet1 - pQuiet0 === 0, `Δ=${pQuiet1 - pQuiet0}`)
+
+  const pOn = await ev(`(()=>{const b=document.querySelector('[data-audio-bed] button');if(!b)return {found:false};
+    const label=b.innerText;b.click();return {found:true,label}})()`)
+  await sleep(400)
+  const pState = await ev(`(()=>{const b=document.querySelector('[data-audio-bed] button');
+    let s=null;try{s=JSON.parse(localStorage.getItem('zts-audio:v1'))}catch(e){}
+    return {label:b?b.innerText:'',checked:b?b.getAttribute('aria-checked'):null,beds:s?s.beds:null}})()`)
+  ok('P3 打开底噪：开关翻到「开」，并且落进本机设置（zts-audio:v1）',
+    pOn.found === true && pOn.label.includes('关') && pState.checked === 'true' && pState.beds === true,
+    JSON.stringify({ ...pOn, ...pState }))
+
+  /* 走一圈模块：换页即换床 —— 终端 / 剧情 / 短信 / 菜单（标题屏那一段走不到，
+     它只在那一下）都在这一圈里排过；作战与首领两段由前面 Phase N 的战报覆盖。 */
+  const pRoam0 = await ev(`window.__au.src`)
+  for (const v of ['终端总览', '剧情推进', '短信', '角色档案', '武装图鉴', '终端设置']) {
+    await goto(v)
+    await sleep(1100)
+  }
+  const pRoam1 = await ev(`window.__au.src`)
+  const pErrs = await ev(`window.__au.err`)
+  ok('P4 六段床在真浏览器里都排得动（换一次页就排满一小节）', pRoam1 - pRoam0 > 60, `Δ=${pRoam1 - pRoam0}`)
+  ok('P5 调度器一条都没抛错（真 Web Audio 不接受的那几种写法都没碰上）',
+    Array.isArray(pErrs) && pErrs.length === 0, JSON.stringify(pErrs))
+
+  // 标签要等 React 重渲染之后再读 —— 点完立刻读拿到的还是旧的那一行
+  const pOffClick = await ev(`(()=>{const b=document.querySelector('[data-audio-bed] button');if(!b)return false;b.click();return true})()`)
+  await sleep(500)
+  const pOffLabel = await ev(`document.querySelector('[data-audio-bed] button').innerText`)
+  const pOff0 = await ev(`window.__au.src`)
+  await sleep(1500)
+  const pOff1 = await ev(`window.__au.src`)
+  ok('P6 关掉底噪：开关翻回「关」，并且真的不再往下排（停了就是停了）',
+    pOffClick === true && pOffLabel.includes('关') && pOff1 - pOff0 === 0, `label=${pOffLabel} Δ=${pOff1 - pOff0}`)
+
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
   console.log('\n[Phase G] P2 Archive：24卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
   // 档案页已在门禁之后（Phase E 清过 localStorage，此处重新置位），本相聚焦档案本体
@@ -1634,6 +1695,7 @@ try {
   const o4 = await ev(`(()=>{const k=document.querySelector('[data-op-kv]');const t=k?k.innerText:'';
     return {standing:/苍之学园|临时访问/.test(t),pos:/低语者|化身之枪|灵魂共奏/.test(t),pot:/Stage4|未测定/.test(t),txt:t.slice(0,180)}})()`)
   ok('O4 专档口径随观测进度（学园身份 · 战斗定位 · 终末潜力）', o4.standing === true && o4.pos === true && o4.pot === true, JSON.stringify(o4))
+
 } catch (e) {
   passAll = false
   console.error('\nSMOKE ERROR: ' + e.message)

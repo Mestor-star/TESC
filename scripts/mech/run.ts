@@ -39,6 +39,10 @@ import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
+import { BEDS } from '../../src/lib/audio/music'
+import { VIEW_BED } from '../../src/lib/audio/index'
+import { hz } from '../../src/lib/audio/sfx'
+import type { BedName, Chord } from '../../src/lib/audio/music'
 import type { Mission } from '../../src/data/types'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
@@ -1710,6 +1714,123 @@ export function run(): MechReport {
       + `豁免 ${Object.keys(NON_FIGHT_EVENTS).length} 段`)
   } catch (e) {
     fail.push('图鉴实体段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 16) 背景音：六段床各自成不成曲，且不跑调 ----------
+     音乐是纯合成的数据（music.ts 的 BEDS），它的错都长在**换和弦的那一下**：
+       · 铃音写成三度、七度 —— 单看一个小节都对，进行一换和弦就撞；
+       · 旋律与进行不同步 —— 乐句排不满一小节，或者两句用的格子不一样；
+       · 低音写到听不见的八度去（40Hz 以下只剩糊，那条运行时闸门就把它吞了）；
+       · 一段床写好了却没有任何模块放它（VIEW_BED 里没人指），等于白写。
+     这些都不是听一遍能听出来的（听出来的那一下，往往已经上线了），所以钉在这里。
+     每一条都配对照：证明判据本身有牙，而不是「怎么写都过」。 */
+  try {
+    const names = Object.keys(BEDS) as BedName[]
+    /** 一个铃音音程落在哪个音级上（八度往上算，三和弦看得见的那一层） */
+    const pc = (b: number) => (b + 12) % 12
+    const bassOf = (ch: Chord) => hz(ch.r + (ch.b ?? -12))
+    const chords = names.flatMap((n) => BEDS[n].prog.map((ch) => ({ bed: n, ch })))
+
+    /* ① 铃音只许落在八度与五度上 —— 三和弦里都站得住的两个音程 */
+    const offKey = names.flatMap((n) => BEDS[n].prog.flatMap((ch) =>
+      BEDS[n].bells
+        .filter((b) => ![0, 7].includes(pc(b)))
+        .map((b) => `${n} 的铃音 ${b}（相对 ${ch.r}）`)))
+    ok('背景音：铃音只取八度与五度 —— 进行走到哪一个小节都不撞',
+      offKey.length === 0,
+      offKey.length ? offKey.join('；') : `${names.length} 段床共 ${names.reduce((a, n) => a + BEDS[n].bells.length, 0)} 个铃音音程`)
+
+    /* 对照：这条判据不是空谈 —— 三度音（15 = 小三度 + 八度、16 = 大三度 + 八度）
+       落在哪一个音级上，就有一半的小节容不下它：整个进行里，
+       没有一个小节同时收得下这两个音级。判据松成「三度也算」的话，第①条必挂。 */
+    const clashPC = chords.filter(({ ch }) => ch.s.includes(pc(15)) && ch.s.includes(pc(16)))
+    ok('背景音（对照）：三度当铃音，没有一个小节两边都容得下 —— 第①条不是空话',
+      chords.length > 0 && clashPC.length === 0,
+      `${chords.length} 个小节里，同时收得下大三度与小三度的有 ${clashPC.length} 个`)
+
+    /* ② 低音落在听得见、也不跟和声挤在一起的那一段（50–130Hz）；
+          pad 的根音落在和声该在的八度（110–280Hz） */
+    const lowOut = chords.filter(({ ch }) => bassOf(ch) < 50 || bassOf(ch) > 130)
+      .map(({ bed, ch }) => `${bed} 低音 ${bassOf(ch).toFixed(0)}Hz`)
+    ok('背景音：每一条低音都落在 50–130Hz —— 不靠运行时那道 40Hz 闸门兜底',
+      lowOut.length === 0,
+      lowOut.length ? lowOut.join('；') : `${chords.length} 个小节，最低 ${Math.min(...chords.map(({ ch }) => bassOf(ch))).toFixed(0)}Hz / 最高 ${Math.max(...chords.map(({ ch }) => bassOf(ch))).toFixed(0)}Hz`)
+
+    const padOut = chords.filter(({ ch }) => hz(ch.r) < 110 || hz(ch.r) > 280)
+      .map(({ bed, ch }) => `${bed} pad ${hz(ch.r).toFixed(0)}Hz`)
+    ok('背景音：每一条 pad 根音都落在 110–280Hz —— 和声不用挤进低音的位置',
+      padOut.length === 0,
+      padOut.length ? padOut.join('；') : `${names.length} 段床的进行逐小节走过`)
+
+    /* 对照：判据本身有牙 —— 把根音再压低两个八度就该掉出台外 */
+    ok('背景音（对照）：同一条判据认得出一段写低了两个八度的进行',
+      (() => {
+        const bad = { r: BEDS.terminal.prog[0].r - 24, s: [0, 7] }
+        return !(bassOf(bad) >= 50 && bassOf(bad) <= 130)
+      })(),
+      `构造的低音 ${bassOf({ r: BEDS.terminal.prog[0].r - 24, s: [0, 7] }).toFixed(1)}Hz`)
+
+    /* ③ 乐句与进行同步：格子数是一小节的整数分（4/8/16），两句格子一样宽，
+          每句至少两个实音，且都留了白 —— 只有作战那两段允许排满 */
+    const grid = [4, 8, 16]
+    const badGrid = names.filter((n) => !grid.includes(BEDS[n].motif.length)
+      || (BEDS[n].alt ? BEDS[n].alt.length !== BEDS[n].motif.length : false))
+    ok('背景音：乐句的格子数与进行对得齐（4/8/16 分一小节），两句宽窄相同',
+      badGrid.length === 0,
+      badGrid.length ? badGrid.join('；') : names.map((n) => `${n}:${BEDS[n].motif.length}`).join(' '))
+
+    const real = (m: (number | null)[]) => m.filter((x) => x !== null).length
+    const thin = names.filter((n) => BEDS[n].lead && (real(BEDS[n].motif) < 2 || (BEDS[n].alt && real(BEDS[n].alt) < 2)))
+    ok('背景音：有旋律的每一段，两个乐句都至少两个实音 —— 不是一句空拍',
+      thin.length === 0,
+      thin.length ? thin.join('；') : names.filter((n) => BEDS[n].lead).map((n) => `${n} ${real(BEDS[n].motif)}/${BEDS[n].motif.length}`).join(' '))
+
+    const busy = names.filter((n) => !['battle', 'boss'].includes(n) && BEDS[n].lead && real(BEDS[n].motif) === BEDS[n].motif.length)
+    ok('背景音：非作战的五段床，乐句里都留着白（不是整小节排满的音墙）',
+      busy.length === 0,
+      busy.length ? busy.join('；') : '终端 / 剧情 / 短信 / 菜单逐句看过')
+
+    /* ④ 段与界面对得上：每一段床都有地方在放，每一处指的也是真有的那一段。
+       出处有两类：VIEW_BED 那张静态映射，和**手工点名的调用**
+       （标题屏的 setBed('menu')、作战屏的 battleBed → battle/boss）。
+       两者都要认 —— 这条断言第一版只认了 VIEW_BED，于是把 menu 报成「没人放」：
+       是判据窄了，不是数据错了。所以出处改成从源码里找调用点。 */
+    const bare = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${ent.name}`
+        if (ent.isDirectory()) walk(p)
+        else if (/\.tsx?$/.test(ent.name) && !p.includes('/lib/audio/music.ts')) files.push(p)
+      }
+    }
+    walk('src')
+    const code = files.map((p) => bare(readFileSync(p, 'utf8'))).join('\n')
+    /* 作战屏那一段是**按条件挑**的（on ? (boss ? 'boss' : 'battle')），
+       没有 setBed('battle') 这样的字面量可找 —— 所以单独取 battleBed 的函数体来看。
+       取的就是那个函数：别的写法（在别处另挑一次）这条看不到，也就该被抓住。 */
+    const idxSrc = bare(readFileSync('src/lib/audio/index.ts', 'utf8'))
+    const battleBody = idxSrc.includes('function battleBed') ? idxSrc.split('function battleBed')[1].slice(0, 400) : ''
+    /** 有人用名字点过它：静态映射、一处 setBed('x')、或作战屏那两个名字之一 */
+    const named = (n: BedName) => Object.values(VIEW_BED).includes(n) || code.includes(`setBed('${n}')`) || battleBody.includes(`'${n}'`)
+    const handPicked = names.filter((n) => !Object.values(VIEW_BED).includes(n) && named(n))
+
+    const orphan = names.filter((n) => !named(n))
+    const ghost = [...new Set([...Object.values(VIEW_BED), ...handPicked])].filter((n) => !names.includes(n))
+    ok('背景音：六段床与界面出处一一对得上 —— 没有白写的，也没有指向空处的',
+      orphan.length === 0 && ghost.length === 0,
+      (orphan.length || ghost.length) ? `没人放：${orphan.join('、') || '无'}；指向空处：${ghost.join('、') || '无'}`
+        : `${Object.keys(VIEW_BED).length} 个模块 + 手工点名的 ${handPicked.join('、')}`)
+
+    /* 对照：这条判据认得出一段真没人点的床（不是「怎么写都过」） */
+    ok('背景音（对照）：同一条判据认得出一段没人点名的床',
+      !named('__nobody__' as BedName) && names.every((n) => named(n)),
+      `手工点名的三段（${handPicked.join('、')}）分别从调用点与 battleBed 里认出来`)
+
+    info.push(`背景音 ${names.length} 段：`
+      + names.map((n) => `${n} ${BEDS[n].bpm}bpm·${BEDS[n].prog.length}和弦·${BEDS[n].lead ?? '无旋律'}`).join('　'))
+  } catch (e) {
+    fail.push('背景音段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

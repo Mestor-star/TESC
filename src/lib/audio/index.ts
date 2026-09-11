@@ -33,8 +33,9 @@ export function useAudioSettings(): AudioSettings {
   )
 }
 
-/** 每个模块配的底 */
-const VIEW_BED: Record<string, BedName> = {
+/** 每个模块配的底（导出是为复核读它 —— 见 scripts/mech 第 16 节：
+    有没有哪一段床是写好了却没人放的，或者哪一处指向一段不存在的床） */
+export const VIEW_BED: Record<string, BedName> = {
   dashboard: 'terminal',
   plot: 'plot',
   saga: 'plot',
