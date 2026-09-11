@@ -1718,41 +1718,117 @@ export function run(): MechReport {
 
   /* ---------- 16) 背景音：六段床各自成不成曲，且不跑调 ----------
      音乐是纯合成的数据（music.ts 的 BEDS），它的错都长在**换和弦的那一下**：
-       · 铃音写成三度、七度 —— 单看一个小节都对，进行一换和弦就撞；
-       · 旋律与进行不同步 —— 乐句排不满一小节，或者两句用的格子不一样；
+       · 旋律写在和弦上而不是写在调上 —— 和弦一换，同一句被整体拖走，
+         一句里的音程结构当场被改写（小三度转过去变大三度），听感就是跑调；
+       · 铃是随机撒的，或者撒在一个不是和弦音的音上 —— 单看一个小节都对，
+         进行一换和弦就撞；
+       · 主题与进行不同步 —— 长度对不上「进行长度 × 一小节八格」；
        · 低音写到听不见的八度去（40Hz 以下只剩糊，那条运行时闸门就把它吞了）；
        · 一段床写好了却没有任何模块放它（VIEW_BED 里没人指），等于白写。
      这些都不是听一遍能听出来的（听出来的那一下，往往已经上线了），所以钉在这里。
      每一条都配对照：证明判据本身有牙，而不是「怎么写都过」。 */
   try {
     const names = Object.keys(BEDS) as BedName[]
-    /** 一个铃音音程落在哪个音级上（八度往上算，三和弦看得见的那一层） */
-    const pc = (b: number) => (b + 12) % 12
-    const bassOf = (ch: Chord) => hz(ch.r + (ch.b ?? -12))
-    const chords = names.flatMap((n) => BEDS[n].prog.map((ch) => ({ bed: n, ch })))
+    /** 一个音落在本段的哪个音级上（相对主音，八度往上算） */
+    const pcOf = (bed: { key: { root: number } }, n: number) => (((n - bed.key.root) % 12) + 12) % 12
+    const bassOf = (ch: Chord) => hz(ch.r - 12)
+    const chords = names.flatMap((n) => BEDS[n].prog.map((ch, i) => ({ bed: n, ch, bar: i })))
 
-    /* ① 铃音只许落在八度与五度上 —— 三和弦里都站得住的两个音程 */
-    const offKey = names.flatMap((n) => BEDS[n].prog.flatMap((ch) =>
-      BEDS[n].bells
-        .filter((b) => ![0, 7].includes(pc(b)))
-        .map((b) => `${n} 的铃音 ${b}（相对 ${ch.r}）`)))
-    ok('背景音：铃音只取八度与五度 —— 进行走到哪一个小节都不撞',
-      offKey.length === 0,
-      offKey.length ? offKey.join('；') : `${names.length} 段床共 ${names.reduce((a, n) => a + BEDS[n].bells.length, 0)} 个铃音音程`)
+    /* ① 旋律整句都写在本段的调上 —— 和弦在底下走，旋律不走调 */
+    const offTune = names.flatMap((n) => BEDS[n].melody
+      .map((x, i) => ({ x, i }))
+      .filter(({ x }) => x !== null && !BEDS[n].key.scale.includes(pcOf(BEDS[n], x as number)))
+      .map(({ x, i }) => `${n} 第 ${Math.floor(i / 8) + 1} 小节第 ${(i % 8) + 1} 格 ${x}`))
+    ok('背景音：主题逐音都在本段的调上 —— 换和弦不改写旋律的音程结构',
+      offTune.length === 0,
+      offTune.length ? offTune.join('；') : names.map((n) => {
+        const real = BEDS[n].melody.filter((x) => x !== null) as number[]
+        return `${n} ${BEDS[n].key.scale.length}声音阶/${real.length} 音`
+      }).join('　'))
 
-    /* 对照：这条判据不是空谈 —— 三度音（15 = 小三度 + 八度、16 = 大三度 + 八度）
-       落在哪一个音级上，就有一半的小节容不下它：整个进行里，
-       没有一个小节同时收得下这两个音级。判据松成「三度也算」的话，第①条必挂。 */
-    const clashPC = chords.filter(({ ch }) => ch.s.includes(pc(15)) && ch.s.includes(pc(16)))
-    ok('背景音（对照）：三度当铃音，没有一个小节两边都容得下 —— 第①条不是空话',
-      chords.length > 0 && clashPC.length === 0,
-      `${chords.length} 个小节里，同时收得下大三度与小三度的有 ${clashPC.length} 个`)
+    /* 对照：判据有牙 —— 主音往上半音（小调的「避音」）不在任何一段的调里 */
+    ok('背景音（对照）：同一条判据认得出一音之差 —— 主音上方半音，六段都不收',
+      names.every((n) => !BEDS[n].key.scale.includes(pcOf(BEDS[n], BEDS[n].key.root + 1))),
+      `${names.length} 段床逐一试过主音 +1`)
 
-    /* ② 低音落在听得见、也不跟和声挤在一起的那一段（50–130Hz）；
-          pad 的根音落在和声该在的八度（110–280Hz） */
-    const lowOut = chords.filter(({ ch }) => bassOf(ch) < 50 || bassOf(ch) > 130)
+    /* ② 和声也在调上：每一条进行的根音与叠的每一个音都属于本调音阶 */
+    const offChord = chords.flatMap(({ bed, ch, bar }) =>
+      [ch.r, ...ch.s.map((s) => ch.r + s)]
+        .filter((x) => !BEDS[bed].key.scale.includes(pcOf(BEDS[bed], x)))
+        .map((x) => `${bed} 第 ${bar + 1} 小节 ${x}`))
+    ok('背景音：和声逐音也在调上 —— 进行里没有一个借来的和弦',
+      offChord.length === 0,
+      offChord.length ? offChord.join('；') : `${chords.length} 个小节的和弦逐音查过`)
+
+    /* 对照：换成一个关系外的和弦（A 小调里插一个 E 大三，带 G#）就该被抓住 */
+    const badChord = { r: -17, s: [0, 4, 7] }   // E G# B，G# 不在 A 自然小调
+    ok('背景音（对照）：同一条判据认得出一段关系外的和弦',
+      [badChord.r, ...badChord.s.map((s) => badChord.r + s)].some((x) => !BEDS.terminal.key.scale.includes(pcOf(BEDS.terminal, x))),
+      `构造的 E 大三和弦在 A 小调上：G# 出调`)
+
+    /* ③ 铃是写在谱面上的（第几小节第几拍哪个音），而且必须是那一小节和弦的和弦音 ——
+          这是上一版最假的一处：随机挑音随机落拍，听着就不是配器 */
+    const offBell = names.flatMap((n) => BEDS[n].bells
+      .filter((b) => {
+        const ch = BEDS[n].prog[b.bar % BEDS[n].prog.length]
+        const tones = [ch.r, ...ch.s.map((s) => ch.r + s)].map((x) => (((x % 12) + 12) % 12))
+        return !tones.includes(((b.note % 12) + 12) % 12)
+      })
+      .map((b) => `${n} 第 ${b.bar + 1} 小节的铃 ${b.note}`))
+    ok('背景音：每一记铃都是它那一小节的和弦音 —— 进行走到哪儿都站得住',
+      offBell.length === 0,
+      offBell.length ? offBell.join('；') : `${names.reduce((a, n) => a + BEDS[n].bells.length, 0)} 记铃逐记对过和弦（${names.filter((n) => !BEDS[n].bells.length).join('、')} 不敲铃）`)
+
+    /* 对照：把任意一记铃挪高半音，就不在它那一小节的和弦音里了 */
+    const one = BEDS.boss.bells[0]
+    ok('背景音（对照）：同一条判据认得出一记只差半音的铃',
+      (() => {
+        const ch = BEDS.boss.prog[one.bar]
+        const tones = [ch.r, ...ch.s.map((s) => ch.r + s)].map((x) => (((x % 12) + 12) % 12))
+        return !tones.includes((((one.note + 1) % 12) + 12) % 12)
+      })(),
+      `boss 第 ${one.bar + 1} 小节的铃挪到 ${one.note + 1} 就出和弦`)
+
+    /* ④ 形制对得齐：主题长度 = 进行长度 × 8 格（一小节一个八分音符网格），
+          铃写在形式之内，主题的实音够多（不是一句空拍），音域落在人听得舒服的那一段，
+          非作战的五段留白过半 —— 只有作战那两段允许排满 */
+    const badForm = names.filter((n) => BEDS[n].melody.length !== BEDS[n].prog.length * 8
+      || BEDS[n].prog.length < 4
+      || BEDS[n].bells.some((b) => b.bar < 0 || b.bar >= BEDS[n].prog.length))
+    ok('背景音：主题长度 = 进行长度 × 8 格，铃写在形式之内 —— 一遍走完正好接回开头',
+      badForm.length === 0,
+      badForm.length ? badForm.join('；') : names.map((n) => `${n} ${BEDS[n].prog.length}小节/${BEDS[n].melody.length}格`).join(' '))
+
+    const thin = names.filter((n) => BEDS[n].melody.filter((x) => x !== null).length < 6)
+    ok('背景音：每一段都有一句真主题（至少六个实音）—— 不是一声长音顶着',
+      thin.length === 0,
+      thin.length ? thin.join('；') : names.map((n) => `${n} ${BEDS[n].melody.filter((x) => x !== null).length} 音`).join(' '))
+
+    const rangeless = names.filter((n) => BEDS[n].melody.some((x) => x !== null && (hz(x) < 110 || hz(x) > 1600)))
+    ok('背景音：主题音域都在 110–1600Hz —— 不用一条听不见的低声部充数',
+      rangeless.length === 0,
+      rangeless.length ? rangeless.join('；') : names.map((n) => {
+        const r = BEDS[n].melody.filter((x) => x !== null) as number[]
+        return `${n} ${hz(Math.min(...r)).toFixed(0)}–${hz(Math.max(...r)).toFixed(0)}Hz`
+      }).join(' '))
+
+    ok('背景音（对照）：同一条判据认得出一条写到 65Hz 去的「主题」',
+      hz(BEDS.terminal.key.root - 40) < 110,
+      `构造的 ${hz(BEDS.terminal.key.root - 40).toFixed(1)}Hz 掉出台外`)
+
+    const wall = names.filter((n) => !['battle', 'boss'].includes(n)
+      && BEDS[n].melody.filter((x) => x !== null).length > BEDS[n].melody.length / 2)
+    ok('背景音：非作战的四段床，主题里留白过半（不是一整句排满的音墙）',
+      wall.length === 0,
+      wall.length ? wall.join('；') : names.filter((n) => !['battle', 'boss'].includes(n))
+        .map((n) => `${n} ${BEDS[n].melody.filter((x) => x !== null).length}/${BEDS[n].melody.length}`).join(' '))
+
+    /* ⑤ 低音落在听得见、也不跟和声挤在一起的那一段（50–140Hz，即 G1 到 C#3）：
+          再低只剩糊（运行时另有一道 40Hz 的闸门兜底），再高就不叫低音声部了。
+          pad 的根音落在和声该在的八度（110–280Hz）。 */
+    const lowOut = chords.filter(({ ch }) => bassOf(ch) < 50 || bassOf(ch) > 140)
       .map(({ bed, ch }) => `${bed} 低音 ${bassOf(ch).toFixed(0)}Hz`)
-    ok('背景音：每一条低音都落在 50–130Hz —— 不靠运行时那道 40Hz 闸门兜底',
+    ok('背景音：每一条低音都落在 50–140Hz —— 不靠运行时那道 40Hz 闸门兜底',
       lowOut.length === 0,
       lowOut.length ? lowOut.join('；') : `${chords.length} 个小节，最低 ${Math.min(...chords.map(({ ch }) => bassOf(ch))).toFixed(0)}Hz / 最高 ${Math.max(...chords.map(({ ch }) => bassOf(ch))).toFixed(0)}Hz`)
 
@@ -1764,31 +1840,9 @@ export function run(): MechReport {
 
     /* 对照：判据本身有牙 —— 把根音再压低两个八度就该掉出台外 */
     ok('背景音（对照）：同一条判据认得出一段写低了两个八度的进行',
-      (() => {
-        const bad = { r: BEDS.terminal.prog[0].r - 24, s: [0, 7] }
-        return !(bassOf(bad) >= 50 && bassOf(bad) <= 130)
-      })(),
+      !(bassOf({ r: BEDS.terminal.prog[0].r - 24, s: [0, 7] }) >= 50
+        && bassOf({ r: BEDS.terminal.prog[0].r - 24, s: [0, 7] }) <= 140),
       `构造的低音 ${bassOf({ r: BEDS.terminal.prog[0].r - 24, s: [0, 7] }).toFixed(1)}Hz`)
-
-    /* ③ 乐句与进行同步：格子数是一小节的整数分（4/8/16），两句格子一样宽，
-          每句至少两个实音，且都留了白 —— 只有作战那两段允许排满 */
-    const grid = [4, 8, 16]
-    const badGrid = names.filter((n) => !grid.includes(BEDS[n].motif.length)
-      || (BEDS[n].alt ? BEDS[n].alt.length !== BEDS[n].motif.length : false))
-    ok('背景音：乐句的格子数与进行对得齐（4/8/16 分一小节），两句宽窄相同',
-      badGrid.length === 0,
-      badGrid.length ? badGrid.join('；') : names.map((n) => `${n}:${BEDS[n].motif.length}`).join(' '))
-
-    const real = (m: (number | null)[]) => m.filter((x) => x !== null).length
-    const thin = names.filter((n) => BEDS[n].lead && (real(BEDS[n].motif) < 2 || (BEDS[n].alt && real(BEDS[n].alt) < 2)))
-    ok('背景音：有旋律的每一段，两个乐句都至少两个实音 —— 不是一句空拍',
-      thin.length === 0,
-      thin.length ? thin.join('；') : names.filter((n) => BEDS[n].lead).map((n) => `${n} ${real(BEDS[n].motif)}/${BEDS[n].motif.length}`).join(' '))
-
-    const busy = names.filter((n) => !['battle', 'boss'].includes(n) && BEDS[n].lead && real(BEDS[n].motif) === BEDS[n].motif.length)
-    ok('背景音：非作战的五段床，乐句里都留着白（不是整小节排满的音墙）',
-      busy.length === 0,
-      busy.length ? busy.join('；') : '终端 / 剧情 / 短信 / 菜单逐句看过')
 
     /* ④ 段与界面对得上：每一段床都有地方在放，每一处指的也是真有的那一段。
        出处有两类：VIEW_BED 那张静态映射，和**手工点名的调用**
@@ -1828,7 +1882,8 @@ export function run(): MechReport {
       `手工点名的三段（${handPicked.join('、')}）分别从调用点与 battleBed 里认出来`)
 
     info.push(`背景音 ${names.length} 段：`
-      + names.map((n) => `${n} ${BEDS[n].bpm}bpm·${BEDS[n].prog.length}和弦·${BEDS[n].lead ?? '无旋律'}`).join('　'))
+      + names.map((n) => `${n} ${BEDS[n].bpm}bpm·${BEDS[n].prog.length}和弦·${BEDS[n].voice}·`
+        + `${BEDS[n].melody.filter((x) => x !== null).length} 音·${BEDS[n].bells.length} 铃`).join('　'))
   } catch (e) {
     fail.push('背景音段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
