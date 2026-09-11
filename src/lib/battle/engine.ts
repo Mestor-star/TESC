@@ -458,7 +458,12 @@ function applyEffect(
        cleanse 洗的是**已经中了**的，ward 挡的是**还没中**的。 */
     if (eff.ward) t.ward = Math.max(t.ward, Math.round(eff.ward * scale))
     /* 蓄力：不是 buff，是「存在这个人身上的一口气」——
-       不按拍数走，只等他真的打出去（或被打散）。所以同一个人的蓄力取强者。 */
+       不按拍数走，只等他真的打出去（或被打散）。所以同一个人的蓄力取强者。
+
+       这一条**不跟 scale 走**，是故意的：蓄力最终乘进下一手的伤害，而那份伤害
+       自己已经过 atkMulOf 里的 skillSpecOf。两边都乘的话，×2 的规格配 ×1.8 的蓄力
+       会打出 ×7.2 的下一手 —— 而正确的读数是 ×3.6（规格 ×2，蓄力 ×1.8，各乘一次）。
+       解封抬的是「她这门东西的规格」，不是「她攒的这口气有多长」。 */
     if (eff.charge && eff.charge > 1) {
       t.charge = Math.max(t.charge, eff.charge)
       pushLog(s, {

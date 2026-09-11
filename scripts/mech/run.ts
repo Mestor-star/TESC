@@ -19,7 +19,7 @@
 
 import {
   act, advance, aliveOf, basicOf, brokenOf, buffOf, createBattle, enemysTurn, find,
-  guardLeft, pendingFoe, skipOf,
+  guardLeft, legalSkills, pendingFoe, skipOf,
 } from '../../src/lib/battle/engine'
 import { enemiesOf } from '../../src/lib/battle/derive'
 import { MISSIONS } from '../../src/data/missions'
@@ -360,7 +360,227 @@ export function run(): MechReport {
     fail.push('破绽分布段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
-  /* ---------- 6) 面板读数与负面键的分工 ---------- */
+  /* ---------- 6) 旧吉他 · 解封：规格翻倍到底翻到了哪些量 ---------- */
+  try {
+    /* 编队按「谁手上真有这几样量」来配，不是按主角团来配：
+       削破绽在 isis-halid（伊西斯）手上 —— 队里那个 `isis` 是另一位，
+       她的表里没有 isis-scoop（上一版就是照 id 猜人，四条断言全落空）。
+       编队上限 6，正好把要用的都带上。 */
+    const S2 = ['isis-halid', 'youshihan', 'maria', 'phidra', 'nana-kamiru', 'mefisa']
+    const mk2 = () => createBattle({
+      mission, squad: S2, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const burst = ROSTER.hikari?.skills.find((k) => k.id === 'hikari-burst')
+    ok('解封：旧吉他·解封这一手在表上', !!burst)
+    ok('解封：它给的是规格 ×2（不是这一拍打得更重）',
+      burst?.effect?.skillMul === 2 && burst?.power === 0,
+      `skillMul=${burst?.effect?.skillMul} power=${burst?.power}`)
+    ok('解封：门一解不立刻能甩（openAfter）', (burst?.openAfter ?? 0) >= 1, `openAfter=${burst?.openAfter}`)
+
+    // 把「解封已在身上」这件事直接摆成状态：buff 存的是 +（N−1），1 + 1 = ×2
+    const unlock = (c: Combatant) => { c.buffs.push({ k: 'skillMul', v: 1, t: 3 }) }
+    const castAs = (s: ReturnType<typeof mk2>, who: string, skillId: string, targetId?: string) => {
+      const c = find(s, who)!
+      c.sp = 999
+      c.cds = {}
+      freezeFoes(s)
+      s.actor = c.id
+      s.phase = 'select'
+      act(s, { t: 'skill', skillId, targetId })
+      return c
+    }
+
+    // (a) 伤害那一支：普攻倍率 ×2
+    const hitSum = (spec: boolean) => {
+      let sum = 0
+      const N2 = 500
+      for (let i = 0; i < N2; i++) {
+        const s = mk2()
+        const h = find(s, 'mefisa')!
+        const foe = s.enemies[0]!
+        sureHit(h)
+        if (spec) unlock(h)
+        foe.hp = 1e9
+        foe.hpMax = 1e9
+        foe.guardAxis = undefined
+        foe.guardPts = 0
+        foe.buffs = foe.buffs.filter((b) => b.k !== 'mark')
+        freezeFoes(s)
+        s.actor = h.id
+        s.phase = 'select'
+        act(s, { t: 'atk', targetId: foe.id })
+        sum += foe.hpMax - foe.hp
+      }
+      return sum / N2
+    }
+    const plainHit = hitSum(false)
+    const specHit = hitSum(true)
+    const hitRatio = plainHit > 0 ? specHit / plainHit : 0
+    ok('解封：普攻伤害按规格翻倍', Math.abs(hitRatio - 2) < 0.06, `×${hitRatio.toFixed(3)}（${plainHit.toFixed(1)} → ${specHit.toFixed(1)}）`)
+
+    // (b) 护持：优士羽的 2 次 → 4 次（她自己那一手，target self，不封门）
+    const wardOf = (spec: boolean) => {
+      const s = mk2()
+      const y = find(s, 'youshihan')!
+      if (spec) unlock(y)
+      castAs(s, 'youshihan', 'youshihan-fate', y.id)
+      return y.ward
+    }
+    ok('解封：护持的层数跟着翻（2 → 4）', wardOf(false) === 2 && wardOf(true) === 4,
+      `${wardOf(false)} → ${wardOf(true)}`)
+
+    // (c) 削破绽：伊西斯（isis-halid）的 2 点 → 4 点
+    const stripOf = (spec: boolean) => {
+      const s = mk2()
+      const foe = s.enemies[0]!
+      foe.guardAxis = '破坏力'
+      foe.guardPts = 10
+      foe.guardMax = 10
+      const i = find(s, 'isis-halid')!
+      if (spec) unlock(i)
+      castAs(s, 'isis-halid', 'isis-scoop', foe.id)
+      return 10 - foe.guardPts
+    }
+    ok('解封：削破绽跟着翻（2 点 → 4 点）', stripOf(false) === 2 && stripOf(true) === 4,
+      `${stripOf(false)} → ${stripOf(true)}`)
+
+    // (d) 回复量：按读出来的那个数比，别按血条比（血条会被上限削平）
+    const healOf = (spec: boolean) => {
+      const s = mk2()
+      const m = find(s, 'maria')!
+      if (spec) unlock(m)
+      for (const a of s.allies) { a.hpMax = 100000; a.hp = 1000 }
+      const before = s.log.length
+      castAs(s, 'maria', 'maria-song')
+      const line = s.log.slice(before).find((x) => x.skillId === 'heal')
+      return line?.heal ?? 0
+    }
+    const hPlain = healOf(false)
+    const hSpec = healOf(true)
+    ok('解封：回复量跟着翻', hPlain > 0 && Math.abs(hSpec / hPlain - 2) < 0.02, `${hPlain} → ${hSpec}`)
+
+    // (e) 蓄力**不该**翻 —— 它最后要乘进的那份伤害自己已经吃过规格了，再乘就是算两遍
+    const chargeOf2 = (spec: boolean) => {
+      const s = mk2()
+      const p = find(s, 'phidra')!
+      if (spec) unlock(p)
+      castAs(s, 'phidra', 'phidra-stake', p.id)
+      return p.charge
+    }
+    ok('解封：蓄力**不**跟着翻（免得规格算两遍）',
+      chargeOf2(false) === 1.8 && chargeOf2(true) === 1.8, `${chargeOf2(false)} → ${chargeOf2(true)}`)
+
+    // (f) 断拍本来就压死在 1 次，翻了也还是 1 —— 这条是复合惩罚，不许开口子
+    const stallOf = (spec: boolean) => {
+      const s = mk2()
+      const foe = s.enemies[0]!
+      const n = find(s, 'nana-kamiru')!
+      if (spec) unlock(n)
+      castAs(s, 'nana-kamiru', 'nana-heavy', foe.id)
+      return buffOf(foe, 'stall')
+    }
+    ok('解封：断拍仍压死在 1 次（复合惩罚不开口子）',
+      stallOf(false) === 1 && stallOf(true) === 1, `${stallOf(false)} → ${stallOf(true)}`)
+
+    info.push(`解封实测：普攻 ×${hitRatio.toFixed(3)}／护持 ${wardOf(false)}→${wardOf(true)}／`
+      + `削破绽 ${stripOf(false)}→${stripOf(true)}／回复 ${hPlain}→${hSpec}／`
+      + `蓄力 ${chargeOf2(false)}→${chargeOf2(true)}（不变）／断拍 ${stallOf(false)}→${stallOf(true)}（封顶）`)
+
+    /* (g) 端到端：把希卡莉那把吉他从封印里一路拧开。
+       上面 (a)~(f) 是往身上直接塞 skillMul 摆出来的规格 —— 那验的是「乘算那一层」；
+       这一段验的是「解封这件事本身」：五重封印逐重开、门开了还要过两拍、
+       甩出来之后她自己下一手真的按新规格走。 */
+    const chain = (useBurst: boolean) => {
+      const s = createBattle({
+        mission, squad: ['hikari', 'mefisa'], progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+      })
+      const h = find(s, 'hikari')!
+      const other = find(s, 'mefisa')!
+      const step = (who: Combatant, cmd: Parameters<typeof act>[1]) => {
+        who.sp = 999
+        who.cds = {}
+        freezeFoes(s)
+        s.actor = who.id
+        s.phase = 'select'
+        act(s, cmd)
+      }
+      const chainLog: string[] = []
+      // 五重封印：链上只列得出启动手，别的一概不给。
+      // 圈数**必须**是 startNeed —— 多跑一圈，那一圈列出来的就是解禁之后的手，
+      // duringChain 会被污染，hand 也白白多走一格（上一版就是这么错的）。
+      const duringChain = new Set<string>()
+      const rounds = h.startNeed
+      for (let i = 0; i < rounds; i++) {
+        const legal = legalSkills(h, s).map((k) => k.id)
+        if (!legal.length) break
+        for (const id of legal) duringChain.add(id)
+        const before = s.log.length
+        step(h, { t: 'skill', skillId: legal[0]!, targetId: h.id })
+        chainLog.push(s.log.slice(before).map((l) => l.skill ?? l.skillId).join('/'))
+      }
+      const unsealed = { used: h.startUsed, need: h.startNeed, at: h.unsealedAt, legal: legalSkills(h, s).map((k) => k.id) }
+      // 门开了再等两拍，burst 才列得出来
+      const openedNow = legalSkills(h, s).some((k) => k.id === 'hikari-burst')
+      const waited: boolean[] = []
+      for (let i = 0; i < 3; i++) {
+        step(other, { t: 'atk', targetId: s.enemies[0]!.id })
+        waited.push(legalSkills(h, s).some((k) => k.id === 'hikari-burst'))
+      }
+      let smul = 0
+      if (useBurst) {
+        step(h, { t: 'skill', skillId: 'hikari-burst', targetId: h.id })
+        smul = buffOf(h, 'skillMul')
+      }
+      // 解封之后她自己打一拳，看按什么规格算
+      const foe = s.enemies[0]!
+      foe.hp = 1e9
+      foe.hpMax = 1e9
+      foe.guardAxis = undefined
+      foe.guardPts = 0
+      foe.buffs = foe.buffs.filter((b) => b.k !== 'mark')
+      sureHit(h)
+      return { s, h, foe, chainLog, duringChain, unsealed, openedNow, waited, smul, step }
+    }
+
+    // 链本身（跑一次，不用重复 200 遍）
+    const probe = chain(true)
+    ok('解封：链上只列得出启动手（封印没开完，别的都锁着）',
+      [...probe.duringChain].every((id) => id === 'hikari-start'),
+      [...probe.duringChain].join(','))
+    ok('解封：五重封印开完即「解禁」', probe.unsealed.used === probe.unsealed.need && probe.unsealed.need === 5,
+      `startUsed=${probe.unsealed.used}/${probe.unsealed.need}`)
+    ok('解封：解禁之后普攻与其余的手才列得出来',
+      probe.unsealed.legal.includes('hikari-atk') && probe.unsealed.legal.includes('hikari-burst') === false,
+      probe.unsealed.legal.join(','))
+    ok('解封：解禁当拍 burst 还压着（openAfter）', probe.openedNow === false, `当拍列出=${probe.openedNow}`)
+    ok('解封：等到第二拍 burst 才列得出来',
+      probe.waited[0] === false && probe.waited[1] === true, JSON.stringify(probe.waited))
+    ok('解封：甩出去之后规格真的挂在身上', probe.smul === 1, `skillMul=${probe.smul}`)
+    info.push('解封链：' + probe.chainLog.join(' → '))
+
+    // 走完整条链之后，她自己那一手按 ×2 算（两边都走链，只差甩不甩 burst）
+    const afterChain = (useBurst: boolean) => {
+      let sum = 0
+      const N3 = 160
+      for (let i = 0; i < N3; i++) {
+        const c = chain(useBurst)
+        c.h.cds = {}
+        c.step(c.h, { t: 'atk', targetId: c.foe.id })
+        sum += c.foe.hpMax - c.foe.hp
+      }
+      return sum / N3
+    }
+    const cPlain = afterChain(false)
+    const cBurst = afterChain(true)
+    const chainRatio = cPlain > 0 ? cBurst / cPlain : 0
+    ok('解封：走完链之后每一手按新规格算', Math.abs(chainRatio - 2) < 0.1,
+      `×${chainRatio.toFixed(3)}（${cPlain.toFixed(1)} → ${cBurst.toFixed(1)}）`)
+    info.push(`解封端到端：解封前 ${cPlain.toFixed(1)} → 解封后 ${cBurst.toFixed(1)}（×${chainRatio.toFixed(3)}）`)
+  } catch (e) {
+    fail.push('解封段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7) 面板读数与负面键的分工 ---------- */
   try {
     const want = ['isis-scoop', 'nana-heavy', 'phidra-stake', 'maria-end', 'youshihan-fate']
     const readouts: string[] = []
