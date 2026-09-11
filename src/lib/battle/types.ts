@@ -84,6 +84,12 @@ export interface PassiveSpec {
    * 原文里心脏破了也照样站着的那些人走这条。
    */
   endure?: number
+  /**
+   * 续行的**加算**：某位同伴还在场上站着时，本场多给几次。
+   * 露娜的丝线是她自己织的，但「回来」那一下不是 —— 是心叶站在那儿（见 roster.luna）。
+   * 判据是「此刻场上还有谁」：倒了、被归档收走的不算，跟着队伍来不算。
+   */
+  endurePlus?: { with: string; extra: number }
   /** 常驻闪避（绝对值） */
   evade?: number
   /** 常驻命中：抵消对方闪避（绝对值） */

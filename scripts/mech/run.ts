@@ -20,7 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import {
   act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, createBattle,
-  enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
+  endureCap, enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
 } from '../../src/lib/battle/engine'
 import { combatantOf, enemiesOf, foeLineOrder, minionOf } from '../../src/lib/battle/derive'
 import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
@@ -33,7 +33,7 @@ import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
 import { rOfPlace } from '../../src/lib/battle/rvalue'
-import { ROSTER } from '../../src/lib/battle/roster'
+import { passiveText, ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
@@ -2729,6 +2729,54 @@ export function run(): MechReport {
     info.push(`好感门槛：${gated.map((e) => `${e.id}(${e.gate!.map((g) => `${g.char}≥${g.value}`).join(',')})`).join('　') || '（暂无）'}`)
   } catch (e) {
     fail.push('好感门槛段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* —— 露娜的「回来」那一下：不是不限次，是有人站在场上换来的 ——
+     口径：一场只织得回来一次；言万心叶在场上时，那一次之外还能再撑一次。
+     判据必须是「此刻场上还有谁」—— 倒了、被归档收走就不算，
+     光「这一队里带了心叶」不作数。 */
+  try {
+    const luna = ROSTER['luna']!.passive
+    ok('露娜：被动不再是「不限次」', luna?.endure === 1, `endure=${luna?.endure}`)
+    ok('露娜：加算挂在言万心叶身上（+1）',
+      luna?.endurePlus?.with === OPERATOR_ID && luna?.endurePlus?.extra === 1,
+      JSON.stringify(luna?.endurePlus))
+
+    const mkSquad = (squad: string[]) => createBattle({
+      mission, squad, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const withOp = mkSquad(['luna', OPERATOR_ID, 'isis', 'phidra'])
+    const noOp = mkSquad(['luna', 'isis', 'phidra', 'maria'])
+    ok('续行上限：心叶在场上 → 2 次', endureCap(withOp, luna!) === 2, `cap=${endureCap(withOp, luna!)}`)
+    ok('续行上限：心叶不在 → 1 次', endureCap(noOp, luna!) === 1, `cap=${endureCap(noOp, luna!)}`)
+
+    const op = find(withOp, OPERATOR_ID)
+    if (!op) {
+      fail.push('续行上限：场上找不到言万心叶，判据无从验起')
+    } else {
+      op.down = true
+      ok('续行上限：心叶倒下 → 加算收回（回到 1 次）',
+        endureCap(withOp, luna!) === 1, `cap=${endureCap(withOp, luna!)}`)
+      op.down = false
+      op.gone = 1
+      ok('续行上限：心叶被归档收走 → 同样不算在场',
+        endureCap(withOp, luna!) === 1, `cap=${endureCap(withOp, luna!)}`)
+      op.gone = 0
+    }
+
+    /* 对照：别人（不限次的老口径已无人在册）—— 拿正经的定额续行验加算不误伤 */
+    const emei = ROSTER['emei']!.passive
+    ok('续行上限：没有 endurePlus 的人不受影响（定额照旧）',
+      endureCap(withOp, emei!) === 1 && endureCap(noOp, emei!) === 1,
+      `场上=${endureCap(withOp, emei!)}　场下=${endureCap(noOp, emei!)}`)
+
+    /* 档案里那一行要读得出来「几次、跟谁」 */
+    const t = passiveText(luna)
+    ok('档案：续行那行写明了次数与在场的人',
+      t.some((x) => x.includes('每场 1 次') && x.includes('言万心叶') && x.includes('2 次')),
+      t.join('｜'))
+  } catch (e) {
+    fail.push('露娜续行段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

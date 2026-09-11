@@ -22,7 +22,7 @@ import { namedBossOf } from './bosses'
 import { GEAR_OF, ITEM_OF } from './gear'
 import { isDebuff, isSpec, toneOf } from './types'
 import type {
-  AxisKey, AxisSheet, BattleState, BuffKey, Combatant, LogEntry, SkillSpec,
+  AxisKey, AxisSheet, BattleState, BuffKey, Combatant, LogEntry, PassiveSpec, SkillSpec,
   EnemyIntent,
 } from './types'
 import type { Mission } from '../../data/types'
@@ -56,6 +56,20 @@ export function aliveOf(list: Combatant[]): Combatant[] {
 /** 还站着的人：含合体蛰伏者（用来判「小队是否全灭」，蛰伏不算阵亡） */
 export function standingOf(list: Combatant[]): Combatant[] {
   return list.filter((c) => !c.down)
+}
+
+/**
+ * 战斗续行的次数上限：这个人这一场到底续得了几次。
+ * `endure < 0` 是不限次；`endurePlus` 是**加算** —— 判据是此刻场上还有没有那个人
+ * （站着、没蛰伏；倒在场上、被归档收走都不算），不是「这一队带没带他」。
+ * 见 roster.luna：丝线是她自己织的，「回来」那一下是心叶站在那儿。
+ */
+export function endureCap(s: BattleState, p: PassiveSpec): number {
+  if (p.endure === undefined) return 0
+  if (p.endure < 0) return -1
+  const plus = p.endurePlus
+  const on = !!plus && aliveOf(allOf(s)).some((c) => c.id === plus.with)
+  return p.endure + (on ? plus.extra : 0)
 }
 
 /* ---------- 增益读数 ---------- */
@@ -646,14 +660,24 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   if (def.hp === 0 && !def.down && def.gone <= 0) {
     // 战斗续行：原文里「心脏破了也照样站着」的人，致命伤只留一口气
     const p = def.passive
-    const canEndure = !!p?.endure && (p.endure < 0 || def.endured < p.endure)
-    if (canEndure) {
+    const cap = p ? endureCap(s, p) : 0
+    const canEndure = cap !== 0 && (cap < 0 || def.endured < cap)
+    if (canEndure && p) {
+      const base = p.endure ?? 0
       def.hp = 1
       def.endured += 1
+      /* 这一下若是**加算**换来的（本场已经续过 base 次），把那个人点出来：
+         「回来」这一下不是她自己织的，是有人在场上 —— 见 endurePlus。 */
+      const plus = p.endurePlus
+      const by = plus && base > 0 && def.endured > base
+        ? aliveOf(allOf(s)).find((c) => c.id === plus.with)
+        : undefined
       pushLog(s, {
         round: s.hand, actorId: def.id, actor: def.name, side: def.side,
         skillId: 'endure', skill: '战斗续行', kind: '指令', fx: 'guard',
-        note: `${p!.name} —— ${p!.desc.split('。')[0]}：这一下没打穿。`,
+        note: by
+          ? `${p.name} —— ${p.desc.split('。')[0]}：${by.name}还在场上，这一下也没打穿。`
+          : `${p.name} —— ${p.desc.split('。')[0]}：这一下没打穿。`,
       })
       return {
         round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,

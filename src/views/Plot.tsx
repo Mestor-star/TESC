@@ -143,6 +143,22 @@ function persistMsg(evId: string, m: ChatMsg): Record<string, ChatMsg[]> {
   return next
 }
 
+/**
+ * 换掉「版式改过」的开场白：开场白是**原文**、不是对话记录，它在代码里改了排印
+ * （如改成「角色名：台词」行，好让终端切得出气泡），旧存档里那条仍是老样子。
+ * 只换那一条、只换文本；其余消息一概不碰 —— 见调用处的判据。
+ */
+function retextMsg(evId: string, id: string, text: string): Record<string, ChatMsg[]> {
+  const next = { ...loadLogs() }
+  next[evId] = (next[evId] ?? []).map((m) => (m.id === id ? { ...m, text } : m))
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(next))
+  } catch {
+    /* 隐私模式下降级为仅内存 */
+  }
+  return next
+}
+
 /** 当前挂载中的剧情推进视图数：0 = 观测者不在本页，这一回合是在后台跑完的 */
 let plotMounts = 0
 
@@ -797,6 +813,16 @@ export function Plot() {
     const auto = TIMELINE.findIndex((e) => e.id === evId) <= AUTO_OPEN_THRU_IDX
 
     const scOpen = SCENES[evId]?.open?.trim()
+
+    /* 只有一条开场白、别无他物 —— 这一段还没开篇，存档里存的就是代码里那段原文。
+       此时若文本与现行版本不同（改了排印的旧存档），按现行文本换掉：观测者看到的
+       该是这一版的原文。**一旦开篇就不再回头改** —— 那条之后是会话历史，
+       里头的话都带着当时的处境，重排等于替它改口。 */
+    if (scOpen && openings.length === 1 && lg.length === 1 && openings[0].text.trim() !== scOpen) {
+      setLogs(retextMsg(evId, openings[0].id, scOpen))
+      return
+    }
+
     if (!openings.length && scOpen) {
       const opening: ChatMsg = { id: idFor(), from: 'them', text: scOpen, time: clock(), meta: { opening: true } }
       appendMsg(evId, opening)

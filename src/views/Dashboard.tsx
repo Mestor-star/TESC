@@ -8,6 +8,8 @@ import {
 import { Portrait } from '../components/Portrait'
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
+import { PERSON_IDS, personOf } from '../data/castmeta'
+import type { CastPerson } from '../data/castmeta'
 import { CODEX } from '../data/codex'
 import { REGIONS } from '../data/regions'
 import { TIMELINE } from '../data/timeline'
@@ -142,12 +144,14 @@ export function Dashboard() {
 
   const lastSquad = live.rec[0]?.squad ?? []
   const squadShown = lastSquad.length ? lastSquad : CHARACTERS.slice(0, 4).map((c: Character) => c.id)
-  const metCount = useMemo(() => CHARACTERS.filter((c: Character) => isMet(c.id)).length, [isMet])
+  /* 「已遇见」数的是**在册名册**（24 位），不是主役四人 —— 档案页列的是这一份名册，
+     剧情里照过面的人也照这份登记（见 Terminal 的现场名册落账）。 */
+  const metCount = useMemo(() => PERSON_IDS.filter((id) => isMet(id)).length, [isMet])
 
   /* 通讯中枢：只列已遇见的人（未解锁的联系人本来就不该出现在这台终端上），
      未读的排前面，其余按名录序。预览取该线最后一句。 */
   const contacts = useMemo(() => {
-    const met = CHARACTERS.filter((c: Character) => isMet(c.id))
+    const met = PERSON_IDS.map((id) => personOf(id)).filter((p): p is CastPerson => !!p && isMet(p.id))
     return met
       .map((c) => {
         const line = logs[c.id]
@@ -253,7 +257,7 @@ export function Dashboard() {
               <small>未读讯息</small>
             </span>
             <span className={css.stat} data-stat="met">
-              <b className="mono">{metCount}/{CHARACTERS.length}</b>
+              <b className="mono">{metCount}/{PERSON_IDS.length}</b>
               <small>已遇见</small>
             </span>
             <span className={css.stat} data-stat="progress">
@@ -847,7 +851,7 @@ export function Dashboard() {
           <div className="panel__body">
             {[
               { k: '终末图鉴', n: codexDone, all: CODEX.length, go: 'codex' as const, c: 'var(--red)' },
-              { k: '角色档案', n: metCount, all: CHARACTERS.length, go: 'archive' as const, c: 'var(--steel)' },
+              { k: '角色档案', n: metCount, all: PERSON_IDS.length, go: 'archive' as const, c: 'var(--steel)' },
               { k: '时间线', n: doneCount, all: TIMELINE.length, go: 'saga' as const, c: 'var(--amber)' },
             ].map((row) => (
               <div key={row.k} className={css.pRow}>
@@ -871,7 +875,7 @@ export function Dashboard() {
               <span className={css.kvVal}>
                 <Package size={11} weight="bold" style={{ opacity: 0.6 }} />
                 <span className="tiny muted">
-                  {' '}每遇见一人即解锁其档案与短信线；当前 {metCount} / {CHARACTERS.length}。
+                  {' '}每遇见一人即解锁其档案与短信线；当前 {metCount} / {PERSON_IDS.length}。
                 </span>
               </span>
             </div>

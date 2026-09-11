@@ -20,6 +20,7 @@
    只认识技能表。
    ============================================================ */
 
+import { OPERATOR_ID, personOf } from '../../data/castmeta'
 import { place } from './atlas'
 import type { PassiveSpec } from './types'
 
@@ -951,9 +952,10 @@ const PASSIVE: Record<string, PassiveSpec> = {
   },
   luna: {
     name: '丝线之躯',
-    desc: '由「境界领域商会」以金属丝线织成的机器人偶——没有要害，也没有心脏可破：'
-      + '丝线断了再织回去就是，血一直在往回长；而无论被打穿多少次，她都不会死。',
-    regen: 0.09, endure: -1,
+    desc: '丝线断了就再织回去。由「境界领域商会」以金属丝线织成的机器人偶——没有要害，'
+      + '也没有心脏可破，血一直在往回长；只是织回一具散掉的身子很费丝线，'
+      + '一场里她只织得回一次；小主人言万心叶在场上时，那一次之外还能再撑一次。',
+    regen: 0.09, endure: 1, endurePlus: { with: OPERATOR_ID, extra: 1 },
   },
   mefisa: {
     name: '无论何处都能抵达',
@@ -1105,7 +1107,9 @@ export function passiveText(p?: PassiveSpec): string[] {
   if (p.cdCut) out.push(`冷却每拍多减 ${p.cdCut}`)
   if (p.basicMul) out.push(`普攻倍率 ${pct(p.basicMul)}`)
   if (p.endure !== undefined) {
-    out.push(p.endure < 0 ? '致命伤不死（不限次）' : `致命伤留 1 点（每场 ${p.endure} 次）`)
+    const plus = p.endurePlus ? `，${personOf(p.endurePlus.with)?.name ?? p.endurePlus.with}在场时 ${p.endure + p.endurePlus.extra} 次` : ''
+    const base = p.endure < 0 ? '致命伤不死（不限次）' : `致命伤留 1 点（每场 ${p.endure} 次）`
+    out.push(base + (p.endure < 0 ? '' : plus))
   }
   return out.length ? out : ['未写效果 —— 这一条要补']
 }
