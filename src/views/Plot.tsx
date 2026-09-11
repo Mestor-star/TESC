@@ -32,7 +32,9 @@ import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
 import { activePresetId } from '../lib/preset'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
-import { buildPresetContext, prefillTurns, readActivePrefill, readActivePreset } from '../lib/preset'
+import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, readActivePreset } from '../lib/preset'
+import { loreHitsOf } from '../lib/ailog'
+import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -414,6 +416,15 @@ export function Plot() {
       // 预设导演指令：由「管理预设」套用后落下的生效快照提供；与本回合扫描同一份文本
       const preset = buildPresetContext(readActivePreset(), scanText)
 
+      // 通联日志身份：这一趟是谁在问、预设实际进了哪几条、世界书命中多少
+      const presetInfo = activePresetInfo()
+      const logMeta: AiLogMeta = {
+        channel: '主线剧情',
+        act: opts?.long ? '事件衔接' : '回合推演',
+        preset: { id: presetInfo.id, name: presetInfo.name, hits: preset.hits, prefill: presetInfo.prefill },
+        lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
+      }
+
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
@@ -451,10 +462,11 @@ export function Plot() {
             const budget = attempt === 1 ? turnBudget : Math.max(5000, Math.round(turnBudget * 1.8))
             // 流式开关（终端设置 · 主线剧情通道）：关掉即整段接收，后续解析路径完全一致
             const res: StreamResult = cfgMain!.stream === false
-              ? { text: await chatCompletion(cfgMain!, outbox, { signal: ctrl.signal, maxTokens: budget }) }
+              ? { text: await chatCompletion(cfgMain!, outbox, { signal: ctrl.signal, maxTokens: budget, meta: logMeta }) }
               : await chatCompletionStream(cfgMain!, outbox, {
                 signal: ctrl.signal,
                 maxTokens: budget,
+                meta: logMeta,
                 onDelta: (chunk) => {
                   if (settled || !chunk) return
                   acc += chunk
@@ -584,7 +596,11 @@ export function Plot() {
         ...toTurns(logs[ev.id]),
         { role: 'user', content: DRAFT_PROMPT },
       ]
-      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: cfgMain!.maxTokens || 1500 })
+      const res = await chatCompletion(cfgMain!, messages, {
+        signal: ctrl.signal,
+        maxTokens: cfgMain!.maxTokens || 1500,
+        meta: { channel: '主线剧情', act: '行动起草' },
+      })
       const text = (res ?? '').trim()
       if (!text) {
         setDraftErr('通道没有返回可用内容，可再试一次。')

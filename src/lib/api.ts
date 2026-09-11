@@ -10,7 +10,14 @@
    api:sms（旧聊天即角色短信的前身），播种后删除旧键。
 
    密钥只存 IndexedDB（浏览器本地），绝不写入代码或任何明文文件。
+
+   出去与回来的每一趟都在这里留一份记录（见 lib/ailog.ts）：
+   调用方传 opts.meta 说明「谁在问、问什么、生效预设进了哪几条」，
+   成功与失败都落一条，终端设置里的「通联日志」据此核对后台 AI 到底吃到了什么。
    ============================================================ */
+
+import { digestPrompt, pushAiLog, replyHeadOf } from './ailog'
+import type { AiLogMeta } from './ailog'
 
 export interface ApiSettings {
   baseUrl: string
@@ -154,6 +161,48 @@ export interface ChatOpts {
   maxTokens?: number
   /** 覆盖温度（默认取 cfg.temperature） */
   temperature?: number
+  /** 通联日志用的身份：谁在问、问什么、预设与世界书各进了多少（见 lib/ailog.ts） */
+  meta?: AiLogMeta
+}
+
+/** 一趟请求的结局：成了给正文，没成给原因 */
+export type AiOutcome =
+  | { ok: true; text: string; finishReason?: string; reasoning?: string }
+  | { ok: false; error: string }
+
+/** 一趟请求的收尾记账（成功失败都记；记账本身绝不抛） */
+function settle(
+  cfg: ApiSettings,
+  messages: ChatTurn[],
+  meta: AiLogMeta | undefined,
+  stream: boolean,
+  t0: number,
+  temperature: number,
+  maxTokens: number,
+  r: AiOutcome,
+): void {
+  const d = digestPrompt(messages)
+  pushAiLog({
+    channel: meta?.channel ?? '未标注',
+    act: meta?.act,
+    preset: meta?.preset,
+    lore: meta?.lore,
+    model: cfg.model.trim(),
+    baseUrl: cfg.baseUrl.trim(),
+    stream,
+    temperature,
+    maxTokens,
+    turns: d.turns,
+    chars: d.chars,
+    prompt: d.text,
+    ok: r.ok,
+    ms: Date.now() - t0,
+    replyChars: r.ok ? r.text.length : 0,
+    replyHead: r.ok ? replyHeadOf(r.text) : '',
+    finishReason: r.ok ? r.finishReason : undefined,
+    reasoningChars: r.ok && r.reasoning ? r.reasoning.length : undefined,
+    error: r.ok ? undefined : r.error,
+  })
 }
 
 /** 调起一次 OpenAI 兼容的 chat/completions */
@@ -162,48 +211,59 @@ export async function chatCompletion(
   messages: ChatTurn[],
   opts?: ChatOpts,
 ): Promise<string> {
-  const base = cfg.baseUrl.trim().replace(/\/+$/, '')
-  if (!base) throw new Error('推演通道未填接口地址')
-  if (!cfg.model.trim()) throw new Error('推演通道未填模型名称')
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers,
-    signal: opts?.signal,
-    body: JSON.stringify({
-      model: cfg.model.trim(),
-      messages,
-      temperature: opts?.temperature ?? cfg.temperature,
-      max_tokens: opts?.maxTokens ?? 640,
-      stream: false,
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    const detail = (() => {
-      try {
-        const j = JSON.parse(body) as { error?: { message?: string } }
-        return j.error?.message ?? ''
-      } catch {
-        return ''
-      }
-    })()
-    throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
+  const t0 = Date.now()
+  const temperature = opts?.temperature ?? cfg.temperature
+  const maxTokens = opts?.maxTokens ?? 640
+  const done = (r: Parameters<typeof settle>[7]) =>
+    settle(cfg, messages, opts?.meta, false, t0, temperature, maxTokens, r)
+  try {
+    const base = cfg.baseUrl.trim().replace(/\/+$/, '')
+    if (!base) throw new Error('推演通道未填接口地址')
+    if (!cfg.model.trim()) throw new Error('推演通道未填模型名称')
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers,
+      signal: opts?.signal,
+      body: JSON.stringify({
+        model: cfg.model.trim(),
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+      }),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      const detail = (() => {
+        try {
+          const j = JSON.parse(body) as { error?: { message?: string } }
+          return j.error?.message ?? ''
+        } catch {
+          return ''
+        }
+      })()
+      throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
+    }
+    const data = (await res.json().catch(() => null)) as {
+      choices?: { message?: { content?: string | null; reasoning_content?: string | null } }[]
+    } | null
+    const text = data?.choices?.[0]?.message?.content?.trim()
+    if (!text) {
+      const thought = data?.choices?.[0]?.message?.reasoning_content?.trim() ?? ''
+      throw new Error(
+        thought
+          ? `通道只产出了内部思考、未输出正文（思考约 ${thought.length} 字，可能触发了长度上限）。可调高该通道的输出预算后重试。`
+          : '通道未返回可用内容',
+      )
+    }
+    done({ ok: true, text })
+    return text
+  } catch (e) {
+    done({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    throw e
   }
-  const data = (await res.json().catch(() => null)) as {
-    choices?: { message?: { content?: string | null; reasoning_content?: string | null } }[]
-  } | null
-  const text = data?.choices?.[0]?.message?.content?.trim()
-  if (!text) {
-    const thought = data?.choices?.[0]?.message?.reasoning_content?.trim() ?? ''
-    throw new Error(
-      thought
-        ? `通道只产出了内部思考、未输出正文（思考约 ${thought.length} 字，可能触发了长度上限）。可调高该通道的输出预算后重试。`
-        : '通道未返回可用内容',
-    )
-  }
-  return text
 }
 
 /* ============================================================
@@ -240,6 +300,29 @@ export async function chatCompletionStream(
   messages: ChatTurn[],
   opts?: StreamOpts,
 ): Promise<StreamResult> {
+  const t0 = Date.now()
+  const temperature = opts?.temperature ?? cfg.temperature
+  const maxTokens = opts?.maxTokens ?? 640
+  const done = (r: AiOutcome) =>
+    settle(cfg, messages, opts?.meta, true, t0, temperature, maxTokens, r)
+  try {
+    const out = await streamBody(cfg, messages, opts, temperature, maxTokens)
+    done({ ok: true, text: out.text, finishReason: out.finishReason, reasoning: out.reasoning })
+    return out
+  } catch (e) {
+    done({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    throw e
+  }
+}
+
+/** 发流式请求并逐行读回（chatCompletionStream 的本体，含全部 await 与解析） */
+async function streamBody(
+  cfg: ApiSettings,
+  messages: ChatTurn[],
+  opts: StreamOpts | undefined,
+  temperature: number,
+  maxTokens: number,
+): Promise<StreamResult> {
   const base = cfg.baseUrl.trim().replace(/\/+$/, '')
   if (!base) throw new Error('推演通道未填接口地址')
   if (!cfg.model.trim()) throw new Error('推演通道未填模型名称')
@@ -252,8 +335,8 @@ export async function chatCompletionStream(
     body: JSON.stringify({
       model: cfg.model.trim(),
       messages,
-      temperature: opts?.temperature ?? cfg.temperature,
-      max_tokens: opts?.maxTokens ?? 640,
+      temperature,
+      max_tokens: maxTokens,
       stream: true,
     }),
   })

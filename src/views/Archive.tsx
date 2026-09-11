@@ -22,7 +22,8 @@ import { readEquip, readGearBag, writeEquip } from '../lib/battle/store'
 import { AXIS_MAX } from '../data/types'
 import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
-import { Portrait } from '../components/Portrait'
+import { personaCardOf } from '../data/persona'
+import { Portrait, useCharImg } from '../components/Portrait'
 
 import css from './Archive.module.css'
 
@@ -166,6 +167,70 @@ function buildRows(): Row[] {
  * 超出常态的那一段才露出红色 —— 即「极限超出常态多少」。
  * 读数同步记为「常态/极限」；该轴未登记极限（或极限未超常态）时退回单值。
  */
+/**
+ * 档案卡顶图：拿同一张立绘裁到半身（cover + full + 取景偏上）。
+ * 展开的那份档案看的是全身，卡面上先给一半 —— 认人靠的是脸与身量，
+ * 竖着塞进窄卡会把整身缩成一根；缺图则整条不摆（见 useCharImg）。
+ */
+function CardArt({ id, name }: { id: string; name: string }) {
+  const url = useCharImg(id, 'full')
+  if (!url) return null
+  return (
+    <div className={css.cardArt} aria-hidden>
+      <img src={url} alt="" loading="lazy" decoding="async" />
+      <span className={css.cardArtFade} />
+      <span className={css.cardArtName}>{name}</span>
+    </div>
+  )
+}
+
+/**
+ * 展开档案的左三分之一：立绘整身。
+ * 有图就把这一栏铺满 —— 尺寸交给 CSS（栏宽是弹性的，钉死像素会在窄屏留出空档），
+ * 整身完整可见（contain），右缘渐隐进档案；
+ * 没图只摆一小块纹章占位：那一格的字号是跟着盒子算的，撑满整栏会变成一个巨大的字，像出了故障。
+ */
+function DossierArt({ focus, onView }: { focus: Row; onView: () => void }) {
+  const url = useCharImg(focus.id, 'full')
+  return (
+    <div className={css.dossierArt} data-dossier-art={url ? 'img' : 'sigil'}>
+      <Portrait
+        avatarId={focus.id}
+        name={focus.name}
+        hue={focus.hue}
+        sigil={focus.sigil}
+        fit="contain"
+        variant="full"
+        width={168}
+        height={224}
+        /* 有图时把内联的像素尺寸交回 CSS：铺满左栏靠 .artImg 的 inset，不靠 width/height */
+        style={url ? { width: 'auto', height: 'auto' } : undefined}
+        className={css.artImg}
+      />
+      <span className={css.artFade} aria-hidden />
+      <div className={css.artCap}>
+        <span className="vhead__kicker" style={{ fontSize: 9 }}>PORTRAIT / 全身</span>
+        <span className="tiny muted">
+          {url ? '立绘整身。点「查看全图」放大到整屏。' : '尚无立绘素材，此位为纹章占位。'}
+        </span>
+        <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={onView}>
+          查看全图
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 外形：取人物卡里「外貌」那一节的逐字摘录。
+ * 人物卡是按原文考据写下的分层小传，外貌一节正是「长什么样」的正面记录；
+ * 没有这一节（或角色未登记人物卡）→ 整节不摆，不编。
+ */
+function appearanceOf(id: string): string[] {
+  const sec = personaCardOf(id)?.sections.find((s) => s.title === '外貌')
+  return sec ? [...sec.lines] : []
+}
+
 function Meters({ row }: { row: Row }) {
   return (
     <>
@@ -689,6 +754,8 @@ export function Archive() {
                       onClick={(e) => onCardOpen(r.id, e)}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCardOpen(r.id, e as unknown as MouseEvent<HTMLElement>) } }}
                     >
+                      <CardArt id={r.id} name={r.name} />
+
                       <div className={css.cardHead}>
                         <Portrait avatarId={r.id} name={r.name} hue={r.hue} sigil={r.sigil} size={46} />
                         <div style={{ minWidth: 0 }}>
@@ -749,35 +816,44 @@ export function Archive() {
             role="dialog"
             aria-modal="true"
           >
-            <div className={css.dialogHead}>
-              <Portrait avatarId={focus.id} name={focus.name} hue={focus.hue} sigil={focus.sigil} size={54} round />
-              <div className={css.dialogTitle}>
-                <small>
-                  {focus.kicker} · {focus.groupLabel}
-                </small>
-                <h3>{focus.name}</h3>
-                <div style={{ color: focus.hue, fontSize: 13, marginTop: 2 }}>{focus.epithet}</div>
-              </div>
-              <button className={css.dialogClose} onClick={close} aria-label="关闭">
-                <X size={18} weight="bold" />
-              </button>
-            </div>
+            <div className={css.dossier}>
+              {/* 左三分之一：立绘整身。右缘渐隐进档案底色，两张纸拼成一张 */}
+              <DossierArt focus={focus} onView={() => setViewer(true)} />
 
-            {/* 立绘位：真图就位即点亮；缺图显示纹章占位 */}
-            <div className={css.stoodRow}>
-              <Portrait avatarId={focus.id} name={focus.name} hue={focus.hue} sigil={focus.sigil} width={132} height={188} fit="contain" />
-              <div className={css.stoodInfo}>
-                <span className="vhead__kicker" style={{ fontSize: 9 }}>PORTRAIT / 立绘</span>
-                <b style={{ fontSize: 15 }}>{focus.name}</b>
-                <p>立绘全图。同名素材置于 public/charimg/ 即自动点亮；当前缺图为纹章占位。</p>
-                <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setViewer(true)}>
-                  查看全图
-                </button>
-              </div>
-            </div>
+              <div className={css.dossierText}>
+                <div className={css.dialogHead}>
+                  <Portrait avatarId={focus.id} name={focus.name} hue={focus.hue} sigil={focus.sigil} size={54} round />
+                  <div className={css.dialogTitle}>
+                    <small>
+                      {focus.kicker} · {focus.groupLabel}
+                    </small>
+                    <h3>{focus.name}</h3>
+                    <div style={{ color: focus.hue, fontSize: 13, marginTop: 2 }}>{focus.epithet}</div>
+                  </div>
+                  <button className={css.dialogClose} onClick={close} aria-label="关闭">
+                    <X size={18} weight="bold" />
+                  </button>
+                </div>
 
             <div className={css.dialogBody}>
               <p className={css.dialogBio}>{focus.bio}</p>
+
+              {/* 外形：人物卡「外貌」一节的逐字摘录 —— 左边看形，右边看字 */}
+              {(() => {
+                const look = appearanceOf(focus.id)
+                return (
+                  <div className={css.dialogSection} data-archive-look>
+                    <h4>外形</h4>
+                    {look.length ? (
+                      <ul className={css.lookList}>
+                        {look.map((l, i) => <li key={i}>{l}</li>)}
+                      </ul>
+                    ) : (
+                      <div className="tiny muted">原书人物页未记其外貌，本终端不代为编造；立绘位所见的即全部。</div>
+                    )}
+                  </div>
+                )
+              })()}
 
               <div className={css.dialogSection}>
                 <h4>档案信息</h4>
@@ -853,6 +929,8 @@ export function Archive() {
                     </div>
                   )
                 })()}
+              </div>
+            </div>
               </div>
             </div>
           </div>

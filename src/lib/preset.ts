@@ -81,10 +81,15 @@ export function matchPresetEntries(entries: PresetEntry[], scanText: string): Pr
 const HEAD_PRE = '【预设 · 导演指令】（本段叙事的硬性约定，与既有习惯冲突时以此为准）'
 const HEAD_POST = '【预设 · 输出格式】（在写出事件指令块之前须满足）'
 
-/** 命中条目 → 两段注入文本（各自为空时返回 ''） */
+/**
+ * 命中条目 → 两段注入文本（各自为空时返回 ''）。
+ * `hits` 是**这一回合真的进了提示词**的条目名（按注入序）——
+ * 通联日志拿它对账：「预设备了 22 条、这一回合进了 5 条」是两件事，
+ * 页面上只说前者就成了「看着生效、其实没进」。
+ */
 export function buildPresetContext(
   entries: PresetEntry[], scanText: string,
-): { pre: string; post: string } {
+): { pre: string; post: string; hits: string[] } {
   const hits = matchPresetEntries(entries, scanText)
   const block = (pos: PresetEntryPos, head: string) => {
     const part = hits.filter((e) => e.position === pos && (e.content || '').trim())
@@ -92,7 +97,31 @@ export function buildPresetContext(
     const body = part.map((e) => `▸ ${e.name}\n${e.content.trim()}`).join('\n')
     return `${head}\n${body}`
   }
-  return { pre: block('pre', HEAD_PRE), post: block('post', HEAD_POST) }
+  return {
+    pre: block('pre', HEAD_PRE),
+    post: block('post', HEAD_POST),
+    hits: hits.filter((e) => (e.content || '').trim()).map((e) => e.name),
+  }
+}
+
+/**
+ * 生效预设的身份：id / 名 / 预填充有无。
+ * 未套用过任何预设时 id 为 null —— 通联日志据此写「未套用预设」，
+ * 而不是让一屏空条目看起来像「预设生效了但一条没进」。
+ */
+export function activePresetInfo(): { id: string | null; name: string; prefill: boolean } {
+  try {
+    const raw = localStorage.getItem(ACTIVE_PRESET_KEY)
+    if (!raw) return { id: null, name: '', prefill: false }
+    const p = JSON.parse(raw) as ActivePreset
+    return {
+      id: typeof p?.id === 'string' ? p.id : null,
+      name: typeof p?.name === 'string' ? p.name : '',
+      prefill: typeof p?.prefill === 'string' && p.prefill.trim() !== '',
+    }
+  } catch {
+    return { id: null, name: '', prefill: false }
+  }
 }
 
 /* ---------- 生效快照 ---------- */

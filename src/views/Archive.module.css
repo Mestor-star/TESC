@@ -161,12 +161,58 @@
   padding: 2px 8px;
 }
 
+/* 卡面顶图：同一张立绘裁到半身。留出卡顶那 3px 主题色压条（.card::before） */
+.cardArt {
+  position: relative;
+  margin: 3px 0 12px;
+  height: 172px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--c) 10%, var(--bg-2));
+}
+.cardArt img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 14%;
+  display: block;
+}
+/* 底缘渐隐：半身像的下切边化进卡面，不像是被裁断的 */
+.cardArtFade {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 58%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--bg-1));
+}
+.cardArtName {
+  position: absolute;
+  left: 16px;
+  bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--ink-dim);
+}
+
 .cardHead {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 18px 18px 12px;
 }
+.cardArt + .cardHead { padding-top: 4px; }
+
+/* 外形：人物卡「外貌」一节的逐字摘录 */
+.lookList {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.lookList li { font-size: 13px; line-height: 1.9; color: var(--ink-dim); }
+.lookList li::marker { color: color-mix(in srgb, var(--c, var(--violet)) 72%, transparent); }
 .cardNo {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -250,8 +296,8 @@
 .dialog {
   position: fixed;
   z-index: 80;
-  width: min(720px, calc(100vw - 28px));
-  max-height: min(76vh, 640px);
+  width: min(1000px, calc(100vw - 28px));
+  max-height: min(84vh, 760px);
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--line-2);
@@ -262,6 +308,62 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* 展开的档案：左边三分之一摆立绘整身，右边写档案 */
+.dossier {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 2fr;
+  align-items: stretch;
+}
+.dossierArt {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: min(84vh, 760px);
+  padding: 0 0 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--c, var(--violet)) 22%, transparent), transparent 72%),
+    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--c, var(--violet)) 4%, transparent) 26px 52px),
+    var(--bg-2);
+}
+/* 有立绘：铺满左栏 —— 上贴顶、下给说明让位，整身完整可见（contain） */
+.dossierArt[data-dossier-art='img'] .artImg {
+  position: absolute;
+  inset: 0 0 92px 0;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+}
+/* 没立绘：纹章占位只摆一小块，别让字号跟着整栏算成一个巨字 */
+.dossierArt[data-dossier-art='sigil'] .artImg {
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%);
+  border-radius: 6px;
+}
+/* 右缘渐隐：立绘的右边界化进档案底色，两块拼成一张纸而不是两张并排 */
+.artFade {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 46%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(11, 14, 20, 0.55) 52%, var(--bg-2) 100%);
+}
+.artCap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 18px;
+}
+.artCap .btn { cursor: pointer; }
+.dossierText { min-width: 0; }
 .dialog.open {
   opacity: 1;
   pointer-events: auto;
@@ -317,27 +419,6 @@
 /* 带∞的满格读数（条纹在组件内联 background 完成，此处仅收边框高亮） */
 .infFill { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
 
-/* ---- 立绘位（真图就位即点亮，缺图显示纹章占位） ---- */
-.stoodRow {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--line);
-  background:
-    repeating-linear-gradient(115deg, transparent 0 30px, color-mix(in srgb, var(--c, var(--violet)) 4%, transparent) 30px 60px),
-    var(--bg-2);
-}
-.stoodInfo {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 7px;
-  min-width: 0;
-}
-.stoodInfo p { margin: 0; font-size: 12.5px; line-height: 1.75; color: var(--ink-mute); }
-.stoodInfo .btn { cursor: pointer; }
-
 /* ---- 立绘全图查看器（大图 contain + 半透明幕） ---- */
 .lightbox {
   position: fixed;
@@ -370,12 +451,26 @@
 .lightboxMeta .dialogClose { margin-left: auto; cursor: pointer; }
 .lightboxStage img { box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7); }
 
+@media (max-width: 820px) {
+  /* 窄屏：立绘退成顶部一条，档案回到单栏（左三右二在手机上会两边都不够宽） */
+  .dossier { grid-template-columns: 1fr; }
+  .dossierArt {
+    position: relative;
+    min-height: 0;
+    height: 300px;
+    padding-bottom: 12px;
+  }
+  .dossierArt[data-dossier-art='img'] .artImg { inset: 0 0 62px 0; }
+  .dossierArt[data-dossier-art='sigil'] .artImg { bottom: 62px; }
+  .artFade { display: none; }
+}
+
 @media (max-width: 680px) {
   .kvBlock, .relationGrid { grid-template-columns: 1fr; }
   .cards { grid-template-columns: 1fr; }
-  .stoodRow { flex-direction: column; align-items: flex-start; }
   .dialogHead { flex-wrap: wrap; }
   .dialogTitle h3 { font-size: 20px; }
+  .cardArt { height: 148px; }
 }
 
 /* ============================================================

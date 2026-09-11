@@ -318,3 +318,127 @@
   font-weight: 500;
   letter-spacing: 0.06em;
 }
+
+/* ============================================================
+   总览 · 第二屏与第三屏
+   通讯中枢 / 最近战报 / 军需与装具 / 观测通报 / 收录进度
+   一律复用全局的 .panel / .meter / .chip，这里只添行式版式。
+   ============================================================ */
+
+/* —— 通讯中枢 —— */
+.msgRow {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 10px; border: 1px solid transparent; border-left: 2px solid var(--line-2);
+  border-radius: 4px; background: transparent; cursor: pointer; text-align: left;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+.msgRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
+.msgRow[data-unread='1'] { border-left-color: var(--red); }
+.msgRowBody { flex: 1; min-width: 0; }
+.msgRowBody b { display: block; font-size: 13px; font-weight: 800; }
+.msgRowBody small {
+  display: block; margin-top: 1px; color: var(--ink-mute); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.badgeUnread {
+  flex: 0 0 auto; min-width: 20px; padding: 1px 6px; border-radius: 999px;
+  background: var(--red); color: #fff; font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 700; text-align: center;
+}
+
+/* —— 最近战报 —— */
+.recRow { display: flex; gap: 10px; align-items: baseline; padding: 8px 4px; border-bottom: 1px dashed var(--line); }
+.recRow:last-child { border-bottom: 0; }
+.recNo { flex: 0 0 auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+.recBody { flex: 1; min-width: 0; }
+.recBody b { display: block; font-size: 12.5px; font-weight: 800; }
+.recBody small { display: block; margin-top: 2px; color: var(--ink-mute); font-size: 11px; }
+.resTag {
+  flex: 0 0 auto; padding: 1px 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+}
+.resTag[data-r='胜'] { background: color-mix(in srgb, var(--jade) 18%, transparent); color: var(--jade); }
+.resTag[data-r='败'] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.resTag[data-r='撤'] { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
+
+/* —— 军需 / 装具 / 补给 —— */
+.kv { display: flex; gap: 10px; align-items: baseline; padding: 6px 2px; border-bottom: 1px dashed var(--line); }
+.kv:last-child { border-bottom: 0; }
+.kvKey { flex: 0 0 72px; color: var(--ink-mute); font-size: 11px; letter-spacing: 0.06em; }
+.kvVal { flex: 1; min-width: 0; font-size: 12.5px; }
+.kvVal b { font-family: var(--font-mono); font-weight: 700; }
+.gearTag {
+  display: inline-block; margin: 0 4px 4px 0; padding: 1px 7px;
+  border: 1px solid var(--line-2); border-radius: 999px; font-size: 11px; color: var(--ink-dim);
+}
+.gearTag i { font-style: normal; color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; }
+
+/* —— 观测通报 —— */
+.feedRow { display: flex; gap: 10px; padding: 7px 2px; border-bottom: 1px dashed var(--line); }
+.feedRow:last-child { border-bottom: 0; }
+.feedMark { flex: 0 0 auto; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--steel); }
+.feedMark[data-k='story'] { background: var(--red); }
+.feedMark[data-k='battle'] { background: var(--amber); }
+.feedBody { flex: 1; min-width: 0; }
+.feedBody b { display: block; font-size: 12.5px; font-weight: 700; }
+.feedBody p {
+  margin: 2px 0 0; font-size: 11.5px; color: var(--ink-mute); line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.feedWhen { flex: 0 0 auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+
+/* —— 收录进度 —— */
+.pRow { padding: 7px 2px; }
+.pRowHead { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.pRowHead b { font-weight: 800; }
+.pRowHead span { margin-left: auto; font-family: var(--font-mono); color: var(--ink-dim); font-size: 11.5px; }
+.pRow .meter { height: 5px; margin-top: 6px; }
+
+/* 推算读数（不在标定表上的地点）挂牌 */
+.estTag {
+  margin-left: 6px; padding: 0 5px; border-radius: 999px;
+  border: 1px dashed var(--line-3); color: var(--ink-faint);
+  font-size: 10px; font-style: normal; font-weight: 500; letter-spacing: 0.06em;
+}
+
+/* ============================================================
+   区域干涉扫描 · 单点显示 + 观测点选择器
+   默认只显示当前观测点一个读数；六区列表收进「更换观测地点」后面。
+   ============================================================ */
+.nowSite {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 12px 12px; border: 1px solid var(--line-2);
+  border-left: 3px solid var(--steel); border-radius: 5px; background: var(--bg-2);
+}
+.nowSiteBody { flex: 1; min-width: 0; }
+.nowSiteBody b { display: block; font-size: 14.5px; font-weight: 800; }
+.nowSiteBody small {
+  display: block; margin-top: 3px; color: var(--ink-faint);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+}
+.nowSiteVal { flex: 0 0 auto; text-align: right; }
+.nowSiteVal b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 800; line-height: 1.15; }
+.nowSiteVal small { display: block; margin-top: 1px; font-size: 10.5px; letter-spacing: 0.08em; }
+
+.picker {
+  display: flex; flex-direction: column; gap: 1px; padding: 6px;
+  border: 1px solid var(--line-2); border-radius: 5px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+.pickerHead { padding: 3px 9px 7px; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.14em; }
+.pickRow {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  padding: 6px 9px; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; cursor: pointer; text-align: left; transition: background 0.12s, border-color 0.12s;
+}
+.pickRow:hover { background: var(--bg-2); border-color: var(--line-2); }
+.pickRow[data-on='1'] {
+  border-color: color-mix(in srgb, var(--steel) 55%, transparent);
+  background: color-mix(in srgb, var(--steel) 8%, transparent);
+}
+.pickRow b {
+  flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pickRow code { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+.pickRow i { font-style: normal; font-family: var(--font-mono); font-size: 12px; font-weight: 700; min-width: 46px; text-align: right; }

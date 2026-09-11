@@ -185,7 +185,11 @@ export async function narrateBattle(rec: BattleRecord): Promise<BattleRecord> {
     ]
     // 主线作战要出详细过程，给足额度；随机任务按原样
     const maxTokens = rec.mainline ? 3000 : 1200
-    const text = (await chatCompletion(cfg, messages, { maxTokens, temperature: 0.75 })).trim()
+    const text = (await chatCompletion(cfg, messages, {
+      maxTokens,
+      temperature: 0.75,
+      meta: { channel: '交战推演', act: `作战叙述 · ${rec.mainline ? '主线作战' : '随机任务'}` },
+    })).trim()
     if (!text) return { ...rec, narrative: fallback, narrativeBy: '模板' }
     return { ...rec, narrative: text, narrativeBy: '推演' }
   } catch {

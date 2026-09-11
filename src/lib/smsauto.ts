@@ -19,7 +19,7 @@ import { TIMELINE } from '../data/timeline'
 import { castOf } from './cast'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { chatCompletion, isReady, loadProfile } from './api'
-import { buildPresetContext, readActivePreset } from './preset'
+import { activePresetInfo, buildPresetContext, readActivePreset } from './preset'
 import { extractLiveDisplay } from './plot'
 import { appendSmsMsg, incomingSms, loadSmsLogs, markUnread, smsTurns, systemPrompt } from './sms'
 
@@ -143,7 +143,15 @@ export function useProactiveSms(): void {
           ...smsTurns(logs[charId], 6),
           { role: 'user' as const, content: PROACTIVE_PROMPT },
         ]
-        const text = (await chatCompletion(cfg, messages, { maxTokens: Math.min(400, cfg.maxTokens || 400) }) ?? '').trim()
+        const pi = activePresetInfo()
+        const text = (await chatCompletion(cfg, messages, {
+          maxTokens: Math.min(400, cfg.maxTokens || 400),
+          meta: {
+            channel: '角色短信',
+            act: `主动来信 · ${charOf(charId)?.name ?? charId}`,
+            preset: { id: pi.id, name: pi.name, hits: preset.hits, prefill: pi.prefill },
+          },
+        }) ?? '').trim()
         if (!alive || !text) return
         // 过一遍展示清洗：外来标签（dream_* 一类）、代码围栏、行首的「【名】」都不该露给观测者
         const clean = extractLiveDisplay(text.replace(/^[【\[][^】\]]{1,12}[】\]]\s*/, '')) || text

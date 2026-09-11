@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Check, Crosshair, PaperPlaneTilt, Storefront, Trash, Users, X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
-import { CHARACTERS } from '../data/chars'
 import { TIMELINE } from '../data/timeline'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { OPERATOR_ID, OPERATOR_PERSON, PERSON_IDS, personOf } from '../data/castmeta'
@@ -10,7 +9,7 @@ import { opPeriodAt, VOL1_END } from '../lib/operator-arc'
 import type { Mission } from '../data/types'
 import { stageSeverity } from '../lib/format'
 import { Battle } from './Battle'
-import { periodProgress, squadIdsFrom } from '../lib/battle/derive'
+import { periodProgress, personIdOf, squadIdsFrom } from '../lib/battle/derive'
 import { TUNING } from '../lib/battle/tuning'
 import {
   buyGear, buyItem, deleteRecord, listRecords, readBag, readCoin, readEquip, readGearBag,
@@ -51,7 +50,6 @@ const STATUS_META: Record<LocalStatus, { cls: string; color: string; label: stri
   锁定: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '等待签署' },
 }
 
-const CHAR_HUE: Record<string, string> = Object.fromEntries(CHARACTERS.map((c) => [c.name, c.hue]))
 
 export function Missions() {
   const { push, epDone, bumpBond, bondNow, isMet, operatorName, navigate } = useTerminal()
@@ -192,7 +190,9 @@ export function Missions() {
   const opArc = opPeriodAt(epDone)
 
   const openBriefing = (m: Mission) => {
-    const rec = squadIdsFrom(m.recommend).filter((id) => id !== OPERATOR_ID)
+    // 推荐位只当推荐：还没照过面的人不替他编进队 —— 卡面上那一栏仍然照列，
+    // 编队格子里这些人本来就是按不动的（isMet 拦着），自动预选更不该绕过去
+    const rec = squadIdsFrom(m.recommend).filter((id) => id !== OPERATOR_ID && isMet(id))
     const auto = rec.length ? rec : PERSON_IDS.filter((id) => id !== OPERATOR_ID && isMet(id)).slice(0, 3)
     // 主角必在队里 —— 编队是「他带谁去」，不是「要不要带他」
     setPicked([OPERATOR_ID, ...auto.filter((id) => id !== OPERATOR_ID).slice(0, SQUAD_MAX - 1)])
@@ -499,13 +499,13 @@ export function Missions() {
                       className={css.rChip}
                       data-mission-r={m2.id}
                       data-r-known={rb.reading.known ? '1' : undefined}
+                      data-r-src={rb.reading.src}
                       data-r-amp={amp}
                       title={`${rb.reading.note}
 ${rb.f.word}`}
                     >
                       R {rb.reading.r.toFixed(3)}
-                      {amp ? ` · 敌 +${amp}%` : ' · 常规'}
-                      {rb.reading.known ? '' : '（推算）'}
+                      {rb.reading.over ? ' · 量程外' : amp ? ` · 敌 +${amp}%` : ' · 常规'}
                     </span>
                     <span className={css.sep}>/</span>
                     <span className={css.deadline}>期限 · {m2.deadline}</span>
@@ -515,12 +515,17 @@ ${rb.f.word}`}
                   <p className={`${css.cardDesc} ${openId === m2.id ? css.open : ''}`}>{m2.desc}</p>
                   <div className={css.crew}>
                     <span className="tag tiny" style={{ padding: '4px 8px' }}>推荐小队</span>
-                    {m2.recommend.map((r) => (
-                      <span key={r} className={css.crewChip} style={{ '--crew': CHAR_HUE[r] ?? 'var(--violet)' }}>
-                        <i>{CHAR_HUE[r] ? CHARACTERS.find((c) => c.name === r)?.sigil ?? '?' : '?'}</i>
-                        {r}
-                      </span>
-                    ))}
+                    {m2.recommend.map((token) => {
+                      // 派单写中文名、剧情作战写 id —— 一律翻成名录里的中文名再上屏
+                      const id = personIdOf(token)
+                      const p = id ? personOf(id) : undefined
+                      return (
+                        <span key={token} className={css.crewChip} style={{ '--crew': p?.hue ?? 'var(--violet)' }}>
+                          <i>{p?.sigil ?? '?'}</i>
+                          {p?.name ?? token}
+                        </span>
+                      )
+                    })}
                     <button className="linkGo" onClick={() => setOpenId(openId === m2.id ? null : m2.id)} style={{ marginLeft: 'auto' }}>
                       {openId === m2.id ? '收起' : '展开详情'}
                     </button>

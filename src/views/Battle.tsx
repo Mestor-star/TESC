@@ -405,10 +405,10 @@ export function Battle({
               ? (st.phase === 'think' ? '敌方指挥中…' : '敌方 · AI 指挥')
               : '敌方 · 离线判断'}
           </span>
-          <span className={css.siteR} data-r-badge title={`${siteR.reading.note}
+          <span className={css.siteR} data-r-badge data-r-src={siteR.reading.src} title={`${siteR.reading.note}
 ${siteR.f.word}`}>
             R {siteR.reading.r.toFixed(3)}
-            {siteR.f.out ? ` · 敌 +${Math.round((siteR.f.mul - 1) * 100)}%` : ' · 常规'}
+            {siteR.reading.over ? ' · 量程外' : siteR.f.out ? ` · 敌 +${Math.round((siteR.f.mul - 1) * 100)}%` : ' · 常规'}
           </span>
         </div>
         <div className={css.hudR}>

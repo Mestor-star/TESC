@@ -116,6 +116,7 @@ export async function askEnemyIntent(
       signal: opts?.signal,
       maxTokens: 200,
       temperature: Math.min(1, Math.max(0.2, cfg.temperature)),
+      meta: { channel: '交战推演', act: `${foe.name} 的下一步` },
     })
   } catch {
     return null

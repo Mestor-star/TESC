@@ -26,7 +26,8 @@ export interface RunStateInput {
   unlocked: boolean
   epDone: Record<string, true>
   cur: string | null
-  focusId: string
+  /** 钉住的观测点 id；null = 跟随剧情（见 Terminal 的 focusRegion） */
+  focusId: string | null
   world: WorldState
 }
 

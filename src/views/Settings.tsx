@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ChatsCircle, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, SlidersHorizontal, SpeakerHigh, Sparkle, Trash, UploadSimple, Wrench } from '@phosphor-icons/react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { ArrowClockwise, CaretDown, CaretRight, ChatsCircle, ClockCounterClockwise, Copy, Database, DownloadSimple, Eye, EyeSlash, FloppyDisk, Play, SlidersHorizontal, SpeakerHigh, Sparkle, Trash, UploadSimple, WarningOctagon, Wrench } from '@phosphor-icons/react'
+import { aiLogVersion, clearAiLogs, listAiLogs, logLine, subscribeAiLog } from '../lib/ailog'
+import type { AiLogRecord } from '../lib/ailog'
 import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
 
@@ -140,6 +142,169 @@ const CH_META: Record<Channel, { title: string; kicker: string; hint: string; te
 
 const SUB_FIELD = { fontFamily: 'inherit', fontSize: 11.5, letterSpacing: 0.02, color: 'var(--ink-faint)', textTransform: 'none' } as const
 
+/**
+ * 通联日志。
+ * 只回答一个问题：我在这一屏里配的东西，后台 AI 到底收到了没有。
+ * 所以每条都摊开三样最容易被「看着生效、其实没进」的东西 ——
+ * 生效预设实际命中的条目、世界书命中的词条、以及发出去的提示词全文。
+ */
+function AiLogPanel() {
+  // 日志写在 lib/api 里（不经过 React），这里订阅它的版本号重读
+  const version = useSyncExternalStore(subscribeAiLog, aiLogVersion)
+  const rows = useMemo(() => listAiLogs(), [version])
+  const [open, setOpen] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const copy = (id: string, text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => { setCopied(id); window.setTimeout(() => setCopied((c) => (c === id ? null : c)), 1600) },
+      () => { /* 无剪贴板权限就静默 */ },
+    )
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel__head">
+        <span className="panel__title"><ClockCounterClockwise size={15} weight="bold" /> 通联日志</span>
+        <span className="muted tiny">最近 {rows.length} 次推演的去向</span>
+      </div>
+      <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className={css.note}>
+          <b>用来核对后台 AI 有没有真的吃到你配的东西。</b><br />
+          每一趟请求都留一条：通道、模型、生效预设**实际进了哪几条**指令、世界书命中多少字、提示词全文、回来的字数与耗时。
+          预设套用了却一条没进、世界书一本没命中、密钥不对被网关挡回来，都在这上面一眼看出来。
+        </div>
+
+        <div className={css.dataLine}>
+          <span className="chip">记录 {rows.length} / 最多 30</span>
+          <span className={css.grow} />
+          <button
+            className={`btn ${confirmClear ? `${css.danger} btn--ghost` : 'btn--ghost'}`}
+            style={{ fontSize: 12 }}
+            onClick={() => {
+              if (!confirmClear) { setConfirmClear(true); window.setTimeout(() => setConfirmClear(false), 4000); return }
+              clearAiLogs(); setConfirmClear(false); setOpen(null)
+            }}
+          >
+            <Trash size={14} weight="bold" /> {confirmClear ? '再按一次清空' : '清空日志'}
+          </button>
+        </div>
+
+        {rows.length === 0 ? (
+          <div className="muted tiny" style={{ padding: '4px 2px' }}>
+            还没有记录。去剧情推进或角色短信里发一轮，回来这里核对。
+          </div>
+        ) : (
+          <div className={css.logList}>
+            {rows.map((r) => {
+              const isOpen = open === r.id
+              return (
+                <div key={r.id} className={`${css.logRow} ${r.ok ? '' : css.logBad}`}>
+                  <div className={css.logHead} onClick={() => setOpen(isOpen ? null : r.id)}>
+                    {isOpen ? <CaretDown size={12} weight="bold" /> : <CaretRight size={12} weight="bold" />}
+                    <span className={css.logWhen}>{logLine(r)}</span>
+                    {r.ok ? null : <WarningOctagon size={13} weight="bold" className={css.logWarnIcon} />}
+                    <span className={css.grow} />
+                    <span className="muted tiny">{r.ts ? new Date(r.ts).toLocaleDateString('zh-CN') : ''}</span>
+                  </div>
+                  {isOpen ? <LogDetail rec={r} copied={copied === r.id} onCopy={() => copy(r.id, detailText(r))} /> : null}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/** 一条记录摊开后的全文（复制用：连同提示词一起带走） */
+function detailText(r: AiLogRecord): string {
+  return [
+    logLine(r),
+    `通道：${r.channel}${r.act ? ` · ${r.act}` : ''}`,
+    `接口：${r.baseUrl || '未填'} ｜ 模型：${r.model || '未填'}`,
+    `参数：温度 ${r.temperature} ｜ 上限 ${r.maxTokens} ｜ ${r.stream ? '流式' : '整段'}`,
+    r.preset ? `预设：${r.preset.name || '未命名'}${r.preset.id ? `（${r.preset.id}）` : ''} ｜ 命中 ${r.preset.hits.length} 条：${r.preset.hits.join('、') || '无'}` : '预设：未套用',
+    r.lore ? `世界书：命中 ${r.lore.hits.length} 条 / ${r.lore.chars} 字：${r.lore.hits.join('、') || '无'}` : '',
+    `结果：${r.ok ? `成功 · 正文 ${r.replyChars} 字 · ${r.ms}ms${r.finishReason ? ` · ${r.finishReason}` : ''}` : `失败 · ${r.error ?? ''}`}`,
+    '',
+    '── 提示词 ──',
+    r.prompt,
+    r.replyHead ? `\n── 回复开头 ──\n${r.replyHead}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+function LogDetail({ rec, copied, onCopy }: { rec: AiLogRecord; copied: boolean; onCopy: () => void }) {
+  const yes = (s: string) => <span className={css.logOk}>{s}</span>
+  const no = (s: string) => <span className={css.logNo}>{s}</span>
+  return (
+    <div className={css.logBody}>
+      <div className={css.logKv}>
+        <span>通道</span><b>{rec.channel}{rec.act ? ` · ${rec.act}` : ''}</b>
+        <span>接口</span><b>{rec.baseUrl || '未填'} ｜ {rec.model || '未填模型'}</b>
+        <span>参数</span><b>温度 {rec.temperature} ｜ 上限 {rec.maxTokens} ｜ {rec.stream ? '流式' : '整段接收'}</b>
+        <span>提示词</span><b>{rec.turns} 条消息 / {rec.chars} 字</b>
+      </div>
+
+      <div className={css.logBlock}>
+        <b>生效预设</b>
+        {rec.preset?.id || rec.preset?.name ? (
+          <>
+            <div className="muted tiny">
+              {rec.preset.name || '未命名'}{rec.preset.id ? `（${rec.preset.id}）` : ''}
+              {rec.preset.prefill ? ' ｜ 带预填充' : ''}
+            </div>
+            <div className={css.logHits}>
+              {rec.preset.hits.length
+                ? rec.preset.hits.map((h) => <span key={h} className={css.logHit}>{h}</span>)
+                : no('一条都没进 —— 预设没生效，或条目全被关/全需未命中的关键词')}
+            </div>
+          </>
+        ) : (
+          <div className="muted tiny">{no('未套用任何预设（到「管理预设」里应用一份）')}</div>
+        )}
+      </div>
+
+      <div className={css.logBlock}>
+        <b>世界书</b>
+        {rec.lore && rec.lore.chars > 0 ? (
+          <>
+            <div className="muted tiny">{rec.lore.chars} 字注入</div>
+            <div className={css.logHits}>
+              {rec.lore.hits.length
+                ? rec.lore.hits.map((h) => <span key={h} className={css.logHit}>{h}</span>)
+                : <span className="muted tiny">（未解析出词条名）</span>}
+            </div>
+          </>
+        ) : (
+          <div className="muted tiny">本次未命中任何词条</div>
+        )}
+      </div>
+
+      <div className={css.logBlock}>
+        <b>结果</b>
+        {rec.ok
+          ? <div className="muted tiny">{yes(`成功 · 正文 ${rec.replyChars} 字 · ${rec.ms}ms`)}{rec.finishReason ? ` · 终止 ${rec.finishReason}` : ''}{rec.reasoningChars ? ` · 内部思考 ${rec.reasoningChars} 字` : ''}</div>
+          : <div className="muted tiny">{no(`失败 · ${rec.error ?? '未知错误'} · ${rec.ms}ms`)}</div>}
+        {rec.replyHead ? <div className={css.logPre}>{rec.replyHead}</div> : null}
+      </div>
+
+      <div className={css.logBlock}>
+        <b>提示词全文</b>
+        <div className={css.logPre}>{rec.prompt}</div>
+      </div>
+
+      <div className={css.logActs}>
+        <button className="btn btn--ghost" style={{ fontSize: 11, padding: '5px 10px' }} onClick={onCopy}>
+          <Copy size={12} weight="bold" /> {copied ? '已复制' : '复制这一条'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function Settings() {
   const { push, navigate, setupMode } = useTerminal()
   const [cfgs, setCfgs] = useState<Record<Channel, ApiSettings> | null>(null)
@@ -242,7 +407,7 @@ export function Settings() {
           { role: 'system', content: '你是一个连通性测试助手。只回复四个字：信道正常。' },
           { role: 'user', content: '测试' },
         ],
-        { signal: ctrl.signal },
+        { signal: ctrl.signal, meta: { channel: '信道自检', act: ch === 'main' ? '主线剧情通道' : '角色短信通道' } },
       )
       setResults((prev) => ({ ...prev, [ch]: { ok: true, text: `信道正常 · 通道回话：${out.slice(0, 120)}` } }))
     } catch (e) {
@@ -753,6 +918,7 @@ export function Settings() {
                   const chip = (p: SchemePart) => (p.model ? `${p.model} · ${p.temperature.toFixed(2)}` : '未配置')
                   return (
                     <div key={s.id} className={`${css.schemeRow} ${isSel ? css.isSel : ''}`} onClick={() => setSchemeSel(s.id)}>
+                      {isSel ? <span className={css.selMark}>已选中</span> : null}
                       <div className={css.schemeMain}>
                         <b>{s.name}</b>
                         {/* 内置的那两份随终端一起来；手动导入的没有这个标 */}
@@ -824,6 +990,8 @@ export function Settings() {
           </div>
         </div>
       </section>
+
+      <AiLogPanel />
 
       {/* 预设调配：调的是预设自带的词条滤网，与世界书自身状态互不干扰 */}
       {manageOf && (

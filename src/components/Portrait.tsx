@@ -10,9 +10,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 
-import { charImgCandidates, FACE_FOCUS } from '../lib/charimg'
+import { charImgCandidates, FACE_FOCUS, probeCharImg } from '../lib/charimg'
 import type { CharImgVariant } from '../lib/charimg'
 import { personOf } from '../data/castmeta'
+
+/**
+ * 素材是否到位（真能加载的那张 URL；全 404 → null）。
+ * 给「缺图宁可不摆」的版位用（档案卡顶图）—— Portrait 的回退是给必须摆一个位子的
+ * 地方（头像、立绘位）准备的，那里摆纹章占位是对的；整条卡面上的装饰带不是。
+ */
+export function useCharImg(avatarId: string, variant: CharImgVariant = 'full'): string | null {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    setUrl(null)
+    void probeCharImg(avatarId, variant).then((u) => { if (alive) setUrl(u) })
+    return () => { alive = false }
+  }, [avatarId, variant])
+  return url
+}
 
 export interface PortraitProps {
   /** 素材 id（= public/charimg/<id>.* 的 <id>；操作员传 'operator'） */
@@ -36,6 +52,12 @@ export interface PortraitProps {
    * 同时决定取哪套素材：cover（小头像 / 人物框）优先 <id>-face，contain（档案大立绘）取 <id>。
    */
   fit?: 'cover' | 'contain'
+  /**
+   * 覆盖素材选择：'face' 头像 / 'full' 立绘。
+   * 需要「拿立绘裁出半身」时用（档案卡顶图：cover + full + focus 取到胸像），
+   * 缺省仍按 fit 推断 —— 方框取头像、大立绘取整图。
+   */
+  variant?: CharImgVariant
   /** cover 裁切的取景重心（CSS object-position）；缺省偏上取脸，官方整身立绘才切得对 */
   focus?: string
   eager?: boolean
@@ -56,8 +78,9 @@ function metaOf(props: PortraitProps) {
 export function Portrait(props: PortraitProps) {
   const { avatarId, size = 44, width, height, round, fit = 'cover', focus, className, style, eager } = props
 
-  // cover 的槽位都是小头像 / 人物框 → 取头像变体；contain 只有档案大立绘 → 取立绘
-  const variant: CharImgVariant = fit === 'cover' ? 'face' : 'full'
+  // cover 的槽位默认都是小头像 / 人物框 → 取头像变体；contain 只有档案大立绘 → 取立绘。
+  // 显式给 variant 时以它为准（档案卡顶图要的是「立绘裁半身」，不是头像）。
+  const variant: CharImgVariant = props.variant ?? (fit === 'cover' ? 'face' : 'full')
   const candidates = useMemo(() => charImgCandidates(avatarId, variant), [avatarId, variant])
   const meta = useMemo(() => metaOf(props), [avatarId, props.name, props.hue, props.sigil])
 

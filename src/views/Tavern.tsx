@@ -14,7 +14,9 @@ import type { ChatMsg, CharId } from '../data/types'
 import { extractLiveDisplay, parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
-import { buildPresetContext, readActivePreset } from '../lib/preset'
+import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/preset'
+import { loreHitsOf } from '../lib/ailog'
+import type { AiLogMeta } from '../lib/ailog'
 import type { GroupThread } from '../lib/smsthreads'
 import { listGroups, makeGroup, nameOf, storeGroups } from '../lib/smsthreads'
 import {
@@ -206,6 +208,15 @@ export function Tavern() {
       // 预设导演指令（短信侧同样受「管理预设」的生效快照管辖）
       const preset = buildPresetContext(readActivePreset(), scanText)
 
+      // 通联日志身份：短信侧这一趟问的是谁
+      const presetInfo = activePresetInfo()
+      const logMeta: AiLogMeta = {
+        channel: '角色短信',
+        act: '回信',
+        preset: { id: presetInfo.id, name: presetInfo.name, hits: preset.hits, prefill: presetInfo.prefill },
+        lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
+      }
+
       const bond = bondNow(charId)
       const system =
         systemPrompt(charId, operatorName, bond, meta.scenario)
@@ -223,10 +234,11 @@ export function Tavern() {
       try {
         // 流式开关（终端设置 · 角色短信通道）：关掉即整段接收
         const res: StreamResult = cfg.stream === false
-          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500 }) }
+          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500, meta: logMeta }) }
           : await chatCompletionStream(cfg, messages, {
             signal: ctrl.signal,
             maxTokens: cfg.maxTokens || 1500,
+            meta: logMeta,
             onDelta: (chunk) => {
               if (settled || !chunk) return
               acc += chunk
@@ -348,6 +360,13 @@ export function Tavern() {
       }
 
       const preset = buildPresetContext(readActivePreset(), scanText)
+      const presetInfo = activePresetInfo()
+      const logMeta: AiLogMeta = {
+        channel: '角色短信',
+        act: `群聊 · ${g.name}`,
+        preset: { id: presetInfo.id, name: presetInfo.name, hits: preset.hits, prefill: presetInfo.prefill },
+        lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
+      }
       const bonds = g.charIds.map((id) => `${charOf(id)?.name ?? id} ${bondNow(id)}`).join(' · ')
       const system =
         groupSystemPrompt(g.charIds, g.name, operatorName, bonds, '各自所在的日常，此刻同时看着这一屏')
@@ -369,10 +388,11 @@ ${preset.post}` : '')
       let settled = false
       try {
         const res: StreamResult = cfg.stream === false
-          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500 }) }
+          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500, meta: logMeta }) }
           : await chatCompletionStream(cfg, messages, {
             signal: ctrl.signal,
             maxTokens: cfg.maxTokens || 1500,
+            meta: logMeta,
             onDelta: (chunk) => {
               if (settled || !chunk) return
               acc += chunk

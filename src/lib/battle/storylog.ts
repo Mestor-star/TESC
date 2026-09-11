@@ -118,7 +118,11 @@ export async function narrateStorylog(rec: BattleRecord): Promise<string> {
       { role: 'system', content: systemPrompt() },
       { role: 'user', content: userPrompt(rec) },
     ]
-    const text = (await chatCompletion(cfg, messages, { maxTokens: 1600, temperature: 0.8 })).trim()
+    const text = (await chatCompletion(cfg, messages, {
+      maxTokens: 1600,
+      temperature: 0.8,
+      meta: { channel: '交战推演', act: `战报成文 · ${rec.place}` },
+    })).trim()
     return text || fallback
   } catch {
     return fallback

@@ -28,16 +28,27 @@ const AXES: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲
 
 const CORE: Record<string, Character> = Object.fromEntries(CHARACTERS.map((c) => [c.id, c]))
 
-/** 名录全名/别名 → id（任务简报的 recommend 里写的是中文名） */
+/**
+ * 名录 id / 全名 / 别名 → id。
+ * 任务简报的 recommend 两种写法都有：派单（missions.ts）写的是中文名，
+ * 剧情作战（mainline.ts）直接搬事件在场者的 id —— 两边都要认，
+ * 否则剧情那一栏挂出来的就是 'kuro-no-maou' 这种原文 id。
+ */
 const NAME2ID = (() => {
   const m = new Map<string, string>()
   for (const p of CAST) {
+    m.set(p.id, p.id)
     for (const n of [p.name, ...p.names]) if (!m.has(n)) m.set(n, p.id)
   }
   return m
 })()
 
-/** 任务简报的推荐名单（中文名）→ 名录 id（认不出的丢弃） */
+/** 单个名字 / id → 名录 id；认不出返回 null */
+export function personIdOf(token: string): string | null {
+  return NAME2ID.get(token) ?? null
+}
+
+/** 任务简报的推荐名单（中文名或 id）→ 名录 id（认不出的丢弃） */
 export function squadIdsFrom(names: string[]): string[] {
   const out: string[] = []
   for (const n of names) {

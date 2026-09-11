@@ -49,3 +49,30 @@ export function charImgCandidates(avatarId: string, variant: CharImgVariant = 'f
 export function charImgUrl(avatarId: string, variant: CharImgVariant = 'full'): string {
   return urlOf(variant === 'face' ? `${avatarId}-face` : avatarId, EXTS[0])
 }
+
+/* 素材是否到位：按「变体:id」缓存探针结果。
+   有些版位（档案卡顶图）在缺图时宁可不摆 —— 一个空纹章带比没有带更难看。
+   Portrait 自己能回退，但它的回退结果在渲染完才知道；这里提前问一句，好决定摆不摆。 */
+const probes = new Map<string, Promise<string | null>>()
+
+/** 探出第一个真能加载的候选 URL；全 404 → null。同一 id 只探一次 */
+export function probeCharImg(avatarId: string, variant: CharImgVariant = 'full'): Promise<string | null> {
+  const key = `${variant}:${avatarId}`
+  const hit = probes.get(key)
+  if (hit) return hit
+  const p = new Promise<string | null>((resolve) => {
+    const list = charImgCandidates(avatarId, variant)
+    let i = 0
+    const next = (): void => {
+      if (i >= list.length) { resolve(null); return }
+      const url = list[i++]
+      const img = new Image()
+      img.onload = () => resolve(url)
+      img.onerror = next
+      img.src = url
+    }
+    next()
+  })
+  probes.set(key, p)
+  return p
+}
