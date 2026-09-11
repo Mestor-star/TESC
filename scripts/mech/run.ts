@@ -2709,6 +2709,42 @@ export function run(): MechReport {
       && thinkContent.includes('结局归言万心叶的行动管'),
       thinkContent ? `字数 ${thinkContent.length}` : '缺 ts-think')
 
+    /* ③d 散在三处的「以他为中心」不解决问题：他落笔时手里攥着的仍是那张待办表。
+       所以他的话要**端到最末**（大纲、情节线、落点、后接事件统统读完之后），逐字，并点名让位。
+       这一条量的就是位置 —— 位置即分量，而位置是最容易在后续改动里被挪走的东西。
+       同时给一条对照：没有本回合输入时不许摆一个空节（AI 起草那一路会因此被塞进上一轮的话）。 */
+    const ACT = '我直接开枪打穿舱门，把露娜抱走。'
+    const ctxNext = { ...ctx, nextEvent: TIMELINE[1], operatorAction: ACT }
+    const withWill = buildDirectorSystem(ev0, ctxNext)
+    const iWill = withWill.indexOf('【本回合 · 言万心叶的意志')
+    const before = ['【事件大纲 · 原文走向', '【本事件实施细则】', '四、原文里这一段的落点',
+      '【收束衔接 · 后接事件'].map((h) => withWill.indexOf(h))
+    ok('详纲：操作员的原话逐字摆在提示词最末一节（大纲/情节线/落点/后接事件全都之后）',
+      iWill > 0 && withWill.includes(`「${ACT}」`) && before.every((i) => i > 0 && iWill > i),
+      `意志节 ${iWill}｜大纲 ${before[0]}｜细则 ${before[1]}｜落点 ${before[2]}｜后接 ${before[3]}｜全文 ${withWill.length}`)
+    ok('详纲：最末那一节写明让位（他推去别处就以别处收束 · 那正是 diverged 的时候）',
+      withWill.includes('这一节压过以上一切') && withWill.includes('全部让位')
+      && withWill.includes('把 diverged 置 true'),
+      '压过一切／让位／diverged 三句都在')
+    /* 主语得是言万心叶：显示名（这里刻意取成「操作员」）是终端界面上的标签，不是第二个人。
+       拿它当主语，模型会顺手把「操作员」写成场上的另一个角色 —— 一段凭空多出来的人。 */
+    ok('详纲：那一节的主语是言万心叶，显示名只以「（显示名「X」）」出现，不冒充第二个人',
+      withWill.includes('【本回合 · 言万心叶的意志')
+      && !withWill.includes('操作员的意志')
+      && withWill.includes('显示名「操作员」'),
+      withWill.includes('显示名「操作员」') ? '主语=言万心叶 · 显示名另注' : '缺显示名注记')
+    ok('详纲（对照）：没有本回合输入时，整节不出现（不摆空节，也不塞上一轮的话）',
+      !full.includes('【本回合 · ') && !lit.includes('【本回合 · '),
+      `有输入的对照节=${withWill.includes('【本回合 · ')}　无输入=${full.includes('【本回合 · ')}`)
+
+    /* 收束的闸门不许再挂回大纲上：eventDone 是「往下推进」的唯一开关，
+       而它最后被读到的那句定义就在 schema 注释里 —— 若写成「大纲关键收束达成才置 true」，
+       模型为了让剧情能往下走，只能把情节推回原位（前面所有松口径全被这一句抵消）。 */
+    const doneLine = full.split('\n').find((l) => l.includes('"eventDone"')) ?? ''
+    ok('详纲：schema 里 eventDone 的注释以「实际发生的」为落点，不把闸门挂回大纲',
+      doneLine.includes('以**此刻实际发生的**为准') && !doneLine.includes('大纲关键收束达成'),
+      doneLine.trim().slice(0, 40) + '…')
+
     /* ③ 台词与「还不知道」必须原样进提示词 —— 这两样一旦被改写，写出来的人就不是原文那个 */
     const probe = EVENT_BRIEFS.__probe__
     ok('详纲：关键台词与「还不知道」逐字进提示词（改写一句就等于换了个人）',

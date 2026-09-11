@@ -210,6 +210,21 @@ function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
   )
 }
 
+/**
+ * 日志里最后一条操作员发言（言万心叶的行动）。
+ *
+ * 重写、续跑、补发指令这几条路上没有「刚发出去的 userMsg」，可提示词最末那一节
+ * 【本回合 · 他的意志】要的正是这一条 —— 从被保留的历史里捞最后一条 'user'（不是 'them'）。
+ * 一条都没有（本事件他还没开过口）返回空串，那一节整节不出现。
+ */
+function lastActOf(log: ChatMsg[] | undefined): string {
+  const list = log ?? []
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].from === 'user') return (list[i].text ?? '').trim()
+  }
+  return ''
+}
+
 /** 把「AI 起草」的原始返回切成一句句可直接填入的候选行动（条理性 best-effort） */
 function parseDraftLines(raw: string): string[] {
   const out: string[] = []
@@ -539,6 +554,9 @@ export function Plot() {
         lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
       }
 
+      /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
+         这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。 */
+      const myTurn = userMsg ?? lastActOf(baseOverride ?? logs[evId])
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
@@ -550,6 +568,7 @@ export function Plot() {
         presetPre: preset.pre || undefined,
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
+        operatorAction: myTurn || undefined,
       })
       const base = toTurns(baseOverride ?? logs[evId])
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
@@ -855,7 +874,11 @@ export function Plot() {
     setBusy(true)
     setErr(null)
     const ev = focusEv
-    const system = buildDirectorSystem(ev, { operatorName, bondNow, epDone, flags: world.flags, needDirective: true })
+    const system = buildDirectorSystem(ev, {
+      operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+      // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
+      operatorAction: lastActOf(logs[ev.id]) || undefined,
+    })
     const messages: ChatTurn[] = [
       { role: 'system', content: system },
       ...toTurns(logs[ev.id]),
