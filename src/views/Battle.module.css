@@ -271,7 +271,10 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: clamp(14px, 3.4vw, 44px);
+  /* 间距收到这个数，是因为敌阵不再固定是三个：首领与精英会喊人，
+     一场仗最多站到 6 个（见 TUNING.enemyCap）。
+     照旧那套 44px 的话，六个 118px 的敌位在一屏里排不下、会折成两行。 */
+  gap: clamp(10px, 2.4vw, 30px);
   flex-wrap: wrap;
 }
 

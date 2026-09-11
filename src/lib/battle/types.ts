@@ -200,12 +200,28 @@ export interface SkillForm {
   name: string
   /** 名字底下的注（本体是谁、这份力从哪来） */
   note?: string
-  /** 持续拍数：数满自行还原本相 */
+  /**
+   * 持续拍数：数满自行还原本相。
+   * 口径是**全局拍**（`advance` 里全员都不满条、整轮一起充能的那一拍），
+   * 不是「自身出场次数」—— 与增益的 buffTurnsCap 不是一回事，别照那个改。
+   * 它数的是场上过了多久，不是他出手几回。验收时推 `advance` 的 tick，别数自己的回合。
+   */
   ticks: number
   /** 解除之后这一手的冷却 */
   cd?: number
-  /** 变身期间覆写的五轴（缺省沿用本体） */
+  /**
+   * 变身期间覆写的五轴（缺省沿用本体）。
+   * 值是**按未成长时的时期面板**写下的绝对值，引擎覆写时会乘上本人的成长系数
+   * （见 engine 的 form 分支）：形是他的另一副面目，本人练到哪它就该到哪。
+   */
   axes?: Partial<AxisSheet>
+  /**
+   * 每过一拍，普攻倍率往上加这么多（缺省 0 = 不涨）。
+   * 数的是**全局拍**，跟 ticks 同一把尺子：这副面目顶了几拍，普攻就长了多少。
+   * 涨的只是这一份拷贝，解除时随技能表一起还回去，不落到本体头上。
+   * 给「越站越凶」的形态用 —— 黄金狮子就是靠它把普攻顶成全作最高。
+   */
+  basicRamp?: number
   /** 变身期间的技能表 —— 整份替换，不是追加 */
   skills: SkillSpec[]
 }
@@ -277,6 +293,12 @@ export interface SkillSpec {
    * 抄得来一把琴，抄不来弹它的那股力，因为那股力本来就不在吉他上。
    */
   uncopyable?: boolean
+  /**
+   * 召唤：这一手不造成伤害，出手时把一只**同场性质**的成形体喊上场（见 engine 的 summonFoe）。
+   * 只有首领与精英带得了这一手 —— 底下的小兵没有「喊人」这个动作，
+   * 否则低危场会变成一场添油：玩家打的不是敌人，是刷不完的人头。
+   */
+  summon?: boolean
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
@@ -353,10 +375,30 @@ export function isDebuff(k: BuffKey): boolean {
   return DEBUFF_KEYS.includes(k)
 }
 
+/**
+ * 「规格」类：改的是这个人这门东西的底子，不是一时的状态。
+ * 所以它们**不吃回合上限**（TUNING.buffRoundsCap）—— 一次解封就是这一场的底子，
+ * 挂上就不走了。要不是这一条，旧吉他的解封链会在半路自己散掉：
+ * 链走完之前规格就没了，等于白解。
+ */
+export const SPEC_KEYS: BuffKey[] = ['skillMul']
+
+/** 这条 buff 是「规格」还是「一时的状态」 */
+export function isSpec(k: BuffKey): boolean {
+  return SPEC_KEYS.includes(k)
+}
+
 export interface Buff {
   k: BuffKey
   v: number
+  /** 还能顶几次**自身出场**（beginAction 里扣） */
   t: number
+  /**
+   * 还能顶几**拍**（全局回合，见 TUNING.buffRoundsCap）。与 t 是两条并行的时限，谁先到零算谁。
+   * 只留 t 是不够的：它数的是「自身出场几次」，于是同一条增益挂在快的人身上两三拍就没了，
+   * 挂在慢的人身上却能撑十几拍 —— 同一个效果两种寿命，读不出来也说不通。
+   */
+  rt?: number
 }
 
 export interface Combatant {
@@ -431,6 +473,8 @@ export interface Combatant {
     ticks: number
     skillId: string
     cd: number
+    /** 每过一拍，普攻倍率往上加这么多（见 SkillForm.basicRamp；本体走 `other` 时为 0） */
+    ramp: number
   } | null
   /** 本场生效的羁绊名（队伍羁绊与双人羁绊；供界面挂牌，不改数值） */
   synergy?: string[]
@@ -518,7 +562,15 @@ export interface BattleState {
   no: string
   title: string
   place: string
+  /** 这一场的敌方性质（`m.nature`）。留着是为了场中召唤 —— 喊上来的那一只
+      得跟同场的是同一种东西，而敌体自己身上那份 `trait` 可能是指名首领的档案标签。 */
+  nature: string
   stage: number
+  /**
+   * 本场已经喊上场的杂兵数。上限判的是 `s.enemies.length`（见 TUNING.enemyCap），
+   * 这个数只用来编号 —— 喊上来的那一只该叫「戊」还是「己」，得看它是第几个。
+   */
+  summoned: number
   /** 节拍数（行动条累积推进了多少拍） */
   tick: number
   /** 已经打出的手数（含敌方；log 里标为 T1 / T2 …） */

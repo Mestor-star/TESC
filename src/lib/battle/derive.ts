@@ -20,6 +20,7 @@ import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
 import { POWER_SCALE, ROSTER } from './roster'
 import { namedBossOf } from './bosses'
+import type { NamedBoss } from './bosses'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
 import { rFactor, rOfPlace } from './rvalue'
@@ -236,7 +237,7 @@ function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
     form: a.form
       ? {
         name: a.form.name, note: a.form.note, ticks: a.form.ticks,
-        cd: a.form.cd, axes: a.form.axes,
+        cd: a.form.cd, axes: a.form.axes, basicRamp: a.form.basicRamp,
         skills: a.form.skills.map((k, j) => spec(k, `${id}-fm${j}`)),
       }
       : undefined,
@@ -423,6 +424,8 @@ interface FoeSkill {
   effect?: SkillEffect
   turns?: number
   cd?: number
+  /** 召唤：不造成伤害，出手时把一只同场性质的成形体喊上场（见 engine 的 summonFoe） */
+  summon?: boolean
   /** 回响：复写我方上一手（整手照抄，所以是技能自己的性质，不在 effect 里） */
   echo?: boolean
   /**
@@ -754,7 +757,23 @@ const GUARD_AXIS: Record<string, AxisKey> = {
   未分类观测体: '反现实亲和', // 观测体本身是「被看见」才成立的，那就用亲和对上它
 }
 
-const SUFFIX = ['甲', '乙', '丙', '丁']
+/* 同型多只时的排行用字。要够长：一场仗最多 6 只（TUNING.enemyCap），
+   初始最多 3 只，所以召唤物会排在丁之后 —— 只写到丁的话，后面几只全叫「丁」。 */
+const SUFFIX = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']
+
+/**
+ * 召唤 · 成形体诱出：首领与精英那一档才带的一手。
+ * 它自己不造成伤害（power 0）—— 出手权换一个站场的人，这是它全部的意义。
+ * 冷却走「自身出手次数」（见 engine 的 beginAction），所以首领大致是
+ * 打几手、喊一个，而不是每一手都在喊。
+ */
+const SUMMON_MOVE: FoeSkill = {
+  id: 'foe-summon', name: '召唤 · 成形体诱出', kind: '技能',
+  desc: '不朝谁动手：把旁边那一片还没成形的东西喊起来，场上多一个。',
+  cost: 2, power: 0, axis: '反现实亲和', target: 'self', cd: 5,
+  line: '「——」它没看谁。它只是把旁边的什么喊醒了。',
+  summon: true,
+}
 
 /**
  * 按任务阶段生成敌阵（阶段越高，数量与数值越强）。
@@ -774,12 +793,12 @@ const SUFFIX = ['甲', '乙', '丙', '丁']
  * 那一条已经在血量的马拉松里被算过一遍了（见 tuning 的 enemyAtkPerStage）。
  */
 export function enemiesOf(m: Mission, progress = 0): Combatant[] {
-  const prof = ENEMY_PROFILE.find((p) => p.match.test(m.nature)) ?? FALLBACK_PROFILE
   const count = m.stage >= 8 ? 3 : m.stage >= 5 ? 2 : 1
-  const r = rOfPlace(m.place, m.stage)
-  const rf = rFactor(r.r)
-  // 时期增幅：开局 ×1，卷末 ×(1 + enemyProgressGain)
-  const pf = 1 + Math.max(0, Math.min(1, progress)) * TUNING.enemyProgressGain
+  const seed: FoeSeed = {
+    missionId: m.id, nature: m.nature, place: m.place, stage: m.stage, progress,
+    // 只站一只的时候不挂「甲」—— 甲乙丙丁是拿来分彼此的，只有一只就没得分
+    solo: count === 1,
+  }
   const out: Combatant[] = []
   for (let i = 0; i < count; i++) {
     // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到顶时它升格为「首领」。
@@ -789,19 +808,53 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
       : m.stage >= TUNING.ultStage ? 'boss' : 'elite'
     // 指名首领：任务挂了 bossId、且那份档案对得上时，场上的头一名就换成他
     // （见 bosses.ts —— 那一类对手是有名有姓有 RANK 的真人，不是现推的观测体）。
-    const named = i === 0 ? namedBossOf(m.bossId) : undefined
+    out.push(buildFoe(seed, i, tier, i === 0 ? namedBossOf(m.bossId) : undefined))
+  }
+  return out
+}
+
+/**
+ * 造一只敌体。`enemiesOf` 与 `minionOf`（召唤）共用这一份 ——
+ * 召唤物不能是另写一套的「影子数值」：同一场里站着的两种东西若各按各的口径缩放，
+ * 血量、护盾、体力、R 值、时期增幅就会悄悄分成两套，迟早对不上。
+ */
+interface FoeSeed {
+  /** 原始任务 id（拼进敌体 id：同一场里所有敌体同源） */
+  missionId: string
+  /** 这一场的敌方性质 —— 召唤物得跟同场的是同一种东西 */
+  nature: string
+  place: string
+  stage: number
+  progress: number
+  /** 单只上场的型别：名字不挂甲乙丙丁 */
+  solo: boolean
+  /** 召唤物：半成形（成形体诱出喊起来的东西还没站稳），血量与出力打折 */
+  half?: boolean
+}
+
+function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: NamedBoss): Combatant {
+  const { nature, stage, solo } = seed
+  const prof = ENEMY_PROFILE.find((p) => p.match.test(nature)) ?? FALLBACK_PROFILE
+  const r = rOfPlace(seed.place, stage)
+  const rf = rFactor(r.r)
+  // 时期增幅：开局 ×1，卷末 ×(1 + enemyProgressGain)
+  const pf = 1 + Math.max(0, Math.min(1, seed.progress)) * TUNING.enemyProgressGain
+  // 半成形的那一档：血量与出力各打一个折（来由见 TUNING.summonHpMul）
+  const halfHp = seed.half ? TUNING.summonHpMul : 1
+  const halfAtk = seed.half ? TUNING.summonAtkMul : 1
+  {
     // 首领与精英各走各的倍数：只写 elite 那一支的话，升格成首领反而掉回 ×1
-    const hpMul = tier === 'boss' ? TUNING.bossHpMul : tier === 'elite' ? TUNING.eliteHpMul : 1
-    const atkMul = tier === 'boss' ? TUNING.bossAtkMul : tier === 'elite' ? TUNING.eliteAtkMul : 1
+    const hpMul = (tier === 'boss' ? TUNING.bossHpMul : tier === 'elite' ? TUNING.eliteHpMul : 1) * halfHp
+    const atkMul = (tier === 'boss' ? TUNING.bossAtkMul : tier === 'elite' ? TUNING.eliteAtkMul : 1) * halfAtk
     const willMul = tier === 'boss' ? TUNING.bossWillMul : tier === 'elite' ? TUNING.eliteWillMul : 1
     const hpMax = named
       // 有名有姓的那位按自己的档案读数站场：血量走同一套曲线，
       // 但再乘一次他自己的 hpMul —— RANK6 与 RANK47 不该一样硬。
       // 指名首领**不吃时期增幅**：他是档案里的人，读数就该跟档案页一致，
       // 不能因为玩家多读了一卷，同一个人在档案上还是那个数、打起来却更厚。
-      ? Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage)
+      ? Math.round((TUNING.enemyHpBase + stage * TUNING.enemyHpPerStage)
         * rf.mul * TUNING.bossHpMul * named.hpMul)
-      : Math.round((TUNING.enemyHpBase + m.stage * TUNING.enemyHpPerStage) * rf.mul * hpMul * pf)
+      : Math.round((TUNING.enemyHpBase + stage * TUNING.enemyHpPerStage) * rf.mul * hpMul * pf)
     const axes: AxisSheet = named
       // 五轴照档案：与档案页读的是同一组数（roster 的 SIDE_AXIS 口径）
       ? {
@@ -814,16 +867,16 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
       : {
         // 破坏力跟血量一起随时期走：只抬血的话，晚期的仗会变成
         // 「打不动我、我也打不死它」的干耗，那不是难度，是拖时间。
-        破坏力: Math.round((TUNING.enemyAtkBase + m.stage * TUNING.enemyAtkPerStage) * atkMul * pf),
-        敏捷度: Math.round(TUNING.enemySpdBase + m.stage * TUNING.enemySpdPerStage),
-        物理抗性: Math.round(TUNING.enemyResistBase + m.stage * TUNING.enemyResistPerStage),
-        反现实亲和: Math.round((10 + m.stage * 4) * rf.mul),
-        意志力: Math.round((10 + m.stage * TUNING.enemyWillPerStage) * willMul),
+        破坏力: Math.round((TUNING.enemyAtkBase + stage * TUNING.enemyAtkPerStage) * atkMul * pf),
+        敏捷度: Math.round(TUNING.enemySpdBase + stage * TUNING.enemySpdPerStage),
+        物理抗性: Math.round(TUNING.enemyResistBase + stage * TUNING.enemyResistPerStage),
+        反现实亲和: Math.round((10 + stage * 4) * rf.mul),
+        意志力: Math.round((10 + stage * TUNING.enemyWillPerStage) * willMul),
       }
     const tag = tier === 'boss' ? '首领' : tier === 'elite' ? '精英' : ''
     const ename = named
       ? named.name
-      : count > 1
+      : !solo
         ? `${prof.name} ${SUFFIX[i]}${tag ? ` · ${tag}` : ''}`
         : tag ? `${prof.name} · ${tag}` : prof.name
     // 敌方体力随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
@@ -838,14 +891,14 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
     const guardPts = !guardAxis ? 0
       : named?.guardPts
         ?? (tier === 'boss' ? TUNING.guardBoss : tier === 'elite' ? TUNING.guardElite : TUNING.guardMinion)
-    out.push({
-      id: `foe-${m.id}-${i}`,
+    return {
+      id: `foe-${seed.missionId}-${i}`,
       side: 'enemy',
       name: ename,
       sigil: named?.sigil ?? prof.sigil,
       hue: named?.hue ?? prof.hue,
       cls: named?.cls ?? prof.cls,
-      trait: named?.trait ?? m.nature,
+      trait: named?.trait ?? nature,
       tier,
       hp: hpMax,
       hpMax,
@@ -873,6 +926,21 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
               line: k.line ?? prof.line, target: k.target, effect: k.effect, turns: k.turns,
               cd: k.cd ?? 0, echo: k.echo,
             } satisfies SkillSpec))
+          : []),
+        /* 召唤：首领与精英都带这一手（危险度底下的小兵不带 —— 见 SUMMON_MOVE）。
+           注意排在这儿而不是型别技能表里：`enemyAct` 挑「重手」时取的是
+           skills 里**第一手** kind === '技能' 的，召唤排到后面去，
+           它才不会把首领的常规重手顶掉。
+           指名首领也不带：那几位是同行、是弹痕持有者，不是「从这片现实里拆出人来」
+           的东西 —— 他们的每一手机制都得有原文依据，不替他们新造（bosses.ts 的规矩）。 */
+        ...(tier === 'boss' || tier === 'elite'
+          ? [{
+              id: SUMMON_MOVE.id, name: SUMMON_MOVE.name, kind: SUMMON_MOVE.kind,
+              desc: SUMMON_MOVE.desc, cost: SUMMON_MOVE.cost, power: SUMMON_MOVE.power,
+              axis: SUMMON_MOVE.axis, fx: prof.fx, line: SUMMON_MOVE.line ?? prof.line,
+              target: SUMMON_MOVE.target, cd: SUMMON_MOVE.cd ?? 0,
+              summon: true,
+            } satisfies SkillSpec]
           : []),
         // boss 级的终结技能：不占常规出手，蓄满自己放（见 engine 的咏唱三段）
         ...(tier === 'boss'
@@ -930,9 +998,49 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
       gearBasic: 0,
       tags: prof.tags,
       note: rf.out
-        ? `${m.nature} · ${r.known ? '' : '推算 '}R ${r.r.toFixed(3)}`
-        : m.nature,
-    })
+        ? `${nature} · ${r.known ? '' : '推算 '}R ${r.r.toFixed(3)}`
+        : nature,
+    }
   }
-  return out
+}
+
+/**
+ * 场中召唤出来的那一只（见 engine 的 summonFoe）。
+ *
+ * 与 `enemiesOf` 共用 `buildFoe`，所以它跟场上其余敌体走的是**同一套**口径：
+ * 同一个型别、同一个地点的 R 值、同一个时期增幅、同样的护盾轴与体力换算。
+ * 两处唯一的差别是名字与档位 ——
+ *   · 它是小兵档（`tier` 留空）：首领喊来的不会是第二个首领，
+ *     不然「首领」这个头衔就成了可以复制的量词；
+ *   · 它是**半成形**的（`half`）：成形体诱出喊起来的东西还没站稳，
+ *     血量与出力各打一个折（见 TUNING.summonHpMul）。
+ *
+ * `slot` 决定它叫「戊」还是「己」：接着场上已有的往下排，免得同一场里两个「丙」。
+ */
+export function minionOf(a: {
+  missionId: string
+  nature: string
+  place: string
+  stage: number
+  progress: number
+  /**
+   * 它在这一场敌体里的排位 —— 就是召唤那一刻的 `s.enemies.length`。
+   * 一个数同时管两件事：id 的后缀、以及甲乙丙丁排到第几个。
+   * 之所以直接拿长度当排位，是因为 s.enemies 只增不减（倒下的也留着），
+   * 长度天然就是「这一场站过多少东西」，不会重号。
+   */
+  slot: number
+}): Combatant {
+  return buildFoe(
+    {
+      missionId: a.missionId, nature: a.nature, place: a.place, stage: a.stage,
+      progress: a.progress,
+      // 召唤物一定带排行字：场上本来就还有别的东西，甲乙丙丁正是拿来分它们的
+      solo: false,
+      half: true,
+    },
+    a.slot,
+    undefined,
+    undefined,
+  )
 }

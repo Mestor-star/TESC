@@ -17,17 +17,22 @@
      node scripts/mech.mjs
    ============================================================ */
 
+import { readFileSync, readdirSync } from 'node:fs'
 import {
-  act, advance, aliveOf, basicOf, brokenOf, buffOf, createBattle, enemysTurn, find,
-  guardLeft, legalSkills, pendingFoe, skipOf,
+  act, advance, aliveOf, atkMulOf, basicOf, brokenOf, buffOf, chargeOf, createBattle, enemysTurn,
+  find, guardLeft, legalSkills, pendingFoe, skipOf, summonFoe,
 } from '../../src/lib/battle/engine'
-import { combatantOf, enemiesOf } from '../../src/lib/battle/derive'
+import { combatantOf, enemiesOf, minionOf } from '../../src/lib/battle/derive'
+import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
+import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
 import { TUNING } from '../../src/lib/battle/tuning'
 import { ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
-import type { AxisKey, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
+import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
+import { OPERATOR_ID } from '../../src/data/castmeta'
+import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
 export interface MechReport {
   pass: string[]
@@ -52,9 +57,9 @@ const HOSTILE_BUFF_KEYS: BuffKey[] = [
   'mark', 'slow', 'silence', 'bleed', 'frail', 'stasis', 'lockdown', 'stall',
 ]
 
-/** 把「反现实制成品 甲 · 首领」还原成型别名 */
+/** 把「反现实制成品 甲 · 首领」还原成型别名（排行字要跟 derive 的 SUFFIX 一样长） */
 function profileOf(name: string): string {
-  return name.replace(/ · (精英|首领)$/, '').replace(/ [甲乙丙丁]$/, '')
+  return name.replace(/ · (精英|首领)$/, '').replace(/ [甲乙丙丁戊己庚辛]$/, '')
 }
 
 export function run(): MechReport {
@@ -171,6 +176,10 @@ export function run(): MechReport {
       const s = mk()
       ready(s, 'isis')
       const foe = s.enemies[0]!
+      /* 这一段验的是断拍，不是召唤：把召唤那一手从牌面上拿掉。
+         不拿掉的话，对照跑证明的只是「他会出个动静」—— 而召唤正好是他的第一个动静，
+         于是「他确实出手了」在日志里读起来是 foe-summon，不是一次攻击。 */
+      foe.skills = foe.skills.filter((k) => !k.summon)
       for (const f of s.enemies) f.bar = -1e6
       for (const a of s.allies) a.bar = TUNING.barMax - 4
       foe.buffs = foe.buffs.filter((b) => b.k !== 'stall')
@@ -261,6 +270,11 @@ export function run(): MechReport {
       ok('护持：两层用尽后负面正常落下（对照）',
         shots.length > 2 && shots[2]!.mark > 0,
         `ward=${victim.ward} mark=${buffOf(victim, 'mark')}`)
+      // 回合上限只管增益 —— 回合闸要是也盖到负面头上，这一发标记就会在
+      // advance 把条充回来的那几拍里自己散掉，玩家根本见不到（这正是踩过的坑）
+      const landed = victim.buffs.find((b) => b.k === 'mark')
+      ok('护持：负面不吃回合闸（那道闸只管增益）',
+        !!landed && landed.rt == null, `mark.rt=${landed?.rt}`)
     }
     info.push('护持三发读数：' + JSON.stringify(shots))
   } catch (e) {
@@ -767,6 +781,403 @@ export function run(): MechReport {
       + `她自己再出一手落到 ${afterHer}`)
   } catch (e) {
     fail.push('会长段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 10) 五轴不封顶 ----------
+     这一节钉的是「放宽」这件事本身：轴、生命、倍率、伤害一路推上去时，
+     半路**不许**有任何一处把它们夹回去。查法不是读代码，是拿一个荒谬的
+     成长值去推，看输出是不是跟着同倍走 —— 有夹子的话，推到某个点就不动了。
+     另有一条反向断言：**该夹的还得夹**。闪避、减伤这类「比率」如果也不封顶，
+     过 1 就是打不中，那是机制崩掉，不是放宽。所以两类要一起钉住。 */
+  try {
+    // (a) 轴随成长线性走，没有回头点
+    const at = (g: number) => combatantOf('mefisa', 1, g)
+    const bare = at(0)
+    const far = at(1000)
+    const axisRatio = far.axes.破坏力 / bare.axes.破坏力
+    const want = (1 + 1000 / 100) / (1 + 0 / 100)
+    ok('五轴不封顶：成长推 1000%，破坏力跟着同倍走（×11）',
+      Math.abs(axisRatio - want) < 0.05,
+      `${bare.axes.破坏力} → ${far.axes.破坏力}（实测 ×${axisRatio.toFixed(2)}，应为 ×${want}）`)
+    ok('生命不封顶：成长推 1000% 时生命远高于裸面板',
+      far.hpMax > bare.hpMax * 10, `${bare.hpMax} → ${far.hpMax}`)
+    ok('AXIS_REF 不是上限：轴可以越过它并且继续长',
+      far.axes.破坏力 > AXIS_REF * 4, `AXIS_REF=${AXIS_REF}，实测破坏力 ${far.axes.破坏力}`)
+
+    // (b) 伤害跟着轴走，中间没有夹子
+    const k = bare.skills.find((x) => x.power > 0 && x.kind !== '启动')!
+    const hit = (c: Combatant) => c.axes[k.axis] * k.power * atkMulOf(c)
+    const hitRatio = hit(far) / hit(bare)
+    ok('伤害不封顶：同一手的裸出力与轴同倍（中间没有夹子）',
+      Math.abs(hitRatio - axisRatio) / axisRatio < 0.02,
+      `「${k.name}」${hit(bare).toFixed(0)} → ${hit(far).toFixed(0)}（×${hitRatio.toFixed(2)}）`)
+
+    // (c) 任务成长封顶 12%，买来的终末等级不封顶 —— 两者在 effectiveGrowth 合流
+    const merged = effectiveGrowth({ mefisa: 12 }, { mefisa: 20 })
+    ok('终末等级不封顶：买了 20 级就是 +100%，不吃任务那条 12% 的封顶',
+      Math.abs((merged.mefisa ?? 0) - (12 + LEVEL_STEP_PCT * 20)) < 1e-9,
+      `任务 12% + 20 级 ×${LEVEL_STEP_PCT}% = ${merged.mefisa}%`)
+    ok('终末等级的价格是指数的：越往上越贵，不是线性',
+      levelCostOf(10) > levelCostOf(9) * 1.5 && levelCostOf(0) === LEVEL_BASE_COST,
+      `0→1 级 ${levelCostOf(0)}　9→10 级 ${levelCostOf(9)}　10→11 级 ${levelCostOf(10)}`)
+    ok('合流之后的面板确实吃到了等级那一份',
+      at(merged.mefisa ?? 0).axes.破坏力 > bare.axes.破坏力 * 2,
+      `裸面板 ${bare.axes.破坏力} → ${at(merged.mefisa ?? 0).axes.破坏力}`)
+
+    // (d) 反向断言：比率与控制类**必须**还夹着，放宽不等于把机制做崩
+    ok('闪避仍然封顶（过 1 就是打不中，那不叫放宽）',
+      TUNING.evadeMax > 0 && TUNING.evadeMax < 1, `evadeMax=${TUNING.evadeMax}`)
+    ok('减伤仍然封顶', TUNING.shieldCap > 0 && TUNING.shieldCap < 1, `shieldCap=${TUNING.shieldCap}`)
+    ok('增益持续拍数仍然封顶（不封顶就是永久增益）',
+      TUNING.buffTurnsCap > 0 && TUNING.buffTurnsCap < 20, `buffTurnsCap=${TUNING.buffTurnsCap}`)
+    ok('断拍次数仍然压死在 1（复合惩罚，放宽会变成永久停手）',
+      TUNING.stallCap === 1, `stallCap=${TUNING.stallCap}`)
+
+    // (e) 这条读代码读不出来：源码里 AXIS_REF 只许出现在「定义」与「显示」两处。
+    //     注释里提到它不算 —— 恰恰相反，chars/roster/tuning 都该写一句「量表不是上限」
+    //     把口径传下去。只认**真代码**，所以先把注释剥掉再找。
+    const dropComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const refSites: string[] = []
+    const walk = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${ent.name}`
+        if (ent.isDirectory()) walk(p)
+        else if (/\.tsx?$/.test(ent.name) && dropComments(readFileSync(p, 'utf8')).includes('AXIS_REF')) refSites.push(p)
+      }
+    }
+    walk('src')
+    const stray = refSites.filter((p) => !p.endsWith('data/types.ts') && !p.endsWith('views/Archive.tsx'))
+    ok('AXIS_REF 只作显示基准（定义在 types，条宽归一化在 Archive），引擎与数值层不引用它',
+      stray.length === 0, stray.length ? stray.join('、') : `${refSites.length} 处，全部是定义与显示`)
+
+    info.push(`不封顶口径：成长 0% → 1000% 时破坏力 ${bare.axes.破坏力} → ${far.axes.破坏力}`
+      + `（×${axisRatio.toFixed(2)}），生命 ${bare.hpMax} → ${far.hpMax}；量表达 ${AXIS_REF}，实测已到 ${far.axes.破坏力}`)
+    info.push(`该夹的还夹着：闪避 ${TUNING.evadeMax}　减伤 ${TUNING.shieldCap}　`
+      + `增益 ${TUNING.buffTurnsCap} 拍　断拍 ${TUNING.stallCap} 次`)
+  } catch (e) {
+    fail.push('不封顶段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 11) 黄金狮子形态 ----------
+     三条要求，一条都不能靠「日志里好像有」蒙混：
+       (a) 变的是自己 —— 名字、五轴、**整份技能表**一起换掉，不是加个增益；
+       (b) 连携是「每一手攻击之后」接上的 —— 所以变身那一手本身不算，增益/治疗也不算；
+       (c) 期满自己变回来，五轴与技能表原样还回去。
+     (b) 那条最容易写错的是「什么时候取形态标记」：必须在 resolve 之前取，
+     否则变身那一手自己就把标记安上了，于是它也会顺手接一记连携。 */
+  try {
+    // 挑最硬的那一档当靶子：低级任务一场只有一个小兵，狮形一记普攻就把它打没了 ——
+    // 而场上没人时连携**本来就不该**接（fireLionLink 里 `if (!foes.length) return`），
+    // 于是断言会随机失败。这不是机制的问题，是靶子太脆，换硬的。
+    const mission = MISSIONS.slice().sort((a, b) => b.stage - a.stage)[0]!
+    const mk = () => createBattle({
+      mission, squad: [OPERATOR_ID, 'luna'], progress: 1, growth: {},
+      sp: 100, spMax: 100, bond: {},
+    })
+    /** 把场面按住：敌人行动条压死，让「谁出手」完全由我们说了算 */
+    const drive = (s: BattleState, who: Combatant, cmd: Parameters<typeof act>[1]) => {
+      for (const f of s.enemies) f.bar = -1e6
+      who.sp = 999
+      s.actor = who.id
+      s.phase = 'select'
+      act(s, cmd)
+    }
+    const linkId = `link-${LION_PAIR_ID}`
+
+    const s = mk()
+    const me = find(s, OPERATOR_ID)!
+    const lion = me.skills.find((k) => k.name === '黄金狮子')
+    ok('黄金狮子：进度推到第一卷末后，这一手在技能表里',
+      !!lion && !!lion.form, lion ? `${lion.name}｜${lion.form?.name}` : '找不到这一手')
+    ok('黄金狮子：变身要求露娜在场',
+      lion?.requireAlly === 'luna', `requireAlly=${lion?.requireAlly}`)
+
+    const before = {
+      axes: { ...me.axes },
+      skills: me.skills.map((k) => k.name),
+      basic: basicOf(me)?.name,
+    }
+    const seen: string[] = []
+    const take = (fn: () => void) => {
+      const n = s.log.length
+      fn()
+      seen.push(...s.log.slice(n).map((l) => l.skillId ?? l.skill ?? ''))
+    }
+
+    take(() => drive(s, me, { t: 'skill', skillId: lion!.id, targetId: me.id }))
+    ok('黄金狮子：变身当场生效（形态安上了，且记的是「自己的另一副面目」）',
+      me.morph?.kind === 'form' && me.morph.name === '黄金狮子',
+      `kind=${me.morph?.kind} name=${me.morph?.name} 余 ${me.morph?.ticks} 拍`)
+    ok('黄金狮子：名字换了',
+      me.name !== before.basic || me.name === '黄金狮子' || !!me.morph,
+      `「${me.name}」`)
+    // 兽化的方向写在原作里：破坏力与物理抗性上抬，意志力反而下去。
+    // 不看「轴换没换」（那太弱），看方向对不对。
+    ok('黄金狮子：五轴按兽化的方向换（破坏力上抬、意志力下去）',
+      me.axes.破坏力 > before.axes.破坏力 && me.axes.意志力 < before.axes.意志力,
+      `破坏力 ${before.axes.破坏力} → ${me.axes.破坏力}；意志力 ${before.axes.意志力} → ${me.axes.意志力}`)
+    ok('黄金狮子：整份技能表换掉（原来是拳，现在是狮子的打法）',
+      me.skills.length > 0 && !me.skills.some((k) => before.skills.includes(k.name)),
+      `变身前 ${before.skills.slice(0, 3).join('、')}… → 变身后 ${me.skills.map((k) => k.name).join('、')}`)
+    // 一记连携会落两条日志：一条是「接上了」的通告（带 note、没有伤害），
+    // 一条是这一下真的打出去（带 dmg）。两条同 id，别当成接了两次 ——
+    // 所以按 dmg 数，数是「真的打出几下」。
+    const linkHits = (from: number) => s.log.slice(from)
+      .filter((l) => l.skillId === linkId && l.dmg != null).length
+    ok('黄金狮子：变身这一手**本身**不触发连携（「攻击后」才算）',
+      linkHits(0) === 0, seen.join('／') || '（这一手没有别的日志）')
+
+    // 变身后的第一手攻击 → 连携接上
+    const mark = s.log.length
+    for (const f of s.enemies) f.hp = f.hpMax   // 补满：挨完这一手它得还站着
+    take(() => drive(s, me, { t: 'atk', targetId: s.enemies[0]!.id }))
+    ok('黄金狮子：变身后的每一手攻击都自己接上露娜的连携',
+      linkHits(mark) === 1,
+      `这一手接上 ${linkHits(mark)} 次／日志 ${seen.join('／')}`)
+
+    // 拿「本人最强的那一手」比变身前后 —— 变身的价值在技能表与轴一起换，
+    // 不在某一条轴上。这一条同时钉住成长：形要跟着本人练，不能越练越弱。
+    const mk2 = (g: number) => {
+      const b = createBattle({
+        mission, squad: [OPERATOR_ID, 'luna'], progress: 1,
+        growth: { [OPERATOR_ID]: g, luna: g }, sp: 100, spMax: 100, bond: {},
+      })
+      const who = find(b, OPERATOR_ID)!
+      const raw = (c: Combatant) => {
+        const best = [...c.skills].filter((k) => k.power > 0 && k.kind !== '启动')
+          .sort((x, y) => y.power - x.power)[0]!
+        return c.axes[best.axis] * best.power * atkMulOf(c)
+      }
+      const asIs = raw(who)
+      const l = who.skills.find((k) => k.name === '黄金狮子')!
+      drive(b, who, { t: 'skill', skillId: l.id, targetId: who.id })
+      return { asIs, asLion: raw(who) }
+    }
+    const g0 = mk2(0)
+    ok('黄金狮子：变身确实更强（拿本人最强的一手比）',
+      g0.asLion > g0.asIs * 1.1,
+      `本人 ${g0.asIs.toFixed(0)} → 狮形 ${g0.asLion.toFixed(0)}（×${(g0.asLion / g0.asIs).toFixed(2)}）`)
+    /* 这一条是补上的坑：f.axes 是绝对值，早先直接覆写，于是本人练出来的那一份
+       一变身就丢 —— 成长 +50% 时变身落到 ×0.92，+200% 时只剩 ×0.47，
+       而终末等级是可以一路买上去的。现在覆写时乘回本人那份成长。 */
+    const g200 = mk2(200)
+    ok('黄金狮子：本人练上去之后，变身仍然更强（形要跟着人一起长）',
+      g200.asLion > g200.asIs,
+      `成长 +200%：本人 ${g200.asIs.toFixed(0)} → 狮形 ${g200.asLion.toFixed(0)}（×${(g200.asLion / g200.asIs).toFixed(2)}）`)
+
+    // 对照组：不顶着形态出手 —— 同样一手，不该凭空多出连携
+    const s2 = mk()
+    const me2 = find(s2, OPERATOR_ID)!
+    const n2 = s2.log.length
+    drive(s2, me2, { t: 'atk', targetId: s2.enemies[0]!.id })
+    const plainLinks = s2.log.slice(n2).filter((l) => l.skillId === linkId).length
+    ok('黄金狮子（对照）：不顶着形态时，同一手不会自己接上这记连携',
+      plainLinks === 0, `未变身出手 → 连携 ${plainLinks} 次`)
+
+    // 期满：这里推的是**全局拍**（advance 的 tick），不是自己的回合数 ——
+    // 变身按场上过了多久算，与增益按自身出场数算不是一回事（见 SkillForm.ticks）。
+    let pushed = 0
+    for (let i = 0; i < 12 && me.morph; i++) {
+      for (const c of [...s.allies, ...s.enemies]) c.bar = c.side === 'enemy' ? -1e6 : 0
+      s.phase = 'select'
+      take(() => advance(s))
+      pushed += 1
+    }
+    ok('黄金狮子：期满自己变回来（形态解除，五轴与技能表原样还回去）',
+      !me.morph && me.axes.破坏力 === before.axes.破坏力
+      && me.skills.map((k) => k.name).join('／') === before.skills.join('／'),
+      me.morph ? `推了 ${pushed} 次仍未解除，余 ${me.morph.ticks} 拍` : `推 ${pushed} 次后还原，破坏力回到 ${me.axes.破坏力}`)
+    ok('黄金狮子：解除时在日志里留了一笔',
+      seen.includes('form-off'), seen.filter((x) => x.startsWith('form-')).join('／') || '（没记）')
+
+    info.push(`黄金狮子：变身 → ${me.skills.length} 手新表；`
+      + `变身后攻击接上连携 ${s.log.filter((l) => l.skillId === linkId).length} 次；`
+      + `期满还原后破坏力 ${me.axes.破坏力}／技能表 ${me.skills.length} 手`)
+  } catch (e) {
+    fail.push('黄金狮子段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 12) 增益的回合上限 ----------
+     增益原先只有一条时限：按「自身出场几次」扣。于是同一条增益，
+     挂在快的人身上两三拍就散了，挂在慢的人身上却能撑十几拍 ——
+     同一个效果两种寿命，档案页上读不出来，玩家也说不清。
+     现在多一条按**全局拍**算的闸，两条并行、谁先到零算谁。
+     这里钉三件事：闸挂上了、走满就散（哪怕本人一次没出手）、以及**它只管增益**。 */
+  try {
+    const s = createBattle({
+      mission: MISSIONS.slice().sort((a, b) => a.stage - b.stage)[0]!,
+      squad: ['alive-anatolia', 'mefisa'], progress: 1, growth: {},
+      sp: 100, spMax: 100, bond: {},
+    })
+    const her = find(s, 'alive-anatolia')!
+    const edit = her.skills.find((k) => k.id === 'alive-edit')!
+    for (const f of s.enemies) f.bar = -1e6
+    her.sp = 999
+    s.actor = her.id
+    s.phase = 'select'
+    act(s, { t: 'skill', skillId: edit.id, targetId: her.id })
+    const b = her.buffs.find((x) => x.k === 'atk')
+    ok('增益回合闸：挂上时就带了一份按拍数算的预算',
+      !!b && b.rt === TUNING.buffRoundsCap,
+      `atk.rt=${b?.rt}（表上 ${TUNING.buffRoundsCap}）t=${b?.t}`)
+
+    // 一拍一拍地推（把条压到「再充一次就满」，advance 恰好只会 tick 一拍）。
+    // 全程不让她出手 —— 于是「自身出场」那条时限一动不动，散掉只能是回合闸干的。
+    const oneTick = () => {
+      for (const c of s.allies) c.bar = TUNING.barMax - chargeOf(c)
+      for (const f of s.enemies) f.bar = -1e6
+      s.phase = 'select'
+      advance(s)
+    }
+    let ticks = 0
+    while (buffOf(her, 'atk') > 0 && ticks < 20) { oneTick(); ticks += 1 }
+    ok('增益回合闸：走满就自己散掉（本人一次都没出手，所以不是另一条时限干的）',
+      buffOf(her, 'atk') === 0 && ticks === TUNING.buffRoundsCap,
+      `第 ${ticks} 拍散尽（表上 ${TUNING.buffRoundsCap}）`)
+    info.push(`增益回合闸：会长「撰写」挂上的攻击增益在第 ${ticks} 拍散尽；`
+      + `另一条时限（自身出场）全程没动过`)
+
+    // 「规格」类（旧吉他解封）不吃这道闸 —— 它改的是底子。
+    // 这条不另搭台子：解封那一段（第 6 节）走完链子还能按新规格算，本身就在证明它没散。
+    const spec = ROSTER['hikari']!.skills.find((k) => k.effect?.skillMul)
+    ok('增益回合闸：解封那种「规格」在表上确实是另一类',
+      !!spec && !DEBUFF_KEYS.includes('skillMul'),
+      spec ? `${spec.name} 给 skillMul ×${spec.effect?.skillMul}` : '（找不到带 skillMul 的手）')
+  } catch (e) {
+    fail.push('增益回合闸段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 13) 召唤 ----------
+     首领与精英都能把旁边还没成形的东西喊上场。
+     四件事必须钉住，缺一条这套机制就走样：
+       ① 首领与精英带得了这一手，**小兵带不了**（配对控制）——
+          不然低危场会变成添油：玩家打的不是敌人，是刷不完的人头；
+       ② 真打起来他确实会喊人，而不是只有技能表上挂着这一手；
+       ③ 一场仗的敌体总数封在 TUNING.enemyCap —— 这条是「收得了场」的保证。
+          上限必须按**总数**算：按「场上还剩几个」算的话，打掉一个补一个，
+          而收场判的正是「场上没人了」（见 checkEnd），这场仗就永远收不了；
+       ④ 喊上来的那一只是小兵档、且自己是半成形的 —— 首领喊不来第二个首领，
+          人也生不出人。 */
+  try {
+    const sorted = MISSIONS.slice().sort((a, b) => a.stage - b.stage)
+    // 最高那一档：头名是首领，且**没挂 bossId** —— 指名首领是另一类对手
+    //（bosses.ts 的规矩：他们的每一手机制都得有原文依据，不替他们新造）
+    const top = sorted.filter((m) => m.stage >= TUNING.ultStage && !m.bossId).pop()!
+    const low = sorted[0]!
+    const mkTop = () => createBattle({
+      mission: top, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const mkLow = () => createBattle({
+      mission: low, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+
+    const s = mkTop()
+    const boss = s.enemies[0]!
+    const grunt = s.enemies[1]!
+    ok('召唤：首领带得了这一手', boss.tier === 'boss' && !!boss.skills.find((k) => k.summon),
+      `stage ${top.stage}　${boss.name}　表上 ${boss.skills.map((k) => k.id).join(',')}`)
+    ok('召唤：精英带得了这一手（危险度够不着首领的那一档）',
+      low.stage < TUNING.ultStage && !!mkLow().enemies[0]!.skills.find((k) => k.summon),
+      `stage ${low.stage}　${mkLow().enemies[0]!.name}`)
+    ok('召唤（对照）：小兵带不了 —— 危险度底下不该是添油战',
+      !grunt.skills.some((k) => k.summon),
+      `${grunt.name}　表上 ${grunt.skills.map((k) => k.id).join(',')}`)
+    // 指名首领：那一类对手是同行、是弹痕持有者，不给他们糊一层新机制
+    const named = sorted.filter((m) => m.bossId).pop()
+    const namedFoe = named
+      ? createBattle({
+          mission: named, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+        }).enemies[0]
+      : undefined
+    ok('召唤（对照）：指名首领不挂这一手（不替他们新造机制）',
+      !namedFoe || !namedFoe.skills.some((k) => k.summon),
+      named ? `${named.no}「${named.title}」　${namedFoe?.name}` : '（任务表里没有指名首领）')
+
+    // 反复喊：到顶就该停，且停得很干脆
+    const s2 = mkTop()
+    const caller = s2.enemies[0]!
+    caller.sp = 9999
+    const base = s2.enemies.length
+    let calls = 0
+    while (calls < 40 && summonFoe(s2, caller)) {
+      // 冷却照走数：这里只想验上限，不想被冷却挡住
+      caller.cds = {}
+      calls += 1
+    }
+    ok('召唤：一场仗的敌体总数封在 enemyCap（到顶就不再喊）',
+      s2.enemies.length === TUNING.enemyCap && calls === TUNING.enemyCap - base,
+      `初始 ${base} ＋ 喊来 ${calls} ＝ ${s2.enemies.length}（表上 ${TUNING.enemyCap}）`)
+    ok('召唤：冷却也在拦（连喊两次之间走得动）', (() => {
+      const s4 = mkTop()
+      const f = s4.enemies[0]!
+      f.sp = 9999
+      const first = summonFoe(s4, f)
+      const again = summonFoe(s4, f)
+      return first && !again && Object.values(f.cds).some((v) => v > 0)
+    })(), '')
+
+    const called = s2.enemies[base]!
+    const peer = s2.enemies[1]!
+    ok('召唤：喊上来的是小兵档（首领喊不来第二个首领）', !called.tier, `tier=${called.tier}`)
+    ok('召唤（对照）：它自己也带不了召唤 —— 人不会自己繁殖',
+      !called.skills.some((k) => k.summon), called.skills.map((k) => k.id).join(','))
+    ok('召唤：半成形（比同场小兵薄一截）', called.hpMax < peer.hpMax,
+      `${called.name} ${called.hpMax} ＜ ${peer.name} ${peer.hpMax}`)
+    ok('召唤：同场性质（与这一场是同一型别，不是另抓一个）',
+      profileOf(called.name) === profileOf(peer.name),
+      `${called.name}　对 ${peer.name}`)
+    ok('召唤：排行接着场上往下排（同一场不会出两个「乙」）',
+      new Set(s2.enemies.map((c) => c.name)).size === s2.enemies.length,
+      s2.enemies.map((c) => c.name).join('／'))
+    // 名字取的是这一场的性质，不是被喊者自己那份标签
+    ok('召唤：性质取自这一场（不是从首领身上借的）',
+      called.trait === top.nature, `${called.trait}　对 ${top.nature}`)
+  } catch (e) {
+    fail.push('召唤段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* 端到端：真推一场，看他会不会真喊人。上面那条只证明「表上有、上限拦得住」，
+     证明不了「打起来会发生」—— 那正是这一支复核存在的理由。 */
+  try {
+    const top = MISSIONS.slice().sort((a, b) => a.stage - b.stage)
+      .filter((m) => m.stage >= TUNING.ultStage && !m.bossId).pop()!
+    const s = createBattle({
+      mission: top, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const base = s.enemies.length
+    /* 一手一手地推，而不是「跑一场完整的仗」——
+       这里的场地跟别处一样是捏出来的（我方条压在 -1e6），
+       而 advance 一次会一口气烧掉八千拍：那几千拍里我方早就把条充回来了，
+       于是它每回都在「等我方出手」那一句上返回，一步也不往前走。
+       所以每一手都把全场按回去、只把首领的条顶满 —— 这样一次 advance
+       恰好等于首领出手一手，他的手牌、冷却、日志都是真跑出来的。
+       我方封血：这一个复核里打不死，好让他一直喊到上限为止，
+       而不是几下把人清完就收场（那样只能证明「他会喊」，证明不了「他喊到顶为止」）。 */
+    for (const a of s.allies) { a.hp = 1e9; a.hpMax = 1e9 }
+    const boss = s.enemies[0]!
+    let turns = 0
+    for (let i = 0; i < 30 && s.enemies.length < TUNING.enemyCap; i++) {
+      for (const c of [...s.allies, ...s.enemies]) c.bar = -1e6
+      boss.bar = TUNING.barMax
+      s.actor = null
+      s.phase = 'select'
+      advance(s)
+      turns += 1
+    }
+    const calls = s.log.filter((l) => l.skillId === 'foe-summon')
+    ok('召唤：真打起来他确实会喊人（不是只挂在表上）', calls.length > 0,
+      `日志里 ${calls.length} 笔　${calls[0]?.skill ?? ''}`)
+    ok('召唤：一直喊到上限为止（不是只喊一个就收手）',
+      s.enemies.length === TUNING.enemyCap && calls.length === TUNING.enemyCap - base,
+      `${base} → ${s.enemies.length}　首领出手 ${turns} 次　喊人 ${calls.length} 笔（表上 ${TUNING.enemyCap}）`)
+    ok('召唤：日志里说得出来是什么被喊起来了',
+      !!calls[0] && /成形体诱出/.test(calls[0].skill ?? '')
+      && (calls[0].note ?? '').includes('喊'),
+      calls[0] ? `${calls[0].skill}｜${calls[0].note}` : '没有日志')
+    info.push(`召唤：${top.no}「${top.title}」打到第 ${s.hand} 手，`
+      + `敌阵 ${base} → ${s.enemies.length}（喊人 ${calls.length} 笔）`)
+  } catch (e) {
+    fail.push('召唤端到端段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

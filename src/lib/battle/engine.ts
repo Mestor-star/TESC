@@ -15,11 +15,11 @@ import { LION_PAIR_ID, applySynergies, bondsOf } from './synergy'
 import type { Bond } from './synergy'
 import { lineFor, poolFor } from './banter'
 import { TUNING } from './tuning'
-import { combatantOf, enemiesOf, speedOf } from './derive'
+import { combatantOf, enemiesOf, minionOf, speedOf } from './derive'
 import { GEAR_OF, ITEM_OF } from './gear'
-import { isDebuff, toneOf } from './types'
+import { isDebuff, isSpec, toneOf } from './types'
 import type {
-  AxisKey, BattleState, BuffKey, Combatant, LogEntry, SkillSpec,
+  AxisKey, AxisSheet, BattleState, BuffKey, Combatant, LogEntry, SkillSpec,
   EnemyIntent,
 } from './types'
 import type { Mission } from '../../data/types'
@@ -237,7 +237,11 @@ export function createBattle(opts: CreateOpts): BattleState {
     no: mission.no,
     title: mission.title,
     place: mission.place,
+    // 留着给场中召唤用：喊上来的那一只得跟同场的是同一种东西
+    //（敌体自己那份 trait 可能是指名首领的档案标签，不是这一场的性质）
+    nature: mission.nature,
     stage: mission.stage,
+    summoned: 0,
     tick: 0,
     hand: 0,
     actor: null,
@@ -371,9 +375,25 @@ function addBuff(c: Combatant, k: BuffKey, v: number, turns: number) {
   if (found) {
     found.v = Math.max(found.v, v) // 同类取强，不叠加（防滚雪球）
     found.t = Math.max(found.t, t)
+    // 续上时两条时限一起续：只续 t 的话，一条被续的增益可以绕开回合上限一直挂着
+    found.rt = Math.max(found.rt ?? 0, TUNING.buffRoundsCap)
   } else {
-    c.buffs.push({ k, v, t })
+    c.buffs.push({ k, v, t, rt: wearsByRound(k) ? TUNING.buffRoundsCap : undefined })
   }
+}
+
+/**
+ * 这条 buff 吃不吃「回合上限」（TUNING.buffRoundsCap）。
+ *
+ * 只给**增益**加这道时限，两个例外都写在这里，别的地方不要各自判：
+ *   · 负面（DEBUFF_KEYS）不吃 —— 那一边早有自己的一套时限（stasisCap / archiveCap），
+ *     而且压制的价值就在于「挂着」，再加一道回合闸等于把敌人的手段一起削了。
+ *     这一条要管的是增益，不是压制。
+ *   · 「规格」类（旧吉他解封）不吃 —— 它改的是底子，不是一时的状态，
+ *     挂上就不走；吃回合上限的话，解封链会在半路自己散掉，等于白解。
+ */
+function wearsByRound(k: BuffKey): boolean {
+  return !isDebuff(k) && !isSpec(k)
 }
 
 /**
@@ -527,8 +547,10 @@ function applyEffect(
     if (eff.stasis) {
       const n = Math.max(1, Math.min(TUNING.stasisCap, Math.round(eff.stasis * scale)))
       const found = t.buffs.find((b) => b.k === 'stasis')
-      if (found) found.t = Math.max(found.t, n)
-      else t.buffs.push({ k: 'stasis', v: 1, t: n })
+      if (found) {
+        found.t = Math.max(found.t, n)
+        found.rt = Math.max(found.rt ?? 0, TUNING.buffRoundsCap)
+      } else t.buffs.push({ k: 'stasis', v: 1, t: n, rt: TUNING.buffRoundsCap })
       pushLog(s, {
         round: s.hand, actorId: src.id, actor: src.name, side: src.side,
         skillId: 'stasis', skill: '停滞', kind: '指令', fx: 'seal',
@@ -875,7 +897,7 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
         kind: 'other',
         name: t.name,
         base: { axes: { ...atk.axes }, spd: atk.spd, skills: atk.skills.map((x) => ({ ...x })) },
-        ticks, skillId: k.id, cd: k.morphCd ?? 3,
+        ticks, skillId: k.id, cd: k.morphCd ?? 3, ramp: 0,
       }
       // 「复制所有能力」= 五轴、速度与整份技能表一并借来
       atk.axes = { ...t.axes }
@@ -898,9 +920,20 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
       kind: 'form',
       name: f.name,
       base: { axes: { ...atk.axes }, spd: atk.spd, skills: atk.skills.map((x) => ({ ...x })) },
-      ticks, skillId: k.id, cd: f.cd ?? 3,
+      ticks, skillId: k.id, cd: f.cd ?? 3, ramp: f.basicRamp ?? 0,
     }
-    if (f.axes) atk.axes = { ...atk.axes, ...f.axes }
+    /* 形是他的**另一副面目**，不是另一个人的面板 —— 本人练到哪，这副面目就跟着到哪。
+       f.axes 是按「还没成长时的时期面板」写下的绝对值，覆写时必须把本人那一份
+       成长补回去（与 derive 的 axisSheetOf 同一个 k）。不补是实测出来的坑：
+       成长 +50% 时变身落到 ×0.92，+200% 时只剩 ×0.47 —— 玩家给自己练了一身本事，
+       一按大招全丢。终末等级是能一路买上去的（见 store 的 effectiveGrowth），
+       所以这条路一定会有人走到。 */
+    if (f.axes) {
+      const k = 1 + Math.max(0, s.growth[atk.id] ?? 0) / 100
+      const grown: Partial<AxisSheet> = {}
+      for (const [a, v] of Object.entries(f.axes)) grown[a as AxisKey] = Math.round((v as number) * k)
+      atk.axes = { ...atk.axes, ...grown }
+    }
     atk.spd = speedOf(atk.axes)
     atk.skills = f.skills.map((x) => ({ ...x }))
     pushLog(s, {
@@ -1043,6 +1076,16 @@ export function advance(s: BattleState): BattleState {
             })
           }
         }
+        /* 增益的第二条时限：按拍数扣，扣完即散（见 TUNING.buffRoundsCap）。
+           与 beginAction 里那份不冲突 —— 那份按「自身出场次数」扣。两条并行、谁先到零算谁，
+           于是「这条增益还能挂多久」有一个按场上节拍算得出来的答案。
+           放在停滞那一段之后：停滞有它自己的解除日志（stasis-off），
+           别让这里抢先把人解冻，那样日志就漏了一笔。 */
+        c.buffs = c.buffs.filter((b) => {
+          if (b.rt == null) return true
+          b.rt -= 1
+          return b.rt > 0
+        })
         c.bar = Math.min(TUNING.barMax * 2, c.bar + chargeOf(c))
         const p = c.passive
         if (p?.regen && c.hp < c.hpMax) {
@@ -1051,8 +1094,14 @@ export function advance(s: BattleState): BattleState {
         if (p?.spRegen && c.sp < c.spMax) {
           c.sp = Math.min(c.spMax, c.sp + p.spRegen)
         }
-        // 变身的拍子：数满即解除，把借来的能力还回去，冷却从这一刻才起算
+        // 变身的拍子：数满即解体，把借来的能力还回去，冷却从这一刻才起算
         if (c.morph) {
+          /* 先长后数：这一拍他还顶着这副面目，那这一拍该涨的就该算上。
+             涨的是技能表里那份拷贝的倍率，随解体一起还回去，不落到本体头上。 */
+          if (c.morph.kind === 'form' && c.morph.ramp) {
+            const b = c.skills.find((x) => x.kind === '普攻')
+            if (b) b.power = Math.round((b.power + c.morph.ramp) * 100) / 100
+          }
           c.morph.ticks -= 1
           if (c.morph.ticks <= 0) {
             const m = c.morph
@@ -1060,15 +1109,15 @@ export function advance(s: BattleState): BattleState {
             c.spd = m.base.spd
             c.skills = m.base.skills
             c.cds[m.skillId] = m.cd
-            c.buffs.push({ k: 'atk', v: -0.12, t: m.cd })
-            c.buffs.push({ k: 'slow', v: 0.12, t: m.cd })
+            c.buffs.push({ k: 'atk', v: -0.12, t: m.cd, rt: TUNING.buffRoundsCap })
+            c.buffs.push({ k: 'slow', v: 0.12, t: m.cd, rt: TUNING.buffRoundsCap })
             pushLog(s, {
               round: s.hand, actorId: c.id, actor: c.name, side: c.side,
               skillId: m.kind === 'form' ? 'form-off' : 'morph-off',
-              skill: m.kind === 'form' ? '变身 · 解除' : '变形 · 解除',
+              skill: m.kind === 'form' ? '变身 · 解体' : '变形 · 解除',
               kind: '指令', fx: 'seal',
               note: m.kind === 'form'
-                ? `「${m.name}」退了下去 —— ${c.name} 变回自己，接下来 ${m.cd} 拍发虚。`
+                ? `「${m.name}」散开了 —— ${c.name} 变回自己，接下来 ${m.cd} 拍发虚。`
                 : `${c.name} 变回自己 —— 借来的东西还了回去，接下来 ${m.cd} 拍手感发虚。`,
             })
             c.morph = null
@@ -1507,12 +1556,51 @@ function ultStep(s: BattleState, foe: Combatant, t: Combatant): boolean {
   return false
 }
 
+/**
+ * 召唤：把一只半成形的同性质实体喊上场（首领与精英才带得了这一手，见 derive 的 SUMMON_MOVE）。
+ *
+ * 上限判的是 **s.enemies 的长度**，也就是「这一场打过多少东西」——
+ * 不是「场上还剩几个」。后者会让「打掉一个补一个」成立，而收场判的正是
+ * 「场上没人了」（见 checkEnd），于是这场仗永远收不了。
+ * s.enemies 只增不减（倒下的也留在里面），所以它的长度天然是这一场的总数。
+ *
+ * @returns 这一手是否真的用来喊人了（false = 它没这一手／到顶了／还在冷却）
+ */
+export function summonFoe(s: BattleState, foe: Combatant): boolean {
+  const k = foe.skills.find((x) => x.summon)
+  if (!k) return false
+  if (s.enemies.length >= TUNING.enemyCap) return false
+  if ((foe.cds[k.id] ?? 0) > 0) return false
+  const m = minionOf({
+    missionId: s.missionId, nature: s.nature, place: s.place, stage: s.stage,
+    progress: s.progress,
+    // 排位取当下长度：它接下来就要占这个位置，甲乙丙丁也就接在这后面
+    slot: s.enemies.length,
+  })
+  s.summoned = (s.summoned ?? 0) + 1
+  s.enemies.push(m)
+  // 这一手自己也有冷却（走「自身出手次数」，见 beginAction）——
+  // 不然首领每一手都在喊人，它自己一次都不打，那就不叫首领，叫传送门。
+  foe.cds[k.id] = k.cd ?? 4
+  pushLog(s, {
+    round: s.hand, actorId: foe.id, actor: foe.name, side: foe.side,
+    // skill 报这一手自己的名字（与其他技能同一口径），喊起来的是谁写在正文里
+    skillId: k.id, skill: k.name, kind: '技能', fx: k.fx,
+    note: `${foe.name}这一手没朝谁来 —— 它只是把旁边那一片还没成形的东西喊了一声，`
+      + `${m.name}就这么站着凝了出来。`,
+  })
+  return true
+}
+
 /** 离线判断：引擎自带的那套（没有接口、或接口没接上时用它） */
 function enemyAct(s: BattleState, foe: Combatant) {
   const t = pickTarget(s, foe)
   if (!t) return
   if (ultStep(s, foe, t)) return
-  const heavy = foe.skills.find((k) => k.kind === '技能' && !k.ult)
+  // 首领与精英先把人喊来 —— 喊人算它这一手（有冷却，也有整场上限）
+  if (summonFoe(s, foe)) return
+  // 挑「重手」时跳过召唤那一手：它不造成伤害，被挑中等于白出一手
+  const heavy = foe.skills.find((k) => k.kind === '技能' && !k.ult && !k.summon)
   const k = heavy && Math.random() < 0.35 ? heavy : foe.skills[0]
   resolve(s, foe, k, t.id)
 }
@@ -1528,6 +1616,16 @@ function enemyActWith(s: BattleState, foe: Combatant, it: EnemyIntent) {
   if (ultStep(s, foe, t)) return
   const k = legalSkills(foe, s).find((x) => x.id === it.skillId && !x.ult)
   if (!k || !affordable(k, foe.sp)) {
+    enemyAct(s, foe)
+    return
+  }
+  /* 交回来的是一记召唤：喊得动就喊，喊不动（到顶了 / 冷却没走完）就退回常规一手。
+     这一手不走 resolve —— 它没有目标、也不造成伤害（见 summonFoe）。 */
+  if (k.summon) {
+    if (summonFoe(s, foe)) {
+      foe.sp = Math.max(0, foe.sp - k.cost)
+      return
+    }
     enemyAct(s, foe)
     return
   }
