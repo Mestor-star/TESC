@@ -11,7 +11,7 @@ import { clamp } from '../lib/format'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
 import { ensureSeeded } from '../lib/lorestore'
-import { ensureBuiltinPresets } from '../lib/builtin-presets'
+import { ensureBudgetFloor, ensureBuiltinPresets } from '../lib/builtin-presets'
 import { requestRemount } from '../lib/remount'
 import { sfx } from '../lib/audio'
 import { resetBattleStore } from '../lib/battle/store'
@@ -401,8 +401,15 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /* 首启迁移：无槽文件但有旧进度 → 留 slots[0]「旧档留档」+ 自动档（幂等） */
   useEffect(() => {
     ensureMigration()
-    // 内置预设也在这个时候入册：用户开「终端设置」时它已经在方案列表里了
-    void ensureBuiltinPresets()
+    /*
+      内置预设也在这个时候入册：用户开「终端设置」时它已经在方案列表里了。
+      挨着再做两件一次性的首启事，顺序不能反：
+        ① 先把还停在旧缺省上的输出预算抬到建议值（只认我们自己塞过的那些值）；
+        ② 再让自带预设生效 —— 从没套过任何预设的机器直接启动它。
+      反过来的话，自动启动刚写下的 30000 会被①②的判据再点一次名（虽然结果一样，
+      但账面上会记成「我们改过预算」，归因就不对了）。
+    */
+    void ensureBudgetFloor().then(() => ensureBuiltinPresets())
   }, [])
 
   /* 重挂载后落地一条重置/读档的反馈通知（冷启动为 null 则跳过） */

@@ -336,6 +336,39 @@ try {
   /* ============ Phase A：离线通读 1→2→3 → 解锁 + 记录 ============ */
   console.log('\n[Phase A] 离线通读 原文 → 归档 → 记录流 / 解锁')
   await boot()
+  /* ---------- A·Q：首启（自带预设施效 · 输出预算）
+     这一批只在**全新档**上成立，所以钉在最前面（后面的 Phase 自己会往
+     api:main 里写 profile，把这里要看的现场改掉）。要验的是：
+     自带的预设不是「躺在方案列表里」，而是开机就生效 —— 生成读的是生效快照，
+     没套用过就是空快照，界面上看不出任何异常，写出来的东西却完全不是预设的写法。 */
+  await poll(`(()=>{try{return !!localStorage.getItem('zts-active-preset:v1')}catch(e){return false}})()`, 12000, 'AQ active preset')
+  const aq = await ev(`(()=>{
+    const rd=(k)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}}
+    const act=rd('zts-active-preset:v1')||{}, list=rd('zts-schemes:v1')||[], floor=rd('zts-budget-floor:v1')||null
+    const prof=(name)=>new Promise((res)=>{const r=indexedDB.open('zts-terminal-store',1);
+      r.onsuccess=()=>{const db=r.result;const tx=db.transaction('kv','readonly');const g=tx.objectStore('kv').get(name);
+        g.onsuccess=()=>{const v=g.result||{};res({has:!!g.result,maxTokens:v.maxTokens===undefined?null:v.maxTokens})};g.onerror=()=>res({has:false})};
+      r.onerror=()=>res({has:false})})
+    return Promise.all([prof('api:main'),prof('api:sms')]).then(([m,s])=>({
+      activeId:act.id||null, activeName:act.name||'', entries:(act.entries||[]).length,
+      enabledEntries:(act.entries||[]).filter(e=>e.enabled).length,
+      schemes:list.length, builtins:list.filter(x=>x.id&&String(x.id).startsWith('builtin-')).map(x=>x.id),
+      main:m, sms:s, floor:!!floor, floorFrom:floor?floor.from:null,
+    }))})()`)
+  ok('AQ1 自带预设开箱即生效：开机就把协议预设落成生效快照（不是只摆进方案列表）',
+    aq.activeId === 'builtin-ts-protocol' && aq.entries >= 20 && aq.enabledEntries >= 15,
+    JSON.stringify({ activeId: aq.activeId, name: aq.activeName, entries: aq.entries, enabled: aq.enabledEntries }))
+  ok('AQ2 对照：两份内置预设都在列表里，而生效的只有协议那一份 ——「入库」不等于「生效」',
+    aq.schemes >= 2 && aq.builtins.length === 2 && aq.activeId === 'builtin-ts-protocol',
+    JSON.stringify({ schemes: aq.schemes, builtins: aq.builtins }))
+  const wantBudget = 30000
+  ok('AQ3 输出预算随预设落到两通道：一条通道都不留在旧缺省上（够写一段正文）',
+    aq.main.maxTokens === wantBudget && aq.sms.maxTokens === wantBudget,
+    JSON.stringify({ main: aq.main, sms: aq.sms }))
+  ok('AQ4 两件首启事各记一本账（记账在先、套用在后：不会下次开机再覆盖一遍）',
+    aq.floor === true && aq.main.has === true,
+    JSON.stringify({ floor: aq.floor, from: aq.floorFrom }))
+
   // A0：P9 角色档案受门禁保护——此时仍是全新世界、unlocked=false，档案不可调阅
   await goto('角色档案')
   await sleep(700)
@@ -829,12 +862,23 @@ try {
   await goto('角色档案')
   await poll(`document.querySelectorAll('[data-archive-card]:not([data-locked-id])').length===24`, 20000, 'G archive unlocked')
   ok('G1d 全员已遇见后封存解除（24/24 可读）', true)
-  // P2 起读数改为「常态/极限」双值，故不再数 ∞ 字符数（∞/∞ 本就算两个），改按 data 属性判定语义
-  const infNorm = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?c.querySelectorAll('[data-axis-normal="∞"]').length:-1})()`)
-  const infLim = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');return c?c.querySelectorAll('[data-axis-limit="∞"]').length:-1})()`)
-  ok('G2 恋兔光破坏力为唯一常态 ∞ 轴，且极限亦 ∞（读数「∞/∞」）', infNorm === 1 && infLim === 1, 'norm=' + infNorm + ' lim=' + infLim)
-  const infOther = await ev(`(()=>{let n=0;document.querySelectorAll('[data-archive-card]').forEach(c=>{if(c.getAttribute('data-archive-card')!=='hikari')n+=c.querySelectorAll('[data-axis-normal="∞"]').length});return n})()`)
-  ok('G2b 常态 ∞ 为恋兔光专属（其余 23 人常态皆为可测数值）', infOther === 0, 'other=' + infOther)
+  // P2 起读数改为「常态/极限」双值，故不再数 ∞ 字符数，改按 data 属性判定语义。
+  // 判据以 chars.ts 的逐条原文锚为准：常态判 '∞' 者如今**一处也没有** —— 顶格的那一条
+  // （恋兔光的破坏力）取量程顶端 200，只把**极限**判不可测（「它，就是混沌与暴力本身」
+  // 「光是不加遮掩地暴露出来就会毁灭世界」→ 上限即世界毁灭，故不给静态数）。
+  const infAxis = await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');if(!c)return null;const s=[...c.querySelectorAll('[data-axis-num]')].find(x=>x.getAttribute('data-axis-normal')==='200');return s?{normal:s.getAttribute('data-axis-normal'),limit:s.getAttribute('data-axis-limit'),over:s.getAttribute('data-axis-over')||null,text:s.innerText.trim()}:null})()`)
+  ok('G2 恋兔光破坏力常态顶格 200 · 极限判不可测（读数「200/∞」）',
+    !!infAxis && infAxis.normal === '200' && infAxis.limit === '∞' && infAxis.text === '200/∞',
+    JSON.stringify(infAxis))
+  // 常态一律可测（顶格者也给数 200），'∞' 只出现在**极限**那一侧 —— 这不是「随便标标」：
+  // 极限判不可测者在数据里逐条附了原文锚（机制性无上限：无限增殖、相对性强化、因果改写一类）。
+  // 另取一位侧写人物（露娜）作第二处已知的 ∞ 极限，免得断言只钉在一个人身上。
+  const infAll = await ev(`(()=>{let norm=0;const lim=[];document.querySelectorAll('[data-archive-card]').forEach(c=>{const id=c.getAttribute('data-archive-card');c.querySelectorAll('[data-axis-num]').forEach(s=>{if(s.getAttribute('data-axis-normal')==='∞')norm++;if(s.getAttribute('data-axis-limit')==='∞'){const k=s.closest('div')?s.closest('div').querySelector('small'):null;lim.push(id+':'+(k?k.innerText:'?'))}})});const luna=[...document.querySelectorAll('[data-archive-card="luna"] [data-axis-num]')].map(s=>s.innerText.trim());return {norm,lim,luna}})()`)
+  ok('G2b 常态无一处判不可测（顶格者也给数）· 极限判不可测逐条落在有原文锚的轴上',
+    !!infAll && infAll.norm === 0
+    && infAll.lim.includes('hikari:破坏力') && infAll.lim.includes('luna:反现实亲和')
+    && infAll.lim.every((x) => /^[a-z0-9-]+:.+$/.test(x)) && infAll.luna.includes('99/∞'),
+    `常态∞ ${infAll && infAll.norm} 处 · 极限∞ ${infAll && infAll.lim.length} 处（恋兔光破坏力 / 露娜反现实亲和 99/∞ 均在其中）`)
   // 双值不变式：凡已登记的轴（有 data-axis-limit）恒满足 极限 ≥ 常态；'∞' 视为最大，常态 '∞' 则极限必须亦为 '∞'
   const badLimit = await ev(`(()=>{const bad=[];document.querySelectorAll('[data-archive-card]').forEach(c=>{c.querySelectorAll('[data-axis-num]').forEach(s=>{const n=s.getAttribute('data-axis-normal'),l=s.getAttribute('data-axis-limit');if(!l)return;if(n==='∞'){if(l!=='∞')bad.push(c.getAttribute('data-archive-card')+':inf/'+l);return}if(l!=='∞'&&Number(l)<Number(n))bad.push(c.getAttribute('data-archive-card')+':'+n+'/'+l)})});return bad})()`)
   ok('G2c 全员极限 ≥ 常态（P2 双值不变式）', Array.isArray(badLimit) && badLimit.length === 0, JSON.stringify(badLimit))
@@ -843,11 +887,21 @@ try {
   // 名称/数值都有实义：chip 文本形如「当前羁绊 <称谓> · <0-100>」，且数值在界内
   const lunaChip = await ev(`(()=>{const c=document.querySelector('[data-archive-card="luna"]');const m=c?c.innerText.match(/当前羁绊\\s*([^·\\n]+?)\\s*·\\s*(\\d+)/):null;return m?{label:m[1].trim(),val:Number(m[2])}:null})()`)
   ok('G4 档案羁绊 chip 有实义称谓与界内数值', !!lunaChip && lunaChip.val >= 0 && lunaChip.val <= 100 && lunaChip.label.length > 0, JSON.stringify(lunaChip))
+  // 对照：五轴两侧都没有 ∞ 的档案（梅芙莉莎）不该出现条纹说明行 —— 说明行是跟着**画出来的条纹**走的，
+  // 不是「弹窗里总有这么一句」。上面 G7 认的是恋兔光（极限 ∞），这里认的是反例。
+  await ev(`(()=>{const c=document.querySelector('[data-archive-card="mefisa"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
+  await poll(`!!document.querySelector('[data-archive-dialog]')`, 15000, 'G4b dialog open（无 ∞ 的档）')
+  const dNoInf = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');return d?{note:d.innerText.includes('无法测量'),inf:d.innerText.includes('∞'),right:d.innerText.includes('副官')}:null})()`)
+  ok('G4b 对照：五轴无 ∞ 的档案不出现条纹说明行（说明行不是弹窗里的常驻一句）',
+    !!dNoInf && dNoInf.right === true && dNoInf.note === false && dNoInf.inf === false, JSON.stringify(dNoInf))
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, 'G4b dialog esc close')
   // 打开恋兔光详情（就近锚定）
   await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
   await poll(`(()=>{const d=document.querySelector('[data-archive-dialog]');return !!d && d.innerText.includes('无法测量')})()`, 15000, 'G dialog open ∞ note')
   const dg = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;const r=d.getBoundingClientRect();return {l:Math.round(r.left),t:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),vw:innerWidth,vh:innerHeight,text:d.innerText}})()`)
-  ok('G5 就近弹窗视口内落位（未越界）', !!dg && dg.t >= 0 && dg.l >= 0 && dg.l + dg.w <= dg.vw + 2 && dg.t + dg.h <= dg.vh + 2, JSON.stringify(dg && { l: dg.l, t: dg.t, w: dg.w, h: dg.h }))
+  ok('G5 就近弹窗视口内落位（未越界）', !!dg && dg.t >= 0 && dg.l >= 0 && dg.l + dg.w <= dg.vw + 2 && dg.t + dg.h <= dg.vh + 2, JSON.stringify(dg && { l: dg.l, t: dg.t, w: dg.w, h: dg.h, vw: dg.vw, vh: dg.vh }))
   ok('G6 弹窗含 立绘位 与 当前羁绊 区', !!dg && dg.text.includes('立绘') && dg.text.includes('当前羁绊'), '')
   ok('G7 弹窗含 ∞/无法测量 说明行', !!dg && dg.text.includes('无法测量'), '')
   // 立绘全图查看器

@@ -6,11 +6,12 @@ import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
 
 import { useTerminal } from '../terminal/Terminal'
+import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../lib/budget'
 import type { AiChannel, ApiSettings } from '../lib/api'
 import { API_DEFAULTS, chatCompletion, isReady, listModels, readProfiles, saveProfile } from '../lib/api'
 import * as lore from '../lib/lorestore'
 import { applySchemeTo, captureFrom, listSchemes, parseChatPreset, parseSchemeFile, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
-import { ensureBuiltinPresets } from '../lib/builtin-presets'
+import { ensureBudgetFloor, ensureBuiltinPresets } from '../lib/builtin-presets'
 import type { Scheme, SchemePart } from '../lib/schemes'
 import { exportToJson } from '../lib/tavernlike/importer'
 import type { MultiImportInput } from '../lib/tavernlike/importer'
@@ -127,7 +128,7 @@ const CH_META: Record<Channel, { title: string; kicker: string; hint: string; te
     kicker: 'STORY / DIRECTOR',
     hint: '剧情推演通道：以第三人称「导演 + 在场角色」推进当前事件，回执带结构化指令自动落地。',
     tempNote: '叙事通道。越低越贴原作基调；建议 0.6–0.9。',
-    maxNote: '每次推演的单回合输出上限。思考型通道（DeepSeek reasoner 等）会先把预算耗在内部思考上——若出现「达长度上限但正文为空」，就调大此项（如 3000–5000）。',
+    maxNote: `每次推演的单回合输出上限，建议 ${DEFAULT_BUDGET}。思考型通道（DeepSeek reasoner 等）会先把预算耗在内部思考上——落在千位以内时，正文常常一个字还没写就被长度掐断。若该通道回话里明确说上限不够，照它给的数往下调（区间 ${MIN_BUDGET}–${MAX_BUDGET}）。`,
     streamNote: '开启后在线推演逐字上屏（SSE 流式）。若中转网关不支持流式、报错或久不出字，关掉即回退为整段接收。',
   },
   sms: {
@@ -135,7 +136,7 @@ const CH_META: Record<Channel, { title: string; kicker: string; hint: string; te
     kicker: 'SMS / CHARACTER CHAT',
     hint: '角色一对一短信通道，回复可带轻量羁绊。可与此前的历史线程无缝衔接。',
     tempNote: '聊天通道。越放飞越跳脱；建议 0.7–1.0。',
-    maxNote: '每条短信回复的输出上限。思考型通道同理，偏低会先被思考耗尽。',
+    maxNote: `每条短信回复的输出上限，沿用与主线同一条口径（建议 ${DEFAULT_BUDGET}）：偏低时思考型通道会先被内部思考耗尽，回过来是一句空话。`,
     streamNote: '开启后短信回复逐字上屏；网关不支持流式时关掉。',
   },
 }
@@ -334,20 +335,34 @@ export function Settings() {
     }
   }, [])
 
-  useEffect(() => {
+  const readCfg = useCallback(() => {
     readProfiles()
       .then((p) => setCfgs({ main: p.main, sms: p.sms }))
       .catch(() => setCfgs(null))
   }, [])
 
+  useEffect(() => { readCfg() }, [readCfg])
+
   useEffect(() => {
     void refreshLoreInfo()
   }, [refreshLoreInfo])
 
-  /* 内置预设是在终端启动时入册的；万一它落盘比这一屏挂载还晚，这里补一次读取 */
+  /*
+    内置预设是在终端启动时入册的；万一它落盘比这一屏挂载还晚，这里补一次读取。
+    它做的事比「加两行方案」多：本机从没套过预设时，它还会把协议预设直接启动
+    （温度 / 输出预算 / 生效快照都落一遍）—— 所以返回 true 时要连通道配置与
+    生效预设一起重读，否则界面上显示的还是自动启动之前的那套参数。
+  */
   useEffect(() => {
-    void ensureBuiltinPresets().then((added) => { if (added) setSchemes(listSchemes()) })
-  }, [])
+    void ensureBudgetFloor()
+      .then((raised) => ensureBuiltinPresets().then((did) => raised || did))
+      .then((did) => {
+        if (!did) return
+        setSchemes(listSchemes())
+        readCfg()
+        void refreshLoreInfo()
+      })
+  }, [readCfg, refreshLoreInfo])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -407,7 +422,13 @@ export function Settings() {
           { role: 'system', content: '你是一个连通性测试助手。只回复四个字：信道正常。' },
           { role: 'user', content: '测试' },
         ],
-        { signal: ctrl.signal, meta: { channel: '信道自检', act: ch === 'main' ? '主线剧情通道' : '角色短信通道' } },
+        // 自检要按**本通道的实际预算**发：拿一个比实际更小的数去自检，
+        // 会在思考型通道上「测出来是空的」，而真正生成时反倒是好的 —— 假阴性。
+        {
+          signal: ctrl.signal,
+          maxTokens: clampBudget(cfg.maxTokens),
+          meta: { channel: '信道自检', act: ch === 'main' ? '主线剧情通道' : '角色短信通道' },
+        },
       )
       setResults((prev) => ({ ...prev, [ch]: { ok: true, text: `信道正常 · 通道回话：${out.slice(0, 120)}` } }))
     } catch (e) {
@@ -716,16 +737,13 @@ export function Settings() {
             <span className={css.rowInline}>
               <input
                 type="number"
-                min={256}
-                max={32000}
+                min={MIN_BUDGET}
+                max={MAX_BUDGET}
                 step={256}
                 className="field"
                 style={{ maxWidth: 140 }}
                 value={cfg.maxTokens}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  set(ch, 'maxTokens', Number.isFinite(n) && n >= 256 ? Math.min(32000, Math.round(n)) : 1500)
-                }}
+                onChange={(e) => set(ch, 'maxTokens', clampBudget(Number(e.target.value)))}
               />
               <span className="muted tiny" style={{ flex: '0 0 auto' }}>tokens / 回合</span>
             </span>

@@ -10,6 +10,7 @@ import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
+import { clampBudget } from '../lib/budget'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode } from '../data/types'
@@ -455,7 +456,7 @@ export function Plot() {
 
       // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）。
       // 事件衔接回合（opts.long）放宽预算——衔接文本「可以长」。
-      const budget = Math.max(800, cfgMain!.maxTokens || 1500)
+      const budget = clampBudget(cfgMain!.maxTokens)
       const turnBudget = opts?.long ? Math.max(2600, Math.round(budget * 1.6)) : budget
       // 正文为空且疑似思考耗尽预算 → 自动加大预算补发一次，避免动辄卡在手动「要求补发」
       try {
@@ -606,7 +607,7 @@ export function Plot() {
       ]
       const res = await chatCompletion(cfgMain!, messages, {
         signal: ctrl.signal,
-        maxTokens: cfgMain!.maxTokens || 1500,
+        maxTokens: clampBudget(cfgMain!.maxTokens),
         meta: { channel: '主线剧情', act: '行动起草' },
       })
       const text = (res ?? '').trim()
@@ -749,7 +750,7 @@ export function Plot() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
-      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: cfgMain!.maxTokens || 1500 })
+      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: clampBudget(cfgMain!.maxTokens) })
       const parsed = parseDirectorReply(res)
       needDir.current = !parsed.found
       if (parsed.found) {

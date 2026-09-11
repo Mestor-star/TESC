@@ -9,6 +9,7 @@ import { Portrait } from '../components/Portrait'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
+import { clampBudget } from '../lib/budget'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import { extractLiveDisplay, parseDirectorReply, smsBondRule, smsDirective } from '../lib/plot'
@@ -235,10 +236,10 @@ export function Tavern() {
       try {
         // 流式开关（终端设置 · 角色短信通道）：关掉即整段接收
         const res: StreamResult = cfg.stream === false
-          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500, meta: logMeta }) }
+          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: clampBudget(cfg.maxTokens), meta: logMeta }) }
           : await chatCompletionStream(cfg, messages, {
             signal: ctrl.signal,
-            maxTokens: cfg.maxTokens || 1500,
+            maxTokens: clampBudget(cfg.maxTokens),
             meta: logMeta,
             onDelta: (chunk) => {
               if (settled || !chunk) return
@@ -389,10 +390,10 @@ ${preset.post}` : '')
       let settled = false
       try {
         const res: StreamResult = cfg.stream === false
-          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: cfg.maxTokens || 1500, meta: logMeta }) }
+          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: clampBudget(cfg.maxTokens), meta: logMeta }) }
           : await chatCompletionStream(cfg, messages, {
             signal: ctrl.signal,
-            maxTokens: cfg.maxTokens || 1500,
+            maxTokens: clampBudget(cfg.maxTokens),
             meta: logMeta,
             onDelta: (chunk) => {
               if (settled || !chunk) return

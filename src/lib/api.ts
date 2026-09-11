@@ -17,6 +17,7 @@
    ============================================================ */
 
 import { digestPrompt, pushAiLog, replyHeadOf } from './ailog'
+import { DEFAULT_BUDGET } from './budget'
 import type { AiLogMeta } from './ailog'
 
 export interface ApiSettings {
@@ -37,7 +38,7 @@ export const API_DEFAULTS: ApiSettings = {
   apiKey: '',
   model: '',
   temperature: 0.8,
-  maxTokens: 1500,
+  maxTokens: DEFAULT_BUDGET,
   stream: true,
 }
 

@@ -532,16 +532,36 @@ export function Archive() {
   }, [])
   const close = useCallback(() => { setOpenId(null); setViewer(false); setOpenRect(null); setPos(null) }, [])
 
-  /* 打开后测量真实尺寸再就近落位 */
-  useLayoutEffect(() => {
-    if (!openId || !openRect || !dlgRef.current) return
+  /* 打开后测量真实尺寸再就近落位。
+     尺寸**要跟着长**：落位那一刻量到的高度未必是最终高度（立绘解码、装具区与作战面板随后撑开），
+     照旧尺寸算出来的位置会让弹窗挂出视口下沿。故挂一个 ResizeObserver，内容每长一次就按新尺寸重算。
+
+     还有两道保险 —— 未定位的弹窗会停在文档流末尾，整个掉出视口（这一步的浏览器复核真跑出来过）：
+       · 没有锚点（openRect 缺失）时按视口中央落位，而不是「没有锚点就不落位」；
+       · 只要还没落位，每次渲染后再试一次 —— 该跑而没跑成的那一次（量到 0 高、锚点晚到）
+         不会就此定格，弹窗自己接着找机会落位。 */
+  const anchor = openRect ?? new DOMRect(window.innerWidth / 2, window.innerHeight / 2, 0, 0)
+  const placeNow = () => {
     const el = dlgRef.current
-    const r = openRect
-    const t = window.setTimeout(() => {
-      setPos(placeDialog(el.offsetWidth, el.offsetHeight, r))
-    }, 0)
+    if (el) setPos(placeDialog(el.offsetWidth, el.offsetHeight, anchor))
+  }
+  useLayoutEffect(() => {
+    if (!openId || !dlgRef.current) return
+    const el = dlgRef.current
+    const t = window.setTimeout(placeNow, 0)
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver === 'function') {
+      ro = new ResizeObserver(placeNow)
+      ro.observe(el)
+    }
+    return () => { window.clearTimeout(t); ro?.disconnect() }
+  }, [openId, openRect]) // eslint-disable-line react-hooks/exhaustive-deps -- placeNow 每次渲染都是新的，进依赖会自激
+  /* 没落位就继续试（防御式收口，正常情况下上面那一次就够了） */
+  useEffect(() => {
+    if (!openId || pos || !dlgRef.current) return
+    const t = window.setTimeout(placeNow, 0)
     return () => window.clearTimeout(t)
-  }, [openId, openRect])
+  })
 
   /* ESC 关闭 */
   useEffect(() => {
@@ -904,7 +924,11 @@ export function Archive() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <Meters row={focus} />
                 </div>
-                {focus.axis.includes('∞') ? (
+                {/* 说明行跟着**画出来的条纹**走：常态判不可测（整条条纹）与极限判不可测
+                    （极限那截红条纹）都会在图上有条纹，就得都解释。曾只认常态那一侧 ——
+                    「常态顶格 200 / 极限 ∞」这类轴（恋兔光的破坏力、露娜的反现实亲和）
+                    画着红条纹却没有任何说明。 */}
+                {focus.axis.includes('∞') || focus.axisLimit.includes('∞') ? (
                   <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的『∞』读数无法测量——已超出委员会可评定的量程。</div>
                 ) : null}
               </div>

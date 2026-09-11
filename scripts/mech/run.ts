@@ -42,6 +42,11 @@ import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
 import { BEDS } from '../../src/lib/audio/music'
 import { VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
+import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/lib/budget'
+import { API_DEFAULTS } from '../../src/lib/api'
+import { BUILTIN_IDS, BUILTIN_SOURCE, needsBudgetFloor, shouldAutoStart } from '../../src/lib/builtin-presets'
+import { parseChatPreset } from '../../src/lib/schemes'
+import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
 import type { Mission } from '../../src/data/types'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
@@ -1727,6 +1732,8 @@ export function run(): MechReport {
        · 一段床写好了却没有任何模块放它（VIEW_BED 里没人指），等于白写。
      这些都不是听一遍能听出来的（听出来的那一下，往往已经上线了），所以钉在这里。
      每一条都配对照：证明判据本身有牙，而不是「怎么写都过」。 */
+  /** 去掉注释再找字面量 —— 不然断言会在自己的说明文字里命中 */
+  const bare = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
   try {
     const names = Object.keys(BEDS) as BedName[]
     /** 一个音落在本段的哪个音级上（相对主音，八度往上算） */
@@ -1849,7 +1856,6 @@ export function run(): MechReport {
        （标题屏的 setBed('menu')、作战屏的 battleBed → battle/boss）。
        两者都要认 —— 这条断言第一版只认了 VIEW_BED，于是把 menu 报成「没人放」：
        是判据窄了，不是数据错了。所以出处改成从源码里找调用点。 */
-    const bare = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     const files: string[] = []
     const walk = (dir: string) => {
       for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -1886,6 +1892,134 @@ export function run(): MechReport {
         + `${BEDS[n].melody.filter((x) => x !== null).length} 音·${BEDS[n].bells.length} 铃`).join('　'))
   } catch (e) {
     fail.push('背景音段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 17) 首启：自带的预设要**真的启动**，输出预算不是「够回一句」 ----------
+     两件事各自长在看不见的地方：
+       · 预设只「播进列表」不等于会用上 —— 生成读的是生效快照（导演指令）与通道参数，
+         没套用过就是空快照 + 通道缺省预算，用户看到的方案列表里却明明有那两份，
+         界面上不会报错，只是写出来的东西不像话；
+       · 输出预算这个数以前散在四个地方各写各的（导入器 64000 / 输入框 32000 /
+         缺省 1500 / 视图里兜底 1500），同一份预设从不同入口进来落地的值不一样，
+         而 1500 那一档在思考型通道上会被内部思考吃光，正文一个字没写就被掐断。
+     这些都不是打开界面能看出来的，所以钉在这里。每条都配对照。 */
+  try {
+    const cfg = (budget = DEFAULT_BUDGET): ChannelCfg => ({
+      main: { ...API_DEFAULTS, maxTokens: budget },
+      sms: { ...API_DEFAULTS, maxTokens: budget },
+    })
+    /* 两通道故意配成**不同**的样子：这样「沿用通道现值」一旦写成了「沿用主通道的值」，
+       短信通道那一列就对不上，逐通道回退与「统一成主通道」两种写法当场分得开。 */
+    const splitCfg: ChannelCfg = {
+      main: { ...API_DEFAULTS, model: '主通道模型', temperature: 0.2, maxTokens: 1234 },
+      sms: { ...API_DEFAULTS, model: '短信通道模型', temperature: 1.3, maxTokens: 4321 },
+    }
+
+    /* ① 内置预设解析出来的预算：够写一段正文，而不是够回一句 */
+    const parsed = BUILTIN_SOURCE.map((b) => ({ id: b.id, r: parseChatPreset(b.json, cfg()) }))
+    const thin = parsed.filter((p) => !p.r.ok || p.r.scheme.main.maxTokens < 8000)
+    ok('首启：内置预设带得动一段正文（解析出的输出预算 ≥ 8000，且两通道一致）',
+      thin.length === 0,
+      thin.length ? thin.map((p) => p.id).join('、')
+        : parsed.map((p) => `${p.id} ${p.r.ok ? p.r.scheme.main.maxTokens : '解析失败'}`).join('　'))
+
+    /* 对照：抹掉预算字段就退回**本通道**的现值 —— 上面那条不是「怎么解析都那个数」 */
+    const stripped = { ...(BUILTIN_SOURCE[0].json as Record<string, unknown>) }
+    delete stripped.openai_max_tokens
+    // 预设里的采样器温度写在哪一层都算数（这份写在顶层 temperature，也在 TEMP_KEYS 里）
+    for (const k of ['temp_openai', 'temperature', 'temp']) delete stripped[k]
+    const fallback = parseChatPreset(stripped, splitCfg)
+    ok('首启（对照）：预设没带预算/温度时，两个通道各取自己的现值（不是统一成主通道那个数）',
+      fallback.ok && fallback.scheme.main.maxTokens === 1234 && fallback.scheme.sms.maxTokens === 4321
+      && fallback.scheme.main.temperature === 0.2 && fallback.scheme.sms.temperature === 1.3,
+      `主通道 1234/0.2 · 短信通道 4321/1.3，解析得到 ${fallback.ok ? `${fallback.scheme.main.maxTokens}/${fallback.scheme.main.temperature} · ${fallback.scheme.sms.maxTokens}/${fallback.scheme.sms.temperature}` : '解析失败'}`)
+
+    /* ①b 预设没写模型名 —— 两通道各留自己那一份。
+       本终端是双通道（主线一套、角色短信一套），两边可以是两个不同的模型，那是用户自己配的。
+       曾经这里两处都写同一个解析结果：手动导入时只是把短信通道顶掉，不易察觉；
+       而内置预设如今是**开机自动套用**的，一台新机器开一次机就把短信通道换成了主通道的模型 ——
+       live 复核里就是这么炸的（短信页等着显示 stub-sms，屏幕上却是 stub）。 */
+    const real = BUILTIN_SOURCE.map((b) => ({ id: b.id, r: parseChatPreset(b.json, splitCfg) }))
+    const leak = real.filter((p) => !p.r.ok
+      || p.r.scheme.main.model !== '主通道模型' || p.r.scheme.sms.model !== '短信通道模型')
+    ok('首启：自带预设没写模型名 —— 两个通道各留自己那一份（不把主通道的模型摁到短信通道上）',
+      leak.length === 0,
+      leak.length ? leak.map((p) => p.id).join('、')
+        : real.map((p) => `${p.id} 主=${p.r.ok ? p.r.scheme.main.model : '解析失败'} 短信=${p.r.ok ? p.r.scheme.sms.model : ''}`).join('　'))
+
+    /* 对照：预设**写了**模型名时，两通道都换成预设那个 —— 上面那条不是「模型名怎么都进不去」 */
+    const named = { ...(BUILTIN_SOURCE[0].json as Record<string, unknown>), oai_model: '预设点名的模型' }
+    const forced = parseChatPreset(named, splitCfg)
+    ok('首启（对照）：预设写了模型名时，两个通道都换成预设那个',
+      forced.ok && forced.scheme.main.model === '预设点名的模型' && forced.scheme.sms.model === '预设点名的模型',
+      forced.ok ? `主=${forced.scheme.main.model} 短信=${forced.scheme.sms.model}` : '解析失败')
+
+    /* ② 自动启动的判据（纯函数）四种情形都要对：该启动的启动，不该动的一律不动 */
+    const ids = [BUILTIN_IDS[0], BUILTIN_IDS[1], 'user-made']
+    const cases = [
+      { name: '从没套过任何预设', state: { activeId: null, started: false, ids }, want: BUILTIN_IDS[0] },
+      { name: '已经套用过别的预设', state: { activeId: 'user-made', started: false, ids }, want: null },
+      { name: '已经自动启动过一次', state: { activeId: null, started: true, ids }, want: null },
+      { name: '内置那份已被删掉', state: { activeId: null, started: false, ids: ['user-made'] }, want: null },
+    ]
+    const wrong = cases.filter((c) => shouldAutoStart(c.state) !== c.want)
+    ok('首启：自带预设自动启动 —— 只对新机器做，且只做一次（不覆盖用户自己的预设）',
+      wrong.length === 0,
+      wrong.length ? wrong.map((c) => c.name).join('；')
+        : cases.map((c) => `${c.name}→${c.want ?? '不动'}`).join('　'))
+
+    /* 对照：判据有牙 —— 三处闸门任缺其一，都会在该拦的时候启动 */
+    ok('首启（对照）：把任一条件放开，都会在「本该不动」的机器上启动',
+      shouldAutoStart({ activeId: null, started: false, ids }) !== null
+      && shouldAutoStart({ activeId: 'user-made', started: false, ids }) === null
+      && shouldAutoStart({ activeId: null, started: true, ids }) === null,
+      '已套用过 / 已启动过 两条各自单独就能拦住')
+
+    /* ②b 预算抬底：只认我们自己塞进去过的值，用户自己打的数一个都不动 */
+    const floor = [
+      [0, true, '从没设过'], [NaN, true, '非数字'], [undefined, true, '缺字段'], [1500, true, '旧缺省'],
+      [2000, false, '用户自己填的'], [4096, false, '预设带进来的'], [30000, false, '已经是建议值'],
+    ] as const
+    const badFloor = floor.filter(([n, want]) => needsBudgetFloor(n) !== want)
+    ok('首启：预算抬底只认自己塞过的值（0 / 非数字 / 旧缺省 1500），别人填的一概不动',
+      badFloor.length === 0,
+      badFloor.length ? badFloor.map(([, , why]) => why).join('；')
+        : floor.map(([n, want, why]) => `${why}(${String(n)})→${want ? '抬' : '不动'}`).join('　'))
+
+    /* ③ 预算区间由 lib/budget.ts 一处说了算：缺省落在区间内、收口函数认得上下限 */
+    const bounds = MIN_BUDGET < DEFAULT_BUDGET && DEFAULT_BUDGET < MAX_BUDGET
+    ok('首启：输出预算的区间与缺省自洽（下限 < 缺省 < 上限），且缺省值就是建议的那一档',
+      bounds && DEFAULT_BUDGET === 30000 && API_DEFAULTS.maxTokens === DEFAULT_BUDGET,
+      `区间 ${MIN_BUDGET}–${MAX_BUDGET} · 缺省 ${DEFAULT_BUDGET} · 通道缺省 ${API_DEFAULTS.maxTokens}`)
+
+    const clampCases: Array<[number, number, string]> = [
+      [999999, MAX_BUDGET, '超上限'],
+      [0, DEFAULT_BUDGET, '零'],
+      [NaN, DEFAULT_BUDGET, '非数字'],
+      [4096, 4096, '区间内原样'],
+    ]
+    const badClamp = clampCases.filter(([n, want]) => clampBudget(n) !== want)
+    ok('首启：收口函数认得上下限（超上限夹住、零与非数字退回缺省、区间内原样）',
+      badClamp.length === 0,
+      badClamp.length ? badClamp.map(([, , why]) => why).join('；')
+        : clampCases.map(([n, want, why]) => `${why}→${want}`).join('　'))
+
+    /* ④ 视图与导入器都走同一个收口：不许再各自写死一个兜底数 */
+    const BUDGET_CALLERS = ['src/views/Plot.tsx', 'src/views/Tavern.tsx', 'src/views/Settings.tsx']
+    const sloppyCheck = (src: string) => !src.includes("from '../lib/budget'")
+      || /\|\|\s*(?:800|1500|8000|30000|32000)\b/.test(src)
+      || /max=\{\d{4,}\}/.test(src)
+    const sloppy = BUDGET_CALLERS.filter((f) => sloppyCheck(bare(readFileSync(f, 'utf8'))))
+    const badSample = "maxTokens: cfg.maxTokens || 1500"
+    ok('首启：输出预算的四个入口都读同一个真源（视图里不再各写各的兜底数）',
+      sloppy.length === 0 && sloppyCheck(badSample),
+      sloppy.length ? sloppy.join('；')
+        : `${BUDGET_CALLERS.length} 个入口逐个查过（对照样本「${badSample}」照样被认出来）`)
+
+    info.push(`首启：内置预设 ${BUILTIN_SOURCE.length} 份 · 自动启动 ${BUILTIN_IDS[0]}`
+      + ` · 输出预算 ${MIN_BUDGET}–${MAX_BUDGET}（缺省 ${DEFAULT_BUDGET}）`)
+  } catch (e) {
+    fail.push('首启段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

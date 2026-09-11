@@ -4,6 +4,7 @@
 
 import type { AiChannel, ApiSettings } from './api'
 import { readProfiles, saveProfile } from './api'
+import { clampBudget, DEFAULT_BUDGET } from './budget'
 import * as lore from './lorestore'
 import type { PresetEntry } from './preset'
 import { activePresetId, DEFAULT_PRESET_ENTRIES, parsePresetEntries, parseStPrompts, snapshotActivePreset } from './preset'
@@ -45,7 +46,8 @@ export interface Scheme {
 }
 
 export const SCHEME_KEY = 'zts-schemes:v1'
-export const DEFAULT_PART: SchemePart = { baseUrl: '', model: '', temperature: 0.7, maxTokens: 1500 }
+
+export const DEFAULT_PART: SchemePart = { baseUrl: '', model: '', temperature: 0.7, maxTokens: DEFAULT_BUDGET }
 
 /** 读取本地方案列表（容错：坏数据/空 → []） */
 export function listSchemes(): Scheme[] {
@@ -129,14 +131,14 @@ function merge(cfg: ApiSettings, p: SchemePart, fb: number): ApiSettings {
     baseUrl: p.baseUrl || cfg.baseUrl,
     model: p.model || cfg.model,
     temperature: p.temperature,
-    maxTokens: p.maxTokens || cfg.maxTokens || fb,
+    maxTokens: clampBudget(p.maxTokens, clampBudget(cfg.maxTokens, fb)),
   }
 }
 
 /** 套用方案：写双通道 + 协调激活世界书 + 覆上词条滤网；返回套用后的双通道配置 */
 export async function applySchemeTo(cfgs: ChannelCfg, s: Scheme): Promise<ChannelCfg> {
-  const nextMain = merge(cfgs.main, s.main, 1500)
-  const nextSms = merge(cfgs.sms, s.sms, 1500)
+  const nextMain = merge(cfgs.main, s.main, DEFAULT_BUDGET)
+  const nextSms = merge(cfgs.sms, s.sms, DEFAULT_BUDGET)
   // 预设带了流式开关就一并落下去（酒馆的 stream_openai 语义；导入时也是这么做的）
   if (typeof s.stream === 'boolean') {
     nextMain.stream = s.stream
@@ -220,7 +222,7 @@ export function parseSchemeFile(data: unknown): Scheme | null {
       baseUrl: typeof o.baseUrl === 'string' ? o.baseUrl : fb.baseUrl,
       model: typeof o.model === 'string' ? o.model : fb.model,
       temperature: typeof o.temperature === 'number' ? o.temperature : fb.temperature,
-      maxTokens: typeof o.maxTokens === 'number' ? o.maxTokens : fb.maxTokens,
+      maxTokens: clampBudget(typeof o.maxTokens === 'number' ? o.maxTokens : fb.maxTokens),
     }
   }
   return {
@@ -275,17 +277,22 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg, fileHint?: stri
   }
   let pf = pickFrom(settings)
   if (!pf.model) pf = pickFrom(d)
+  /** 预设**自己**带的模型名。它跟「这次导入最终用的模型」不是一回事，见下面 scheme 的逐通道回退 */
+  const declared = pf.model
   let model = pf.model
-  const temp = pf.temp ?? cfgs.main.temperature ?? 0.8
+  // 温度同理：预设写了就照它的，没写就各通道留自己那一份（不带这一项 ≠ 统一成主通道的）
+  const tempMain = pf.temp ?? cfgs.main.temperature ?? 0.8
+  const tempSms = pf.temp ?? cfgs.sms.temperature ?? 0.8
   let note = pf.modelKey ? (MODEL_KEYS.includes(pf.modelKey) ? '' : `读自 ${pf.modelKey}`) : ''
 
   const budgetKey = (['openai_max_tokens', 'oai_max_tokens', 'max_tokens'] as const)
     .find((k) => typeof settings[k] === 'number' || typeof d[k] === 'number')
   const rawBudget = budgetKey ? (typeof settings[budgetKey] === 'number' ? settings[budgetKey] : d[budgetKey]) as number : NaN
-  const maxTokens = Number.isFinite(rawBudget) && rawBudget > 0
-    ? Math.max(256, Math.min(64000, Math.round(rawBudget)))
-    : (cfgs.main.maxTokens || cfgs.sms.maxTokens || 1500)
-  const budgetNote = Number.isFinite(rawBudget) && rawBudget > 0 ? `输出预算 ${maxTokens}` : ''
+  // 预算：预设写了就两通道都照它的；没写就各通道留自己那一份（同上，不拿主通道的顶替短信通道的）
+  const budget = Number.isFinite(rawBudget) && rawBudget > 0 ? clampBudget(rawBudget) : null
+  const maxTokensMain = budget ?? clampBudget(cfgs.main.maxTokens)
+  const maxTokensSms = budget ?? clampBudget(cfgs.sms.maxTokens)
+  const budgetNote = budget !== null ? `输出预算 ${budget}` : ''
 
   if (!model) {
     // 确属预设（含采样器键）但没带模型名 → 沿用当前通道模型，仅应用温度等参数（同酒馆「导入即套用」语义）
@@ -298,7 +305,7 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg, fileHint?: stri
     const curModel = cfgs.main.model.trim() || cfgs.sms.model.trim()
     if (samplerish && !isLorebook) {
       model = curModel
-      note = curModel ? '预设未含模型名，已沿用当前通道模型' : '预设未含模型名，导入后在终端设置里填模型'
+      note = curModel ? '预设未含模型名，已沿用各通道自己的模型' : '预设未含模型名，导入后在终端设置里填模型'
     } else {
       const keysShown = (Object.keys(settings).length ? Object.keys(settings) : Object.keys(d)).slice(0, 8).join('、')
       const warn = isLorebook
@@ -323,11 +330,15 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg, fileHint?: stri
     ? d.assistant_prefill
     : (typeof settings.assistant_prefill === 'string' ? settings.assistant_prefill : '')
   const prefill = (prefillRaw ?? '').trim().slice(0, 400)
+  // 逐通道回退：预设**没写模型名**时，两个通道各留自己那一份 —— 不能拿主通道的模型
+  // 去顶替短信通道的（本终端是双通道，两边可以是两个不同的模型，这是用户自己配的）。
+  // 曾经这里两处都写同一个 model：手动导入时只是把短信通道顶掉，不易察觉；
+  // 而现在内置预设是开机自动套用的，一台机器开机就把短信通道的模型换成了主通道的。
   const scheme: Scheme = {
     id: crypto.randomUUID(),
     name,
-    main: { baseUrl: cfgs.main.baseUrl, model, temperature: temp, maxTokens },
-    sms: { baseUrl: cfgs.sms.baseUrl, model, temperature: temp, maxTokens },
+    main: { baseUrl: cfgs.main.baseUrl, model: declared || cfgs.main.model, temperature: tempMain, maxTokens: maxTokensMain },
+    sms: { baseUrl: cfgs.sms.baseUrl, model: declared || cfgs.sms.model, temperature: tempSms, maxTokens: maxTokensSms },
     activeLoreIds: [],
     ...(entries ? { entries } : {}),
     ...(prefill ? { prefill } : {}),
