@@ -1,0 +1,53 @@
+# 把构建产物发到 GitHub Pages。
+#
+# 为什么非要这一道：Pages 原先按「main 分支根目录」发布 —— 那个根目录是**源码**，
+# 首页 index.html 里只有一句 <script type="module" src="/src/main.tsx">，
+# 浏览器不认识 TSX，于是 root 永远空着：站点返回 200，打开却是一片黑。
+# 所以改成「Actions 构建后再发」：产物里是编译过的 assets/…，页面才真的打得开。
+#
+# 构建走 --mode pages（见 vite.config.ts）：站点挂在 /TESC/ 底下，
+# 资源 URL 得跟着加这个前缀，否则全指到域根去。
+name: 部署到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时刻只发一次；前一次还在跑就让它跑完（不半路掐掉，免得发上去一半）
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 装依赖
+        run: npm ci
+      - name: 构建（tsc -b + vite build --mode pages）
+        run: npm run build -- --mode pages
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
