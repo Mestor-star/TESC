@@ -1050,6 +1050,34 @@ export function minionOf(a: {
 }
 
 /**
+ * 敌阵的**站位**：最硬的那个站中间，其余从中间往两边交替铺开。
+ *
+ * 为什么单拎成一支纯函数：`enemiesOf` 是按生成序排的（头一名是这一场的头目档），
+ * 照原样铺开就是「最强的杵在最左边」，越往右越弱 —— 眼睛会以为左边那个是杂兵。
+ * 所以显示时重排一次。**只动显示序**，`st.enemies` 本身不动：
+ * 引擎、存档、战报全按 id 找，谁站哪一格与规则无关。
+ *
+ * 两只及以下不重排：两个位置没有「中间」，硬排反而把主次弄反。
+ * 三只 → [二, 一, 三]；四只 → [三, 一, 二, 四]（中线偏左，两侧同时向外扩）。
+ */
+export function foeLineOrder<T>(arr: readonly T[]): T[] {
+  const n = arr.length
+  if (n <= 2) return [...arr]
+  const out: T[] = new Array(n)
+  const mid = Math.floor((n - 1) / 2)
+  out[mid] = arr[0]
+  let l = mid - 1
+  let r = mid + 1
+  for (let i = 1; i < n; i++) {
+    // 先右后左：奇数位补右边，偶数位补左边
+    if (i % 2 === 1 && r < n) out[r++] = arr[i]
+    else if (l >= 0) out[l--] = arr[i]
+    else out[r++] = arr[i]
+  }
+  return out
+}
+
+/**
  * 第二阶段 —— 第一阶段清空的那一拍顶上来的那一位（见 engine 的 phaseTwo）。
  *
  * 走的是 `buildFoe` 与 `enemiesOf` 同一条路，所以「第二阶段」不是另造一套数值：

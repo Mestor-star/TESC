@@ -22,7 +22,7 @@ import {
   act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, createBattle,
   enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
 } from '../../src/lib/battle/engine'
-import { combatantOf, enemiesOf, minionOf } from '../../src/lib/battle/derive'
+import { combatantOf, enemiesOf, foeLineOrder, minionOf } from '../../src/lib/battle/derive'
 import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
 import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
@@ -53,12 +53,13 @@ import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 import { EVENT_BRIEFS } from '../../src/data/briefs'
 import { TEMPER, temperAt } from '../../src/data/temper'
+import { SCENES } from '../../src/data/scenes'
 import { CHARACTERS } from '../../src/data/chars'
 import { castOf } from '../../src/lib/cast'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
-import type { Mission } from '../../src/data/types'
+import type { Mission, TimelineEvent } from '../../src/data/types'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
 export interface MechReport {
@@ -1561,6 +1562,23 @@ export function run(): MechReport {
       strangers.length === 0,
       strangers.length ? strangers.join('、') : `逐段核对 ${codexEvents.length} 段`)
 
+    /* 敌阵站位：最硬的站中间（见 derive.foeLineOrder）。
+       拿字母当单位验**形状**：a 是这一场的头目档（enemiesOf 把最硬的那个生成在头一名）。 */
+    const line3 = foeLineOrder(['a', 'b', 'c'])
+    const line4 = foeLineOrder(['a', 'b', 'c', 'd'])
+    const line5 = foeLineOrder(['a', 'b', 'c', 'd', 'e'])
+    ok('敌阵站位：三只时头一名落在中线，另两只分列两侧',
+      line3.join('') === 'cab', `三只 → ${line3.join('')}`)
+    ok('敌阵站位：四只、五只时头一名仍在中线附近，其余从中间往两边交替铺开',
+      line4.join('') === 'cabd' && line5.join('') === 'ecabd',
+      `四只 → ${line4.join('')}　五只 → ${line5.join('')}`)
+    ok('敌阵站位（对照）：两只及以下不重排 —— 两个位置没有「中间」，硬排反而把主次弄反',
+      foeLineOrder(['a', 'b']).join('') === 'ab' && foeLineOrder(['a']).join('') === 'a',
+      `两只 → ${foeLineOrder(['a', 'b']).join('')}　一只 → ${foeLineOrder(['a']).join('')}`)
+    ok('敌阵站位（对照）：重排只动显示序，人数与成员一毫不差（不是把谁弄丢了）',
+      [...line5].sort().join('') === 'abcde' && line5.length === 5,
+      `五只排序后 → ${[...line5].sort().join('')}`)
+
     /* ④ 那一位真的站到 enemies[0] 上去 —— 两条路各走一遍。
        主线牌面走 mainlineMissions（要先把前面几段标记成已归档，牌面才翻到这一段）；
        现场触发走 battleMissionOf（模型给的那一场是 OBS-xxx）。 */
@@ -2464,15 +2482,19 @@ export function run(): MechReport {
     const strip = (s: string) => s.replace(/\s+/g, '')
 
     /* ① 没有详纲的事件：只剩概述，细则那一节整节不出现。
-       挑的是**确实还没摘的那一段**，不是写死 TIMELINE[0] ——
-       摘录是逐卷推进的，写死的那一段早晚会被摘到，那时这条对照就会假装失败。 */
-    const unread = TIMELINE.find((e) => !EVENT_BRIEFS[e.id])
-    const bare = buildDirectorSystem(unread ?? ev0, ctx)
-    ok('详纲：没摘到的事件不出现【本事件实施细则】—— 退回概述，行为零差异',
-      !!unread && bare.includes(unread.summary) && !bare.includes('【本事件实施细则】'),
-      unread
-        ? `试的是 ${unread.id}　概述在=${bare.includes(unread.summary)}　细则节=${bare.includes('【本事件实施细则】')}`
-        : '（全 57 段都摘到了 —— 这条对照已无用武之地，可删）')
+       这一段是**现造的**（借一段真事件的壳，换个不在表里的 id），
+       不是「全表里还没摘到的那一段」—— 57 段如今全摘完了，
+       按「还没摘」去挑就永远挑不到，那条对照会自己失效、变成假装失败。
+       对照组是同一函数跑同一段**有**详纲的事件：细则得摆得出来，
+       才说明上面那条「不摆」不是函数坏了。 */
+    const bareEv: TimelineEvent = { ...ev0, id: '__no-brief__', summary: '（对照用：这一段没有详纲。）' }
+    const bare = buildDirectorSystem(bareEv, ctx)
+    const lit = buildDirectorSystem(ev0, ctx)
+    ok('详纲（对照）：没详纲的那一段退回概述、不摆细则，有详纲的同一段摆得出来',
+      bare.includes(bareEv.summary) && !bare.includes('【本事件实施细则】')
+      && lit.includes('【本事件实施细则】'),
+      `现造段 ${bareEv.id}：概述在=${bare.includes(bareEv.summary)}　细则节=${bare.includes('【本事件实施细则】')}`
+      + `　｜${ev0.id}（有详纲）：细则节=${lit.includes('【本事件实施细则】')}`)
 
     /* ② 摘到了：五节按序齐全，且台词、知道/不知道两栏都逐字落地 */
     if (!EVENT_BRIEFS.__probe__) {
@@ -2522,6 +2544,58 @@ export function run(): MechReport {
       + (covered.length ? `（${covered.slice(0, 6).join('、')}${covered.length > 6 ? ' …' : ''}）` : '　内容见 scripts/briefs/'))
   } catch (e) {
     fail.push('详纲段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 21b) 开场白：台词行按「角色名：」起行，旁白行不带前缀 ----------
+     开场白是注入到会话最前面的**那一条**（见 views/Plot 的在线开场）。
+     它按终端的台词行契约写：某角色开口就另起一行、以「本名/常用称呼＋全角冒号」开头，
+     终端据此切气泡；旁白、神态、动作行**不许**带前缀 —— 带了就被当成台词，切出假气泡。
+     反过来，名字前缀若查不到（档案表 + castmeta.VOICE_ONLY 那几位「开口但不在册」的），
+     整行会连前缀一起掉回旁白，版面上就多出一行「某某：……」的叙述。两头都要拦。 */
+  try {
+    const rows = Object.entries(SCENES).filter(([, v]) => !!v?.open)
+    /** 行首的「名字：」——名字取 2～6 个汉字/间隔号，够像人名即可 */
+    const LEAD_NAME = /^[一-龥][一-龥·]{1,5}：/
+    const leaks: string[] = []
+    for (const [k, v] of rows) {
+      for (const seg of splitSpeech(v.open!)) {
+        if (seg.kind !== 'narr') continue
+        for (const line of seg.text.split('\n')) {
+          if (LEAD_NAME.test(line.trim())) leaks.push(`${k}｜${line.trim().slice(0, 14)}`)
+        }
+      }
+    }
+    ok('开场白：台词行都切得出气泡 —— 没有「名字：」起行却掉回旁白的那一种',
+      leaks.length === 0,
+      leaks.length ? `掉回旁白的：${leaks.slice(0, 4).join('　')}${leaks.length > 4 ? ` 等 ${leaks.length} 处` : ''}`
+        : `${rows.length} 段开场白，无一行名字前缀漏进旁白`)
+    /* 对照：真有一行「查不到的名字：……」时判据报得出来 ——
+       没有这条，上面那条也可能只是碰巧扫不到东西。 */
+    const ghost = splitSpeech('陌生人甲：……你是谁？')
+    ok('开场白（对照）：判据对「查不到的名字：」确实报得出来',
+      ghost.length === 1 && ghost[0].kind === 'narr' && LEAD_NAME.test(ghost[0].text.trim()),
+      `「陌生人甲：……」→ ${ghost[0]?.kind}；「${ghost[0]?.text.slice(0, 8) ?? ''}…」`)
+    /* 卷一是整章复述（不是两行简报），台词行最多 —— 这里单独盯它：
+       言万心叶的台词必须落在右气泡（you），其余角色落在左气泡（say），两边都不为空。 */
+    const v11 = SCENES['v1-1']?.open ?? ''
+    const segs = splitSpeech(v11)
+    const yous = segs.filter((s) => s.kind === 'you').length
+    const says = segs.filter((s): s is Extract<DialogueSeg, { kind: 'say' }> => s.kind === 'say')
+    const names = [...new Set(says.map((s) => s.id))]
+    ok('开场白（卷一）：言万心叶的台词走右气泡、同场其他人走左气泡，两种都有',
+      yous >= 5 && says.length >= 5 && names.length >= 2,
+      `${segs.length} 段：you ${yous}、say ${says.length}（${names.join('、')}）`)
+    /* 旁白行不许带名字前缀 —— 卷一里有「言万心叶头也不回地说。」这种神态行 */
+    const narr = segs.filter((s): s is Extract<DialogueSeg, { kind: 'narr' }> => s.kind === 'narr')
+    const prefixed = narr.filter((s) => LEAD_NAME.test(s.text.trim())).length
+    ok('开场白（卷一）：神态/叙述行不带名字前缀（带了会被切出一个假气泡）',
+      prefixed === 0, `旁白段 ${narr.length} 个，带前缀的 ${prefixed} 个`)
+    // 末尾得收住：或句号，或一句引文收尾
+    const openEnd = rows.filter(([, v]) => !/[。！？」]$/.test((v.open ?? '').trim())).map(([k]) => k)
+    ok('开场白：以句号或一句引文收尾（不是一个断在半截的句子）',
+      openEnd.length === 0, openEnd.length ? `没收住：${openEnd.join('、')}` : `${rows.length} 段均已收尾`)
+  } catch (e) {
+    fail.push('开场白段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   /* ---------- 22) 性情锚：人物卡逐字进提示词，分期层按「读到哪」翻篇 ---------- */

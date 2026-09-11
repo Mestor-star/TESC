@@ -43,6 +43,7 @@ import { passiveText } from '../lib/battle/roster'
 import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
+import { foeLineOrder } from '../lib/battle/derive'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
@@ -303,28 +304,8 @@ export function Battle({
       .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
   }, [st])
 
-  /* ---- 敌阵的站位：最硬的那个站中间，其余分列两侧 ----
-     `st.enemies` 是**按生成序排的**（第一只是这一场的头目档，见 derive.enemiesOf），
-     照原样铺开就是「最强的杵在最左边」，越往后越弱 —— 眼睛会以为左边那个是杂兵。
-     所以只在这里重排**显示序**，不动 st.enemies 本身（引擎、存档、日志全按 id 找，
-     谁站哪一格与规则无关）：先把头一名摆进中线，剩下的从中间往两边交替铺开。 */
-  const foeLine = useMemo(() => {
-    const arr = st.enemies
-    const n = arr.length
-    if (n <= 2) return arr
-    const out: typeof arr = new Array(n)
-    const mid = Math.floor((n - 1) / 2)
-    out[mid] = arr[0]
-    let l = mid - 1
-    let r = mid + 1
-    for (let i = 1; i < n; i++) {
-      // 先右后左：奇数位补右边，偶数位补左边，两侧同时向外扩
-      if (i % 2 === 1 && r < n) out[r++] = arr[i]
-      else if (l >= 0) out[l--] = arr[i]
-      else out[r++] = arr[i]
-    }
-    return out
-  }, [st.enemies])
+  /* ---- 敌阵的站位：最硬的那个站中间，其余分列两侧（见 derive.foeLineOrder）---- */
+  const foeLine = useMemo(() => foeLineOrder(st.enemies), [st.enemies])
 
   /* ---- 「回手」的那一下 ----
      解封尽解的人会被引擎原位填满行动条、点名下一位还是他（见 engine 的 again）。

@@ -180,10 +180,32 @@ export const OPERATOR_PERSON: CastPerson = {
   hue: '#58c6ff', sigil: '心', avatarId: OPERATOR_ID,
 }
 
-/** 查角色（含操作员） */
+/** 查角色（含操作员）—— **只认在册的那 24 位**；台词表另见 speakerOf */
 export function personOf(id: string): CastPerson | undefined {
   if (id === OPERATOR_ID) return OPERATOR_PERSON
   return CAST.find((p) => p.id === id)
+}
+
+/* 「开口说话但不在册」的人 —— 目前只有序章的拉法（SIDECAST 里唯一不进 ROSTER_GROUPS 的）。
+   为什么不并进 CAST：CAST 是 24 位在册登场者，图鉴/羁绊/人物关系三处都按它遍历
+   （PERSON_IDS），塞进去他就凭空多一张档案卡、一条羁绊线 —— 那是另一件事，
+   不该由「序章要能切出气泡」顺手带出来。但他在序章整段里都在开口，台词行要认得
+   出他、气泡头要有名字与主题色，所以这里补一份**只供台词识别与气泡显示**的条目。
+   取值一律照抄 SIDECAST（名字、别名、登场序定的主题色），不另立设定。 */
+export const VOICE_ONLY: CastPerson[] = SIDECAST
+  .filter((e) => !CAST.some((c) => c.id === e.id))
+  .map((e) => ({
+    id: e.id, kind: 'side' as const, name: e.name,
+    names: unique([e.name, e.alias].filter((x) => x && x !== e.name)),
+    gender: GENDER[e.id] ?? '?', defaultBond: 0,
+    hue: SIDE_PALETTE[(SIDE_INDEX.get(e.id) ?? 0) % SIDE_PALETTE.length],
+    sigil: e.name.slice(0, 1), avatarId: e.id,
+  }))
+
+/** 查「能开口的人」（含操作员）：在册者 → CAST，其余 → VOICE_ONLY。
+    台词识别与气泡渲染用它；图鉴/羁绊仍用 personOf，两处口径不同是有意的。 */
+export function speakerOf(id: string): CastPerson | undefined {
+  return personOf(id) ?? VOICE_ONLY.find((p) => p.id === id)
 }
 
 /* 一登场就已是满值的羁绊。会长不在此列之外地「难测」——她从一开始就把话说到最满，

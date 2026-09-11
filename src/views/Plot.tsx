@@ -4,7 +4,7 @@ import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, Slide
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
-import { OPERATOR_ID, PERSON_IDS, personOf } from '../data/castmeta'
+import { OPERATOR_ID, PERSON_IDS, personOf, speakerOf } from '../data/castmeta'
 import { rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
@@ -1062,7 +1062,8 @@ export function Plot() {
         </div>
       )
     }
-    const c = personOf(seg.id)
+    // 气泡头取「能开口的人」：在册档案 + 只在台词里出现的（如序章的拉法，见 castmeta.VOICE_ONLY）
+    const c = speakerOf(seg.id)
     const hue = c?.hue ?? '#7fb4ff'
     return (
       <div key={key} className={css.sayRow} data-say="1" data-say-for={seg.id}>

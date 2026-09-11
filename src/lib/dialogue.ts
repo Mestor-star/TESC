@@ -11,7 +11,7 @@
       「角色：……」「别名：……」两种写法标台词行）。
    ============================================================ */
 
-import { CAST, OPERATOR_ID, OPERATOR_PERSON, personOf } from '../data/castmeta'
+import { CAST, OPERATOR_ID, OPERATOR_PERSON, VOICE_ONLY, speakerOf } from '../data/castmeta'
 
 export type DialogueSeg =
   | { kind: 'narr'; text: string }
@@ -28,16 +28,24 @@ interface SpeakerEntry {
   id: string
 }
 
-/** 台词识别表：全名 + 别名（含操作员），按长度降序便于长名优先 */
+/** 档案名与正文排印在这里不是同一个点：档案/图鉴一律写「・」(U+30FB)，
+    原文排印写「·」(U+00B7) —— 同一个人（如「拉斐尔・加西亚」）。识别表把
+    两者视作同一串，编年史一类的**逐字原文**才不必为了切气泡去改标点。 */
+const DOT_ALIKE = (s: string) => s.replace(/・/g, '·')
+
+/** 台词识别表：全名 + 别名（含操作员与「开口但不在册」者），按长度降序便于长名优先 */
 const SPEAKER_TABLE: SpeakerEntry[] = (() => {
   const map = new Map<string, string>()
   const add = (id: string, names: string[]) => {
     for (const n of names) {
       const s = (n ?? '').trim()
       if (s.length >= SPEAKER_MIN) map.set(s, id)
+      const alt = DOT_ALIKE(s)
+      if (alt !== s && alt.length >= SPEAKER_MIN) map.set(alt, id)
     }
   }
   for (const p of CAST) add(p.id, [p.name, ...p.names])
+  for (const p of VOICE_ONLY) add(p.id, [p.name, ...p.names])
   add(OPERATOR_ID, [OPERATOR_PERSON.name, ...OPERATOR_PERSON.names])
   return [...map.entries()]
     .map(([text, id]) => ({ text, id }))
@@ -137,5 +145,5 @@ export function splitSpeech(raw: unknown): DialogueSeg[] {
 
 /** 供气泡头显示说话人登记名（say 段；未收录则返回原 id） */
 export function speakerNameOf(id: string): string {
-  return personOf(id)?.name ?? id
+  return speakerOf(id)?.name ?? id
 }
