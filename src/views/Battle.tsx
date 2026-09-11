@@ -21,6 +21,7 @@ import type { GearDef } from '../lib/battle/types'
 import { passiveText } from '../lib/battle/roster'
 import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
+import { namedBossOf } from '../lib/battle/bosses'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
@@ -1107,7 +1108,23 @@ function BuffTags({ c }: { c: Combatant }) {
 /* ---------- 连携技：右侧立起来的那张牌 ----------
    羁绊攒满、自己接上的那一手，值得单占一块地方：
    谁跟谁一起打的，看脸就知道 —— 头像叠着排，招式名压在下头。
-   跟伤害数字挤在一起就分不出「这是合击」了。 */
+   跟伤害数字挤在一起就分不出「这是合击」了。
+
+   牌面上排的是**人**，所以 members 里给的是档案 id —— 我方那几条向来如此。
+   但连携不只有我方那几套：对面那位骷髅假面之男也接得上一条（与异次元的蕾雅），
+   而他**不入档案**（roster 第 6 行）：personOf 查不到他，只剩一个 raw id 可念。
+   于是这里再退一层 —— 指名首领那一张表（bosses.ts）里写着他的名字、纹章与颜色，
+   正好是这块牌要的两样。两级都查不到才认命念 id。 */
+
+function linkFaceOf(id: string) {
+  const p = personOf(id)
+  if (p) return { name: p.name, hue: p.hue as string | undefined, sigil: undefined as string | undefined }
+  const nb = namedBossOf(id)
+  /* 颜色只在**查得到**的时候给：Portrait 拿它去拼渐变，喂一个 `var(--ink)` 进去
+     会拼成 `var(--ink)2e` 这种不是颜色的东西，整条 background 会被丢掉。
+     查不到就留空，让它照常回自己那张灰底 —— 名字照念。 */
+  return { name: nb?.name ?? id, hue: nb?.hue, sigil: nb?.sigil }
+}
 
 function LinkPop({ link }: { link: { id: string; name: string; members: string[] } }) {
   return (
@@ -1115,7 +1132,7 @@ function LinkPop({ link }: { link: { id: string; name: string; members: string[]
       <b className={css.linkPopCap}>连携</b>
       <div className={css.linkPopFaces}>
         {link.members.map((id, i) => {
-          const p = personOf(id)
+          const f = linkFaceOf(id)
           return (
             <span
               key={id}
@@ -1124,8 +1141,9 @@ function LinkPop({ link }: { link: { id: string; name: string; members: string[]
               style={{ marginLeft: i ? -15 : 0, zIndex: 9 - i } as CSSProperties}
               data-link-face={id}
             >
-              <Portrait avatarId={id} className={css.linkPopAva} size={54} round eager />
-              <i style={{ color: p?.hue ?? 'var(--ink)' }}>{p?.name ?? id}</i>
+              <Portrait avatarId={id} name={f.name} hue={f.hue} sigil={f.sigil}
+                className={css.linkPopAva} size={54} round eager />
+              <i style={{ color: f.hue ?? 'var(--ink)' }}>{f.name}</i>
             </span>
           )
         })}

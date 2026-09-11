@@ -900,6 +900,8 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       cls: named?.cls ?? prof.cls,
       trait: named?.trait ?? nature,
       tier,
+      // 认人用：场上的 id 只有位次，认不出档案里是谁（见 Combatant.namedId）
+      namedId: named?.id,
       hp: hpMax,
       hpMax,
       axes,
@@ -1043,4 +1045,137 @@ export function minionOf(a: {
     undefined,
     undefined,
   )
+}
+
+/**
+ * 第二阶段 —— 第一阶段清空的那一拍顶上来的那一位（见 engine 的 phaseTwo）。
+ *
+ * 走的是 `buildFoe` 与 `enemiesOf` 同一条路，所以「第二阶段」不是另造一套数值：
+ * 五轴、技能、破绽、护盾全是他自己那份档案，血量走同一套曲线再乘他自己那个 hpMul。
+ * 唯一的差别是**出场时机** —— 他不是这一场开局站在那儿的，是打到一半来的。
+ *
+ * `slot` 取顶上来的那一刻 s.enemies 的长度：id 要接着往下排，
+ * 不能与第一阶段那位撞号（撞了 find 会认到已经倒下的那一个身上）。
+ */
+export function nextBossOf(a: {
+  missionId: string
+  nature: string
+  place: string
+  stage: number
+  progress: number
+  slot: number
+  /** 顶上来的那一位的档案 id（bosses.ts 那一栏） */
+  id: string
+}): Combatant | undefined {
+  const named = namedBossOf(a.id)
+  if (!named) return undefined
+  return buildFoe(
+    {
+      missionId: a.missionId, nature: a.nature, place: a.place, stage: a.stage,
+      progress: a.progress,
+      solo: true,
+    },
+    a.slot,
+    'boss',
+    named,
+  )
+}
+
+/**
+ * 「他是被唤上来的那一个」这枚标记。
+ *
+ * 两处认它，且只认它：
+ *   · 引擎数队伍时 —— 本体喊到名单第几个了、场上还有几位同行者；
+ *   · 收场那一段 —— 本体倒了，军团跟着散（见 engine 的 checkEnd）。
+ * 用标记而不是用 id 前缀去认：前缀是防重名的（他可能与编队里的本人同场），
+ * 标记说的是「这个敌体的来路」。两件事，两个记号。
+ */
+export const RIVAL_TAG = '异次元'
+
+/**
+ * 同行者的 id 前缀。**后面原样接档案 id**（`rival-reiya`）——
+ * 前缀只是把「对面这一位」与我方编队里同名的那一位分开（引擎的 find 先我方后敌方，
+ * 同 id 会认错人），档案 id 得留着，不然认不出这一位档案里是谁。
+ */
+const RIVAL_PREFIX = 'rival-'
+
+/**
+ * 这一位是不是「被唤上来的同行者」；是的话，档案里是谁。
+ * 认的是前缀本身，不是「前缀 + 谁」—— 名单读的是 bosses.ts 的那一栏，
+ * 引擎不该把某几个名字抄第二遍。
+ */
+export function rivalArchiveIdOf(c: Combatant): string | null {
+  return c.side === 'enemy' && c.id.startsWith(RIVAL_PREFIX)
+    ? c.id.slice(RIVAL_PREFIX.length)
+    : null
+}
+
+/**
+ * 异次元的同行者 —— 面具心叶从另一侧唤出来的卡乌斯学院学生（见 engine 的 summonFoe）。
+ *
+ * 与召唤杂兵的分工，一句话：**杂兵是空壳，这一支是人**。
+ *   · 杂兵是这片现实里现推的半成形体，随便什么首领与精英都喊得动；
+ *   · 这一支是档案角色 —— 五轴、技能表、被动、弹痕全部走 combatantOf 那一份，
+ *     一个字不改。所以「技能能力都相同」不是形容词：场上那位奈奈抡的确实是
+ *     「大麻烦」，蕾雅锯下去的确实是「热沃当的少女」。
+ *
+ * 只有两处必须改：
+ *   · **id 加前缀**。他可能与玩家编队里的同一个人同场（卡乌斯学院就那五个人，
+ *     名单上写得出名字），而引擎的 find 是先我方后敌方的 —— 同 id 会认错人。
+ *     前缀之后**原样保留档案 id**（`rival-reiya`），所以引擎还能从 id 认出
+ *     「这一位档案里是谁」—— 对面那一记连携就是靠这个认人的
+ *     （见 rivalArchiveIdOf 与 engine 的 fireRivalLink）。
+ *   · **身板改走敌方曲线**。他是站到对面来的对手，我方那条曲线（190~280）
+ *     在这儿等于一掌一个。技能照搬、身板另算，这才是「同一个人站在对面」。
+ *
+ * 破绽不挂：他们是人，不是「打不穿的反现实实体」—— 与指名首领同一条规矩。
+ */
+export function rivalOf(a: {
+  /** 档案 id（roster / sidecast / 档案页同一套键） */
+  id: string
+  progress: number
+  stage: number
+  place: string
+}): Combatant {
+  const base = combatantOf(a.id, a.progress, 0)
+  // 与同场杂兵同一套缩放：地点 R 值 × 时期增幅（见 buildFoe）
+  const rf = rFactor(rOfPlace(a.place, a.stage).r)
+  const pf = 1 + clamp01(a.progress) * TUNING.enemyProgressGain
+  const hpMax = Math.round(
+    (TUNING.enemyHpBase + a.stage * TUNING.enemyHpPerStage) * rf.mul * pf,
+  )
+  return {
+    ...base,
+    // 前缀 + 原样的档案 id：前缀防重名，后缀让人认得出他是谁
+    id: `${RIVAL_PREFIX}${a.id}`,
+    side: 'enemy',
+    name: `${base.name} · 异次元`,
+    // 小兵档：首领喊来的不会是第二个首领，来的是一位同行者
+    tier: undefined,
+    hp: hpMax,
+    hpMax,
+    bar: 0,
+    buffs: [],
+    taunt: 0,
+    down: false,
+    gone: 0,
+    guardPts: 0,
+    guardMax: 0,
+    guardAxis: undefined,
+    broken: 0,
+    ward: 0,
+    charge: 0,
+    morph: null,
+    chant: {},
+    cds: {},
+    /* 认得出「他是被唤来的」那枚标记 —— 连携那一手只认这个标记
+       （见 engine 的 fireRivalLink）。不带标记的敌体是这一场的原住民，
+       不会替异次元来的人接招。
+       这里**整份换掉**、而不是往 base.tags 后面追加：base 那一份写的是
+       `['委员会']` —— 那是他在自己那一侧的身份。站到对面来的这一位不是委员，
+       顶着那个标签还会被 pickTarget 当成「机械 / 魔王」一类的敌体挑目标
+       （见 engine 的 pickTarget），那是替另一个人写的打法。 */
+    tags: [RIVAL_TAG],
+    note: '异次元 · 被唤出',
+  }
 }

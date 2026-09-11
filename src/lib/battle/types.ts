@@ -299,6 +299,13 @@ export interface SkillSpec {
    * 否则低危场会变成一场添油：玩家打的不是敌人，是刷不完的人头。
    */
   summon?: boolean
+  /**
+   * 这一手唤的是**谁**：填了就是「唤出异次元的同行者」——按名单依次喊出档案角色，
+   * 能力与技能照搬本人（见 derive 的 rivalOf）。
+   * 缺省则喊的是这片现实里现推的半成形杂兵（见 derive 的 minionOf）。
+   * 两者不是一套东西：杂兵是同场性质的一个空壳，这一支是真正站在对面的人。
+   */
+  summonPack?: string[]
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
@@ -415,6 +422,11 @@ export interface Combatant {
   /** 敌阵里的头目档：每场至少一个 —— 低危是精英，危险度到顶换成首领（Boss）。
       我方不带这个字段（谁强谁弱写在名册的五轴上，不靠贴标签）。 */
   tier?: 'elite' | 'boss'
+  /** 指名首领：**档案里是谁**（bosses.ts 那一套键）。通用观测体与同行者不带这个字段。
+      场上的 id 是 `foe-<任务>-<位次>`，认不出人；敌方那几条只认人的规矩
+      （对面那一记连携得找的是「异次元的言万心叶」本人）得靠这一栏。
+      同行者不走它 —— 他们的 id 里就带着档案 id（见 derive 的 rivalArchiveIdOf）。 */
+  namedId?: string
   hp: number
   hpMax: number
   axes: AxisSheet
@@ -631,6 +643,19 @@ export interface BattleState {
    * 接完一手就进冷却，我方每出一手减一。槽满不等于能接 —— 冷却没走完也接不上。
    */
   linkCd: Record<string, number>
+  /**
+   * 异次元同行者那一记连携的冷却（还剩几次出手）。单开一格，因为它数的不是「我方出手」——
+   * 那几位站在对面，节拍器得挂在**他们自己**的出手上（见 engine 的 fireRivalLink）。
+   * 混进 linkCd 是不行的：那张表由 tickLinkCd 按我方出手统一减，
+   * 减的却是敌方那一记的冷却，读起来就说不通了。
+   */
+  rivalCd?: number
+  /**
+   * 第二阶段顶上来的那一位（档案 id）。开局由任务挂的 bossId 解析出来（见 engine 的
+   * createBattle），第一阶段收场时消费掉一次（见 engine 的 phaseTwo）。
+   * 缺省 = 这一场只打一个阶段，赢了就是赢了。
+   */
+  nextBoss?: string
   /**
    * 每人与你的羁绊读数（0~100）。整场只读不写 —— 仗打完了才回写（见 settle 的 bondPerWin）。
    * 场上只有两处用到它：共鸣槽的拍数、本人五轴的加成，两处都在 synergy 里。

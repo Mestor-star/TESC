@@ -233,6 +233,13 @@ export interface PlaceOpt {
   /** 合体：出这一手时把 requireAlly 那位暂时请下场，蛰伏 N 拍后自行归位 */
   mergeAlly?: string
   mergeTicks?: number
+  /* —— 召唤（首领与精英那一记通用的「成形体诱出」不走这儿，见 derive 的 SUMMON_MOVE）——
+     这一栏是给「对面喊上来的不是观测体，而是档案里的真人」那一种写的：
+     骷髅假面之男的亡灵军团。两个字段一起填，见 SkillSpec 的同名两条。 */
+  /** 这一手不造成伤害，出手时把一只喊上场 */
+  summon?: boolean
+  /** 喊的是**谁**：按名单依次喊出这些档案 id（缺省 = 这片现实里现推的杂兵） */
+  summonPack?: string[]
 }
 
 /**
@@ -272,6 +279,9 @@ export function place(archId: string, o: PlaceOpt): SkillSpec {
     requireAlly: o.requireAlly,
     mergeAlly: o.mergeAlly,
     mergeTicks: o.mergeTicks,
+    // 召唤：整份照抄交回来的那一对（框架里没有「召唤」这一类，它是这一手的性质，不是打法）
+    summon: o.summon,
+    summonPack: o.summonPack,
     /** 这一手按框架里的哪一类打的（档案与作战面板都会写出来） */
     arch: a.id,
   }

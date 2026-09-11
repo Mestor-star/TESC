@@ -11,11 +11,14 @@
      其中「更换装备」不消耗回合（执行委员长口径）。
    ============================================================ */
 
-import { LION_PAIR_ID, applySynergies, bondsOf } from './synergy'
+import { LION_PAIR_ID, RIVAL_LINK, applySynergies, bondsOf } from './synergy'
 import type { Bond } from './synergy'
 import { lineFor, poolFor } from './banter'
 import { TUNING } from './tuning'
-import { combatantOf, enemiesOf, minionOf, speedOf } from './derive'
+import {
+  RIVAL_TAG, combatantOf, enemiesOf, minionOf, nextBossOf, rivalArchiveIdOf, rivalOf, speedOf,
+} from './derive'
+import { namedBossOf } from './bosses'
 import { GEAR_OF, ITEM_OF } from './gear'
 import { isDebuff, isSpec, toneOf } from './types'
 import type {
@@ -242,6 +245,11 @@ export function createBattle(opts: CreateOpts): BattleState {
     nature: mission.nature,
     stage: mission.stage,
     summoned: 0,
+    /* 第二阶段：这一场的指名首领写了「他倒下之后谁顶上来」就记在这儿。
+       只记 id、不预先造人 —— 顶上来的那一位的数值要照**顶上来的那一刻**算
+       （地点 R 值与时期增幅都取当时那一份），提前造好就是拿开局的口径打收尾的仗。 */
+    nextBoss: namedBossOf(mission.bossId)?.next,
+    rivalCd: 0,
     tick: 0,
     hand: 0,
     actor: null,
@@ -1564,6 +1572,11 @@ function ultStep(s: BattleState, foe: Combatant, t: Combatant): boolean {
  * 「场上没人了」（见 checkEnd），于是这场仗永远收不了。
  * s.enemies 只增不减（倒下的也留在里面），所以它的长度天然是这一场的总数。
  *
+ * 这一手喊的是**谁**，看技能上挂的是哪一份展开：
+ *   · 没有 `summonPack` —— 喊的是这片现实里现推的半成形杂兵（derive 的 minionOf）；
+ *   · 有 `summonPack` —— 喊的是**真正站在对面的人**，按名单依次出场
+ *     （derive 的 rivalOf，五轴与技能照搬本人）。骷髅假面之男的亡灵军团走的是这一支。
+ *
  * @returns 这一手是否真的用来喊人了（false = 它没这一手／到顶了／还在冷却）
  */
 export function summonFoe(s: BattleState, foe: Combatant): boolean {
@@ -1571,13 +1584,29 @@ export function summonFoe(s: BattleState, foe: Combatant): boolean {
   if (!k) return false
   if (s.enemies.length >= TUNING.enemyCap) return false
   if ((foe.cds[k.id] ?? 0) > 0) return false
-  const m = minionOf({
-    missionId: s.missionId, nature: s.nature, place: s.place, stage: s.stage,
-    progress: s.progress,
-    // 排位取当下长度：它接下来就要占这个位置，甲乙丙丁也就接在这后面
-    slot: s.enemies.length,
-  })
-  s.summoned = (s.summoned ?? 0) + 1
+
+  /* 名单走到第几个 —— 数场上**已有的同行者**，不另存一份进度。
+     s.enemies 只增不减，倒下的同行者也在里面，所以数一遍就是进度：
+     喊到「丙」就不会回头再喊「乙」，也不会同一个人站两次。 */
+  const named = k.summonPack
+  const nth = named
+    ? s.enemies.filter((e) => e.tags.includes(RIVAL_TAG)).length
+    : 0
+  /* 名单喊空了 —— 这一手就到此为止，不必再冷却。留着它在牌面上，
+     enemyAct 每次都白搭一手进去（见该函数第一行的分支）。 */
+  if (named && nth >= named.length) return false
+
+  const m = named
+    ? rivalOf({
+        id: named[nth]!, progress: s.progress, stage: s.stage, place: s.place,
+      })
+    : minionOf({
+        missionId: s.missionId, nature: s.nature, place: s.place, stage: s.stage,
+        progress: s.progress,
+        // 排位取当下长度：它接下来就要占这个位置，甲乙丙丁也就接在这后面
+        slot: s.enemies.length,
+      })
+  if (!named) s.summoned = (s.summoned ?? 0) + 1
   s.enemies.push(m)
   // 这一手自己也有冷却（走「自身出手次数」，见 beginAction）——
   // 不然首领每一手都在喊人，它自己一次都不打，那就不叫首领，叫传送门。
@@ -1586,10 +1615,74 @@ export function summonFoe(s: BattleState, foe: Combatant): boolean {
     round: s.hand, actorId: foe.id, actor: foe.name, side: foe.side,
     // skill 报这一手自己的名字（与其他技能同一口径），喊起来的是谁写在正文里
     skillId: k.id, skill: k.name, kind: '技能', fx: k.fx,
-    note: `${foe.name}这一手没朝谁来 —— 它只是把旁边那一片还没成形的东西喊了一声，`
-      + `${m.name}就这么站着凝了出来。`,
+    note: named
+      /* 同行者与杂兵在正文里必须读得出分别 —— 一个是被推出来的东西，
+         一个是被叫回来的人。所以这一支的措辞不写「凝了出来」：
+         那个世界的人已经不在了，是**认出来**才站到这一边的。 */
+      ? `${foe.name}没有看谁，只朝空处念了一声名字 —— ${m.name}就这么站在了对面，`
+        + `手里还是她自己那一件。`
+      : `${foe.name}这一手没朝谁来 —— 它只是把旁边那一片还没成形的东西喊了一声，`
+        + `${m.name}就这么站着凝了出来。`,
   })
   return true
+}
+
+/**
+ * 对面那一记连携 —— 异次元的言万心叶 × 异次元的蕾雅（见 synergy 的 RIVAL_LINK）。
+ *
+ * 照黄金狮子那一处的写法：不看共鸣槽，只看**这两个人是不是都还站着**，
+ * 以及它自己的冷却。对面只有这一条连携，参加者也就这一对 ——
+ * 名单写在 synergy 里，这里不抄第二遍。
+ *
+ * 冷却记在 `s.rivalCd` 上，单开一格：这几位站在对面，节拍器得挂在
+ * **他们自己**的出手上，不能混进 linkCd 那张按我方出手统一减的表（见 types 的注释）。
+ *
+ * @param actorId 刚刚出过手的敌体（这一手由他执手）
+ */
+function fireRivalLink(s: BattleState, actorId: string) {
+  if ((s.rivalCd ?? 0) > 0) {
+    s.rivalCd = (s.rivalCd ?? 0) - 1
+    return
+  }
+  /* 两个人各按各的认法：本体是**指名首领**（id 里只有位次，认他靠 namedId），
+     被唤上来的那一位是**同行者**（id 里带着档案 id，见 derive 的 rivalArchiveIdOf）。
+     两种记号不能混用：同行者里没有本体，而本体也可能与同行者同姓同名。 */
+  const part = [RIVAL_LINK.a, RIVAL_LINK.b]
+    .map((base) => s.enemies.find((e) => !e.down && e.gone <= 0
+      && (e.namedId === base || rivalArchiveIdOf(e) === base)))
+  if (part.some((c) => !c)) return              // 少一个就凑不齐 —— 与双人连携同一条规矩
+  const actor = part.find((c) => c!.id === actorId)
+  if (!actor) return                            // 这一手得由他们两个之一接上
+  /* 牌面上排的是**人**：link.members 一路都是「谁」（我方那几条填的就是档案 id），
+     视图拿它查档案、取头像。所以这里交回去的是本体的档案 id 与同行者的档案 id，
+     不是 `foe-…-0` / `rival-reiya`。打出去的那一手仍按场上的 id 算
+     （见下面 resolve 的 linkUnits）—— 两张表各认各的。 */
+  const faceIdOf = (c: Combatant | undefined) => c?.namedId ?? (c && rivalArchiveIdOf(c)) ?? c!.id
+  const foes = aliveOf(s.allies)
+  if (!foes.length) return
+  const target = [...foes].sort((a, c) => a.hp - c.hp)[0]
+  s.rivalCd = RIVAL_LINK.cd
+  pushLog(s, {
+    round: s.hand, actorId: actor.id, actor: actor.name, side: actor.side,
+    skillId: `link-${RIVAL_LINK.id}`, skill: `连携 · ${RIVAL_LINK.name}`,
+    kind: '技能', fx: RIVAL_LINK.link.fx, tone: 'strike', scope: 'one',
+    note: `两枚成对的戒指对上了 —— ${part.map((c) => c!.name).join('、')} 自己接上了这一手。`,
+    link: { id: RIVAL_LINK.id, name: RIVAL_LINK.link.name, members: part.map(faceIdOf) },
+  })
+  resolve(s, actor, {
+    id: `link-${RIVAL_LINK.id}`,
+    name: RIVAL_LINK.link.name,
+    kind: '技能',
+    desc: RIVAL_LINK.link.desc,
+    cost: 0,
+    power: RIVAL_LINK.link.power,
+    axis: RIVAL_LINK.link.axis,
+    fx: RIVAL_LINK.link.fx,
+    line: RIVAL_LINK.link.line,
+    target: 'one',
+    linkUnits: part.filter((c) => c!.id !== actor.id).map((c) => c!.id),
+    linkPow: RIVAL_LINK.link.linkPow,
+  }, target.id)
 }
 
 /** 离线判断：引擎自带的那套（没有接口、或接口没接上时用它） */
@@ -1603,6 +1696,8 @@ function enemyAct(s: BattleState, foe: Combatant) {
   const heavy = foe.skills.find((k) => k.kind === '技能' && !k.ult && !k.summon)
   const k = heavy && Math.random() < 0.35 ? heavy : foe.skills[0]
   resolve(s, foe, k, t.id)
+  // 打完这一手才轮到那记连携 —— 它是「接在攻击后面」的，不是另起一手
+  fireRivalLink(s, foe.id)
 }
 
 /**
@@ -1639,6 +1734,8 @@ function enemyActWith(s: BattleState, foe: Combatant, it: EnemyIntent) {
   }
   foe.sp = Math.max(0, foe.sp - k.cost)
   resolve(s, foe, k, t.id)
+  // 打完这一手才轮到那记连携 —— 它是「接在攻击后面」的，不是另起一手
+  fireRivalLink(s, foe.id)
 }
 
 /* ---------- 敌方指挥权交给视图 ---------- */
@@ -1668,7 +1765,84 @@ export function enemysTurn(s: BattleState, intent: EnemyIntent | null): BattleSt
 
 /* ---------- 收场 ---------- */
 
+/**
+ * 第一阶段倒下之后，第二阶段站上来的那一拍。
+ *
+ * 触发点是「场上清空」，不是「本体倒下」——两件事在这一场里其实同一拍发生，
+ * 因为本体一倒，他喊上来的亡灵军团跟着散（见 sweepLegion），
+ * 而原文本来就是这么写的：codex 图鉴 No.8590 的 counter 一栏
+ * 「（异次元体）可对话。其亡灵军团随本体意志消散。」。
+ * 摆在这里而不是摆进 resolve，是因为这一手管的是**收场那一次清点**：
+ * 本体没倒就不该散，本体倒了就不能让那几位还替他站着。
+ *
+ * @returns 是不是真的顶上来了（false = 这一场没有第二阶段，或者还没轮到他）
+ */
+function phaseTwo(s: BattleState): boolean {
+  const boss = s.enemies[0]
+  // 本体：开局站在头一位的那一个（enemiesOf 只把指名首领放在这个位置，只增不减）
+  if (!s.nextBoss || !boss?.down) return false
+  sweepLegion(s)
+  // 军团散尽是指挥官写的那一拍的事，散完这一场还是得等他 —— 那就在这儿接着往下走
+  if (standingOf(s.enemies).length > 0) return false
+  const next = nextBossOf({
+    missionId: s.missionId, nature: s.nature, place: s.place, stage: s.stage,
+    progress: s.progress,
+    slot: s.enemies.length,
+    id: s.nextBoss,
+  })
+  // 名单上写不出这个人（bosses 里没这一份档案）→ 当作没有第二阶段，照常收场
+  if (!next) {
+    // 名单上写不出这个人 —— 把这一栏收掉，免得每次清点都来试一遍
+    s.nextBoss = undefined
+    return false
+  }
+  s.nextBoss = undefined
+  s.rivalCd = 0
+  s.enemies.push(next)
+  /* 报两笔：先报「第二阶段来了」，再把上一阶段那句话收掉。
+     战报是一行一行读下来的，形态切换必须自己占一行 ——
+     否则玩家读到的只是「敌人又满了」，读不出这是同一位的第二形态。 */
+  pushLog(s, {
+    round: s.hand, actorId: TERMINAL.id, actor: TERMINAL.name, side: 'enemy',
+    skillId: 'phase-2', skill: '第二阶段', kind: '指令', fx: 'noise',
+    note: `第一形态沉寂下去的那一瞬，那一片的东西没有散干净 —— `
+      + `它们朝同一个方向收拢，重新压成了一具躯体：${next.name}。`,
+  })
+  return true
+}
+
+/**
+ * 本体一倒，他喊上来的那几位跟着散。
+ *
+ * 这不是平衡钮，是原文写明的收场方式（codex 图鉴 No.8590 的 counter）。
+ * 少这一手会很难看：骷髅假面之男倒下之后，被他叫回来的人还替他把仗打下去 ——
+ * 那一场就不是「异次元体的军团」，而是一群正好路过的强敌。
+ */
+function sweepLegion(s: BattleState) {
+  // 这一次真正散掉了几个 —— 一个都没有就说明已经散过，不必再报一笔
+  let swept = 0
+  for (const e of s.enemies) {
+    if (e.down || e.gone > 0) continue
+    if (!e.tags.includes(RIVAL_TAG)) continue
+    e.down = true
+    e.hp = 0
+    swept += 1
+  }
+  if (swept) {
+    pushLog(s, {
+      round: s.hand, actorId: TERMINAL.id, actor: TERMINAL.name, side: 'enemy',
+      skillId: 'legion-gone', skill: '军团消散', kind: '指令', fx: 'noise',
+      note: '喊他们回来的那一位已经不在了 —— 站在对面的那几位随他的意志一并散去。',
+    })
+  }
+}
+
 function checkEnd(s: BattleState) {
+  /* 第二阶段判在**收场之前**，而且判的比「场上清空」更早一步：
+     它的触发点是「本体倒下」（见 phaseTwo）。摆在这儿是因为这一次清点
+     本来就要做两件事 —— 先让军团散、再看场上还剩谁；顺序倒了的话，
+     军团还站着的那一拍根本进不了这一段，第二阶段就永远顶不上来。 */
+  phaseTwo(s)
   if (standingOf(s.enemies).length === 0) {
     s.phase = 'won'
     s.actor = null

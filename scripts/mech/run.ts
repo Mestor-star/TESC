@@ -19,8 +19,8 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import {
-  act, advance, aliveOf, atkMulOf, basicOf, brokenOf, buffOf, chargeOf, createBattle, enemysTurn,
-  find, guardLeft, legalSkills, pendingFoe, skipOf, summonFoe,
+  act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, chargeOf, createBattle,
+  enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
 } from '../../src/lib/battle/engine'
 import { combatantOf, enemiesOf, minionOf } from '../../src/lib/battle/derive'
 import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
@@ -31,7 +31,8 @@ import { ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
-import { OPERATOR_ID } from '../../src/data/castmeta'
+import { namedBossOf } from '../../src/lib/battle/bosses'
+import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
 export interface MechReport {
@@ -1178,6 +1179,238 @@ export function run(): MechReport {
       + `敌阵 ${base} → ${s.enemies.length}（喊人 ${calls.length} 笔）`)
   } catch (e) {
     fail.push('召唤端到端段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 14) 面具心叶 · 亡灵军团 · 二阶段黑金狮子 ----------
+     这是「特殊 BOSS」那一档，与上面那记通用召唤不是一套东西，所以另起一段：
+       ① 他喊上来的**不是观测体，是档案里的真人** —— 技能表要跟本人逐条相同
+          （「技能能力都相同」不是形容词）。对照：通用那记喊来的是现推的空壳，
+          技能表挂在型别上，与任何一个档案角色都对不上；
+       ② 名单依次出场、一人一次，且到顶就收手（复用 enemyCap）；
+       ③ 被喊上来的那几位接得上**他们自己**那一记连携 —— 而且只有那一条，
+          只有异次元的蕾雅接得上（配对控制：名单里换成别人就不接）；
+       ④ 本体倒下 → 军团随他的意志散去 → 第二阶段的黑金狮子顶上，
+          这一场**没有**就此收场。对照：没写 next 的指名首领倒下就是赢了。 */
+  try {
+    const two = MISSIONS.find((m) => m.bossId === 'masked-kokonoha')!
+    const mkTwo = () => createBattle({
+      mission: two, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const s = mkTwo()
+    const mask = s.enemies[0]!
+    const call = mask.skills.find((k) => k.summon)!
+
+    ok('面具心叶：他带得了那一记召唤，且名单挂在技能上',
+      !!call && (call.summonPack?.length ?? 0) > 0,
+      call ? `${call.name}　名单 ${call.summonPack?.length} 人` : '（找不到召唤那一手）')
+    ok('面具心叶：他没走通用那一套（不挂成形体诱出的机制手）',
+      mask.skills.filter((k) => k.id === 'foe-summon').length === 0,
+      mask.skills.filter((k) => k.summon).map((k) => k.id).join(','))
+
+    /* ① 喊上来的与本人逐条相同 —— 拿技能 id 比，不拿名字比：
+       id 是引擎认人的那把尺（冷却、日志、连携都读它）。 */
+    const pack = call.summonPack!
+    for (let i = 0; i < pack.length; i++) { mask.cds = {}; summonFoe(s, mask) }
+    const rivals = s.enemies.filter((e) => e.tags.includes('异次元'))
+    ok('面具心叶：名单依次出场、一人一次（不重号、不回头）',
+      rivals.length === pack.length
+      && rivals.map((r) => r.id).join(',') === pack.map((x) => `rival-${x}`).join(','),
+      rivals.map((r) => r.id).join('／') || '（一个也没喊上来）')
+    const mismatch = rivals.filter((r) => {
+      const base = combatantOf(r.id.replace(/^rival-/, ''), 1, 0)
+      return r.skills.map((k) => k.id).join(',') !== base.skills.map((k) => k.id).join(',')
+    })
+    ok('面具心叶：喊上来的是档案里的真人 —— 技能表与本人逐条相同',
+      rivals.length > 0 && mismatch.length === 0,
+      mismatch.length
+        ? `对不上的：${mismatch.map((r) => r.id).join('、')}`
+        : `${rivals[0]!.name}　${rivals[0]!.skills.map((k) => k.name).join('、')}`)
+    const axesSame = rivals.every((r) => {
+      const base = combatantOf(r.id.replace(/^rival-/, ''), 1, 0)
+      return (Object.keys(base.axes) as AxisKey[]).every((k) => r.axes[k] === base.axes[k])
+    })
+    ok('面具心叶：五轴也照本人（不是按危险度现推的一份）', rivals.length > 0 && axesSame,
+      rivals[0] ? `破坏力 ${rivals[0].axes.破坏力}（本人 ${combatantOf(rivals[0].id.replace(/^rival-/, ''), 1, 0).axes.破坏力}）` : '')
+    const thinner = rivals.every((r) => r.hpMax > combatantOf(r.id.replace(/^rival-/, ''), 1, 0).hpMax)
+    ok('面具心叶：身板另算 —— 技能照搬，血走敌方曲线（站在对面不是站着陪练）',
+      rivals.length > 0 && thinner,
+      rivals[0] ? `${rivals[0].name} ${rivals[0].hpMax} ＞ 本人 ${combatantOf(rivals[0].id.replace(/^rival-/, ''), 1, 0).hpMax}` : '')
+
+    /* 对照：通用那一记喊来的空壳，技能表挂在型别上 —— 与任何一个档案角色都对不上 */
+    const generic = mkTwo()
+    const top = MISSIONS.filter((m) => m.stage >= TUNING.ultStage && !m.bossId)
+      .sort((a, b) => a.stage - b.stage).pop()!
+    const gs = createBattle({
+      mission: top, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const gf = gs.enemies[0]!
+    gf.cds = {}
+    const called = summonFoe(gs, gf)
+    const shell = gs.enemies[gs.enemies.length - 1]!
+    ok('面具心叶（对照）：通用那记喊来的是现推的空壳，不是档案角色',
+      called && !shell.tags.includes('异次元')
+      && !ROSTER[shell.name] && shell.skills.every((k) => k.id.startsWith('foe-')),
+      `${shell.name}　${shell.skills.map((k) => k.id).join(',')}`)
+
+    ok('面具心叶：同行者自己带不了召唤（人不会自己繁殖）',
+      rivals.every((r) => !r.skills.some((k) => k.summon)),
+      rivals[0] ? `rival-reiya 表上 ${rivals.length} 位，召唤手 ${rivals.filter((r) => r.skills.some((k) => k.summon)).length} 条` : '')
+
+    /* ③ 那一记连携：只有异次元的蕾雅接得上。
+       让本体连出六手 —— 每一手都是一次真打的攻击（收了召唤那一手，
+       不然他头几手全用来喊人，证明不了「攻击之后接得上」）。
+       对照跑把那一位换成名单里的**别人**：同一张台子、同一个执手，
+       只换了对面站着的是谁 —— 不接就只能是「认人」这一条干的。 */
+    const linkRun = (keep: string) => {
+      const w = mkTwo()
+      const boss = w.enemies[0]!
+      for (let i = 0; i < pack.length; i++) { boss.cds = {}; summonFoe(w, boss) }
+      for (const r of w.enemies) {
+        if (r.tags.includes('异次元') && !r.id.endsWith(keep)) r.down = true
+      }
+      // 我方封血：这一个复核只问接不接得上，不问打不打得死
+      for (const a of w.allies) { a.hp = 1e9; a.hpMax = 1e9 }
+      boss.cds = {}
+      for (let i = 0; i < 6; i++) {
+        for (const c of [...w.allies, ...w.enemies]) c.bar = -1e6
+        boss.bar = TUNING.barMax
+        w.actor = null
+        w.phase = 'select'
+        advance(w)
+      }
+      const links = w.log.filter((l) => /^link-/.test(l.skillId ?? ''))
+      return {
+        hits: links.filter((l) => l.skillId === 'link-rival-session').length,
+        ids: [...new Set(links.map((l) => l.skillId))],
+        who: links[0]?.actor ?? '',
+        faces: links[0]?.link?.members ?? [],
+      }
+    }
+    const withReiya = linkRun('reiya')
+    ok('面具心叶：他与异次元的蕾雅接得上那一记连携',
+      withReiya.hits > 0, `接上 ${withReiya.hits} 次　执手 ${withReiya.who}`)
+    const without = linkRun('emei')
+    ok('面具心叶（对照）：场上换成正对里的别人就接不起来 —— 这一条只认她',
+      without.hits === 0, `换 emei 上场　接上 ${without.hits} 次`)
+    ok('面具心叶：对面自始至终只有这一条连携（没有第二条掺进来）',
+      withReiya.ids.length === 1 && withReiya.ids[0] === 'link-rival-session',
+      `日志里出现过的连携：${withReiya.ids.join('、') || '（一条也没有）'}`)
+
+    /* 牌面那一笔：members 交回视图的是**人**（档案 id），不是场上的位次号。
+       视图拿它查档案 / 取头像（Battle 的 LinkPop）——喂 `foe-mst-v4x1-0` 进去，
+       名字一栏就只能念 raw id，脸也退回默认灰底。所以这里钉死：
+       每一个都查得到人（档案里有，或是指名首领那一张表里有）。
+       对照：本体不入档案（roster 第 6 行），所以他只能靠指名首领那一张表接住 ——
+       两条路都断的话，这一断言会当场说出来。 */
+    const faces = withReiya.faces
+    const resolved = faces.map((id) => personOf(id)?.name ?? namedBossOf(id)?.name)
+    ok('面具心叶：那一记连携的牌面交回的是档案 id（视图查得到人，不是位次号）',
+      faces.length === 2 && resolved.every((n) => !!n)
+      && faces.every((id) => !id.startsWith('foe-') && !id.startsWith('rival-')),
+      `牌面 ${faces.join('、') || '（空）'} → ${resolved.map((n) => n ?? '（查不到）').join('、')}`)
+    ok('面具心叶（对照）：本体不在角色档案里 —— 他靠指名首领那一张表才被认得出来',
+      !personOf('masked-kokonoha') && !!namedBossOf('masked-kokonoha'),
+      `personOf=${personOf('masked-kokonoha')?.name ?? '（查不到）'}　`
+      + `namedBossOf=${namedBossOf('masked-kokonoha')?.name ?? '（查不到）'}`)
+
+    /* ④ 二阶段。收场那一次清点只在「有人出手之后」跑（见 advance 的两处 checkEnd），
+       所以这里得推一手我方 —— 光把条推满是不够的。 */
+    const oneAllyTurn = (w: BattleState) => {
+      for (const c of [...w.allies, ...w.enemies]) c.bar = -1e6
+      const a = w.allies.find((x) => !x.down)!
+      a.bar = TUNING.barMax
+      w.actor = null
+      w.phase = 'select'
+      advance(w)
+      if (w.phase === 'select' && w.actor === a.id) act(w, { t: 'guard' })
+    }
+    const p = mkTwo()
+    const lord = p.enemies[0]!
+    for (let i = 0; i < pack.length; i++) { lord.cds = {}; summonFoe(p, lord) }
+    const legion = p.enemies.filter((e) => e.tags.includes('异次元'))
+    ok('二阶段：开场这一场是有第二阶段的（任务挂的 bossId 上写着 next）',
+      p.nextBoss === 'black-gold-lion', `nextBoss=${p.nextBoss}`)
+    ok('二阶段：军团确实站到了场上（不是空场上的假通过）',
+      legion.length === pack.length, `军团 ${legion.length} 位（名单 ${pack.length} 人）`)
+    lord.down = true
+    lord.hp = 0
+    oneAllyTurn(p)
+    ok('二阶段：本体一倒，军团随他的意志散去（原文写明的收场方式）',
+      legion.every((e) => e.down) && p.log.some((l) => l.skillId === 'legion-gone'),
+      `军团 ${legion.length} 位，还站着的 ${legion.filter((e) => !e.down).length} 位；`
+      + `日志 ${p.log.filter((l) => l.skillId === 'legion-gone').length} 笔`)
+    const lion = p.enemies.find((e) => e.namedId === 'black-gold-lion')
+    ok('二阶段：终末化的黑金狮子顶上来，这一场没有就此收场',
+      p.phase !== 'won' && !!lion && !lion.down,
+      `phase=${p.phase}　顶上来的是 ${lion?.name ?? '（没人）'}`)
+    ok('二阶段：顶上来的是**另一份档案**，不是把第一阶段那个人回血',
+      !!lion && lion.hpMax > lord.hpMax,
+      lion ? `${lord.name} ${lord.hpMax} → ${lion.name} ${lion.hpMax}` : '')
+    ok('二阶段：只顶一次（再清场就是收场，不会无限换形态）',
+      p.nextBoss === undefined, `nextBoss=${p.nextBoss ?? '（已用掉）'}`)
+
+    /* 对照：没写 next 的指名首领，倒下就是收场 */
+    const plain = MISSIONS.find((m) => m.bossId === 'phidra')!
+    const q = createBattle({
+      mission: plain, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    for (const e of q.enemies) { e.down = true; e.hp = 0 }
+    oneAllyTurn(q)
+    ok('二阶段（对照）：没写 next 的指名首领倒下就是赢了',
+      q.phase === 'won' && !q.nextBoss,
+      `phase=${q.phase}　nextBoss=${q.nextBoss ?? '（无）'}`)
+
+    /* ⑤ 整场打得完 —— 两阶段的仗不能卡在半路，也不能长得没边。
+       我方按「放得起的最重一手，否则普攻」打，敌方交给引擎自己。
+       这里只钉两件事：打得完（不是 stuck），以及二阶段确实在实战里出现过。 */
+    /* advance 只在「轮到我方某一位」时才把控制权交回来（敌方的手它自己打完了），
+       所以这里 s.actor 必定是我方。技能被冷却 / 印记挡住时 act 会原样退回、
+       这一手不往前走 —— 那就一层层往下退，退到底还推不动就停，别在这儿空转。 */
+    const playOut = (progress: number) => {
+      const w = createBattle({
+        mission: two, squad: ['operator', 'hikari', 'luna', 'mefisa'],
+        progress, growth: {}, sp: 100, spMax: 100, bond: {},
+      })
+      let guard = 0
+      while (w.phase === 'select' && guard++ < 900) {
+        const me = w.actor ? find(w, w.actor) : null
+        if (!me || me.side !== 'ally' || me.down) break
+        const foe = standingOf(w.enemies)[0]
+        if (!foe) break
+        const usable = legalSkills(me, w).filter((k) => affordable(k, me.sp))
+        const heavy = usable
+          .filter((k) => k.kind !== '启动' && k.power > 0)
+          .sort((a, b) => b.power - a.power)[0]
+        const start = usable.find((k) => k.kind === '启动')
+        const before = w.hand
+        if (heavy) act(w, { t: 'skill', skillId: heavy.id, targetId: foe.id })
+        // 解封期的人普攻是关着的（START_GATE）—— 退到启动那一手，再退到防御。
+        if (w.hand === before && start) act(w, { t: 'skill', skillId: start.id, targetId: foe.id })
+        if (w.hand === before) act(w, { t: 'atk', targetId: foe.id })
+        if (w.hand === before) act(w, { t: 'guard' })
+        if (w.hand === before) break
+      }
+      return w
+    }
+    /* 三个时期各打一场 —— 与 balance 同一套口径：只在一个时期上看得出的结论，
+       换个时期未必成立（这一条是复核跑出来的教训，见 tuning 的 enemyProgressGain）。 */
+    const plays = [0.15, 0.5, 0.9].map((p) => ({ p, w: playOut(p) }))
+    ok('面具心叶：整场打得完 —— 三个时期都不会卡在半路',
+      plays.every(({ w }) => w.phase === 'won' || w.phase === 'lost'),
+      plays.map(({ p, w }) => `时期 ${p}：${w.phase} ${w.hand} 手`).join('　'))
+    /* 只问「实战里来不来」——「来时军团散不散」是上一条的事。
+       这两个不能合成一条：真人打起来未必留得下军团（那几位是会先被打掉的），
+       合成一条的话，军团被清空反倒会把「二阶段来过」这条真话判成假。 */
+    const fought2 = plays.filter(({ w }) => w.log.some((l) => l.skillId === 'phase-2'))
+    ok('面具心叶：二阶段在实战里确实会来（不是只有单测里摆得出来）',
+      fought2.length === plays.length,
+      `${fought2.length}/${plays.length} 场打到第二阶段`)
+    info.push(`面具心叶：${two.no}「${two.title}」　军团 ${rivals.length} 位、`
+      + `连携 ${withReiya.hits} 次；二阶段顶上 ${lion?.name ?? '（无）'} ${lion?.hpMax ?? 0}；`
+      + plays.map(({ p, w }) => `${p}:${w.phase}(${w.hand}手/${w.tick}拍)`).join(' '))
+    void generic
+  } catch (e) {
+    fail.push('面具心叶段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }
