@@ -41,6 +41,46 @@ const errors = []
 const warnings = []
 const briefs = {}
 
+/* ── 说话人标签（lines[].who）规范化 ──────────────────────────
+   摘录时人按原文叙述里的叫法写（「泰尔学长」「恋兔学姐」），这没错 ——
+   原文里就是这么叫的。但这一行进提示词时是 `谁：台词` 的格式，
+   导演会照着它写台词行；写出来的名字若对不上档案表，前端切气泡时
+   认不出，那一句就掉成旁白 —— 好台词白写。
+
+   所以这里按档案表把它们归一到**档案全名**：变体在下面逐条列出，
+   归一的结果会作为「归一 N 处」报出来，不悄悄改。
+
+   档案表之外的（女神 / 守护者 / 八脚马 / 泥塑面具…）原样留着：
+   它们本来就不是登记在册的角色，原文怎么称就怎么称。 */
+const WHO_ALIAS = {
+  泰尔学长: '泰尔米别克・简别科娃',
+  弗恩: '弗恩・西蒙',
+  弗恩学长: '弗恩・西蒙',
+  恋兔学姐: '恋兔光',
+  梅芙: '梅芙莉莎・简别科娃',
+  小柴: '小柴喵呜',
+  艾莉芙: '艾莉芙・安纳托利亚',
+  老头子子: '老头子', // 笔误
+}
+
+/** 档案表里登记过的名字（chars.ts 的 name / sidecast.ts 的 card 全名与别名） */
+function castNames() {
+  const out = new Set(['言万心叶']) // 操作员（不在档案表里，但当然是合法说话人）
+  for (const rel of ['data/chars.ts', 'data/sidecast.ts']) {
+    const p = path.join(ROOT, 'src', rel)
+    if (!fs.existsSync(p)) continue
+    const s = fs.readFileSync(p, 'utf8')
+    for (const m of s.matchAll(/name: '([^']+)'/g)) out.add(m[1])
+    for (const m of s.matchAll(/card\(\s*'[^']+',\s*'([^']+)',\s*'([^']+)'/g)) {
+      out.add(m[1])
+      out.add(m[2])
+    }
+  }
+  return out
+}
+const CAST_NAMES = castNames()
+const whoFixes = new Map() // 变体 → 出现次数（生成时报出来）
+
 const offtextCache = new Map()
 function offtextOf(id) {
   if (offtextCache.has(id)) return offtextCache.get(id)
@@ -60,8 +100,9 @@ const files = fs.existsSync(IN_DIR)
   : []
 
 if (!files.length) {
-  console.log('· scripts/briefs/ 下没有 .json，什么都没做')
-  process.exit(0)
+  // 一份都没摘也要把文件写上（空的）—— 生成物是**始终存在**的，
+  // 调用方（src/data/briefs/index.ts）才不必为「还没摘」写一条分支。
+  console.log('· scripts/briefs/ 下没有 .json —— 写一份空的 generated.ts')
 }
 
 for (const f of files) {
@@ -105,6 +146,18 @@ for (const f of files) {
       } else {
         b.lines.forEach((l, i) => {
           if (!l || typeof l.who !== 'string' || !l.who.trim()) errors.push(`${f}: ${id}.lines[${i}].who 缺失`)
+          else {
+            const w = l.who.trim()
+            const canon = WHO_ALIAS[w]
+            if (canon) {
+              whoFixes.set(w, (whoFixes.get(w) ?? 0) + 1)
+              l.who = canon
+            } else if (!CAST_NAMES.has(w)) {
+              // 不在档案表里 —— 可能是原文里的次要人物（泰尔、玛吉娜…），
+              // 也可能只是写岔了。不拦，但要说出来让人看一眼。
+              warnings.push(`${f}: ${id}.lines[${i}].who「${w}」不在档案表内（确属原文里的次要人物则无需处理）`)
+            }
+          }
           if (!l || typeof l.text !== 'string' || !l.text.trim()) {
             errors.push(`${f}: ${id}.lines[${i}].text 缺失`)
             return
@@ -177,6 +230,13 @@ for (const f of files) {
 
 for (const w of warnings) console.log(`  warn  ${w}`)
 for (const e of errors) console.log(`  FAIL  ${e}`)
+
+if (whoFixes.size) {
+  console.log('· 说话人标签归一（照着档案表，好让前端切得出气泡）：')
+  for (const [from, n] of [...whoFixes].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${from} → ${WHO_ALIAS[from]}　×${n}`)
+  }
+}
 
 if (errors.length) {
   console.log(`\n=== 大纲校验不通过：${errors.length} 条 ===\n（一条都不写盘。修完 scripts/briefs/*.json 再来）`)

@@ -16,8 +16,10 @@ import type { CharId, FlagValue, TimelineEvent } from '../data/types'
 import { CHARACTERS } from '../data/chars'
 import { eventNotesOf } from '../data/eventnotes'
 import { briefOf } from '../data/briefs'
+import { personaCardOf } from '../data/persona'
+import { temperAt } from '../data/temper'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
-import { genderOf, PERSON_IDS } from '../data/castmeta'
+import { genderOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { bondName, clamp } from './format'
@@ -667,7 +669,7 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
 export interface DirectorCtx {
   /** 操作员显示名（剧情本体固定为 言万心叶） */
   operatorName: string
-  /** 当前各角色羁绊取值（用于在提示词里注明关系阶段）；缺省取事件基准 */
+  /** 当前各角色羁绊取值（此刻真实的关系：初见值 + 主角行为）；缺省退回原著同段读数 */
   bondNow?: (charId: string) => number
   /** 已收束事件表：用来判断剧情读到哪一段，从而决定该角色此刻怎么称呼主角 */
   epDone?: Record<string, true>
@@ -700,6 +702,11 @@ function outlineRules(opName: string): string {
 - 称呼随关系阶段与剧情位置变：角色怎么叫言万心叶，按下方角色行里注明的「对言万心叶的称呼」来（露娜在签订使用者契约之前一直称他「言万同学」，之后才改口「小主人」）；没有注明的，按该角色原文惯用的叫法，不得擅自升级成亲昵、主从或恋人式的称呼。
 - 只有该事件大纲的关键收束已被达成、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。
 - 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。`
+}
+
+/** 角色显示名（主役取 characters，登场者取 castmeta；都不认得就回 id） */
+function nameOfChar(charId: string): string {
+  return CHARACTERS.find((c) => c.id === charId)?.name ?? personOf(charId)?.name ?? charId
 }
 
 function relationLine(charId: string, ev: TimelineEvent, ctx: DirectorCtx): string {
@@ -795,6 +802,51 @@ function briefSection(ev: TimelineEvent): string {
     + seg.join('\n\n')
 }
 
+/**
+ * 在场角色的**性情锚**：这一层治的是「人物走样」本身。
+ *
+ * 两类东西合起来，是这一节存在的全部理由：
+ *   ① 底色 —— `persona.ts` 的人物卡里那几节（性格 / 说话方式 / 禁忌·雷区），
+ *      逐字来自原作的考据，整卷不变。对上位角色的叮嘱（「不要 OOC」）没有用，
+ *      有用的只有「这个人在原文里就是这么说、这么想的」这一条条事实。
+ *   ② 分期 —— `temper.ts` 的叠加层。同一个人在故事的不同阶段是不同的人：
+ *      露娜在「使用者契约」之前与之后，分寸完全不同；拿前期的写法写后期，
+ *      单看每句都像，连起来就是不对。哪一层生效由**剧情读到哪**决定，不由模型猜。
+ *
+ * 两处都取不到的角色（没登记卡面、也没有分期）整条不出现 —— 宁可少一层，
+ * 也不要拿一句自己编的性格去顶。
+ */
+const TEMPER_SECTIONS = ['性格', '说话方式', '禁忌·雷区']
+
+function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
+  const present = ev.chars.length ? ev.chars : (CHARACTERS.map((c) => c.id) as CharId[])
+  const done = furthestDone(ctx.epDone ?? {})
+  const blocks: string[] = []
+
+  for (const id of present) {
+    const c = CHARACTERS.find((x) => x.id === id)
+    const bond = ctx.bondNow
+      ? ctx.bondNow(id)
+      : (ev.bond[id as keyof typeof ev.bond] ?? 0)
+    const stage = temperAt(id, typeof bond === 'number' ? bond : 0, done)
+
+    const lines: string[] = []
+    for (const s of personaCardOf(id)?.sections ?? []) {
+      if (!TEMPER_SECTIONS.includes(s.title) || !s.lines.length) continue
+      lines.push(`〔${s.title}〕`)
+      for (const l of s.lines) lines.push(`· ${l}`)
+    }
+    const now = stage?.note ? [`〔此刻的性情 · 已随剧情翻过一层〕`, stage.note] : []
+    const forb = stage?.forbid?.length ? ['〔此刻不要写出去的方向〕', ...stage.forbid.map((x) => `× ${x}`)] : []
+    if (!lines.length && !now.length && !forb.length) continue
+    blocks.push(`▸ ${c?.name ?? id}\n${[...lines, ...now, ...forb].join('\n')}`)
+  }
+
+  if (!blocks.length) return ''
+  return `\n\n【在场角色 · 性情锚】（逐字取自原作考据；与他处的人设描述冲突时，以本节为准）
+下面是这些人**各自怎么说话、什么脾气、踩到哪一句会翻脸**。照此写 —— 不要按一般印象替他们改性子，也不要让所有人用同一种腔调说话。\n\n${blocks.join('\n\n')}`
+}
+
 /** 拼装导演系统提示词（单事件） */
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
   const present = ev.chars.length ? ev.chars : (CHARACTERS.map((c) => c.id) as CharId[])
@@ -804,10 +856,31 @@ export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string
     .join('\n')
 
   const entList = ev.entities.filter((e) => e !== '——').join('、') || '（本事件暂无新实体）'
-  const baseline = Object.entries(ev.bond)
-    .filter(([, v]) => typeof v === 'number')
-    .map(([k, v]) => `  ${k}: ${v}`)
-    .join('\n')
+
+  /**
+   * 羁绊读数 —— 导演照着这个写关系。
+   *
+   * 数值取**此刻真实的羁绊**（`ctx.bondNow`：初见值 + 主角一路的行为），
+   * 不是这一段原著里的数值。差别很要紧：原著读数只是考据（`ev.bond`），
+   * 主角要是把话说砸了，真实羁绊比原著低得多 —— 照原著数值写，对方就会
+   * 无缘无故地对他熟络，正是要防的那种走样。
+   *
+   * 原著读数附在后面一行作对照，供导演判断「这儿比原著亲近还是疏远」，
+   * 但不作准。
+   */
+  const bondRows = Object.entries(ev.bond).filter(([, v]) => typeof v === 'number')
+  const baseline = bondRows.length
+    ? bondRows
+        .map(([k, v]) => {
+          const now = ctx.bondNow?.(k)
+          const name = nameOfChar(k)
+          if (typeof now !== 'number') return `  ${name}（${k}）：${v}`
+          const diff = now - (v as number)
+          const mark = diff >= 8 ? ' ↑比原著亲近' : diff <= -8 ? ' ↓比原著疏远' : ''
+          return `  ${name}（${k}）：${now}（原著同段约 ${v}${mark}）`
+        })
+        .join('\n')
+    : ''
 
   // 用户变量登记：把「主角行为改变了什么」稳定地写回同名变量（world.flags = 变量面板 A 区）
   const varEntries = ctx.flags ? Object.entries(ctx.flags) : []
@@ -848,10 +921,15 @@ ${entList}
 
 【本事件出场角色】${
     roster ? `\n${roster}` : '\n（暂无已建立关系的角色在场）'
-  }
+  }${temperSection(ev, ctx)}
 
-【羁绊基准（数值仅参考，勿过度解读）】
-${baseline.trim() || '（无）'}${reask}${loreSection}${opsSection}${varBlock}${anchor}${presetSection(ctx.presetPost)}
+【此刻的羁绊 · 照此写关系，不要照原著写】
+${baseline.trim() || '（无）'}
+数值是**此刻真实的关系**（初见值 + 言万心叶一路说过的、做过的一切），不是这一段原著里的数值：
+主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
+括号里的「原著同段约 N」只作对照，不作准。
+关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
+${reask}${loreSection}${opsSection}${varBlock}${anchor}${presetSection(ctx.presetPost)}
 
 ${speechContract()}
 
@@ -861,7 +939,9 @@ ${speechContract()}
 紧接着一个 \`\`\`json 围栏块，仅含一个对象。字段（全部可选）：
 {
   "met":    ["新遇见角色id"],                 // 仅限本段在场或新登场的档案角色：hikari/luna/mefisa/nyau（其余档案角色仅当其确实登场时方可出现）
-  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊增减，正=更亲近；本事件相关角色单次 1~4，勿过度
+  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊**只由本回合言万心叶的行为决定**：正=更亲近，负=生分（说错话、越界、失信就该给负数）
+                                                   // 本事件相关角色单次 ±1~4，勿过度；什么都没发生就别给这条
+                                                   // 数值是关系本身，不随剧情进度自动涨 —— 不给就不会变
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
   "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
   "diverged": true,                           // 已与原著相异（否则省略）

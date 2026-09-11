@@ -182,7 +182,7 @@ function parseDraftLines(raw: string): string[] {
 export function Plot() {
   const {
     operatorName, navigate, push,
-    epDone, bondNow, world, isMet,
+    epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, recordPick, completeEvent,
     records, requestProfile,
   } = useTerminal()
@@ -721,6 +721,12 @@ export function Plot() {
       return
     }
     const digest = concluded.digest || ev.summary
+    // 门槛没过就收不了束：事件不能再替主角把关系走完（如卷一的契约事件）
+    const miss = gateMissing(ev.id)
+    if (miss.length) {
+      push('warn', '这一段还收不了', `还差：${gateText(miss)}。先把这段关系走到那儿。`, false)
+      return
+    }
     completeEvent(ev.id, digest, 'online', concluded.diverged) // 此刻才写记录 + epDone → focus 落到下一事件
     setConcluded(null)
     push('decode', '事件收束 · 已写入记录', `${ev.title}（已写入低语者日志）`, false)

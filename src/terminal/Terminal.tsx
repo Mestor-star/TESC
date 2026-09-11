@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue } from '../data/types'
 import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
@@ -107,9 +107,18 @@ export interface TerminalState {
   markRead: (id: string) => void
   resetRead: (id: string) => void
 
-  /** 好感：起步＝初见≈20±性格；主役随已走剧情段原著快照推进，全体再叠主角行为（抉择/推演/短信）偏移——可增可减的变量 */
+  /**
+   * 好感：起步＝初见（≈20±性格）＋ 主角行为累积偏移。
+   * **不随进度白涨** —— 涨多少只看这一路说过什么、做过什么（可说错话往下掉）。
+   * 事件说了算的两处例外：`world.locked` 锁定值、阶段上限（见 bondNow 注释）。
+   */
   bondNow: (charId: string) => number
+  /** 原著读数：这一段原著里那个人对他说得上的好感 —— 只作对照，不当基准 */
   bondSnapAt: (epId: string | null) => BondSnap
+  /** 这一段的门槛还差谁（空数组 = 进得去）；界面用它提前说明「为什么这一段点不进去」 */
+  gateMissing: (id: string) => BondGate[]
+  /** 门槛缺失的人话：「露娜（52/70）」 */
+  gateText: (miss: BondGate[]) => string
 
   /** —— 动态世界状态（持久化变量） —— */
   world: WorldState
@@ -189,7 +198,7 @@ function takePendingView(): ViewId | null {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [] }
+  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [] }
 }
 
 /** 「记录」按阅读序排序（主键 readingIndexOf，次键完成时间） */
@@ -235,6 +244,8 @@ function meetIndexOf(charId: string): number {
 function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Partial<WorldState> | undefined): WorldState {
   const w: WorldState = {
     offset: raw?.offset ?? {},
+    // 旧档没有这一栏（好感锁定是后加的）→ 空表；已锁定的段位由本次读档重新触发。
+    locked: raw?.locked ?? {},
     flags: raw?.flags ?? {},
     met: raw?.met ?? {},
     ends: raw?.ends ?? {},
@@ -584,7 +595,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
 
 
-  /* —— 好感：起步＝初见（无段可依时），主役取当前所在「段」的原著快照作基准 —— */
+  /* —— 好感：只从主角的行为里来 —— */
+
+  /**
+   * 原著读数：这一段原著里，那个人对言万心叶的好感大概是多少。
+   *
+   * **它不再是好感的基准** —— 只作对照用：界面上拿它比一比「走到这一段，
+   * 你比他更亲近，还是更疏远」。好感本身只从 `world.offset` 来（见 bondNow）。
+   */
   const bondSnapAt = useCallback(
     (epId: string | null): BondSnap => {
       if (epId) {
@@ -597,25 +615,51 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
 
   /**
-   * 好感变量：基准 + 主角行为累积偏移。
-   * 基准 = 四位主役：当前段原著快照（读到哪段就跟到哪段的原著推进）；
-   *        其余 20 名在册登场者及未读段的主役：castmeta 起步值（初见≈20±性格）。
-   * 主角行为（在线推演抉择/导演回执、短信往来）→ world.offset 增减 → 可增可减的动态变量。
+   * 好感变量：**初见值 + 主角行为累积**，不从进度里来。
+   *
+   * 从前是「读到哪一段就跟到那一段的原著数值」，主角做过什么只在这之上加减一个偏移 ——
+   * 于是好感成了进度的影子：什么都没做也涨，跳过一集也涨。现在基准只剩初见值
+   * （`defaultBondOf`，性格定的起点），涨多少全看这一路说过什么、做过什么
+   * （在线推演抉择 / 导演回执 / 短信往来 → `world.offset`）。什么都不做就是不动。
+   *
+   * 两处例外，都是「事件说了算」的：
+   *   锁定（`world.locked`，由事件的 `lock` 写入）—— 那件事之后关系回不去了，此后固定在这个值；
+   *   阶段上限（`bondWithStage`）—— 还没到翻篇的那一步，再好也封顶（见 data/bondstage.ts）。
    */
   const bondNow = useCallback(
     (charId: string) => {
       // 会长：一开始就是满值，且不随主角行为偏移上下浮动
       if (BOND_FULL[charId]) return 100
-      const ep = cur ? TIMELINE.find((e) => e.id === cur) : undefined
-      const v = ep?.bond[charId as keyof BondSnap]
-      // 主役锚点 = 当前段原著快照；其余 20 名在册登场者 = 起步值（初见）；均叠加主角行为偏移
-      const base = typeof v === 'number' ? v : defaultBondOf(charId)
+      const base = defaultBondOf(charId)
       const off = world.offset[charId] ?? 0
-      // 阶段上限：有的关系是「到了那一步」才翻篇的，推时间线本身不白送好感
-      // （露娜在缔结使用者契约之前封顶，之后直接满值 —— 见 data/bondstage.ts）
-      return bondWithStage(charId, clamp(base + off, 0, 100), cur)
+      const v = bondWithStage(charId, clamp(base + off, 0, 100), cur)
+      // 锁定值优先于行为偏移，且只增不减：已被锁过的角色再撞上更低的锁定值，取高的那个
+      const locked = world.locked?.[charId]
+      return typeof locked === 'number' ? Math.max(v, locked) : v
     },
-    [cur, world.offset],
+    [cur, world.offset, world.locked],
+  )
+
+  /**
+   * 这一段的**门槛**还差几个人：返回所有未达成的条目（空数组 = 进得去）。
+   *
+   * 用在「不是读到这儿就该发生，而是关系先得走到这儿」的段上（如卷一的契约事件）。
+   * 好感不够时推进指针会停在前一段 —— 时间线不替主角把关系走完。
+   */
+  const gateMissing = useCallback(
+    (id: string): BondGate[] => {
+      const ev = TIMELINE.find((e) => e.id === id)
+      if (!ev?.gate?.length) return []
+      return ev.gate.filter((g) => bondNow(g.char) < g.value)
+    },
+    [bondNow],
+  )
+
+  /** 门槛的缺失人话（给提示条用）：「露娜（52/70）」 */
+  const gateText = useCallback(
+    (miss: BondGate[]) =>
+      miss.map((m) => `${personOf(m.char)?.name ?? m.char}（${bondNow(m.char)}/${m.value}）`).join('、'),
+    [bondNow],
   )
 
   /* —— 动态世界操作 —— */
@@ -754,10 +798,21 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const ev = TIMELINE.find((e) => e.id === id)
       if (!ev) return
+      // 门槛：关系还没走到这儿，这一段就开不了 —— 指针停在前一段，不替主角把路走完
+      const miss = gateMissing(id)
+      if (miss.length) {
+        push(
+          'warn',
+          '这一段还进不去',
+          `还差：${gateText(miss)}。好感只在对话与行动里涨 —— 先把这段关系走出来。`,
+        )
+        return
+      }
       setEpDone((prev) => {
         if (prev[id]) return prev
         return { ...prev, [id]: true }
       })
+
       // 前进指针：只允许往后，不允许倒退
       setCur((prevCur) => {
         if (prevCur === id) return prevCur
@@ -767,7 +822,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         return prevCur
       })
     },
-    [],
+    [gateMissing, gateText, push],
   )
 
   /** 结算整段：标记完成，并自动解锁「本次遇见」的角色、自动登记「本次遭遇」的实体 */
@@ -817,15 +872,30 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     (id: string, digest: string, mode: RecordMode, diverged?: boolean): boolean => {
       const ev = TIMELINE.find((e) => e.id === id)
       if (!ev) return false
+      // 门槛同样拦在这里：收束是「这一段走完了」的宣告，门都没进就不算走完。
+      // 不拦的话，导演回执可以绕过 markRead 直接把这一段判成完成 —— 那就等于
+      // 事件又能替主角把关系走完了，正是这次要拿掉的东西。
+      if (gateMissing(id).length) return false
       resolveEvent(id)
       const body = digest.trim() || ev.summary
       setWorld((prev) => {
+        // 本段若带锁定（如卷一的契约事件），走完就锁死这一段关系的下限：
+        // 此后主角说什么做什么，读出来都不会再低于这个值
+        let locked = prev.locked
+        for (const l of ev.lock ?? []) {
+          const had = locked?.[l.char] ?? 0
+          if (l.value > had) locked = { ...locked, [l.char]: l.value }
+        }
         const rec: WorldRecord = { eventId: id, mode, digest: body, diverged: !!diverged, ts: Date.now() }
-        return { ...prev, records: sortRecords([...prev.records.filter((r) => r.eventId !== id), rec]) }
+        return {
+          ...prev,
+          ...(locked !== prev.locked ? { locked } : null),
+          records: sortRecords([...prev.records.filter((r) => r.eventId !== id), rec]),
+        }
       })
       return true
     },
-    [resolveEvent],
+    [resolveEvent, gateMissing],
   )
 
   // 完成目标事件 → 自动解锁受门禁保护的视图（含角色档案）
@@ -891,6 +961,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     resetRead,
     bondNow,
     bondSnapAt,
+    gateMissing,
+    gateText,
     world,
     isMet,
     bumpBond,

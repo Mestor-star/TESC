@@ -8,6 +8,7 @@ import { Portrait } from '../components/Portrait'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
 import { rosterRowOf, rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
+import { personOf } from '../data/castmeta'
 import { clock } from '../lib/format'
 import type { RecordMode } from '../data/types'
 
@@ -136,8 +137,29 @@ export function Saga() {
                   </div>
                 ) : null}
 
+                {/* 门槛摆在最前：这一格点不进去的时候，得让人一眼看见差在哪 */}
+                {focusEv.gate?.length ? (
+                  <div className={css.chipRow} style={{ marginTop: 10 }}>
+                    {focusEv.gate.map((g) => {
+                      const now = bondNow(g.char)
+                      const pass = now >= g.value
+                      return (
+                        <span
+                          key={g.char}
+                          className="chip"
+                          data-gate={g.char}
+                          style={{ color: pass ? 'var(--jade)' : 'var(--amber)' }}
+                          title={pass ? '门槛已达成' : '这一段要先把关系走到这儿才开得了'}
+                        >
+                          进入需 · {personOf(g.char)?.name ?? g.char} 好感 ≥ {g.value}（现 {now}）
+                        </span>
+                      )
+                    })}
+                  </div>
+                ) : null}
+
                 {castRows.length > 0 ? (
-                  <div className={css.secLabel}>出场角色 · 羁绊快照（含偏移）</div>
+                  <div className={css.secLabel}>出场角色 · 羁绊（只由言万心叶的行为累积，不随进度白涨）</div>
                 ) : null}
                 <div className={css.charGrid}>
                   {castRows.map((c) => {
@@ -179,7 +201,10 @@ export function Saga() {
                             </i>
                           ) : null}
                         </span>
-                        <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>{met ? `基准 ${canon}` : '未遇见'}</span>
+                        {/* 原著同段只是对照：走到这一段，主角比他更亲近还是更疏远 */}
+                        <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>
+                          {met ? `原著同段 ${canon}${cur > canon ? ' · 更亲近' : cur < canon ? ' · 更疏远' : ''}` : '未遇见'}
+                        </span>
                       </button>
                     )
                   })}
@@ -299,7 +324,9 @@ export function Saga() {
                 )
               })}
               <div className={css.noteLine}>
-                好感起步为「初见」（陌生≈20，按性格浮动）；主役随已读剧情段的原著基准推进，全体再按主角行为增减——推演中的抉择、回执与短信往来。
+                好感起步为「初见」（陌生≈20，按性格浮动），此后**只由言万心叶的行为累积**——
+                推演中的抉择、回执与短信往来，说错话会往下掉。读过哪一段、走到哪一天都不涨。
+                少数事件另有门槛（关系先到某个数才进得去）与锁定（那件事之后关系再也回不去，固定满值）。
               </div>
             </div>
           </div>

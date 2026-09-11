@@ -18,14 +18,18 @@
    即该事件的原文切片），绝不新增、改写或补全；**拿不准就留空** ——
    留空即该节整节不渲染，导演退回 summary，行为零差异。
 
-   键 = 事件 id（如 'v1-1' / 'v2-4' / 's1-6'）。
+   内容**不在本文件里**：`scripts/briefs/*.json` 是唯一真源（摘录时按卷分片），
+   由 `node scripts/briefgen.mjs` 逐字校验过原文切片后生成 `generated.ts`。
+   校验有一条对不上就整块拒绝 —— 大纲是给导演当事实用的，
+   掺一条编的就等于整本不可信，所以宁可不出，也不出一份半真的。
    ============================================================ */
 
-import type { EventBrief } from './types'
+import type { EventBrief } from '../types'
+import { EVENT_BRIEFS as GENERATED } from './generated'
 
-export const EVENT_BRIEFS: Record<string, EventBrief> = {}
+export const EVENT_BRIEFS: Record<string, EventBrief> = GENERATED
 
-/** 这一事件的详细大纲；没写就返回 undefined（调用方退回 summary） */
+/** 这一事件的详细大纲；没摘就返回 undefined（调用方退回 summary） */
 export function briefOf(evId: string): EventBrief | undefined {
   return EVENT_BRIEFS[evId]
 }

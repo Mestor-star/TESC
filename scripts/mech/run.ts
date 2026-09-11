@@ -38,7 +38,8 @@ import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
-import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
+import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
+import { BOND_STAGE, bondWithStage } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
@@ -50,6 +51,9 @@ import { API_DEFAULTS } from '../../src/lib/api'
 import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, shouldAutoStart } from '../../src/lib/builtin-presets'
 import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
+import { EVENT_BRIEFS } from '../../src/data/briefs'
+import { TEMPER, temperAt } from '../../src/data/temper'
+import { CHARACTERS } from '../../src/data/chars'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -2446,6 +2450,175 @@ export function run(): MechReport {
 
     info.push('事件指令：裸写/围栏/截断/尾逗号/注释/装饰标签行/示例块 七种写法逐一验过，'
       + '落地字段与上屏正文两样都咬住；只有指令没有正文时不上屏原文')
+  }
+
+  /* ---------- 21) 详细大纲：细的那一份要真的进提示词，缺了要退得干净 ----------
+     OOC 几乎都不是模型不会写，而是它手上只有两三句概述 —— 谁在场、谁知道什么、
+     关键那句台词长什么样，全得它自己编。这一节把 EVENT_BRIEFS 通道钉住：
+     五节各自独立渲染、缺一份整节不出现（退回概述，行为零差异）。
+     内容本身（逐字）由 scripts/briefgen.mjs 对着原文切片校验，不在这里验。 */
+  try {
+    const ev0 = TIMELINE[0]
+    const ctx = { operatorName: '操作员', presetPost: '【预设 · 输出格式】\n（无）' }
+    const strip = (s: string) => s.replace(/\s+/g, '')
+
+    /* ① 没有详纲的事件：只剩概述，细则那一节整节不出现。
+       挑的是**确实还没摘的那一段**，不是写死 TIMELINE[0] ——
+       摘录是逐卷推进的，写死的那一段早晚会被摘到，那时这条对照就会假装失败。 */
+    const unread = TIMELINE.find((e) => !EVENT_BRIEFS[e.id])
+    const bare = buildDirectorSystem(unread ?? ev0, ctx)
+    ok('详纲：没摘到的事件不出现【本事件实施细则】—— 退回概述，行为零差异',
+      !!unread && bare.includes(unread.summary) && !bare.includes('【本事件实施细则】'),
+      unread
+        ? `试的是 ${unread.id}　概述在=${bare.includes(unread.summary)}　细则节=${bare.includes('【本事件实施细则】')}`
+        : '（全 57 段都摘到了 —— 这条对照已无用武之地，可删）')
+
+    /* ② 摘到了：五节按序齐全，且台词、知道/不知道两栏都逐字落地 */
+    if (!EVENT_BRIEFS.__probe__) {
+      EVENT_BRIEFS.__probe__ = {
+        beats: ['第一拍：船甲板上的脚步声。', '第二拍：他抬头。'],
+        lines: [{ who: '言万心叶', text: '我的名字叫言万心叶，是个随处可见的普通高中生。' }],
+        knows: [{ char: '言万心叶', knows: ['船要被开去某个角落'], unknown: ['露娜的存在'] }],
+        done: ['两人把话说完', '甲板上的脚步声远去'],
+        taboo: ['不要提前写出露娜'],
+      }
+    }
+    const full = buildDirectorSystem({ ...ev0, id: '__probe__' }, ctx)
+    const at = (s: string) => full.indexOf(s)
+    const order = ['一、情节线', '二、关键台词', '三、在场的谁知道什么', '四、收束条件', '五、禁忌']
+      .map((h) => at(h))
+    const ascending = order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))
+    ok('详纲：摘到了就把五节按序摆出来（情节线 / 关键台词 / 谁知道什么 / 收束条件 / 禁忌）',
+      full.includes('【本事件实施细则】') && ascending,
+      `各节位置 ${order.join(' → ')}`)
+
+    /* ③ 台词与「还不知道」必须原样进提示词 —— 这两样一旦被改写，写出来的人就不是原文那个 */
+    const probe = EVENT_BRIEFS.__probe__
+    ok('详纲：关键台词与「还不知道」逐字进提示词（改写一句就等于换了个人）',
+      strip(full).includes(strip(probe.lines![0].text))
+      && full.includes('还不知道：露娜的存在')
+      && full.includes(`${probe.lines![0].who}：${probe.lines![0].text}`),
+      `台词行 ${full.includes(`${probe.lines![0].who}：${probe.lines![0].text}`)}`)
+
+    /* 对照：只有 beats 的事件，后面四节一律不冒出空壳标题（半截标题会读成「这一节没有内容」） */
+    EVENT_BRIEFS.__probe2__ = { beats: ['只有一拍'] }
+    const lean = buildDirectorSystem({ ...ev0, id: '__probe2__' }, ctx)
+    ok('详纲（对照）：只给了情节线时，其余四节的标题一个都不出现（不摆空壳）',
+      lean.includes('一、情节线') && !['二、关键台词', '三、在场的谁知道什么', '四、收束条件', '五、禁忌']
+        .some((h) => lean.includes(h)),
+      ['二、三、四、五 节的标题'].map((h) => `${h}${lean.includes(h) ? '有' : '无'}`).join('　'))
+    delete EVENT_BRIEFS.__probe__
+    delete EVENT_BRIEFS.__probe2__
+
+    /* ④ 键必须都是真事件 id：摘录时敲错一个字，那一份就永远不会被任何事件读到，
+       而且**不会报错** —— 它只是静静地躺在表里，等于没摘。 */
+    const ids = new Set(TIMELINE.map((e) => e.id))
+    const stray = Object.keys(EVENT_BRIEFS).filter((k) => !ids.has(k))
+    const covered = Object.keys(EVENT_BRIEFS).filter((k) => ids.has(k))
+    ok('详纲：表里的键都是真事件 id（敲错的键不会被任何事件读到，且不会报错）',
+      stray.length === 0, stray.length ? `多出来的：${stray.join('、')}` : `现有 ${covered.length} 条`)
+    info.push(`详纲：已摘 ${covered.length} / ${TIMELINE.length} 个事件`
+      + (covered.length ? `（${covered.slice(0, 6).join('、')}${covered.length > 6 ? ' …' : ''}）` : '　内容见 scripts/briefs/'))
+  } catch (e) {
+    fail.push('详纲段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 22) 性情锚：人物卡逐字进提示词，分期层按「读到哪」翻篇 ---------- */
+  try {
+    const withLuna = TIMELINE.find((e) => e.chars.includes('luna'))!
+    const sys = buildDirectorSystem(withLuna, { operatorName: '言万心叶', presetPost: '' })
+    ok('性情锚：在场角色的性格 / 说话方式逐字进提示词（对上的叮嘱没用，有用的是原文里他怎么说话）',
+      sys.includes('【在场角色 · 性情锚】') && sys.includes('〔说话方式〕')
+      && sys.includes('露娜'), `含「性情锚」节=${sys.includes('【在场角色 · 性情锚】')}`)
+
+    /* 台上没有的人一个都不许冒出来 —— 整卡铺开最容易犯的错 */
+    const absent = sys.slice(sys.indexOf('【在场角色 · 性情锚】'), sys.indexOf('【此刻的羁绊'))
+    const strays = [...new Set(absent.match(/▸ (\S+)/g) ?? [])]
+      .map((x) => x.slice(2))
+      .filter((n) => !withLuna.chars.some((id) => (CHARACTERS.find((c) => c.id === id)?.name ?? id) === n))
+    ok('性情锚（对照）：只列在场的那些，台上没有的一个都不冒出来',
+      strays.length === 0, strays.length ? `多出来的：${strays.join('、')}` : `${strays.length || 0} 个越界`)
+
+    /* 分期：同一个人，读到的位置不同 → 该叠的层不同；够不着的层不许提前生效 */
+    const far = TIMELINE.length - 1
+    ok('性情分期：够不着的那一层不会提前生效（读得早 → 不给后期的性情）',
+      temperAt('luna', 100, -1) === null && temperAt('luna', 0, far) === null,
+      `没开始读=${temperAt('luna', 100, -1) ? '有层' : '无层'}　读到底（当前无规则）=${temperAt('luna', 0, far) ? '有层' : '无层'}`)
+    info.push(`性情分期：TEMPER 现有 ${Object.keys(TEMPER).length} 个角色登记（内容待逐卷从原文摘录）`)
+  } catch (e) {
+    fail.push('性情锚段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 23) 好感：只从行为里来 + 事件门槛 / 锁定 ---------- */
+  try {
+    const gated = TIMELINE.filter((e) => (e.gate?.length ?? 0) > 0)
+    const locked = TIMELINE.filter((e) => (e.lock?.length ?? 0) > 0)
+
+    /* ① 门槛与锁定都得是真角色、真数值 —— 敲错一个 id 就是一道永远过不去的门 */
+    const badRef = [...gated, ...locked].flatMap((e) =>
+      [...(e.gate ?? []), ...(e.lock ?? [])]
+        .filter((g) => !PERSON_IDS.includes(g.char) || !Number.isFinite(g.value) || g.value < 0 || g.value > 100)
+        .map((g) => `${e.id}:${g.char}=${g.value}`))
+    ok('好感门槛 / 锁定：指向的角色都在档案名录内，数值都在 0~100（敲错的 id 会变成一道永远过不去的门）',
+      badRef.length === 0, badRef.length ? `有问题的：${badRef.join('、')}` : `门槛 ${gated.length} 段 · 锁定 ${locked.length} 段`)
+
+    /* ② 门槛必须够得着：封顶值 < 门槛值 → 那一段永远开不了（这条最容易在改数值时踩） */
+    const unreachable = gated.flatMap((e) =>
+      (e.gate ?? [])
+        .filter((g) => {
+          const cap = BOND_STAGE[g.char]?.cap
+          return typeof cap === 'number' && cap < g.value
+        })
+        .map((g) => `${e.id} 要 ${g.char} ${g.value}，却在 ${e.id} 之前封顶 ${BOND_STAGE[g.char]!.cap}`))
+    ok('好感门槛：门槛值不会高过阶段上限（否则那一段谁也开不了 —— 封顶之前攒不够门槛）',
+      unreachable.length === 0, unreachable.length ? unreachable.join('；') : '卷一的契约门槛 70 ≤ 封顶 78，够得着')
+
+    /* ③ 契约那一段：门槛 70 / 锁 100，且封顶确实卡在门槛之上 */
+    const pact = TIMELINE.find((e) => e.id === 'v1-9')
+    ok('好感门槛：卷一使用者契约（v1-9）要好感先到 70，走完锁 100',
+      pact?.gate?.some((g) => g.char === 'luna' && g.value === 70) === true
+      && pact?.lock?.some((g) => g.char === 'luna' && g.value === 100) === true,
+      `门槛=${JSON.stringify(pact?.gate ?? null)}　锁定=${JSON.stringify(pact?.lock ?? null)}`)
+
+    ok('阶段上限：契约之前封顶 78（攒得到 70 的门槛，但攒不满），契约之后满值',
+      BOND_STAGE.luna?.from === 'v1-9'
+      && bondWithStage('luna', 100, 'v1-8') === 78
+      && bondWithStage('luna', 100, 'v1-9') === 100,
+      `读 v1-8 时给到 ${bondWithStage('luna', 100, 'v1-8')}　读 v1-9 时给到 ${bondWithStage('luna', 100, 'v1-9')}`)
+
+    /* ④ 导演照着写的是「此刻真实的羁绊」，不是这一段原著里的数值 ——
+       从前这两者混在一句「羁绊基准」里，主角把话说砸了导演还照原著写亲密。 */
+    const sysB = buildDirectorSystem(pact!, {
+      operatorName: '言万心叶', presetPost: '', bondNow: (id) => (id === 'luna' ? 12 : 20),
+    })
+    const sysC = buildDirectorSystem(pact!, {
+      operatorName: '言万心叶', presetPost: '', bondNow: (id) => (id === 'luna' ? 96 : 20),
+    })
+    ok('羁绊读数：同一个事件，主角行为不同 → 进提示词的读数就不同（不再照原著写死）',
+      sysB.includes('露娜（luna）：12') && sysC.includes('露娜（luna）：96'),
+      `冷淡时=${sysB.includes('露娜（luna）：12')}　亲近时=${sysC.includes('露娜（luna）：96')}`)
+
+    /* 对照那一行要两边都标得出来：露娜这一段的原著值是 95，往上不到 8 分的余量，
+       所以「更亲近」拿恋兔光（原著 78）来验 —— 只测一边的标记等于没测。 */
+    const sysD = buildDirectorSystem(pact!, {
+      operatorName: '言万心叶', presetPost: '', bondNow: (id) => (id === 'hikari' ? 96 : 20),
+    })
+    ok('羁绊读数：原著读数降级为对照（同一段，主角更疏远 / 更亲近都看得出来）',
+      sysB.includes('↓比原著疏远') && sysD.includes('↑比原著亲近')
+      && sysB.includes('不是这一段原著里的数值'),
+      `疏远标记=${sysB.includes('↓比原著疏远')}　亲近标记=${sysD.includes('↑比原著亲近')}`)
+
+    /* ⑤ 好感基准里不许再出现「读到这一段就跟到这一段」的原著快照当基线 ——
+       把 offset 清零后，读数应当回到初见值，而不是回到 ev.bond。 */
+    const ev9 = pact!
+    const offsetless = bondWithStage('luna', defaultBondOf('luna'), null)
+    ok('好感基准：什么都不做就是不涨（偏移清零 → 回到初见值，而不是原著同段的数值）',
+      offsetless === defaultBondOf('luna') && offsetless !== ev9.bond.luna,
+      `初见值 ${defaultBondOf('luna')} ≠ 原著同段 ${ev9.bond.luna}`)
+
+    info.push(`好感门槛：${gated.map((e) => `${e.id}(${e.gate!.map((g) => `${g.char}≥${g.value}`).join(',')})`).join('　') || '（暂无）'}`)
+  } catch (e) {
+    fail.push('好感门槛段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

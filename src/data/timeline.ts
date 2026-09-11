@@ -103,6 +103,10 @@ const v1: Evt[] = [
     entities: ['NO.8288 黄金狮子', 'NO.228-B 死骸机关之神'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
     // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
     cast: ['luna', 'hikari', 'mefisa', 'nyau', 'alive-anatolia', 'vern-simon', 'kuro-no-maou'],
+    // 结成使用者契约是人自己走到的，不是读到这儿就该发生的：好感先到 70，这一段才开得了。
+    // 走完即锁定 100 —— 契约之后这段关系回不去了，主角再说什么做什么都不会再低于满值。
+    gate: [{ char: 'luna', value: 70 }],
+    lock: [{ char: 'luna', value: 100 }],
     bond: B({ luna: 95, hikari: 78, mefisa: 80, nyau: 72 }),
   },
 ];
