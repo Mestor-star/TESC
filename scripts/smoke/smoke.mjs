@@ -720,6 +720,31 @@ try {
   await poll(`(async()=>{try{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-terminal-store',1);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const tx=db.transaction('kv','readonly');const g=tx.objectStore('kv').get('api:main');g.onsuccess=()=>res(g.result&&g.result.maxTokens===2000);g.onerror=()=>res(false)})}catch(e){return false}})()`, 8000, 'F maxTokens persist')
   ok('F2c 输出预算改动随通道配置持久（api:main.maxTokens=2000）', saved === true, 'saved=' + saved)
 
+  /* 内置预设「删了不重播」——F2d 只验了「播进去」，这条验它「删掉之后不回来」。
+     走真实 UI 删除（不直接改存储）：从「内置」标往上爬到最近一个含「删除方案」按钮的祖先再点，
+     每轮重查 DOM，避开上一次点击触发重渲染后节点失效。 */
+  let removed = 0
+  for (let i = 0; i < 6; i++) {
+    const hit = await ev(`(()=>{const tag=[...document.querySelectorAll('span')].find(x=>x.textContent==='内置');if(!tag)return false;let p=tag;while(p&&!p.querySelector('button[title="删除方案"]'))p=p.parentElement;const b=p&&p.querySelector('button[title="删除方案"]');if(!b)return false;b.click();return true})()`)
+    if (!hit) break
+    removed++
+    await sleep(260)
+  }
+  const afterDel = await ev(`(()=>{const l=JSON.parse(localStorage.getItem('zts-schemes:v1')||'[]');const k=JSON.parse(localStorage.getItem('zts-builtin-presets:v1')||'null');return {n:l.filter(s=>s.builtin).length,seen:k?k.seeded.length:0,badge:[...document.querySelectorAll('span')].filter(x=>x.textContent==='内置').length}})()`)
+  ok('F2e 删除内置预设：方案列表移除、「内置」标消失，但记账仍记着已播过 2 条',
+    removed === 2 && afterDel.n === 0 && afterDel.badge === 0 && afterDel.seen === 2,
+    `removed=${removed} ` + JSON.stringify(afterDel))
+
+  // 重启：若少了「删了不重播」这层记账，ensureBuiltinPresets 会以为没播过而重新灌回去
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('终端设置')
+  await poll(`document.body.innerText.includes('世界书数据管理')`, 20000, 'F2f settings after reload')
+  const afterReboot = await ev(`(()=>{const l=JSON.parse(localStorage.getItem('zts-schemes:v1')||'[]');const k=JSON.parse(localStorage.getItem('zts-builtin-presets:v1')||'null');return {n:l.filter(s=>s.builtin).length,seen:k?k.seeded.length:0,badge:[...document.querySelectorAll('span')].filter(x=>x.textContent==='内置').length}})()`)
+  ok('F2f 内置预设删了不重播（重启后不复活）',
+    afterReboot.n === 0 && afterReboot.badge === 0 && afterReboot.seen === 2,
+    JSON.stringify(afterReboot))
+
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
   console.log('\n[Phase G] P2 Archive：24卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
   // 档案页已在门禁之后（Phase E 清过 localStorage，此处重新置位），本相聚焦档案本体
