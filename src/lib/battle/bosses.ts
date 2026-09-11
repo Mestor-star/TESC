@@ -23,6 +23,7 @@
 import { place } from './atlas'
 import type { AxisKey, PassiveSpec, SkillSpec } from './types'
 import { TUNING } from './tuning'
+import { END_FOES } from './endfoes'
 
 export interface NamedBoss {
   /** 档案 id —— 与 roster / sidecast / 档案页同一套键 */
@@ -39,6 +40,15 @@ export interface NamedBoss {
   hpMul: number
   /** 五轴。缺省取 roster 的档案读数 */
   axes?: [number, number, number, number, number]
+  /**
+   * 这一位的**危险度**（图鉴登记的 Stage）。
+   *
+   * 只有图鉴实体写它。写了它，血量就按它自己那一档算，而不是按这一场任务的阶段 ——
+   * 图鉴上那个 Stage 就是委员会给它评的危险度，与任务阶段同一根标尺。
+   * 不写的（档案里的真人）按任务阶段算：他们本来就随任务危险度出场，
+   * 而且他们的读数在档案页上写死了，不该被一只怪物的图鉴编号左右。
+   */
+  codexStage?: number
   /** 被动（有原文依据的才写） */
   passive?: PassiveSpec
   /**
@@ -588,7 +598,18 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
   },
 }
 
-/** 任务挂的 bossId 能不能对上一位指名首领 */
+/**
+ * 任务挂的 bossId 对得上哪一位。
+ *
+ * 两张表，一条规矩：**先查人，再查图鉴**。
+ *   · NAMED_BOSSES —— 有档案的真人（天空竞技祭那几位、卡乌斯学院的人……），
+ *     每一个名字、每一句台词、每一手机制都从 arms / sidecast / chars 取；
+ *   · END_FOES —— 终末图鉴里登记在册的实体（见 endfoes.ts），
+ *     名字与台词从 codex.ts 的条目取。
+ * 两张表不会撞号（一边是人物 id，一边是图鉴条目 id），顺序只是把「人优先」
+ * 写成明面上的事：万一哪天有个图鉴条目的 id 与某人同名，站在对面的是那个人。
+ */
 export function namedBossOf(id?: string): NamedBoss | undefined {
-  return id ? NAMED_BOSSES[id] : undefined
+  if (!id) return undefined
+  return NAMED_BOSSES[id] ?? END_FOES[id]
 }

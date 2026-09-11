@@ -22,7 +22,7 @@ import { POWER_SCALE, ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
 import { GEAR_OF, gearSkillOf } from './gear'
-import { START_GATE, TUNING, UNRATED_AXES } from './tuning'
+import { START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
 import { rFactor, rOfPlace } from './rvalue'
 import type { AxisKey, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target } from './types'
 
@@ -847,12 +847,19 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
     const hpMul = (tier === 'boss' ? TUNING.bossHpMul : tier === 'elite' ? TUNING.eliteHpMul : 1) * halfHp
     const atkMul = (tier === 'boss' ? TUNING.bossAtkMul : tier === 'elite' ? TUNING.eliteAtkMul : 1) * halfAtk
     const willMul = tier === 'boss' ? TUNING.bossWillMul : tier === 'elite' ? TUNING.eliteWillMul : 1
+    /* 一位有名有姓的对手，血量按**哪一档**算？
+       一般是这一场的危险度（任务的阶段）。但图鉴实体自带一个数 ——
+       图鉴上登记的 Stage 就是委员会给它评的危险度，与任务阶段同一根标尺。
+       所以它写了自己的那个数时按它自己的算：同一只实体，在主线那一场
+       （阶段按时间线位置推出来的）与在现场撞上（阶段由现场定）该是一样厚，
+       不能因为这次撞见它的地方排得靠前，就把 Stage10『终焉』的星鲸削成半只。 */
+    const hpStage = named?.codexStage ?? stage
     const hpMax = named
       // 有名有姓的那位按自己的档案读数站场：血量走同一套曲线，
       // 但再乘一次他自己的 hpMul —— RANK6 与 RANK47 不该一样硬。
       // 指名首领**不吃时期增幅**：他是档案里的人，读数就该跟档案页一致，
       // 不能因为玩家多读了一卷，同一个人在档案上还是那个数、打起来却更厚。
-      ? Math.round((TUNING.enemyHpBase + stage * TUNING.enemyHpPerStage)
+      ? Math.round((TUNING.enemyHpBase + hpStage * TUNING.enemyHpPerStage)
         * rf.mul * TUNING.bossHpMul * named.hpMul)
       : Math.round((TUNING.enemyHpBase + stage * TUNING.enemyHpPerStage) * rf.mul * hpMul * pf)
     const axes: AxisSheet = named
@@ -864,15 +871,10 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
         反现实亲和: named.axes?.[3] ?? SIDE_AXIS[named.id]?.[3] ?? 0,
         意志力: named.axes?.[4] ?? SIDE_AXIS[named.id]?.[4] ?? 0,
       }
-      : {
-        // 破坏力跟血量一起随时期走：只抬血的话，晚期的仗会变成
-        // 「打不动我、我也打不死它」的干耗，那不是难度，是拖时间。
-        破坏力: Math.round((TUNING.enemyAtkBase + stage * TUNING.enemyAtkPerStage) * atkMul * pf),
-        敏捷度: Math.round(TUNING.enemySpdBase + stage * TUNING.enemySpdPerStage),
-        物理抗性: Math.round(TUNING.enemyResistBase + stage * TUNING.enemyResistPerStage),
-        反现实亲和: Math.round((10 + stage * 4) * rf.mul),
-        意志力: Math.round((10 + stage * TUNING.enemyWillPerStage) * willMul),
-      }
+      // 五轴一律从 tuning 的 enemyAxesAt 取（只此一处算法）。
+      // 从前这一段是就地算的，反现实亲和还写死了一个 4 —— 于是「五轴可调」
+      // 只在四条上成立，且图鉴实体另算一份就必然与这里对不上。
+      : enemyAxesAt(stage, { atkMul, willMul, progressMul: pf, rMul: rf.mul })
     const tag = tier === 'boss' ? '首领' : tier === 'elite' ? '精英' : ''
     const ename = named
       ? named.name

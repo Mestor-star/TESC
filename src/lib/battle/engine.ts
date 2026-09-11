@@ -1780,8 +1780,12 @@ export function enemysTurn(s: BattleState, intent: EnemyIntent | null): BattleSt
  * @returns 是不是真的顶上来了（false = 这一场没有第二阶段，或者还没轮到他）
  */
 function phaseTwo(s: BattleState): boolean {
-  const boss = s.enemies[0]
-  // 本体：开局站在头一位的那一个（enemiesOf 只把指名首领放在这个位置，只增不减）
+  /* 「本体」= 场上**最后一位**认得出名字的那一具，不是 enemies[0]。
+     形态链会一直接下去（巨匠 → 黑之魔王 → 二级天使・百翼，见 endfoes 的 next 栏），
+     盯死头一位的写法在第三条链上就错了：第二位还站着的时候第一位早就 down 了，
+     条件当场成立 —— 第三形态会在第二形态没死的时候就顶上来。
+     所以取最后一位有 namedId 的敌体（杂兵与异次元同行者都没有 namedId）。 */
+  const boss = lastNamedOf(s.enemies)
   if (!s.nextBoss || !boss?.down) return false
   sweepLegion(s)
   // 军团散尽是指挥官写的那一拍的事，散完这一场还是得等他 —— 那就在这儿接着往下走
@@ -1798,20 +1802,38 @@ function phaseTwo(s: BattleState): boolean {
     s.nextBoss = undefined
     return false
   }
-  s.nextBoss = undefined
+  /* 这一具也有下一形态的话，接着排下去 —— 不这么做的话，
+     「多形态」就只到第二形态为止，而原文里巨匠那一条是走到底的。
+     链子接在**顶上来的这一位自己**的 next 栏上，所以谁接谁由档案说了算。 */
+  s.nextBoss = namedBossOf(next.namedId)?.next
   s.rivalCd = 0
   s.enemies.push(next)
-  /* 报两笔：先报「第二阶段来了」，再把上一阶段那句话收掉。
-     战报是一行一行读下来的，形态切换必须自己占一行 ——
-     否则玩家读到的只是「敌人又满了」，读不出这是同一位的第二形态。 */
+  /* 报一笔：形态切换必须自己占一行 —— 战报是一行一行读下来的，
+     否则玩家读到的只是「敌人又满了」，读不出这是同一位的下一个形态。
+     序号按场上已经站过几具有名有姓的算，所以第三形态报的是「第三阶段」，
+     不会三条链都写着「第二阶段」。 */
+  const formNo = s.enemies.filter((e) => e.namedId).length
   pushLog(s, {
     round: s.hand, actorId: TERMINAL.id, actor: TERMINAL.name, side: 'enemy',
-    skillId: 'phase-2', skill: '第二阶段', kind: '指令', fx: 'noise',
-    note: `第一形态沉寂下去的那一瞬，那一片的东西没有散干净 —— `
+    skillId: `phase-${formNo}`, skill: `第${CN_NUM[formNo] ?? formNo}阶段`, kind: '指令', fx: 'noise',
+    note: `第${CN_NUM[formNo - 1] ?? formNo - 1}形态沉寂下去的那一瞬，`
+      + `那一片的东西没有散干净 —— `
       + `它们朝同一个方向收拢，重新压成了一具躯体：${next.name}。`,
   })
   return true
 }
+
+/** 场上最后一位认得出名字的敌体（当前形态）。杂兵与异次元同行者都没有 namedId。 */
+function lastNamedOf(list: Combatant[]): Combatant | undefined {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const c = list[i]!
+    if (c.namedId) return c
+  }
+  return undefined
+}
+
+/** 形态的序号用字：写到「五」够了 —— 原文里最长的那条链是三条。 */
+const CN_NUM = ['', '一', '二', '三', '四', '五']
 
 /**
  * 本体一倒，他喊上来的那几位跟着散。

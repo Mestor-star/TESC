@@ -26,13 +26,20 @@ import { combatantOf, enemiesOf, minionOf } from '../../src/lib/battle/derive'
 import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
 import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
-import { TUNING } from '../../src/lib/battle/tuning'
+import { TIMELINE } from '../../src/data/timeline'
+import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
+import { TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
+import { END_FOES } from '../../src/lib/battle/endfoes'
+import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, mainlineMissions } from '../../src/lib/battle/mainline'
+import { battleMissionOf } from '../../src/lib/battle/from-directive'
+import { rOfPlace } from '../../src/lib/battle/rvalue'
 import { ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf } from '../../src/data/castmeta'
+import type { Mission } from '../../src/data/types'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
 export interface MechReport {
@@ -1447,6 +1454,262 @@ export function run(): MechReport {
     void generic
   } catch (e) {
     fail.push('面具心叶段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 15) 图鉴实体 · 形态链 · 五轴同一条曲线 ----------
+     这一节钉的是三件事真的接上了，而不是各自写完了：
+       · 「全文会触发的战斗」—— 时间线上每一段登着实体、且实体落得进图鉴的事件
+         （外传也算全文），都指派了头名；没指派的只许是明写豁免的那几段。
+         头名还必须是**这一段自己列出来的实体之一**：上一版这张表整片错开了一行
+         （entities 那一行压在它所属事件的 id 之下，抄的时候按视觉位置对，
+         于是 v3-3 拿了 v3-4 的对手），这条断言就是为那一次立的。
+       · 「图鉴实体按图鉴自己的危险度站」—— 同一个东西在卷一撞见与在卷六撞见一样厚，
+         而现推的观测体照样跟着任务阶段走（这一对照证明前者不是「没生效也没人发现」）。
+       · 「五轴同一条曲线」—— 同危险度、同档位的那一只，与图鉴实体的破坏力读数
+         一模一样：两边都出自 tuning 的 enemyAxesAt，谁也不许另算一份。
+       · 「多形态」—— 三形态能一路走到底、第三形态不插队、并且走得完。 */
+  try {
+    const AXES5: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
+    /** 事件自己列出来的实体串 → 可比较的名字（去掉开头的编号，抹平两种间隔号） */
+    const bare = (s: string) => s.replace(/^[^ ]+ /, '').replace(/[・·]/g, '')
+    const foesOf = (e: { entities?: string[] }) => (e.entities ?? []).filter((x) => x && x !== '——')
+    const entitiesEvents = TIMELINE.filter((e) => foesOf(e).length > 0)
+    const codexEvents = entitiesEvents.filter((e) => foesOf(e).some((x) => resolveEntityToCodexId(x)))
+
+    /* ① 表里不许有失效行：每一行都得指着一段真登了实体、且没被豁免的事件。
+       上一版 v3-5 那一行就是这么来的 —— 事件本身不存在，那行永远查不到、
+       也永远不会有人发现它是错的。 */
+    const deadRows = Object.keys(EVENT_HEAD).filter((id) => {
+      const e = TIMELINE.find((x) => x.id === id)
+      return !e || !foesOf(e).length || !!NON_FIGHT_EVENTS[id]
+    })
+    ok('图鉴头名表：没有失效行（每一行都指着一场真登了实体的事件）',
+      deadRows.length === 0,
+      `${Object.keys(EVENT_HEAD).length} 行，失效 ${deadRows.length} 行`
+      + (deadRows.length ? `：${deadRows.join('、')}` : ''))
+
+    /* ② 覆盖：落到图鉴上的每一段实体事件都指派了头名（豁免的除外） */
+    const missed = codexEvents.filter((e) => !NON_FIGHT_EVENTS[e.id] && !headFoeOf(e.id))
+    ok('全文（含外传）：落到图鉴上的每一段实体事件都指派了头名',
+      missed.length === 0,
+      `实体事件 ${entitiesEvents.length} 段（${codexEvents.length} 段落得进图鉴），`
+      + `未指派 ${missed.length} 段${missed.length ? '：' + missed.map((e) => e.id).join('、') : ''}`)
+    /* 对照：这套判据不是恒真 —— 全文里确实有该判成「漏」的那几段，
+       是靠豁免表才平掉的。谁把豁免表删了，上面那条立刻会说人话。 */
+    const unheaded = codexEvents.filter((e) => !headFoeOf(e.id))
+    ok('全文（对照）：判据确实会报漏 —— 那几段是豁免表平掉的，不是碰巧没人查',
+      unheaded.length > 0 && unheaded.length === Object.keys(NON_FIGHT_EVENTS).length,
+      `无头名 ${unheaded.map((e) => e.id).join('、') || '（一段都没有）'}；`
+      + `豁免表 ${Object.keys(NON_FIGHT_EVENTS).join('、') || '（空）'}`)
+
+    /* ③ 头名必须是这一段自己列出来的实体之一（错位就是在这一步被抓住的） */
+    const strangers: string[] = []
+    for (const e of codexEvents) {
+      const id = headFoeOf(e.id)
+      if (!id || !END_FOES[id]) continue       // 指名首领（同行者）不进图鉴，跳过
+      const c = CODEX.find((x) => x.id === id)!
+      const listed = foesOf(e).some((x) => {
+        const b = bare(x)
+        return b.includes(c.name.replace(/[・·]/g, '')) || c.name.replace(/[・·]/g, '').includes(b)
+      })
+      if (!listed) strangers.push(`${e.id}→${c.name}`)
+    }
+    ok('图鉴头名表：头名是那一段自己列出来的实体之一（不是邻段的对手）',
+      strangers.length === 0,
+      strangers.length ? strangers.join('、') : `逐段核对 ${codexEvents.length} 段`)
+
+    /* ④ 那一位真的站到 enemies[0] 上去 —— 两条路各走一遍。
+       主线牌面走 mainlineMissions（要先把前面几段标记成已归档，牌面才翻到这一段）；
+       现场触发走 battleMissionOf（模型给的那一场是 OBS-xxx）。 */
+    const onlyUnclaimed = (evId: string) => {
+      const epDone: Record<string, true> = {}
+      const claimed: Record<string, true> = {}
+      for (const e of TIMELINE) { epDone[e.id] = true; if (e.id !== evId) claimed[e.id] = true }
+      return mainlineMissions(epDone, claimed)[0]
+    }
+    const heads: Array<[string, string]> = [
+      ['v3-2', 'chain-detective'], ['v3-3', 'rose-detective'], ['v3-4', 'cape-mouth'],
+      ['v2-8', 'master-craft'], ['s1-2', 'cherax'],
+    ]
+    const wrongHead = heads.filter(([evId, want]) => onlyUnclaimed(evId)?.bossId !== want)
+    ok('主线牌面：该挂头名的那几段挂的是那一位（侦探那三段的错位不许再来一次）',
+      wrongHead.length === 0,
+      wrongHead.length
+        ? wrongHead.map(([evId, want]) => `${evId} 想要 ${want}、拿到 ${onlyUnclaimed(evId)?.bossId ?? '（无）'}`).join('　')
+        : heads.map(([evId, want]) => `${evId}→${want}`).join(' '))
+
+    const standUp = (m: Mission) => createBattle({
+      mission: m, squad: SQUAD, progress: 0.5, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const plot = battleMissionOf({ name: '复核 · 现场', stage: 5, place: '东京' }, 'v6-3')
+    const plotW = standUp(plot)
+    ok('现场触发：模型给的那一场也站的是档案里那一位（不是临时挂牌的观测体）',
+      plot.bossId === 'emilya' && plotW.enemies[0]?.namedId === 'emilya',
+      `bossId=${plot.bossId ?? '（无）'}　场上头一位 ${plotW.enemies[0]?.name ?? '（空）'}`)
+    const mainW = standUp(onlyUnclaimed('v2-8')!)
+    ok('主线牌面：三段链的头一位（巨匠）真的站在场上',
+      mainW.enemies[0]?.namedId === 'master-craft' && mainW.nextBoss === 'black-maou',
+      `${mainW.enemies[0]?.name ?? '（空）'}　nextBoss=${mainW.nextBoss ?? '（无）'}`)
+
+    /* ⑤ 图鉴实体按**图鉴自己的危险度**站。
+       深海异界是原文实测（0.89）的那一处，读数不随危险度走 ——
+       拿它当场地，血量若还在动，动的那一处就只可能是 hpStage。 */
+    const PLACE = '深海异界'
+    ok('靶场前提：那个地点的 R 读数不随危险度变（不然下面那两条量的是地点，不是实体）',
+      rOfPlace(PLACE, 3).r === rOfPlace(PLACE, 9).r,
+      `${PLACE}：Stage3 读 ${rOfPlace(PLACE, 3).r}、Stage9 读 ${rOfPlace(PLACE, 9).r}`)
+    const at = (stage: number, bossId?: string) => enemiesOf({
+      id: `mech-${stage}`, no: 'MECH', title: '复核', place: PLACE, stage,
+      nature: '反现实 · 死灵操法', recommend: [], status: '压制中', deadline: '即刻',
+      desc: '', reward: [], ...(bossId ? { bossId } : {}),
+    }, 0)[0]!
+    const s3 = at(3, 'star-whale')
+    const s9 = at(9, 'star-whale')
+    ok('图鉴实体：同一个东西在卷一撞见与在卷六撞见一样厚（按图鉴登记的危险度站）',
+      s3.hpMax === s9.hpMax && AXES5.every((k) => s3.axes[k] === s9.axes[k]),
+      `Stage3 ${s3.hpMax} / 破坏 ${s3.axes.破坏力}　Stage9 ${s9.hpMax} / 破坏 ${s9.axes.破坏力}`)
+    ok('图鉴实体（对照）：现推的观测体仍跟着任务阶段走 —— 上一条不是「两边都不动」',
+      at(3).hpMax !== at(9).hpMax,
+      `现推观测体 Stage3 ${at(3).hpMax} → Stage9 ${at(9).hpMax}`)
+
+    /* ⑥ 五轴同一条曲线。
+       破坏力那一轴**没有任何套件去偏置它**（见 CLASS_KIT 的 bias 表），
+       所以图鉴实体的破坏力读数该与「同危险度、同档位的现推首领」一字不差 ——
+       两边都出自 enemyAxesAt，谁也不许另算一份。
+       对照：意志力那一条被套件偏置过，它俩该不一样 ——
+       不然「实体只是把观测体换了个名字」这句话就成立了。 */
+    const codex6 = at(6, 'organ-apt')
+    const generic6 = at(6)
+    ok('五轴同一条曲线：同危险度、同档位的图鉴实体与现推首领，破坏力读数一致',
+      codex6.axes.破坏力 === generic6.axes.破坏力
+      && codex6.axes.破坏力 === enemyAxesAt(6, { atkMul: TUNING.bossAtkMul }).破坏力,
+      `图鉴实体 ${codex6.axes.破坏力} / 现推首领 ${generic6.axes.破坏力} / 曲线 `
+      + `${enemyAxesAt(6, { atkMul: TUNING.bossAtkMul }).破坏力}`)
+    ok('五轴（对照）：套件的偏置确实落在了读数上 —— 它不只是现推首领换了个名字',
+      AXES5.some((k) => codex6.axes[k] !== generic6.axes[k]),
+      AXES5.map((k) => `${k} ${codex6.axes[k]}/${generic6.axes[k]}`).join('　'))
+
+    /* ⑦ 五轴随危险度一路抬 —— 只抬血与破坏力的那一版是在这里被抓住的：
+       五条轴一条都不许是常数。 */
+    const flat = AXES5.filter((k) => {
+      const v = Array.from({ length: 10 }, (_, i) => enemyAxesAt(i + 1)[k])
+      return !v.every((x, i) => i === 0 || x > v[i - 1]!)
+    })
+    ok('五轴：五条都随危险度单调抬升（没有一条是常数）',
+      flat.length === 0,
+      flat.length
+        ? `平的是 ${flat.join('、')}`
+        : AXES5.map((k) => `${k} ${enemyAxesAt(1)[k]}→${enemyAxesAt(10)[k]}`).join('　'))
+    ok('五轴：首领那一档的倍数真的乘上去了（不是把基础曲线原样端出来）',
+      namedBossOf('star-whale')!.axes![0] !== enemyAxesAt(10).破坏力
+      && namedBossOf('star-whale')!.axes![0] === enemyAxesAt(10, { atkMul: TUNING.bossAtkMul }).破坏力,
+      `星鲸 ${namedBossOf('star-whale')!.axes![0]}／基础曲线 ${enemyAxesAt(10).破坏力}`)
+
+    /* ⑧ 多形态：三形态一路走到底、第三形态不插队、并且走得完。
+       脏器公寓 → 格尔 → 黑曜石（v1-5 这一段自己列的三个实体）。 */
+    const three: Mission = {
+      id: 'mech-three', no: 'MECH-3', title: '复核 · 三形态', place: PLACE, stage: 6,
+      nature: '反现实 · 死灵操法', recommend: [], status: '压制中', deadline: '即刻',
+      desc: '', reward: [], bossId: 'organ-apt',
+    }
+    const w = standUp(three)
+    const dirs = (id: string) => w.enemies.filter((e) => e.namedId === id)
+    ok('形态链：开局是第一形态，链头指向第二形态',
+      w.enemies[0]?.namedId === 'organ-apt' && w.nextBoss === 'fanatic-ger',
+      `场上 ${w.enemies[0]?.name ?? '（空）'}　nextBoss=${w.nextBoss ?? '（无）'}`)
+    const nudge = () => {
+      for (const c of [...w.allies, ...w.enemies]) c.bar = -1e6
+      const a = w.allies.find((x) => !x.down)!
+      a.bar = TUNING.barMax
+      w.actor = null
+      w.phase = 'select'
+      advance(w)
+      if (w.phase === 'select' && w.actor === a.id) act(w, { t: 'guard' })
+    }
+    const clearField = () => { for (const e of w.enemies) { e.hp = 0; e.down = true } }
+    clearField()
+    nudge()
+    ok('形态链：第一形态倒下，第二形态顶上来，链没有断（nextBoss 指着第三形态）',
+      dirs('fanatic-ger').length === 1 && !dirs('fanatic-ger')[0]!.down && w.nextBoss === 'obsidian',
+      `场上 ${dirs('fanatic-ger')[0]?.name ?? '（没顶上来）'}　nextBoss=${w.nextBoss ?? '（无）'}`)
+    ok('形态链：第三形态不许插队（第二形态还站着的时候它不许上场）',
+      dirs('obsidian').length === 0,
+      `场上第三形态 ${dirs('obsidian').length} 位`)
+    ok('形态链：换形态换的是**另一份档案**，不是把前一具回血',
+      dirs('fanatic-ger')[0]!.hpMax !== dirs('organ-apt')[0]!.hpMax,
+      `${dirs('organ-apt')[0]!.hpMax} → ${dirs('fanatic-ger')[0]!.hpMax}`)
+    clearField()
+    nudge()
+    ok('形态链：第二形态倒下，第三形态顶上来，这一场还没有收场',
+      dirs('obsidian').length === 1 && !dirs('obsidian')[0]!.down && w.phase !== 'won'
+      && w.nextBoss === undefined,
+      `phase=${w.phase}　场上 ${dirs('obsidian')[0]?.name ?? '（没顶上来）'}　`
+      + `nextBoss=${w.nextBoss ?? '（链到此为止）'}`)
+    ok('形态链：形态数在日志里数得出来（第二阶段 / 第三阶段各有名有姓）',
+      w.log.some((l) => l.skillId === 'phase-2') && w.log.some((l) => l.skillId === 'phase-3'),
+      w.log.filter((l) => l.skillId.startsWith('phase-')).map((l) => l.skill).join(' → '))
+    clearField()
+    nudge()
+    ok('形态链：第三形态倒下就是收场（链走得完，不会无限换形态）',
+      w.phase === 'won', `phase=${w.phase}　手数 ${w.hand}`)
+
+    /* 对照：没写 next 的图鉴实体，倒下就是收场 —— 链是写出来的，不是默认给的 */
+    const solo = standUp({ ...three, id: 'mech-solo', bossId: 'star-whale' })
+    for (const e of solo.enemies) { e.hp = 0; e.down = true }
+    {
+      for (const c of [...solo.allies, ...solo.enemies]) c.bar = -1e6
+      const a = solo.allies.find((x) => !x.down)!
+      a.bar = TUNING.barMax
+      solo.actor = null
+      solo.phase = 'select'
+      advance(solo)
+      if (solo.phase === 'select' && solo.actor === a.id) act(solo, { t: 'guard' })
+    }
+    ok('形态链（对照）：没写 next 的图鉴实体倒下就是收场',
+      solo.phase === 'won' && !solo.nextBoss,
+      `phase=${solo.phase}　nextBoss=${solo.nextBoss ?? '（无）'}`)
+
+    /* ⑨ 图鉴说它不难打的那一只，牌面上确实不难打 ——
+       魇视鳌虾的 counter 写着「消灭并不困难（一发吉他即可）」，
+       所以它既不厚、身上也没有那层「只有对上这条轴才削得动」的破绽。
+       它的难处是另一处（识别并唤醒被拖入噩梦者），那条写在技能上。 */
+    const cherax = END_FOES.cherax!
+    const hard = `${cherax.passive?.desc ?? ''}${cherax.skills.map((k) => k.desc).join('')}`
+    ok('图鉴原话：counter 写着「消灭并不困难」的那一只，牌面上既不厚也没有破绽 —— 难处在别处',
+      cherax.hpMul < 1 && !cherax.guardAxis && hard.includes('识别并唤醒被拖入噩梦者'),
+      `${cherax.name}　血量 ×${cherax.hpMul}　破绽=${cherax.guardAxis ?? '无'}`)
+
+    /* ⑩ 形态链不许有断头与死循环：每一个 next 都得查得到人、且几步之内走得完 */
+    const brokenChain: string[] = []
+    for (const [id, b] of Object.entries(END_FOES)) {
+      let cur = b
+      const seen = new Set([id])
+      for (let i = 0; i < 5 && cur.next; i++) {
+        if (seen.has(cur.next)) { brokenChain.push(`${id} 绕回 ${cur.next}`); break }
+        seen.add(cur.next)
+        const nx = END_FOES[cur.next]
+        if (!nx) { brokenChain.push(`${id} → ${cur.next}（查不到这一份档案）`); break }
+        cur = nx
+      }
+      if (cur.next) brokenChain.push(`${id} 链过长`)
+    }
+    ok('形态链：每一条都查得到下一位、也没有绕回自己',
+      brokenChain.length === 0,
+      brokenChain.length ? brokenChain.join('；') : `${Object.keys(END_FOES).length} 份图鉴档案逐条走过`)
+
+    const chains = Object.entries(END_FOES)
+      .filter(([, b]) => b.next)
+      .map(([id, b]) => {
+        const c = [id]
+        let cur = b
+        while (cur.next && END_FOES[cur.next]) { c.push(cur.next); cur = END_FOES[cur.next]! }
+        return c.join('→')
+      })
+    info.push(`图鉴实体 ${Object.keys(END_FOES).length} 份；形态链 ${chains.filter((c, i) => !chains.some((o, j) => j < i && o.endsWith(c))).join('　')}`)
+    info.push(`全文实体事件 ${entitiesEvents.length} 段 / 有头名 ${entitiesEvents.length - unheaded.length} 段 / `
+      + `豁免 ${Object.keys(NON_FIGHT_EVENTS).length} 段`)
+  } catch (e) {
+    fail.push('图鉴实体段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }
