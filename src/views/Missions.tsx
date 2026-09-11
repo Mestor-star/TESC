@@ -18,6 +18,7 @@ import {
   LEVEL_STEP_PCT,
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
+import { PAIRS, TRAITS, bondCut, bondNext, bondsOf, pairsOf, traitsOf } from '../lib/battle/synergy'
 import { genBoard } from '../lib/battle/missiongen'
 import { mainlineMissions } from '../lib/battle/mainline'
 import { GEAR_SHOP, ITEMS, GEAR_OF, canEquip } from '../lib/battle/gear'
@@ -239,6 +240,86 @@ export function Missions() {
       return next
     })
   }
+
+  /**
+   * 编队面板左边那一栏：这张名单**此刻**凑出了什么。
+   * 取的口径与引擎同一份（bondsOf / traitsOf / pairsOf）——
+   * 面板上写着几条，打起来就是几条，中间不隔一层自己编的算法。
+   *
+   * 分三段：已经成立的（连携的槽是几拍）、差人没成立的（差谁、差几个）。
+   * 「差人」这段才是编队时真正要看的：它告诉你再带上谁就能多出哪一条。
+   */
+  const squadBonds = useMemo(() => {
+    const on = picked
+    const bondVals = bondOfSquad(on)
+    const bonds = bondsOf(on, bondVals).map((b) => {
+      // 双人那条看参加者里最生的一个（与 applySynergies 同一口径）——
+      // 面板上那个「交情」读数得跟实际加速对得上
+      const deep = b.squad ? 0 : Math.min(...b.members.map((id) => bondVals[id] ?? 0))
+      return {
+        id: b.id, name: b.name, members: b.members,
+        need: b.need, squad: !!b.squad,
+        axis: b.link.axis, cd: b.link.cd,
+        deep, cut: b.squad ? 0 : bondCut(deep),
+        next: b.squad ? null : bondNext(deep),
+      }
+    })
+    const formedTraits = traitsOf(on)
+    const formedIds = new Set(formedTraits.map((t) => t.trait.id))
+    // 队伍羁绊：已经开档的报档位，还没开档但名单里已有人的报「还差几个、差谁」
+    const traits = [
+      ...formedTraits.map(({ trait, tier, members }) => ({
+        id: trait.id, name: trait.name, have: members.length, desc: trait.desc,
+        on: true, need: tier.need, total: trait.ids.length,
+        atk: tier.atk ?? 0, spd: tier.spd ?? 0, evade: tier.evade ?? 0,
+        axes: tier.axes ?? null,
+        next: [...trait.tiers].filter((x) => x.need > tier.need).sort((a, b) => a.need - b.need)[0]?.need ?? null,
+        missing: [] as string[],
+        squadLink: !!trait.squadLink,
+      })),
+      /* 没开档的队伍羁绊：名单里已经有人了才摆出来 ——
+         这一栏讲的是「这张名单此刻的状态」，不是一本羁绊总表。
+         一个人都没带上的那几支队伍，说了也只是占地方。 */
+      ...TRAITS.filter((t) => !formedIds.has(t.id)).map((t) => {
+        const have = t.ids.filter((id) => on.includes(id))
+        const low = [...t.tiers].sort((a, b) => a.need - b.need)[0].need
+        return {
+          id: t.id, name: t.name, have: have.length, desc: t.desc,
+          on: false, need: low, total: t.ids.length,
+          atk: 0, spd: 0, evade: 0, axes: null, next: null,
+          missing: t.ids.filter((id) => !on.includes(id)),
+          squadLink: !!t.squadLink,
+        }
+      }).filter((t) => t.have > 0),
+    ].sort((a, b) => Number(b.on) - Number(a.on) || b.have - a.have)
+    // 双人：名单里沾着一头的才摆 ——「再带上他就多这一条」是编队时最该看见的一句
+    const formedPairs = new Set(pairsOf(on).map((p) => p.id))
+    const pairs = PAIRS.map((p) => {
+      const a = on.includes(p.a), b = on.includes(p.b)
+      return {
+        id: p.id, name: p.name, desc: p.desc,
+        on: formedPairs.has(p.id),
+        have: [a, b].filter(Boolean).length,
+        members: [p.a, p.b],
+        here: a ? p.a : p.b,
+        missing: a ? p.b : p.a,
+        linkName: p.link.name, axis: p.link.axis, cd: p.link.cd,
+      }
+    }).filter((p) => p.have > 0)
+      .sort((x, y) => Number(y.on) - Number(x.on) || y.have - x.have)
+    return { bonds, traits, pairs, bondVals }
+  }, [picked, bondOfSquad])
+
+  /** 队伍羁绊这一档到底给什么 —— 一行写死，面板上不摆黑话 */
+  const tierLine = (t: { atk: number; spd: number; evade: number; axes: Record<string, number> | null }) => [
+    t.atk ? `攻击 +${Math.round(t.atk * 100)}%` : '',
+    t.spd ? `充能 +${Math.round(t.spd * 100)}%` : '',
+    t.evade ? `闪避 +${Math.round(t.evade * 100)}%` : '',
+    ...Object.entries(t.axes ?? {}).map(([k, v]) => `${k} +${v}`),
+  ].filter(Boolean).join(' · ')
+
+  /** 名单上差的那几个人叫什么 */
+  const whoName = (id: string) => personOf(id)?.name ?? id
 
   const launch = () => {
     if (!briefing) return
@@ -720,12 +801,117 @@ ${rb.f.word}`}
       {/* 编队 */}
       {briefing ? (
         <div className={css.modal} data-sortie-briefing>
-          <div className={css.modalBox}>
+          <div className={`${css.modalBox} ${css.modalBoxSplit}`}>
             <div className={css.modalHead}>
               <Users size={15} weight="bold" />
               <b>编队 · {briefing.no}「{briefing.title}」</b>
               <span className="tiny muted">危险度 S{briefing.stage} · 最多 {SQUAD_MAX} 人（含主角）</span>
             </div>
+            <div className={css.briefBody}>
+            {/* 左栏：羁绊的实时状态。名单一动就跟着动 ——
+                编队看的就是「这一手带出去能凑出什么、再带上谁又多一条」。 */}
+            <aside className={css.bondPane} data-bond-pane data-bond-live>
+              <div className={css.bondCap}>
+                <b>羁绊 · 实时</b>
+                <span className="tiny muted">随名单即时变化 · 与打起来的口径同一份</span>
+              </div>
+
+              <div className={css.bondGroup} data-bond-group="traits">
+                <span className={css.bondLabel}>队伍羁绊</span>
+                {squadBonds.traits.map((t) => (
+                  <div
+                    key={t.id}
+                    className={`${css.bondRow} ${t.on ? css.bondRowOn : ''}`}
+                    data-bond-trait={t.id}
+                    data-on={t.on ? '1' : undefined}
+                  >
+                    <div className={css.bondTop}>
+                      <b>{t.name}</b>
+                      <em className={t.on ? css.bondOn : css.bondOff}>
+                        {t.on
+                          ? `成立 ${t.have}/${t.total}`
+                          : `${t.have}/${t.total} · 差 ${Math.max(0, t.need - t.have)} 人`}
+                      </em>
+                    </div>
+                    {t.on
+                      ? <span className={css.bondLine}>{tierLine(t) || '（本档只开连携）'}</span>
+                      : <span className={css.bondLine}>凑够 {t.need} 人开档{t.squadLink ? ` · 满 ${TUNING.traitMax} 人开整队连携` : ''}</span>}
+                    {t.on && t.next
+                      ? <span className={css.bondLine}>再凑到 {t.next} 人换更高一档</span>
+                      : null}
+                    {!t.on && t.missing.length
+                      ? <span className={css.bondWho}>
+                          {/* 只报够开档的那几个名字：差一个就写一个，
+                              把整本花名册倒出来反倒看不出「再带上谁就够了」。
+                              候选比缺口多的时候也不写「等」—— 写「即可」，
+                              意思是这些人里任意一个都够，不是后面还排着队。 */}
+                          再带上 {t.missing.slice(0, Math.max(1, t.need - t.have)).map(whoName).join('、')}
+                          {t.missing.length > Math.max(1, t.need - t.have) ? '（任一皆可）' : ''} 即可开档
+                        </span>
+                      : null}
+                    {t.squadLink
+                      ? <span className={css.bondTag}>特殊连携 · 全员能量满则全队巨量加成</span>
+                      : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className={css.bondGroup} data-bond-group="pairs">
+                <span className={css.bondLabel}>双人羁绊</span>
+                {squadBonds.pairs.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`${css.bondRow} ${p.on ? css.bondRowOn : ''}`}
+                    data-bond-pair={p.id}
+                    data-on={p.on ? '1' : undefined}
+                  >
+                    <div className={css.bondTop}>
+                      <b>{p.name}</b>
+                      <em className={p.on ? css.bondOn : css.bondOff}>
+                        {p.on ? '成立' : `${p.have}/2`}
+                      </em>
+                    </div>
+                    <span className={css.bondLine}>{p.members.map(whoName).join(' × ')}</span>
+                    <span className={css.bondLine}>
+                      合击「{p.linkName}」· 按 {p.axis} 出力 · 冷却 {p.cd} 拍
+                    </span>
+                    {!p.on
+                      ? <span className={css.bondWho}>再带上 {whoName(p.missing)} 就成立</span>
+                      : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className={css.bondGroup} data-bond-group="links">
+                <span className={css.bondLabel}>连携 · 本场生效</span>
+                {squadBonds.bonds.length ? squadBonds.bonds.map((b) => (
+                  <div key={b.id} className={css.bondRow} data-bond-link={b.id} data-squad={b.squad ? '1' : undefined}>
+                    <div className={css.bondTop}>
+                      <b>{b.name}</b>
+                      <em className={b.squad ? css.bondOn : css.bondOff}>
+                        {b.squad ? '特殊连携' : '双人'}
+                      </em>
+                    </div>
+                    <span className={css.bondLine}>
+                      {b.squad
+                        ? `名单 ${b.members.length} 人各蓄满 ${b.need} 拍才成立 · 由出手的那位带出去`
+                        : `共鸣 ${b.need} 拍满 · 参加者各出一手都添一笔`}
+                    </span>
+                    <span className={css.bondLine}>出口成伤：各按 {b.axis} 出力 · 冷却 {b.cd} 拍</span>
+                    {!b.squad
+                      ? <span className={css.bondLine}>
+                          交情 {Math.round(b.deep)} · 槽缩到 {b.need} 拍
+                          {b.cut ? `（已减 ${b.cut} 拍）` : ''}
+                          {b.next ? ` · 离「${b.next.name}」还差 ${b.next.left}，槽再缩一拍` : ' · 交情已到顶'}
+                        </span>
+                      : null}
+                  </div>
+                )) : (
+                  <span className={css.bondEmpty}>这张名单上还没有连携 —— 双人的要两边都在，整队的要把最高一档凑满。</span>
+                )}
+              </div>
+            </aside>
+            <div className={css.briefMain}>
             {/* 主角也是战斗人员：面板随观测进度换页，编队时可一并带上 */}
             <div className={css.opCard} data-operator-card>
               <span className="glyph" style={{ '--g': OPERATOR_PERSON.hue, width: 30, height: 30 }}>
@@ -844,6 +1030,8 @@ ${rb.f.word}`}
               <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={launch} data-launch data-guide="launch">
                 出击
               </button>
+            </div>
+            </div>
             </div>
           </div>
         </div>
