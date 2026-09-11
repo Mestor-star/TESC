@@ -966,9 +966,14 @@ export function Plot() {
                   onClick={() => openProfile(r.id)}
                   title={met ? `调阅 ${r.name} 的档案` : `${r.name} 的档案尚未显影`}
                 >
-                  <span className="glyph" style={{ '--g': r.hue, width: 26, height: 26 }}>
-                    <span style={{ fontSize: 12 }}>{r.sigil}</span>
-                  </span>
+                  {met ? (
+                    <Portrait avatarId={r.id} name={r.name} hue={r.hue} sigil={r.sigil} size={26} round />
+                  ) : (
+                    /* 未遇见的不露脸，与档案页「？？？」同口径 */
+                    <span className="glyph" style={{ '--g': r.hue, width: 26, height: 26 }}>
+                      <span style={{ fontSize: 12 }}>{r.sigil}</span>
+                    </span>
+                  )}
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <b style={{ fontSize: 12.5 }}>{r.name}</b>
                   </span>

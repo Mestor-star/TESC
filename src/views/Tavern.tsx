@@ -560,7 +560,8 @@ ${preset.post}` : '')
           <div className="vhead__kicker">SMS / CHARACTER CHAT</div>
           <h1>角色短信</h1>
           <div className="vhead__sub">
-            与已「遇见」的角色一对一短信。回复由你在终端设置里配好的推演通道生成，人格取自角色档案与原文台词；
+            名册即角色档案的全员，解锁口径也与档案一致 —— 剧情里「遇见」过的才发得出去，其余在名册上挂着锁。
+            人格取自各自的分层人物卡（逐字考据的外貌 / 性格 / 说话方式 / 关系…），回复由你在终端设置里配好的推演通道生成；
             走「角色短信」通道，可带轻量羁绊。密钥仅存本机。
           </div>
         </div>
@@ -611,9 +612,15 @@ ${preset.post}` : '')
                       onClick={() => enter(pid)}
                       style={{ opacity: met ? 1 : 0.55 }}
                     >
-                      <span className="glyph" style={{ '--g': c.hue, width: 40, height: 40 }}>
-                        <span>{c.sigil}</span>
-                      </span>
+                      {/* 遇见过的用真头像；没遇见的照旧只有一枚纹章 —— 与档案/剧情同口径：
+                          未遇见的人不露脸（见 Saga 的登场人物行） */}
+                      {met ? (
+                        <Portrait avatarId={pid} name={c.name} hue={c.hue} sigil={c.sigil} size={40} round />
+                      ) : (
+                        <span className="glyph" style={{ '--g': c.hue, width: 40, height: 40 }}>
+                          <span>{c.sigil}</span>
+                        </span>
+                      )}
                       <span className={comm.contactMain}>
                         <span className={css.castName}>
                           {c.name}
@@ -622,7 +629,7 @@ ${preset.post}` : '')
                         </span>
                         {met ? (
                           <>
-                            <span className={css.castSub}>{c.epithet}</span>
+                            <span className={css.castSub}>{c.role}</span>
                             <span className={css.castSub} style={{ color: 'var(--ink-faint)' }}>
                               {bondName(bond, { gender: genderOf(pid) })} {bond}/100
                             </span>
@@ -735,9 +742,17 @@ ${preset.post}` : '')
           {activeId && activeChar && activeMeta ? (
             <>
               <div className={comm.chatHead}>
-                <span className="glyph" style={{ '--g': activeGroup ? 205 : activeChar.hue, width: 44, height: 44 }}>
-                  <span>{activeGroup ? '群' : activeChar.sigil}</span>
-                </span>
+                {/* 群聊没有一张脸可摆（成员各有各的），照旧用「群」字纹章 */}
+                {activeGroup ? (
+                  <span className="glyph" style={{ '--g': 205, width: 44, height: 44 }}>
+                    <span>群</span>
+                  </span>
+                ) : (
+                  <Portrait
+                    avatarId={activeChar.id} name={activeChar.name} hue={activeChar.hue} sigil={activeChar.sigil}
+                    size={44} round
+                  />
+                )}
                 <div className={comm.chatHeadMeta}>
                   <b>
                     {activeGroup ? activeGroup.name : activeChar.name}{' '}
@@ -911,9 +926,7 @@ ${preset.post}` : '')
                       )
                     }
                   >
-                    <span className="glyph" style={{ '--g': c.hue, width: 26, height: 26 }}>
-                      <span>{c.sigil}</span>
-                    </span>
+                    <Portrait avatarId={id} name={c.name} hue={c.hue} sigil={c.sigil} size={26} round />
                     <span>{c.name}</span>
                     {on ? <Check size={13} weight="bold" /> : null}
                   </button>

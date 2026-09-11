@@ -621,9 +621,17 @@ ${siteR.f.word}`}>
           ) : (
             <>
               <div className={css.who}>
-                <span className="glyph" style={{ '--g': actor.hue } as CSSProperties}>
-                  <span style={{ fontSize: 14 }}>{actor.sigil}</span>
-                </span>
+                {/* 轮到谁出手：我方是有脸的人（敌阵那些「未评定」的终末仍旧只有纹章） */}
+                {actor.side === 'ally' ? (
+                  <Portrait
+                    avatarId={actor.avatarId ?? actor.id} name={named(actor)} hue={actor.hue} sigil={actor.sigil}
+                    size={44} round
+                  />
+                ) : (
+                  <span className="glyph" style={{ '--g': actor.hue } as CSSProperties}>
+                    <span style={{ fontSize: 14 }}>{actor.sigil}</span>
+                  </span>
+                )}
                 <span style={{ minWidth: 0 }}>
                   <b style={{ fontSize: 13 }}>{named(actor)}</b>
                   <span className="tiny muted" style={{ display: 'block' }}>
@@ -1122,9 +1130,17 @@ function Unit({
       role={targetable ? 'button' : undefined}
       tabIndex={targetable ? 0 : undefined}
     >
-      <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
-        <span style={{ fontSize: 14 }}>{c.sigil}</span>
-      </span>
+      {/* 我方队位放真头像；敌阵的终末没有脸，仍旧一枚纹章（未评定的东西不该看着像个人） */}
+      {c.side === 'ally' ? (
+        <Portrait
+          avatarId={c.avatarId ?? c.id} name={named(c)} hue={c.hue} sigil={c.sigil}
+          size={44} style={{ borderRadius: 3 }}
+        />
+      ) : (
+        <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
+          <span style={{ fontSize: 14 }}>{c.sigil}</span>
+        </span>
+      )}
 
       <div className={css.unitBody}>
         <div className={css.unitTop}>

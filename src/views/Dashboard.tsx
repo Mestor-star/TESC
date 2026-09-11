@@ -5,6 +5,7 @@ import {
   NoteBlank, Package, PaperPlaneTilt, ShieldChevron, Target,
 } from '@phosphor-icons/react'
 
+import { Portrait } from '../components/Portrait'
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
 import { CODEX } from '../data/codex'
@@ -428,9 +429,7 @@ export function Dashboard() {
                 const g = live.equip[c.id] ? GEAR_OF[live.equip[c.id]] : undefined
                 return (
                   <div key={c.id} className={css.squadRow} style={{ '--c': c.hue } as CSSProperties}>
-                    <span className="glyph" style={{ '--g': c.hue, width: 38, height: 38 }}>
-                      <span>{c.sigil}</span>
-                    </span>
+                    <Portrait avatarId={c.id} name={c.name} hue={c.hue} sigil={c.sigil} size={38} style={{ borderRadius: 4 }} />
                     <div className={css.squadMeta}>
                       <b>{c.name} <span className="tiny muted" style={{ fontWeight: 400 }}>· {c.station}</span></b>
                       <small>{c.role} · {c.division.split(' · ').pop()}{g ? ` · 装具 ${g.name}` : ''}</small>
@@ -686,9 +685,7 @@ export function Dashboard() {
                     data-thread={c.id}
                     onClick={() => requestSms(c.id)}
                   >
-                    <span className="glyph" style={{ '--g': c.hue, width: 32, height: 32 }}>
-                      <span style={{ fontSize: 13 }}>{c.sigil}</span>
-                    </span>
+                    <Portrait avatarId={c.id} name={c.name} hue={c.hue} sigil={c.sigil} size={32} round />
                     <span className={css.msgRowBody}>
                       <b>{c.name}</b>
                       <small>{preview}</small>

@@ -9,6 +9,7 @@ import { opPeriodAt, VOL1_END } from '../lib/operator-arc'
 import type { Mission } from '../data/types'
 import { stageSeverity } from '../lib/format'
 import { Battle } from './Battle'
+import { Portrait } from '../components/Portrait'
 import { periodProgress, personIdOf, squadIdsFrom } from '../lib/battle/derive'
 import { TUNING } from '../lib/battle/tuning'
 import {
@@ -952,9 +953,14 @@ ${rb.f.word}`}
                     onClick={() => togglePick(id)}
                     title={met ? p.name : '尚未遇见'}
                   >
-                    <span className="glyph" style={{ '--g': p.hue, width: 24, height: 24 }}>
-                      <span style={{ fontSize: 11 }}>{p.sigil}</span>
-                    </span>
+                    {met ? (
+                      <Portrait avatarId={id} name={p.name} hue={p.hue} sigil={p.sigil} size={24} round />
+                    ) : (
+                      /* 未遇见的不露脸，与档案页「？？？」同口径 */
+                      <span className="glyph" style={{ '--g': p.hue, width: 24, height: 24 }}>
+                        <span style={{ fontSize: 11 }}>{p.sigil}</span>
+                      </span>
+                    )}
                     <span className={css.pickName}>{met ? p.name : '？？？'}</span>
                   </button>
                 )

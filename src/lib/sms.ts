@@ -9,7 +9,7 @@
    单聊用角色 id，群聊用 `g:<uuid>`（线程名册另存，见 lib/smsthreads.ts）。
    ============================================================ */
 
-import { TAVERN_PERSONAS, charOf } from '../data/personas'
+import { TAVERN_PERSONAS, charOf, profileLinesOf, voiceLinesOf } from '../data/personas'
 import type { CharId, ChatMsg } from '../data/types'
 import { clock } from './format'
 import { extractLiveDisplay } from './plot'
@@ -160,7 +160,10 @@ export function markUnread(threadId: string): void {
 
 /* ---------- 人格提示 ---------- */
 
-/** 由现有档案（bio/quote/epithet）拼装人格系统提示，不虚构设定 */
+/**
+ * 人格系统提示：**分层人物卡优先**（data/personas.ts 的 profileLinesOf），
+ * 没登记卡面的角色回退平铺档案。两条路都只写已入库的原文，不虚构设定。
+ */
 export function systemPrompt(
   charId: string,
   opName: string,
@@ -169,17 +172,17 @@ export function systemPrompt(
 ): string {
   const c = charOf(charId)
   const you = opName === '言万心叶' ? '言万心叶' : `操作员「${opName}」`
+  const card = profileLinesOf(charId)
   const core = c
-    ? `你是《这里是，终末停滞委员会。》中的角色「${c.name}」（${c.role} · ${c.epithet}）。`
-      + `\n档案设定：${c.bio}`
-      + `\n标志性台词参考：${c.quote}`
+    ? `你是《这里是，终末停滞委员会。》中的角色「${c.name}」（${c.role}）。`
+      + (card.length ? `\n人物卡：\n${card.join('\n')}` : '')
     : '你是该作品中的一位角色。'
   return `${core}
 \n此刻情境：${scenario}
 \n当前与${you}的羁绊约 ${bond}/100（仅作语气参考，别把数字说出口）。
 \n规则：
 1. 始终以第一人称扮演，绝不脱离角色、绝不替${you}说话。
-2. 使用简体中文，每次回复一到三句，口语自然，贴合上述档案的口癖与个性。
+2. 使用简体中文，每次回复一到三句，口语自然，贴合人物卡里〔说话方式〕〔性格〕那几节的口癖与个性。
 3. 不用 Markdown、不加星号动作、不发编号，像在聊天软件里直接打字。
 4. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
 5. 可以沿用原作台词与关系，但不要长篇复述设定。`
@@ -200,7 +203,11 @@ export function groupSystemPrompt(
   const roster = charIds
     .map((id) => {
       const c = charOf(id)
-      return c ? `· ${c.name}（${c.role} · ${c.epithet}）：${c.bio}\n  标志性台词参考：${c.quote}` : null
+      if (!c) return null
+      /* 群聊里每人只带「怎么说话」的一半卡面（voiceLinesOf）——
+         二十几张整卡一字排开，群聊那点情境会被压得看不见。 */
+      const voice = voiceLinesOf(id).map((l) => `  ${l}`).join('\n')
+      return `· ${c.name}（${c.role}）${voice ? `\n${voice}` : ''}`
     })
     .filter(Boolean)
     .join('\n')
@@ -212,7 +219,7 @@ ${roster}
 \n规则：
 1. 每一行都必须以「【角色名】」开头，行与行之间换行；不在名单里的名字不要出现。
 2. 本回合只让一到三位成员开口 —— 谁接话由情境决定，不必人人都说，更不要排队式轮流发言。
-3. 每人一到两句，口语自然，贴合各自档案的口癖；绝不替${you}说话。
+3. 每人一到两句，口语自然，贴合各自人物卡的口癖；绝不替${you}说话。
 4. 使用简体中文，不用 Markdown、不加星号动作、不发编号，像在群聊软件里直接打字。
 5. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。`
 }
