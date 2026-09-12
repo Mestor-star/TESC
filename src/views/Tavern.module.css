@@ -265,3 +265,22 @@
 @media (max-width: 960px) {
   .wrapExtra { grid-template-columns: 1fr !important; }
 }
+
+/* ---------------- 多女同场（1 男多女那一场）的选人面板 ----------------
+   摆在会话头之下、消息流之上：挑人的时候得看得见自己在跟谁说话。
+   只在还没开这一场时露出来（已经开了的那一场要改人，就散场重约）。 */
+.partyPick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.partyPickRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.partyPickRow > .chip { cursor: pointer; font-family: inherit; font-size: 12px; }

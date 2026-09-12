@@ -27,6 +27,8 @@ import { personaCardOf } from '../data/persona'
 import {
   INTIMATE_SLOTS, LEWD_META, PHYSIQUE, SLOT_META, VIRGIN, devStage, firstByName,
 } from '../data/intimate'
+import { ACT_KINDS, ACT_META, actOf, actTotal } from '../data/acts'
+import { relTier as relTierOf } from '../data/rel'
 import { Portrait, useCharImg } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
 
@@ -371,9 +373,22 @@ function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }
  * （约会与私密往来落下）—— 这一页只把两者合成之后照搬上屏，自己不算任何数；
  * 栏位上也不写「这一栏是怎么来的」那种说明 —— 读的人要看的是她，不是这份档案的规则。
  */
+/**
+ * 关系档位还没由剧情给过时，那一栏照实读的一句话。
+ *
+ * 「尚未定下」是要写在明面上的：这一栏不由读数换算（见 data/rel.ts），
+ * 所以「没有」不是「零级」，而是**还没走到那一步**——摆一个「萍水」上去，
+ * 就等于替剧情先定了性。
+ */
+const REL_UNSET = '关系还没走到需要定名的那一步 —— 由剧情给，不由羁绊读数换算'
+
 function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: string; name: string; onBack: () => void }) {
-  const { intimOf, operatorName } = useTerminal()
+  const { intimOf, operatorName, actsOf, relOf } = useTerminal()
   const prof = intimOf(charId)
+  /* 次数账与关系档位与私密档案同一页，但走的是另外两本账（见 data/acts.ts / data/rel.ts）：
+     intim 合成之后那一页里没有它们 —— 一样是「此刻读一次」，所以都在这里现取。 */
+  const acts = actsOf(charId)
+  const relTier = relTierOf(relOf(charId))
   if (!prof) return null
   const opName = operatorName.trim() || '言万心叶'
   /* 身量那一栏只对**有实据**的角色摆（data/intimate-table.ts 的 PHYSIQUE）——
@@ -499,6 +514,47 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
                 <small>破处对象</small>
                 <b>{prof.virgin ? VIRGIN : firstByName(prof.firstBy, opName)}</b>
               </div>
+            </div>
+          </div>
+
+          {/* 关系档位：与上面几栏不同，这一栏**不由读数换出来** —— 由剧情给
+              （见 data/rel.ts）。没给过就照实写「尚未定下」，不硬凑一个。 */}
+          <div className={css.dialogSection}>
+            <h4>关系档位</h4>
+            <div className={css.intimFoot} data-intimate-rel={relTier?.id ?? ''}>
+              <div className={css.intimFootCell}>
+                <small>此刻</small>
+                <b style={relTier ? { color: hue } : undefined} data-intimate-rel-name>
+                  {relTier ? relTier.name : '—— 尚未定下'}
+                </b>
+              </div>
+              <div className={css.intimFootCell}>
+                <small>口径</small>
+                <b data-intimate-rel-hint>{relTier ? relTier.hint : REL_UNSET}</b>
+              </div>
+            </div>
+          </div>
+
+          {/* 次数账（八栏）：与开发度各记各的 —— 开发度说「这一处此刻是什么样」，
+              它说「一共多少回」。只增不减，没记过的栏位照实读 0。 */}
+          <div className={css.dialogSection}>
+            <h4>次数</h4>
+            <div className={css.actGrid} data-intimate-acts data-act-total={actTotal(acts)}>
+              {ACT_KINDS.map((kind) => (
+                <div
+                  className={css.actCell}
+                  key={kind}
+                  title={ACT_META[kind].hint}
+                  data-intimate-act={kind}
+                >
+                  <small>{ACT_META[kind].label}</small>
+                  <b className="mono" data-act-count={actOf(acts, kind)}>{actOf(acts, kind)}</b>
+                </div>
+              ))}
+            </div>
+            <div className="tiny muted" style={{ marginTop: 6 }}>
+              只记「做成了几回」，一栏一栏累加，只增不减。内射与性交 / 肛交各记各的 ——
+              同一次里可以两栏都动。
             </div>
           </div>
         </div>
@@ -668,7 +724,7 @@ const FLIP_MS = 240
 export function Archive() {
   const {
     operatorName, epDone, cur, bondNow, push, profileRequest, clearProfileRequest, isMet,
-    intimOf,
+    intimOf, relOf,
   } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
@@ -698,6 +754,8 @@ export function Archive() {
    * 门槛在翻之前就判 —— 翻到一半被人拦下会剩一张空白的背面。
    */
   const backOk = side === 'back' && !!focus && intimOf(focus.id) !== null
+  /** 此刻这位的关系档位（由剧情给过的那一档；没给过 → null，照实读作「尚未定下」） */
+  const focusRel = focus ? relTierOf(relOf(focus.id)) : null
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const sit = opSituation(epDone)
   /** 主角档案：随已收束的事件换页（原文里他每一段时期都不同） */
@@ -1266,6 +1324,19 @@ export function Archive() {
                   <div>
                     <span className={css.bondName} style={{ color: focus.hue, borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }}>
                       {bondNow(focus.id)} · {bondName(bondNow(focus.id), { gender: focus.gender })}
+                    </span>
+                    {/* 关系档位与羁绊并列摆在这儿 —— 但它们是两回事：上面那条是读数
+                        （主角一路的言行攒出来的），下面这一枚是**由剧情定**的那一档
+                        （见 data/rel.ts）。摆在一起正是为了让两者的差别看得见。 */}
+                    <span
+                      className={css.relBadge}
+                      style={focusRel
+                        ? { color: focus.hue, borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }
+                        : undefined}
+                      data-archive-rel={focusRel?.id ?? ''}
+                      title={REL_UNSET}
+                    >
+                      关系 · {focusRel?.name ?? '尚未定下'}
                     </span>
                     <div className="tiny muted" style={{ marginTop: 6 }}>主役随读到的每一段事件变化；登场者自近似基线起，随剧情中的遇见与短信增减。</div>
                   </div>

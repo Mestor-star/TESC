@@ -1,8 +1,8 @@
 /* ============================================================
    CG 补图清单导出 —— 跑法
    ------------------------------------------------------------
-   把当前登记的全部 CG 槽位（各段自己的图位 + 通用池 + 私密立绘）连同
-   每个槽位「该画什么」的那一句 `note` 导成一份 Markdown，放进 `public/cg/`，
+   把当前登记的全部 CG 槽位（各段自己的图位 + 通用池 + 私密立绘 + 见面约会）
+   连同每个槽位「该画什么」的那一句 `note` 导成一份 Markdown，放进 `public/cg/`，
    好对着它收图 / 画图、补完在文件名上打勾。
 
      node scripts/cglist.mjs          # 写 public/cg/清单.md
@@ -10,7 +10,14 @@
 
    **这是生成物**（同 scripts/briefs → src/data/briefs/generated.ts 的关系）：
    槽位在 `src/data/scenes.ts`（各段）、`src/data/cgs.ts`（通用池）、
-   `src/data/intimate.ts`（私密立绘）里改，改完重跑这一条 —— 别手改那份 md。
+   `src/data/intimate.ts`（私密立绘）、`src/lib/rendezvous.ts`
+   （见面约会，`DATE_CG` + `DATE_CG_INTIMATE`）里改，改完重跑这一条 ——
+   别手改那份 md。
+
+   ⚠ 上面那四处就是本文件认得的**全部**槽位来源。当初只认前三处，见面约会那
+   五张（`lib/rendezvous.ts` 的 `DATE_CG` + `DATE_CG_INTIMATE`）就整整齐齐漏了 ——
+   而且**不报错**，清单只是少一截。所以日后新开一处槽位表，必须同时加到这里；
+   末尾那道重名检查（同一个 id 被两处登记）算是替这件事补的一半防线。
 
    「已补 / 待补」按目录里真的有没有同名文件判（webp / png / jpg 三种都认，
    与 src/lib/cg.ts 的候选链一致），所以这份清单可以反复重跑当进度看。
@@ -40,6 +47,7 @@ try {
   const { CG_POOL } = await server.ssrLoadModule('/src/data/cgs.ts')
   const { INTIMATE } = await server.ssrLoadModule('/src/data/intimate.ts')
   const { personOf } = await server.ssrLoadModule('/src/data/castmeta.ts')
+  const { DATE_CG, DATE_CG_INTIMATE } = await server.ssrLoadModule('/src/lib/rendezvous.ts')
 
   const have = new Set(readdirSync(join('public', 'cg')))
   /** 这个 id 有没有图（按候选链找一个就算有；返回实际命中的文件名） */
@@ -63,24 +71,33 @@ try {
     })
   }
 
-  /* ---- ② 通用池 / ③ 私密立绘 ---- */
+  /* ---- ② 通用池 / ③ 私密立绘 / ④ 见面约会 ---- */
   const pool = CG_POOL.map(norm)
   const intim = Object.keys(INTIMATE).map((charId) => ({
     id: `cg-intim-${charId}`,
     charId,
     name: personOf(charId)?.name ?? charId,
   }))
+  /* 见面那一档的图位住在 lib/rendezvous.ts（不在 data/ 下，所以当初漏了这一处）。
+     两张表都要：「到私密那一档才进候选」的那两张也是真槽位，只是候选面窄。 */
+  const date = [...DATE_CG, ...DATE_CG_INTIMATE].map(norm)
+  const dateIntimIds = new Set(DATE_CG_INTIMATE.map((r) => norm(r).id))
 
   const sceneIds = [...byGroup.values()].flat().flatMap((b) => b.cgs.map((c) => c.id))
-  const allIds = [...sceneIds, ...pool.map((p) => p.id), ...intim.map((i) => i.id)]
+  const allIds = [
+    ...sceneIds,
+    ...pool.map((p) => p.id),
+    ...intim.map((i) => i.id),
+    ...date.map((d) => d.id),
+  ]
   const missing = allIds.filter((id) => !found(id))
 
   const L = []
   L.push('# CG 补图清单（生成物 · 别手改）')
   L.push('')
   L.push('> 这份清单由 `node scripts/cglist.mjs` 从 `src/data/scenes.ts`、'
-    + '`src/data/cgs.ts`、`src/data/intimate.ts` 导出。**改槽位要改那三处再重跑**，'
-    + '手改这里下一次重跑就没了。')
+    + '`src/data/cgs.ts`、`src/data/intimate.ts`、`src/lib/rendezvous.ts` 导出。'
+    + '**改槽位要改那四处再重跑**，手改这里下一次重跑就没了。')
   L.push('')
   L.push('## 怎么补')
   L.push('')
@@ -145,7 +162,21 @@ try {
   }
   L.push('')
 
-  L.push('## 四、还缺哪些（一条条对着补）')
+  L.push('## 四、见面约会的图位（`src/lib/rendezvous.ts` · 四条通道里的「见面」那一档）')
+  L.push('')
+  L.push('版位 **16:9 横构图**（与场景 CG 同规格，按 `cover` 裁）。')
+  L.push('前三张哪一场都进候选；后两张**只有这一场走到私密那一档**才进候选 —— '
+    + '所以它们可以画得比前面三张更直给。')
+  L.push('')
+  L.push('| | 文件名 | 该画什么（`note`） | 什么时候进候选 |')
+  L.push('| --- | --- | --- | --- |')
+  for (const d of date) {
+    const scope = dateIntimIds.has(d.id) ? '`kind: intimate` 才进候选' : '每一场见面都能点'
+    L.push(`| ${mark(d.id)} | \`${d.id}\` | ${cell(d.note)} | ${scope} |`)
+  }
+  L.push('')
+
+  L.push('## 五、还缺哪些（一条条对着补）')
   L.push('')
   if (!missing.length) L.push('**一张不缺。**')
   else {
@@ -155,14 +186,21 @@ try {
   }
   L.push('')
 
+  /* 重名 = 两处登记了同一个 id（改了文件名却没改旧的那一处，或复制粘贴漏改）。
+     它不算「多一张」，会让清单把同一张数两遍、进度也跟着虚高，所以直接报出来。 */
+  const dupes = [...new Set(allIds.filter((id, i) => allIds.indexOf(id) !== i))]
+
   if (CHECK) {
     process.stdout.write(`CG 清单：共 ${allIds.length} 张，已补 ${allIds.length - missing.length}，还缺 ${missing.length}\n`)
+    if (dupes.length) process.stdout.write('  重名（两处登记了同一个 id）：' + dupes.join('、') + '\n')
     if (missing.length) process.stdout.write(missing.map((m) => '  ' + m).join('\n') + '\n')
   } else {
     writeFileSync(OUT, L.join('\n'), 'utf8')
     process.stdout.write(`已写出 ${OUT}\n`)
-    process.stdout.write(`共 ${allIds.length} 张：各段 ${sceneIds.length} · 通用 ${pool.length} · 私密立绘 ${intim.length}`
+    process.stdout.write(`共 ${allIds.length} 张：各段 ${sceneIds.length} · 通用 ${pool.length}`
+      + ` · 私密立绘 ${intim.length} · 见面约会 ${date.length}`
       + ` —— 已补 ${allIds.length - missing.length}，还缺 ${missing.length}\n`)
+    if (dupes.length) process.stdout.write('  重名：' + dupes.join('、') + '\n')
   }
 } finally {
   await server.close()

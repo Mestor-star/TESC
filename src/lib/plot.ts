@@ -12,8 +12,12 @@
    按事件逐字注入——那是项目「原文细节通道」，非自动喂正文。
    ============================================================ */
 
-import type { FlagValue, IntimateProgress, IntimateSlot, TimelineEvent } from '../data/types'
+import type {
+  ActCount, ActKind, FlagValue, IntimateProgress, IntimateSlot, RelId, TimelineEvent,
+} from '../data/types'
 import { INTIMATE_BOND, INTIMATE_SLOTS, hasIntimate } from '../data/intimate'
+import { ACT_KINDS, ACT_META } from '../data/acts'
+import { isRelId, relLadderText, relTier, REL_IDS } from '../data/rel'
 import { CHARACTERS } from '../data/chars'
 import { eventNotesOf } from '../data/eventnotes'
 import { briefOf } from '../data/briefs'
@@ -25,7 +29,7 @@ import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { castOf } from './cast'
 import { bondName, clamp } from './format'
-import { BOTTOM_RULES } from './worldrules'
+import { BOTTOM_RULES, haremRule } from './worldrules'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 
@@ -80,6 +84,23 @@ export interface PlotDirective {
    * `lastAct` / `view` 后写覆盖（这两项说的是「此刻」，与第一回无关）。
    */
   intim?: IntimateDirective[]
+  /**
+   * **次数账的增量**（约会 / 私密往来时用）：角色 id → 八栏里哪几栏、各加几回。
+   *
+   * 与 `intim` 的分工写在 data/acts.ts 的开头：intim 是「这一处此刻是什么样」
+   * （开发度 / 状态句，可以被改写与覆盖），acts 是「**一共**多少回」（只累加）。
+   * 所以这里给的是**增量**而不是总数 —— 一次一个「这一次做了几回」，
+   * 由 `mergeActs` 逐栏累加。多女同场时逐人各给一条（见 worldrules 的 HAREM_RULE）。
+   */
+  acts?: Record<string, ActCount>
+  /**
+   * **关系档位**（角色 id → 此刻的档位 id）—— 由剧情给，不从羁绊读数换算。
+   *
+   * 给的是**绝对值不是增量**：往上走给更高的那一级，翻脸了也给（往下的那一级）。
+   * 只认 `data/rel.ts` 梯子上的九级（`isRelId`）；认不出来整条丢掉。
+   * 拿不准就别给 —— 不给即维持此刻那一档。
+   */
+  rel?: Record<string, RelId>
 }
 
 /** 一条私密推进：某角色的某个部位，这一次走到了哪儿 */
@@ -134,10 +155,20 @@ const KNOWN_FIELDS = new Set([
   'task',
   // 私密那一支（约会 / 私密往来）：同样是漏一个就整条安静地丢
   'date', 'intim',
+  // 次数账与关系档位：同上 —— 漏在名单外就整条安静地丢，账永远记不上
+  'acts', 'rel',
 ])
 
 /** 一次私密推进的开发度增量上限（一次一小步：一回合跳满等于没有过程） */
 const INTIM_DEV_MAX = 8
+
+/** 一回合里最多记几个人 / 最多记几栏 —— 多女同场（多P）时够用，又不至于被灌爆 */
+const ACT_CHARS_MAX = 6
+const ACT_KINDS_MAX = 8
+/** 单栏一次报的回数上限（一次报十回等于没数） */
+const ACT_TIMES_MAX = 9
+/** 一回合最多落下几条私密推进（多女同场时逐人分条，所以比从前宽） */
+const INTIM_ITEMS_MAX = 8
 
 /** 事件指令里 cg id 的长度上限（够长到写得下 `v1-2-refuse`，短到拦得住整段串词） */
 const CG_ID_MAX = 64
@@ -256,9 +287,54 @@ export function sanitizeDirective(v: unknown): PlotDirective {
         ...(lastAct ? { lastAct } : {}),
         ...(view ? { view } : {}),
       })
-      if (intim.length >= 4) break
+      if (intim.length >= INTIM_ITEMS_MAX) break
     }
     if (intim.length) out.intim = intim
+  }
+
+  /* 次数账：角色 → 八栏里哪几栏各加几回。三样都得对上才落：
+     ① 角色在档案名录里、且**有私密档案**（这本账挂在那一页背面，只对女角色生效）；
+     ② 栏位是八栏之一（`ACT_KINDS`）；
+     ③ 回数取 1–9 的整数增量（负数抹平、小数四舍五入 —— 这本账只增不减，
+        一次报十回等于没数，所以封顶压得比开发度低）。 */
+  if (src.acts && typeof src.acts === 'object' && !Array.isArray(src.acts)) {
+    const acts: Record<string, ActCount> = {}
+    let chars = 0
+    for (const [rawId, rawCount] of Object.entries(src.acts as Record<string, unknown>)) {
+      const char = rawId.trim()
+      if (!hasIntimate(char)) continue
+      if (!rawCount || typeof rawCount !== 'object' || Array.isArray(rawCount)) continue
+      const one: ActCount = {}
+      let kinds = 0
+      for (const [rawKind, rawTimes] of Object.entries(rawCount as Record<string, unknown>)) {
+        const kind = rawKind.trim() as ActKind
+        if (!ACT_KINDS.includes(kind)) continue
+        const times = finiteNum(rawTimes)
+        if (times === null || times <= 0) continue
+        one[kind] = clamp(Math.round(times), 1, ACT_TIMES_MAX)
+        kinds += 1
+        if (kinds >= ACT_KINDS_MAX) break
+      }
+      if (!Object.keys(one).length) continue
+      acts[char] = one
+      chars += 1
+      if (chars >= ACT_CHARS_MAX) break
+    }
+    if (Object.keys(acts).length) out.acts = acts
+  }
+
+  /* 关系档位：只认梯子上那九级。给的是**绝对档位**（不是增量），所以这里
+     只做一件事 —— 把认不出来的整条丢掉：编出来的档位落不下去，也不该落到
+     「比此刻更低」那一级上去。 */
+  if (src.rel && typeof src.rel === 'object' && !Array.isArray(src.rel)) {
+    const rel: Record<string, RelId> = {}
+    for (const [rawId, rawTier] of Object.entries(src.rel as Record<string, unknown>)) {
+      const char = rawId.trim()
+      if (!CHAR_IDS.has(char)) continue
+      if (!isRelId(rawTier)) continue
+      rel[char] = rawTier
+    }
+    if (Object.keys(rel).length) out.rel = rel
   }
 
   if (Array.isArray(src.ends)) {
@@ -764,6 +840,10 @@ export interface DirectiveApi {
   setFlag: (k: string, v: FlagValue) => void
   /** 私密档案推进（约会 / 私密往来落下的开发度与状态；见 data/intimate.ts） */
   bumpIntim: (charId: string, p: IntimateProgress) => void
+  /** 次数账推进（八栏增量；见 data/acts.ts） */
+  bumpActs: (charId: string, add: ActCount) => void
+  /** 关系档位（**绝对**档位，不是增量；见 data/rel.ts） */
+  setRel: (charId: string, tier: RelId) => void
 }
 
 export interface DirectiveEffects {
@@ -782,11 +862,18 @@ export interface DirectiveEffects {
   date?: { kind?: 'date' | 'intimate'; title?: string; place?: string }
   /** 本次实际推进的私密读数（供提示条念一句；部位与色情度可以只来其一） */
   intim: { char: string; slot?: IntimateSlot; lewd?: number }[]
+  /** 本次实际记下的次数（逐人一条；供提示条念一句） */
+  acts: { char: string; add: ActCount }[]
+  /** 本次实际落下的关系档位（逐人一条；绝对档位） */
+  rel: { char: string; tier: RelId }[]
 }
 
 /** 把净化后的指令落地到世界状态；返回实际产生的影响（供视图 toast/结算） */
 export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEffects {
-  const fx: DirectiveEffects = { met: [], bonds: [], ends: [], flags: [], diverged: false, eventDone: false, intim: [] }
+  const fx: DirectiveEffects = {
+    met: [], bonds: [], ends: [], flags: [], diverged: false, eventDone: false,
+    intim: [], acts: [], rel: [],
+  }
 
   for (const id of d.met ?? []) {
     api.meetChar(id)
@@ -838,6 +925,20 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
       ...(it.view ? { view: it.view } : {}),
     })
   }
+  /* 次数账：逐人并进那本累计账（`mergeActs` 只加不减，这里只负责递下去）。
+     与 intim 各自独立 —— 同一次里可以只动次数不动开发度（例如只是多亲了几回），
+     也可以只动开发度而没有新的回数（第一次那一下未必由增量带出来）。 */
+  for (const [char, add] of Object.entries(d.acts ?? {})) {
+    if (!Object.keys(add).length) continue
+    api.bumpActs(char, add)
+    fx.acts.push({ char, add })
+  }
+  /* 关系档位：给的是绝对档位，所以这里原样透传 —— 比较与去重交给下面那一层
+     （视图知道自己手里此刻是哪一档，能顺带判断「真的变了没有」）。 */
+  for (const [char, tier] of Object.entries(d.rel ?? {})) {
+    api.setRel(char, tier)
+    fx.rel.push({ char, tier })
+  }
   if (d.date) fx.date = d.date
   fx.diverged = d.diverged === true
   fx.eventDone = d.eventDone === true
@@ -860,7 +961,9 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       d.eventDone === true ||
       Boolean(d.battle?.name) ||
       Boolean(d.date) ||
-      Boolean(d.intim?.length),
+      Boolean(d.intim?.length) ||
+      Boolean(d.acts && Object.keys(d.acts).length) ||
+      Boolean(d.rel && Object.keys(d.rel).length),
   )
 }
 
@@ -896,17 +999,24 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
  *   · bond：只认**对方**，一次 ±5（一场约会里的分量比一条短信重）；
  *   · met / ends / flag / task：照放（约会也能遇见人、撞见图鉴实体、被托付事）；
  *   · cg：照放（这一场该摆哪张画，由 lib/rendezvous.ts 落地）；
- *   · intim：**只有这一路放行**（私密档案的推进只发生在见面的时候），
- *     开发度增量再收一道到 ±3 一回合（sanitize 那道 8 是单项上限）。
+ *   · intim / acts：**只有这一路放行**（私密档案与次数账都只发生在见面的时候），
+ *     intim 的开发度增量再收一道到 ±3 一回合（sanitize 那道 8 是单项上限）。
+ *   · rel：照放（关系档位由剧情给 —— 见面正是一段关系往前走的地方）。
  *   · eventDone / diverged / digest：**不放行** —— 约会是主线之外另开的一条线程，
  *     不能替主线把那一段判成走完。
+ *
+ * `party` 是**这一场还带着谁**（1 男多女的那种见面，见 lib/rendezvous.ts 的
+ * `Rendezvous.party`）：给了就把这几个人一并放进许可名单 —— 不然同场那几位
+ * 既写不进正文的读数，档案上也留不下痕迹。
  */
-export function dateDirective(d: PlotDirective | null, charId: string): PlotDirective {
+export function dateDirective(d: PlotDirective | null, charId: string, party: string[] = []): PlotDirective {
   if (!d) return {}
   const out: PlotDirective = {}
+  /** 这一场允许记谁：主角约的那一位 + 同场的几位 */
+  const allowed = new Set<string>([charId, ...party])
   if (d.bond) {
     const bond = d.bond
-      .filter((b) => b.char === charId)
+      .filter((b) => allowed.has(b.char))
       .map((b) => ({ char: b.char, delta: clamp(Math.round(b.delta), -5, 5) }))
     if (bond.length) out.bond = bond
   }
@@ -917,13 +1027,27 @@ export function dateDirective(d: PlotDirective | null, charId: string): PlotDire
   if (d.cg) out.cg = d.cg
   if (d.intim && d.intim.length) {
     const intim = d.intim
-      .filter((it) => it.char === charId)
+      .filter((it) => allowed.has(it.char))
       .map((it) => ({
         ...it,
         ...(typeof it.dev === 'number' ? { dev: clamp(Math.round(it.dev), 1, 3) } : {}),
         ...(typeof it.lewd === 'number' ? { lewd: clamp(Math.round(it.lewd), 1, 3) } : {}),
       }))
     if (intim.length) out.intim = intim
+  }
+  if (d.acts) {
+    const acts: Record<string, ActCount> = {}
+    for (const [char, add] of Object.entries(d.acts)) {
+      if (allowed.has(char)) acts[char] = add
+    }
+    if (Object.keys(acts).length) out.acts = acts
+  }
+  if (d.rel) {
+    const rel: Record<string, RelId> = {}
+    for (const [char, tier] of Object.entries(d.rel)) {
+      if (allowed.has(char)) rel[char] = tier
+    }
+    if (Object.keys(rel).length) out.rel = rel
   }
   return out
 }
@@ -949,6 +1073,14 @@ export interface DirectorCtx {
    * 【在场角色 · 性情锚】与前面那份关系读数都读同一个名单，两处不会各说各话。
    */
   castNow?: string[]
+  /**
+   * 此刻各角色的**关系档位**（`world.rel[charId]`，由剧情给过的那一档）。
+   *
+   * 与 `bondNow` 并列：羁绊是读数，这一栏是「两个人之间到底走到哪儿了」——
+   * 两者可以不同（同样 80 的羁绊，可以是并肩的战友，也可以是把话挑明的恋人）。
+   * 没给过的那几位返回 undefined，提示词里照实读作「尚未定下」。
+   */
+  relOf?: (charId: string) => RelId | undefined
   /** 是否处于「重试补发指令」：要求本回合必须带指令块 */
   needDirective?: boolean
   /** 世界书命中参考段（由 lorescan 生成；置顶在指令说明之前，仅作延续性背景） */
@@ -1027,7 +1159,11 @@ function relationLine(charId: string, ev: TimelineEvent, ctx: DirectorCtx): stri
   // 称呼随关系阶段与剧情位置变（见 data/address.ts）：露娜契约前是「言万同学」
   const call = addressOf(charId, typeof cur === 'number' ? cur : 0, furthestDone(ctx.epDone ?? {}))
   const callSeg = call ? `｜对言万心叶的称呼：${call}` : ''
-  return `${c.name}｜${c.epithet}（${c.role}）｜关系：${stage}${callSeg}｜台词「${c.quote}」`
+  /* 关系档位与羁绊并列摆出来：一个是读数、一个是「两个人到底走到哪儿了」。
+     还没定下就照实写「尚未定下」—— 那正好是这一栏此刻真实的样子。 */
+  const tier = relTier(ctx.relOf?.(charId))
+  const relSeg = `｜关系档位：${tier ? `${tier.name}（${tier.id}）` : '尚未定下'}`
+  return `${c.name}｜${c.epithet}（${c.role}）｜关系：${stage}${relSeg}${callSeg}｜台词「${c.quote}」`
 }
 
 /** 后接事件锚（软门禁）：给标题/地点与开场引子，提示导演收束需自然引向后接事件；不含后接正文，防剧透 */
@@ -1335,6 +1471,10 @@ ${ctx.cgPalette}
   const intimIds = present.filter(
     (id) => hasIntimate(id) && (ctx.bondNow?.(id) ?? 0) >= INTIMATE_BOND,
   )
+  /* 八栏的标签串（顺序照 ACT_KINDS，别在这里另排一套） */
+  const actList = ACT_KINDS.map((k) => `${k}（${ACT_META[k].label}）`).join(' / ')
+  /* 多女同场那一条只在**真的不止一位**时取得到（`haremRule` 一对一回空串） */
+  const harem = haremRule(intimIds.length)
   const intimSection = intimIds.length
     ? `
 
@@ -1351,7 +1491,31 @@ ${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
   到什么程度，都照实写出来。真正推进到哪一步，用下面事件指令里的 intim 落成读数
   （这几个数进的是档案页「私密档案」的背面，不是正文）：
   部位那一路给 dev；她整个人的敏度往前挪了就另外给 lewd；这一回到底做了什么，
-  给 lastAct 一句话记下来（比照原样改写，不要写「同上」）。两件事各记各的。`
+  给 lastAct 一句话记下来（比照原样改写，不要写「同上」）。两件事各记各的。
+· **次数另记一本账**（下面事件指令里的 acts）：这一回合真的做成了几回，逐栏给增量 ——
+  ${actList}。
+  它与开发度不是一回事：只是多亲了几回、多要了一回，就只动 acts、不动 dev；
+  内射那一栏与性交 / 肛交各记各的（同一次里可以两栏都动，也可以只有交合而没有内射）。
+  **数不清就不给** —— 拿不准的整栏省略，宁可少记一笔，也不要虚报。${harem ? `
+· ${harem.replace(/^· \*\*/, '**')}` : ''}`
+    : ''
+
+  /* 关系档位 —— 只由剧情给，不从羁绊读数换算（见 data/rel.ts）。
+     九级的口径整张列出来：导演得看得见上面还有哪几级，才知道此刻这一档是刚起步
+     还是已经很深。各人此刻在哪一档，上面【本事件出场角色】那几行里已经写了。 */
+  const relSection = present.length
+    ? `
+
+【关系档位 · 只由剧情给，不从羁绊读数换算】
+这一栏问的是「这两个人之间到底走到哪儿了」，不是好感读数：同样 80 的羁绊，
+可以是并肩的战友，也可以是把话挑明的恋人 —— 所以它不由数换算，由**这一段真的
+发生了什么**定。九级由生到熟（各人此刻在哪一档，见上面【本事件出场角色】）：
+${relLadderText()}
+什么时候给：这一段真的发生了够格挪一步的事，才在下面事件指令里给 rel。
+给的是**此刻的档位**（绝对值，不是增量）；往上、往下都给同一个字段 ——
+翻脸了、把话说绝了，照给，那就是低的那一级。
+只对**本段确实在场**的人给（不在场的别替他们记）；拿不准就整条省略 ——
+省略即维持此刻那一档，不必每段都动。`
     : ''
 
   const notesSection = notesSectionFor(ev)
@@ -1392,7 +1556,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${reask}${loreSection}${opsSection}${smsSection}${varBlock}${cgSection}${intimSection}${anchor}${presetSection(ctx.presetPost)}${will}
+${reask}${loreSection}${opsSection}${smsSection}${varBlock}${cgSection}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 
@@ -1427,7 +1591,15 @@ ${speechContract()}
       "lewd": 1,                              // 色情度增量，1~3（可选；说不清就别给）
       "state": "改写该部位状态的一句话（可选，不写就沿用原句）",
       "first": true }                         // 仅当**这一回是初次破处**时置 true（此后不要再给）
-  ]                                             // slot 可以省：这一回没碰哪儿、心思却更敏了，就只给 lewd` : ''}
+  ]                                             // slot 可以省：这一回没碰哪儿、心思却更敏了，就只给 lewd` : ''}${intimIds.length ? `,
+  "acts": {                                   // 次数账的**增量**（仅【私密往来】名单上的人）：做了几回就给几，1~9
+    "角色id": { "kiss": 1, "oral": 1, "sex": 1, "creampie": 1 }
+  }                                             // 八栏：${ACT_KINDS.join(' / ')}
+                                                // 只给**这一回合真的做成了**的那几栏；只增不减、数不清就不给
+                                                // 多女同场时逐人各给一条 —— 谁做了什么记在谁名下，不要合成一条` : ''}${present.length ? `,
+  "rel": {                                    // 关系档位（仅本段确实在场的人）：给的是**此刻的档位**，绝对值不是增量
+    "角色id": "${REL_IDS.join('|')}"
+  }                                             // 只在剧情真的挪了一步时给；往上、往下都给同一个字段；拿不准就整条省略` : ''}
 }
 无任何变化时输出 { }。不要把本说明当作文本念出来。
 

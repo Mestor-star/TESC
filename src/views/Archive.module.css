@@ -276,6 +276,21 @@
   clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
 }
 
+/* 关系档位那一枚：与羁绊徽章并排，但形状不同 —— 羁绊是读数（斜切角），
+   关系是剧情给的定名（虚线框），两者摆在一起是让「不是一回事」看得见。
+   没给过时不留主题色：不拿色相替剧情先定调。 */
+.relBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+}
+
 .cardFoot {
   margin-top: auto;
   display: flex;
@@ -867,6 +882,20 @@
 .intimFootCell small { font-size: 9.5px; letter-spacing: 0.08em; color: var(--ink-mute); }
 .intimFootCell b { font-size: 12.5px; color: var(--ink); }
 .intimFootCell[data-intimate-virgin='0'] b { color: var(--red); }
+
+/* 次数账八栏：四列两行比八列一行好读 —— 标签是中文词，八列会把「内射次数」挤成两行。
+   每一格只摆「名目 + 数」：这儿不写状态，状态在开发度那一栏。 */
+.actGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.actCell {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+}
+.actCell small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--ink-mute); white-space: nowrap; }
+.actCell b { font-size: 13px; color: var(--ink); }
+/* 0 回的那几栏压暗：账只增不减，没动过就是真没动过 —— 别让「0」读成读数高亮 */
+.actCell b[data-act-count='0'] { color: var(--ink-faint); }
 
 @media (max-width: 520px) {
   .intimBack { grid-template-columns: 1fr; min-height: 0; }

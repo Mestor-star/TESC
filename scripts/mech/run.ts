@@ -1,9 +1,14 @@
 /* ============================================================
-   战斗机制定点复核 —— 让引擎自己证明这四样机制真的生效
+   定点复核 —— 让源码自己证明这些规矩真的生效
    ------------------------------------------------------------
+   这一支叫 mech 出身，从「战斗机制」起家；如今它量的是**整个终端凡是
+   不能只看界面就信的规矩** —— 战斗引擎、音频床、预设、提示词组装、
+   记忆库、私密底档、底层规矩、回退。名字没改，是因为冒烟脚本按这个名字
+   调它；但别被名字骗了：这里大半的节已经不碰战斗。
+
    为什么单开一支，而不是塞进 smoke：
      smoke 跑的是**构建产物**（vite preview），它读不到源码模块；
-     这四样机制住在引擎内部，只有拿源码那一份才验得动。
+     这些规矩住在引擎内部，只有拿源码那一份才验得动。
      所以这里借 vite 的 SSR 加载器现场编译（同 balance.mjs），不落产物。
 
    为什么不信「整场模拟里出现过」：
@@ -13,6 +18,58 @@
      而且凡是要证明「这样做了」的，都配一条**对照**证明「不这样就不做」——
      否则断言可能在「根本没打起来」的空场上悄悄通过（这坑踩过：
      单人挑 stage 10，createBattle 一返回 phase 就已经是 lost）。
+
+   ------------------------------------------------------------
+   一节一节的目录（按文件顺序，节号即注释里的编号）
+   ------------------------------------------------------------
+   · 引擎机制
+      1  破绽       —— 破防只认破绽，破绽按轴算，不是按「谁打得多」
+      2  断拍       —— 被打断的那一回合真跳过，且不是被 stall 顶替
+      3  护持       —— 轴护盾只吃本轴伤；盾在谁身上有定表（EXPECT_AXIS）
+      4  蓄力       —— 蓄到满才放得出，中途挨打会掉
+      5  破绽归属    —— 破绽长在**该长的人**身上（不是随手挂）
+      6  旧吉他解封   —— 「规格翻倍」翻到了哪些量，逐项对上
+      7  面板与负面键 —— 面板读数与 DEBUFF_KEYS 的分工不重叠
+      8  敌阵       —— 血量压制 · 首领≥精英 · 随时期变强
+      9  会长天花板   —— 数值有顶，且不许回涨（回涨 = 平衡返工）
+     10  五轴不封顶   —— 基准 AXIS_REF 不是上限，越过它也得算得出来
+     11  黄金狮子     —— 形态数值与解锁条件
+     12  增益回合上限 —— 增益有回合寿命，不会永久挂着
+     13  召唤       —— 召唤物入场 / 退场 / 占位不越界
+     14  面具心叶等   —— 亡灵军团 · 二阶段黑金狮子这一串特殊形态
+     15  图鉴与形态链 —— 图鉴实体 ↔ 形态链 ↔ 五轴走同一条曲线
+   · 声音与引导
+     16  背景音     —— 六段床各自成曲、且不跑调（半音表比对）
+     17  首启       —— 自带预设要**真的启动**，输出预算够一轮真实回执
+     18  台词行契约   —— 气泡版式是契约，换预设也不许破
+     19  梅芙引导     —— 作战屏那一段导览的步序与终点
+   · 推演与提示词
+     20  事件指令     —— 回执里的结构化指令解析得干净（含坏输入）
+     21  详细大纲     —— 细的那份真进提示词；缺了要退得干净
+     21b 开场白     —— 台词行按「角色名：」起行，旁白行不带前缀
+     22  性情锚     —— 人物卡逐字进；分期层按「读到哪」翻篇
+   · 账与记忆
+     23  好感       —— 只从行为里来 + 事件门槛 / 锁定
+     24  情景记忆库   —— 只重排既有的账（不新记 · 不漏 · 不剧透）
+   · 文档与互读
+     25  操作手册     —— MANUAL 里的步序不许骗人（对着真 DOM 属性核）
+     26  正文↔短信    —— 互读的筛子就是这条功能本身
+   · 私密与底层规矩
+     27  私密档案     —— 底档从 0 起 · 并账只增 · 合成分档
+     28  底层规矩     —— 独占 / 白虎 / 紧致 … 只进提示词，不上屏
+   · 成文与回退
+     29  交战成文     —— 回填推演的是一整段**正文**（不是分节报告）
+     30  在场名册 + 回退 —— 名册实时化 · 撤一段只撤该撤的四样
+   · 新账
+     31  次数账 / 关系 / 多女同场 —— 八栏只增不减 · 九级梯子由剧情给 ·
+                                  那一条只在真不止一个人时挂
+
+   ------------------------------------------------------------
+   写一节新的时候，跟着这一节的老规矩走：
+     · 每一条 ok() 的名字要能被**单独读出来**（不看上下文也知道在证明什么）
+     · 每条「这样做了」配一条「不这样就不做」的对照
+     · 场地立不住要**抛**，不能悄悄跳过（见下面的 ready()）
+     · 量的是源码里的那份规矩；界面上看得见的那一半归 smoke
 
      node scripts/mech.mjs
    ============================================================ */
@@ -45,10 +102,10 @@ import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
-import { BOTTOM_RULES, EXCLUSIVE_RULE, SMOOTH_RULE } from '../../src/lib/worldrules'
+import { BOTTOM_RULES, EXCLUSIVE_RULE, HAREM_RULE, SMOOTH_RULE, haremRule } from '../../src/lib/worldrules'
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
-import { rendezvousPrompt } from '../../src/lib/rendezvous'
-import type { Rendezvous } from '../../src/lib/rendezvous'
+import { PARTY_MAX, dateBondRule, rendezvousPrompt } from '../../src/lib/rendezvous'
+import type { Rendezvous, RendezvousParty } from '../../src/lib/rendezvous'
 import { BEDS } from '../../src/lib/audio/music'
 import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
@@ -74,13 +131,15 @@ import { castName, castOf } from '../../src/lib/cast'
 import { plotContextFor, smsContextFor } from '../../src/lib/crosslink'
 import {
   DEV_STAGE_COUNT, INTIMATE, INTIMATE_BOND, INTIMATE_SLOTS, NO_ACT, PHYSIQUE, devStage,
-  devStageIndex, intimAdvanceLabel, intimateOf, mergeIntim,
+  devStageIndex, hasIntimate, intimAdvanceLabel, intimateOf, mergeIntim,
 } from '../../src/data/intimate'
-import { directiveHasFx, sanitizeDirective } from '../../src/lib/plot'
+import { ACT_KINDS, ACT_META, actOf, actTotal, isActReceive, mergeActs } from '../../src/data/acts'
+import { REL_IDS, REL_TIERS, isRelId, relIndex, relLadderText, relName } from '../../src/data/rel'
+import { directiveHasFx, dateDirective, sanitizeDirective } from '../../src/lib/plot'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
-import type { Mission, TimelineEvent, WorldRecord, WorldState } from '../../src/data/types'
+import type { ActCount, Mission, RelId, TimelineEvent, WorldRecord, WorldState } from '../../src/data/types'
 import type { AxisKey, BattleState, BuffKey, Combatant, EnemyIntent, SkillSpec } from '../../src/lib/battle/types'
 
 export interface MechReport {
@@ -4015,6 +4074,219 @@ export function run(): MechReport {
       + '回退撤 epDone + 记录 + 羁绊下限，指针退回前一段，会话正文保留')
   } catch (e) {
     fail.push('在场名册 / 回退段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 31) 次数账 · 关系档位 · 多女同场 ----------
+     三件事各量各的规矩（规矩分别住在 data/acts.ts、data/rel.ts、lib/worldrules.ts）：
+
+       · **次数账**（用户口径：「增加次数统计，大概为亲吻 / 口交 / 性交 / 肛交 /
+         手交 / 足交 / 乳交 / 内射次数」）—— 八本**各记各的**账，只增不减，
+         一次一小步。它挂在私密档案那一页背面，所以只对女角色生效。
+
+       · **关系档位**（「增加关系：按照剧情给予」）—— 九级梯子，由导演在剧情真走到
+         那一步时落一次（绝对值，不是增量）。这里量的是它**没有**那套「多少羁绊换
+         哪一档」的换算 —— 一旦有，这一栏就退化成读数的别名了。
+
+       · **多女同场**（「增加多P的情况（多女1男）」）—— 那一条规矩只在**真不止一个人
+         在场**时才挂。混进 BOTTOM_RULES 就会被四条通道无条件带上，一对一的那一场
+         也收到「这一场不止一个人」——那不叫规矩，那叫提示模型往多P写。
+
+     界面那一半（背面那一栏摆不摆得出来）归冒烟；这里量的是底下这几条规矩本身。 */
+  try {
+    /* —— 次数账：八栏本身 —— */
+    ok('次数账 · 八栏齐、不重、栏栏都有标签与一行释义',
+      ACT_KINDS.length === 8 && new Set(ACT_KINDS).size === 8
+      && ACT_KINDS.every((k) => ACT_META[k]?.label.trim() && ACT_META[k]?.hint.trim()),
+      ACT_KINDS.map((k) => ACT_META[k].label).join(' / '))
+
+    ok('次数账 · 内射单算一栏（与性交 / 肛交各记各的，同一次里可以两栏都动）',
+      isActReceive('creampie') && !isActReceive('sex') && !isActReceive('anal')
+      && ACT_KINDS.includes('creampie'),
+      '「内射」是「他怎么收的」那一栏，前七栏是「她做了什么」')
+
+    /* —— 次数账：只增不减（规矩在 mergeActs 自己身上，不只靠上游那道夹子）—— */
+    const once = mergeActs(undefined, { kiss: 2, sex: 1 })
+    const twice = mergeActs(once, { kiss: 3 })
+    ok('次数账 · 并账是累加（第二回上去，第一回的不被顶掉）',
+      actOf(twice, 'kiss') === 5 && actOf(twice, 'sex') === 1,
+      JSON.stringify(twice))
+
+    ok('次数账 · 这次没提的栏位原样留着（不因为没提就归零）',
+      actOf(twice, 'sex') === 1 && actTotal(twice) === 6, `总回数 ${actTotal(twice)}`)
+
+    const dirtyAdd = mergeActs(
+      { kiss: 4 },
+      { kiss: -6, oral: Number.NaN, hand: Number.POSITIVE_INFINITY, foot: 0 } as ActCount,
+    )
+    ok('次数账 · 负数 / 零 / NaN / 无穷一律跳过（这本账没有往回缩的道理）',
+      actOf(dirtyAdd, 'kiss') === 4 && actOf(dirtyAdd, 'oral') === 0
+      && actOf(dirtyAdd, 'hand') === 0 && actOf(dirtyAdd, 'foot') === 0,
+      JSON.stringify(dirtyAdd))
+
+    ok('次数账 · 空账读作 0（没动过就是真没动过，不是「缺数据」）',
+      actTotal(undefined) === 0 && actTotal({}) === 0 && actOf(undefined, 'kiss') === 0,
+      '0')
+
+    /* —— 次数账：指令那一道闸 —— */
+    const femaleId = Object.keys(INTIMATE)[0]!
+    const maleId = PERSON_IDS.find((id) => !hasIntimate(id)) ?? 'kaito'
+    const bySex = sanitizeDirective({ acts: { [femaleId]: { kiss: 3 }, [maleId]: { kiss: 3 } } })
+    ok('次数账 · 非女角色落不下来（这本账挂在私密档案上，只对女角色生效）',
+      !!bySex.acts && !!bySex.acts[femaleId] && !(maleId in bySex.acts),
+      `${femaleId} 进得来 · ${maleId}（无底档）被挡下`)
+
+    const offGrid = sanitizeDirective({ acts: { [femaleId]: { kiss: 3, nail: 4, '__bad': 2 } } })
+    ok('次数账 · 认不出的栏位整条丢掉（八栏之外的写法落不下来）',
+      JSON.stringify(Object.keys(offGrid.acts?.[femaleId] ?? {})) === JSON.stringify(['kiss']),
+      JSON.stringify(offGrid.acts?.[femaleId] ?? {}))
+
+    const clamped = sanitizeDirective({ acts: { [femaleId]: { kiss: 99, sex: -3, anal: 2.6, oral: 0.4 } } })
+    const cl = clamped.acts?.[femaleId]
+    ok('次数账 · 一次报十回等于没数（增量夹成 1–9 的整数；报了正数就至少记 1 回）',
+      actOf(cl, 'kiss') === 9 && actOf(cl, 'sex') === 0 && actOf(cl, 'anal') === 3 && actOf(cl, 'oral') === 1,
+      `kiss 99→${actOf(cl, 'kiss')} · anal 2.6→${actOf(cl, 'anal')} · oral 0.4→${actOf(cl, 'oral')} · sex −3→${actOf(cl, 'sex')}`)
+
+    const crowd = sanitizeDirective({
+      acts: Object.fromEntries(Object.keys(INTIMATE).map((id) => [id, { kiss: 1 }])),
+    })
+    ok('次数账 · 一次最多记 6 位（再多就不是一场戏，是点名单了）',
+      !!crowd.acts && Object.keys(crowd.acts).length === 6,
+      `${Object.keys(INTIMATE).length} 位报上来 → 只留 ${Object.keys(crowd.acts ?? {}).length} 位`)
+
+    /* —— 关系档位：梯子本身 —— */
+    ok('关系 · 九级梯子、id 不重、顺序即高低（越靠后越高，同一 id 每次翻同一级）',
+      REL_TIERS.length === 9 && new Set(REL_IDS).size === 9
+      && REL_TIERS.every((t, i) => relIndex(t.id) === i),
+      REL_IDS.map((id) => relName(id)).join(' → '))
+
+    ok('关系 · 每一级都带着一句能用的口径（只写「关系好」等于没给这一栏）',
+      REL_TIERS.every((t) => t.hint.trim().length >= 12)
+      && new Set(REL_TIERS.map((t) => t.hint)).size === REL_TIERS.length,
+      '九句各不相同')
+
+    ok('关系 · 认不出来的档位整条丢掉（编出来的落不下去）',
+      isRelId('lover') && !isRelId('soulmate') && !isRelId('') && !isRelId(7),
+      'lover 认得，「soulmate」这类自造档位不认')
+
+    ok('关系 · 提示词里摆的是**整张**梯子（id / 名字 / 口径三样都在，一级不漏）',
+      REL_TIERS.every((t) => {
+        const s = relLadderText()
+        return s.includes(t.id) && s.includes(t.name) && s.includes(t.hint)
+      }),
+      `${REL_TIERS.length} 级`)
+
+    const relD = sanitizeDirective({ rel: { luna: 'lover', hikari: 'soulmate' } })
+    ok('关系 · 只认梯子上那九级（自造的档位落不下去，也顶不掉此刻那一档）',
+      relD.rel?.luna === 'lover' && !('hikari' in (relD.rel ?? {})),
+      JSON.stringify(relD.rel ?? {}))
+
+    /* 与次数账那条门槛相反：次数账只对女角色生效（它挂在私密档案上），
+       关系档位对**名录里每一位**都开 —— 这九级说的是关系本身，不分男女。 */
+    ok('关系 · 不分男女（与次数账那条门槛正好相反：那本账挂在私密档案上，这一栏不挂）',
+      sanitizeDirective({ rel: { [maleId]: 'friend' } }).rel?.[maleId] === 'friend'
+      && !sanitizeDirective({ acts: { [maleId]: { kiss: 1 } } }).acts,
+      `${maleId}：关系档位给得进 · 次数账给不进`)
+
+    ok('关系 · 它算「本回合有变化」（只有 rel 的回执不会面板报有变化、实际什么都没落地）',
+      directiveHasFx({ rel: { luna: 'lover' } }) && directiveHasFx({ acts: { luna: { kiss: 1 } } }),
+      'directiveHasFx({rel}) / ({acts}) = true')
+
+    /* —— 关系档位：进得了提示词，且是**现取**（不是从羁绊换算）—— */
+    const evRel = TIMELINE.find((e) => castOf(e).length >= 2)
+    if (!evRel) fail.push('关系 · 找不到现场名册 ≥ 2 人的事件，量不动')
+    else {
+      const unset = buildDirectorSystem(evRel, { operatorName: '言万心叶', epDone: {} })
+      const set = buildDirectorSystem(evRel, {
+        operatorName: '言万心叶', epDone: {}, relOf: () => 'lover' as RelId,
+      })
+      /* 比的必须是**那一行**（`…｜关系档位：…`），不能拿整份提示词里有没有「恋人」二字来判 ——
+         下面【关系档位】那一节本来就把九级逐条摆着，整份里当然有「恋人」。 */
+      ok('关系 · 提示词那一行照此刻的档位现取（没给过照实写「尚未定下」，不硬凑一级）',
+        unset.includes('关系档位：尚未定下') && !unset.includes('关系档位：恋人')
+        && set.includes('关系档位：恋人（lover）'),
+        `${evRel.id}：未定下 → 恋人（lover）`)
+
+      ok('关系 · 梯子整张摆进提示词（导演看得见上面还有几级，才知道此刻这档是刚起步还是走到很里面了）',
+        unset.includes('关系档位 · 只由剧情给，不从羁绊读数换算')
+        && REL_TIERS.every((t) => unset.includes(t.hint)),
+        '九级口径逐条进提示词')
+    }
+
+    /* —— 多女同场：那一条只在真不止一个人在场时才挂 —— */
+    ok('多女同场 · 那一条**不在** BOTTOM_RULES 里（否则一对一的那一场也收到「不止一个人」）',
+      !BOTTOM_RULES.includes(HAREM_RULE) && HAREM_RULE.trim().length > 0,
+      'BOTTOM_RULES 只装独占 + 平滑，多女同场另取')
+
+    ok('多女同场 · 现取那一支按人数判（一个人 → 空串，两个及以上 → 那一条）',
+      haremRule(0) === '' && haremRule(1) === '' && haremRule(2) === HAREM_RULE && haremRule(3) === HAREM_RULE,
+      'haremRule(1) = 「」 · haremRule(2) = 该条')
+
+    ok('多女同场 · 三件事写死在里面（不许合成一个人 / 她们彼此之间不发生 / 账各记各的）',
+      HAREM_RULE.includes('不要写成同一个人换几次名字')
+      && HAREM_RULE.includes('她们彼此之间**不发生**')
+      && HAREM_RULE.includes('账要各记各的')
+      && HAREM_RULE.includes('别把它说出来'),
+      '分开写 · 方向只朝他 · 逐人分条 · 不说出口')
+
+    /* —— 多女同场：提示词与指令两处都认人数 —— */
+    const rvOne: Rendezvous = {
+      id: 'd:mech-one', charId: 'luna', kind: 'date', title: '放学后的天台',
+      place: '天台', from: 'you', ts: 0, done: false,
+    }
+    const onePrompt = rendezvousPrompt('luna', '言万心叶', 80, rvOne, '')
+    const pair: RendezvousParty[] = [{ id: 'hikari', name: '光', bond: 75 }]
+    const twoPrompt = rendezvousPrompt('luna', '言万心叶', 80, { ...rvOne, party: ['hikari'] }, '', undefined, pair)
+
+    ok('多女同场 · 一个人那一场不挂这一条（一对一的提示词里一个字都不提「不止一个人」）',
+      !onePrompt.includes(HAREM_RULE) && !onePrompt.includes('不止你们'),
+      'party 空 → 不挂')
+
+    ok('多女同场 · 带了人才挂，且把同场的几位列到人（名单 + 各自与他的羁绊）',
+      twoPrompt.includes(HAREM_RULE) && twoPrompt.includes('这一场不止你们两个')
+      && twoPrompt.includes('· 光：与他约 75/100'),
+      '同场 1 位 → 名单写出来')
+
+    ok('多女同场 · 提示词点明「你只替你这一位开口」（多说话人最容易串到别人身上）',
+      onePrompt.includes('你是这一场里与') && onePrompt.includes('别替别人开口'),
+      '每位各读自己那一份')
+
+    const oneRule = dateBondRule('luna')
+    const twoRule = dateBondRule('luna', ['hikari'])
+    /* 数的是 intim 那些条目本身（`"slot": "mouth"` 一人一条），不是数 `"char": "谁"` ——
+       上面 bond 那条例子里也带着主位的 id，数它会多算一条。 */
+    const slotsIn = (s: string) => s.split('"slot": "mouth"').length - 1
+    const actsIn = (s: string) => s.split('"kiss": 1 }').length - 1
+    ok('多女同场 · 收尾指令逐人分条（只给主位留位置，同场的几位就永远记不上）',
+      slotsIn(oneRule) === 1 && actsIn(oneRule) === 1 && !oneRule.includes('"hikari"')
+      && slotsIn(twoRule) === 2 && actsIn(twoRule) === 2 && twoRule.includes('"hikari"'),
+      `1 人 → intim ${slotsIn(oneRule)} 条 · acts ${actsIn(oneRule)} 条；`
+      + `2 人 → intim ${slotsIn(twoRule)} 条 · acts ${actsIn(twoRule)} 条`)
+
+    ok('多女同场 · 同场的人数有上限，且上屏与落盘照同一个（PARTY_MAX）',
+      PARTY_MAX === 3 && dateBondRule('luna', ['a', 'b', 'c']).includes('"char": "c"'),
+      `一起最多再带 ${PARTY_MAX} 位`)
+
+    /* —— 见面那一场：指令只记在场的人 —— */
+    const dxOut = dateDirective(
+      { acts: { luna: { kiss: 1 }, hikari: { kiss: 1 } }, rel: { luna: 'lover', hikari: 'friend' } },
+      'luna',
+      [],
+    )
+    const dxIn = dateDirective(
+      { acts: { luna: { kiss: 1 }, hikari: { kiss: 1 } }, rel: { luna: 'lover', hikari: 'friend' } },
+      'luna',
+      ['hikari'],
+    )
+    ok('见面 · 指令只记这一场在场的人（没带的同场，账上落不下来）',
+      !!dxOut.acts?.luna && !dxOut.acts?.hikari && !dxOut.rel?.hikari
+      && !!dxIn.acts?.hikari && dxIn.rel?.hikari === 'friend',
+      'party 空 → 只记主位 · 带上光 → 两位各记一条')
+
+    info.push('次数账 + 关系档位 + 多女同场：八栏只增不减（负数 / NaN / 超量都被拦）· '
+      + '九级梯子由剧情给（认不出的整条丢掉 · 提示词照实写「尚未定下」）· '
+      + '多女同场那一条只在真不止一个人时挂（提示词与收尾指令都逐人分条，见面只记在场的人）')
+  } catch (e) {
+    fail.push('次数账 / 关系 / 多女同场段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

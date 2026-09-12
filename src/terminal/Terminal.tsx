@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, TimelineEvent } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, ActCount, RelId, TimelineEvent } from '../data/types'
 import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { intimateOf, mergeIntim } from '../data/intimate'
+import { mergeActs } from '../data/acts'
 import { clamp } from '../lib/format'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
@@ -166,6 +167,21 @@ export interface TerminalState {
   intimOf: (charId: string) => IntimateProfile | null
   /** 落下一次私密推进（约会 / 私密往来）：各部位开发度增量、状态改写、破处对象 */
   bumpIntim: (charId: string, p: IntimateProgress) => void
+  /**
+   * **次数账**（八栏累计值；见 `data/acts.ts`）。与 `intimOf` 并列摆在同一页背面：
+   * intim 说的是「这一处此刻是什么样」，它说的是「**一共**多少回」—— 只增不减。
+   * 没记过的角色 → 空表（八栏全读作 0）。
+   */
+  actsOf: (charId: string) => ActCount
+  /** 记一笔次数（八栏增量；只增不减） */
+  bumpActs: (charId: string, add: ActCount) => void
+  /**
+   * **关系档位**（`data/rel.ts` 的九级梯子）。由剧情给，**不从羁绊读数换算** ——
+   * 没给过 → undefined，档案上照实读作「尚未定下」。
+   */
+  relOf: (charId: string) => RelId | undefined
+  /** 落下一次关系档位（**绝对**档位：往上、往下都给同一个入口；相同则不写） */
+  setRel: (charId: string, tier: RelId) => void
 
   /** 已归档「记录」（按阅读序） */
   records: WorldRecord[]
@@ -230,7 +246,10 @@ function takePendingView(): ViewId | null {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cast: {}, intim: {}, records: [] }
+  return {
+    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cast: {},
+    intim: {}, acts: {}, rel: {}, records: [],
+  }
 }
 
 /** 「记录」按阅读序排序（主键 readingIndexOf，次键完成时间） */
@@ -288,6 +307,9 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     cast: raw?.cast ?? {},
     // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
     intim: raw?.intim ?? {},
+    // 次数账与关系档位同为后加 → 旧档空表：八栏读作 0、档位读作「尚未定下」
+    acts: raw?.acts ?? {},
+    rel: raw?.rel ?? {},
     records: [],
   }
   const doneIds = new Set(Object.keys(epDone))
@@ -821,6 +843,41 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** 该角色手里那一本次数账（没记过 → 空表：八栏全读作 0） */
+  const actsOf = useCallback(
+    (charId: string): ActCount => world.acts?.[charId] ?? {},
+    [world.acts],
+  )
+  /**
+   * 记一笔次数 —— 怎么并进手里那一本，全在 `mergeActs` 里（逐栏累加、**只增不减**）。
+   * 与 `bumpIntim` 同一个分工：规则住在 data 里（能被单独验），这儿只管写回世界。
+   */
+  const bumpActs = useCallback((charId: string, add: ActCount) => {
+    if (!personOf(charId)) return
+    setWorld((prev) => {
+      const next = mergeActs(prev.acts?.[charId], add)
+      return { ...prev, acts: { ...prev.acts, [charId]: next } }
+    })
+  }, [])
+
+  /** 该角色此刻的关系档位（还没由剧情定下 → undefined，档案上照实读作「尚未定下」） */
+  const relOf = useCallback(
+    (charId: string): RelId | undefined => world.rel?.[charId],
+    [world.rel],
+  )
+  /**
+   * 落下一次关系档位 —— 给的是**绝对**档位（不是增量），所以这里只做一件事：
+   * 与此刻那一档相同就别写（免得每次推演都刷一遍存档、也免得白白触发一次渲染）。
+   * 上下都走同一个入口：翻脸了照样给，那就是低的那一级。
+   */
+  const setRel = useCallback((charId: string, tier: RelId) => {
+    if (!personOf(charId)) return
+    setWorld((prev) => {
+      if (prev.rel?.[charId] === tier) return prev
+      return { ...prev, rel: { ...prev.rel, [charId]: tier } }
+    })
+  }, [])
+
   /** 请求打开某角色档案（自动切到档案页；档案页受门禁保护，未解锁时 navigate 会被拦下） */
   const requestProfile = useCallback(
     (id: string) => {
@@ -1124,6 +1181,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setCast,
     intimOf,
     bumpIntim,
+    actsOf,
+    bumpActs,
+    relOf,
+    setRel,
     varsOpen,
     setVarsOpen,
     records: world.records,

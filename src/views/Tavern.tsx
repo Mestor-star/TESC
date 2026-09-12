@@ -4,9 +4,12 @@ import { Lock, PaperPlaneTilt, Stop, Eraser, Plus, Check, Trash, UsersThree, Lis
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
-import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
+import { OPERATOR_ID, PERSON_IDS, genderOf, speakerVariants } from '../data/castmeta'
+import { hasIntimate } from '../data/intimate'
 import { plotContextFor } from '../lib/crosslink'
 import { INTIMATE_BOND, intimAdvanceLabel } from '../data/intimate'
+import { PARTY_MAX } from '../lib/rendezvous'
+import { relName } from '../data/rel'
 import { CgSlot } from '../components/CgSlot'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -59,6 +62,7 @@ export function Tavern() {
   const {
     operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
     smsRequest, clearSmsRequest, cgOf, setCg, bumpIntim, meetChar, registerEnd,
+    bumpActs, setRel,
   } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
   const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadSmsLogs)
@@ -125,6 +129,10 @@ export function Tavern() {
   const [rvs, setRvs] = useState<Rendezvous[]>(listRendezvous)
   const rvVer = useSyncExternalStore(subscribeRendezvous, rendezvousVersion)
   useEffect(() => { setRvs(listRendezvous()) }, [rvVer])
+  /* 多女同场的选人面板：开没开、选了谁。只活在这一次操作里，不落盘 ——
+     真正定下来的名单写在那一场（`Rendezvous.party`）上。 */
+  const [partyOpen, setPartyOpen] = useState(false)
+  const [partyPick, setPartyPick] = useState<string[]>([])
   /** 未走完的那几场（名单与角标只认这些；走完的留在会话里当记录） */
   const liveRvs = useMemo(() => rvs.filter((r) => !r.done), [rvs])
 
@@ -146,6 +154,9 @@ export function Tavern() {
       }
       setActiveId(threadId)
       setErr(null)
+      /* 换人就把选人面板收起来：名单是**对某一位**挑的，跟着人跑会挑错 */
+      setPartyOpen(false)
+      setPartyPick([])
       markRead(threadId)
     },
     [isMet, push],
@@ -214,6 +225,28 @@ export function Tavern() {
   )
   /** 流式气泡的头像：一对一（含见面）才是此人；群聊是多说话人剧本，落定前不知道谁在说，故留白 */
   const liveAvatarId = activeGroup ? '' : activeChar?.id ?? ''
+
+  /**
+   * 这一场**能带谁**：同样是女角色（有私密档案）、已遇见、且羁绊一样过了
+   * `INTIMATE_BOND` 的别位 —— 差一个都开不了口的人，不该出现在这张名单上。
+   * 自己不带自己（那一位是主位），位子照 `PERSON_IDS` 的固定顺序排。
+   */
+  const partyPool = useMemo(
+    () => (activeChar
+      ? PERSON_IDS
+          .filter((id) => id !== activeChar.id && isMet(id) && hasIntimate(id) && bondNow(id) >= INTIMATE_BOND)
+          .map((id) => ({ id, name: charOf(id)?.name ?? id, hue: charOf(id)?.hue ?? '#8ad' }))
+      : []),
+    [activeChar, isMet, bondNow],
+  )
+  const toggleParty = useCallback((id: string) => {
+    setPartyPick((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id)
+        : prev.length >= PARTY_MAX ? prev
+          : [...prev, id]
+    ))
+  }, [])
+
 
   /**
    * 发送核心：对某联系人用给定历史跑一次回复（历史末端需为操作员发言）。
@@ -611,15 +644,21 @@ ${preset.post}` : '')
       }
 
       const bond = bondNow(charId)
+      /* 同场的其余几位（1 男多女那一场）：羁绊在这里现读 —— 提示词里要按人给口气。
+         名字取不到（理论上不会，rv.party 落地时已经筛过一遍）就整位跳过。 */
+      const partyIds = rv.party ?? []
+      const party = partyIds
+        .map((id) => ({ id, name: charOf(id)?.name ?? '', bond: bondNow(id) }))
+        .filter((p) => !!p.name)
       /* 正文里与她有关的那一截（她不在场的段落一句不给）：她答应这一场多半是正文里
          刚走过的那一段在起作用。与单聊那条一样当場读 —— 见面可能在她翻着别的模块时开。 */
       const plotCtx = plotContextFor(charId, { records: world.records, epDone })
       const system =
-        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)), plotCtx || undefined)
+        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)), plotCtx || undefined, party)
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
-        + dateBondRule(charId)
+        + dateBondRule(charId, party.map((p) => p.id))
       const turns = smsTurns(log, 12)
       /* 空线程 = 这一场刚开场：不给它留白，直接让对面把第一句说出来
          （谁先开的口由 rv.from 决定，措辞见 lib/rendezvous.ts 的 dateOpeningPrompt） */
@@ -661,8 +700,8 @@ ${preset.post}` : '')
 
         const parsed = parseDirectorReply(reply)
         const shown = replyDisplayText(parsed, acc)
-        const fx = applyDirective(dateDirective(parsed.directive, charId), {
-          meetChar, bumpBond, registerEnd, setFlag, bumpIntim,
+        const fx = applyDirective(dateDirective(parsed.directive, charId, rv.party ?? []), {
+          meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel,
         })
         // 换画面：点名的 CG 记在**这一场**名下（world.cg[d:uuid]），与主线那本账各存各的
         if (fx.cg) setCg(rv.id, fx.cg)
@@ -679,7 +718,17 @@ ${preset.post}` : '')
         const newTasks = parsed.directive?.task ?? []
         for (const t of newTasks) addTask(t.title, { detail: t.detail, ...(isCharId(charId) ? { from: charId } : {}) })
         const hasFx = fx.bonds.length > 0 || fx.flags.length > 0 || fx.met.length > 0
-          || fx.ends.length > 0 || fx.intim.length > 0 || Boolean(fx.cg) || newTasks.length > 0
+          || fx.ends.length > 0 || fx.intim.length > 0 || fx.acts.length > 0 || fx.rel.length > 0
+          || Boolean(fx.cg) || newTasks.length > 0
+        /* 私密档案 / 次数账 / 关系档位：三本账都在档案页那一栏，所以合成一句报出去
+           （逐条列回数太吵，回数与八栏读数在档案背面看得见）。 */
+        if (fx.intim.length || fx.acts.length || fx.rel.length) {
+          const parts: string[] = []
+          if (fx.intim.length) parts.push(fx.intim.map((x) => `${charOf(x.char)?.name ?? x.char} · ${intimAdvanceLabel(x)}`).join(' · '))
+          if (fx.acts.length) parts.push(fx.acts.map((x) => `${charOf(x.char)?.name ?? x.char}（次数）`).join(' · '))
+          if (fx.rel.length) parts.push(fx.rel.map((x) => `${charOf(x.char)?.name ?? x.char} —— 「${relName(x.tier)}」`).join(' · '))
+          push('decode', '这一场的推进', `${parts.join(' · ')} —— 角色档案的「私密档案」可见。`, false)
+        }
 
         // 整份回执只有指令、没有正文：不出气泡（空气泡比一坨 JSON 更像坏了），提醒一句就走
         if (!shown) {
@@ -732,7 +781,7 @@ ${preset.post}` : '')
     },
     [
       settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread,
-      meetChar, registerEnd, bumpIntim, setCg,
+      meetChar, registerEnd, bumpIntim, setCg, bumpActs, setRel,
     ],
   )
 
@@ -761,7 +810,7 @@ ${preset.post}` : '')
 
   /** 操作员主动约：先开一场空见面（名目待定），由对面开口时自己认领 */
   const startDate = useCallback(
-    async (charId: string) => {
+    async (charId: string, party: string[] = []) => {
       const c = charOf(charId)
       if (!c) return
       if (bondNow(charId) < INTIMATE_BOND) {
@@ -774,9 +823,18 @@ ${preset.post}` : '')
         await enterDate(open)
         return
       }
-      const rv = openRendezvous(charId, { from: 'you', title: '一次见面', place: '学园外' })
+      /* 同场的几位在这儿再筛一道（面板上已经只列够格的了，这一道是防别的入口带进来）：
+         同一位不进两次，封顶 PARTY_MAX。 */
+      const crew = party
+        .filter((id) => id !== charId && bondNow(id) >= INTIMATE_BOND && !!charOf(id))
+        .filter((id, i, a) => a.indexOf(id) === i)
+        .slice(0, PARTY_MAX)
+      const rv = openRendezvous(charId, { from: 'you', title: '一次见面', place: '学园外', ...(crew.length ? { party: crew } : {}) })
       setRvs(listRendezvous())
-      push('decode', '约了 TA', `${c.name} —— 名目还没定，看对面怎么接。`, false)
+      setPartyOpen(false)
+      setPartyPick([])
+      const crewNames = crew.map((id) => charOf(id)?.name ?? id).join('、')
+      push('decode', '约了 TA', `${c.name}${crew.length ? `（同场：${crewNames}）` : ''} —— 名目还没定，看对面怎么接。`, false)
       await enterDate(rv)
     },
     [bondNow, push, enterDate],
@@ -1118,6 +1176,9 @@ ${preset.post}` : '')
                       ? activeGroup.charIds.map((id) => charOf(id)?.name ?? id).join('、')
                       : activeRv
                         ? `${activeRv.title} · ${activeRv.place}`
+                          + (activeRv.party?.length
+                            ? ` · 同场：${activeRv.party.map((id) => charOf(id)?.name ?? id).join('、')}`
+                            : '')
                         : activeMeta.scenario}
                   </small>
                 </div>
@@ -1137,6 +1198,19 @@ ${preset.post}` : '')
                     <HeartStraight size={13} weight="bold" /> 约 TA
                   </button>
                 ) : null}
+                {/* 多女同场：把够格的几位一并带上。只在还没开这一场时露出来 ——
+                    已经开了的那一场要改人，就散场重约（改名单会让提示词的账对不上）。 */}
+                {!activeGroup && !activeRv && bondNow(activeChar.id) >= INTIMATE_BOND && partyPool.length ? (
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 11, padding: '6px 10px' }}
+                    onClick={() => setPartyOpen((v) => !v)}
+                    title="把别的几位一起带上 —— 多女同场"
+                    data-sms-party-open
+                  >
+                    <UsersThree size={13} weight="bold" /> 带人一起{partyPick.length ? ` · ${partyPick.length}` : ''}
+                  </button>
+                ) : null}
                 {activeRv && !activeRv.done ? (
                   <button
                     className="btn btn--ghost"
@@ -1152,6 +1226,43 @@ ${preset.post}` : '')
                   <Eraser size={13} weight="bold" /> 清空
                 </button>
               </div>
+
+              {/* 多女同场的选人面板：只列**同样够格**的几位（羁绊到 INTIMATE_BOND
+                  的别的档案角色）—— 差一个都开不了口的人，不该出现在这张名单上。 */}
+              {partyOpen && !activeGroup && !activeRv && partyPool.length ? (
+                <div className={css.partyPick} data-sms-party-pick>
+                  <div className="tiny muted">
+                    这一场还带谁去（可多选，最多 {PARTY_MAX} 位）—— 带上的人与 {activeChar.name} 同场，
+                    各记各的账。
+                  </div>
+                  <div className={css.partyPickRow}>
+                    {partyPool.map((p) => {
+                      const on = partyPick.includes(p.id)
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={`chip ${on ? 'chip--on' : ''}`}
+                          style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
+                          onClick={() => toggleParty(p.id)}
+                          data-sms-party={p.id}
+                          data-sms-party-on={on ? '1' : '0'}
+                        >
+                          {p.name}
+                        </button>
+                      )
+                    })}
+                    <button
+                      className="btn btn--primary"
+                      style={{ fontSize: 11, padding: '6px 10px' }}
+                      onClick={() => void startDate(activeChar.id, partyPick)}
+                      data-sms-party-go
+                    >
+                      就这么去
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className={comm.thread} data-sms-thread>
                 <div className={comm.dayLabel}>

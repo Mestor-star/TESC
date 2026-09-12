@@ -44,6 +44,8 @@ import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
 import { smsContextFor } from '../lib/crosslink'
 import { intimAdvanceLabel } from '../data/intimate'
+import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
+import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 
@@ -272,6 +274,7 @@ export function Plot() {
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
     records, requestProfile, setCg, bumpIntim, castOfEvent, setCast,
+    bumpActs, setRel, relOf,
   } = useTerminal()
 
   /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
@@ -489,7 +492,7 @@ export function Plot() {
     (parsed: PlotReply, evId: string) => {
       const d = parsed.directive
       if (!d || Object.keys(d).length === 0) return
-      const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag, bumpIntim })
+      const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel })
       const ev = TIMELINE.find((e) => e.id === evId)
       if (fx.met.length) {
         const names = fx.met.map((id) => personOf(id)?.name ?? id).join(' · ')
@@ -526,6 +529,25 @@ export function Plot() {
           .join(' · ')
         push('decode', '私密档案 · 有更新', `${parts} —— 角色档案的「私密档案」一栏可见。`, false)
       }
+      /* 次数账：与私密档案同一本背面，但报的话不一样 —— 它说的是「一共几回」。
+         只念动了哪几栏，回数本身在档案页看（念一串数字既吵又记不住）。 */
+      if (fx.acts.length) {
+        const parts = fx.acts
+          .map((x) => {
+            const kinds = ACT_KINDS.filter((k) => actOf(x.add, k) > 0)
+              .map((k) => `${ACT_META[k].label}${actOf(x.add, k) > 1 ? `×${actOf(x.add, k)}` : ''}`)
+              .join('、')
+            return `${personOf(x.char)?.name ?? x.char} · ${kinds}`
+          })
+          .join(' · ')
+        push('decode', '次数账 · 有更新', `${parts} —— 角色档案的「私密档案」背面可见。`, false)
+      }
+      /* 关系档位：给的是绝对档位，所以报出来的一定是「此刻是什么」，不是加了多少 */
+      if (fx.rel.length) {
+        for (const x of fx.rel) {
+          push('success', '关系档位', `${personOf(x.char)?.name ?? x.char} —— 此刻是「${relName(x.tier)}」。`, false)
+        }
+      }
       if (fx.flags.length) {
         const shown = fx.flags
           .map(([k, v]) => `${k} = ${typeof v === 'string' ? v : String(v)}`)
@@ -558,7 +580,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCg, setCast, bumpIntim, push],
+    [meetChar, bumpBond, registerEnd, setFlag, setCg, setCast, bumpIntim, bumpActs, setRel, push],
   )
 
   /**
@@ -685,6 +707,8 @@ export function Plot() {
         /* 在场名册取**此刻**的那一份（导演实时改过就用改过的）：提示词里的
            【在场角色 · 性情锚】与关系读数、短信摘录、CG 候选都用同一个名单。 */
         castNow: castIds,
+        /* 各人此刻的关系档位（由剧情给过的那一档）——与羁绊读数并列摆进关系那一行 */
+        relOf,
         /* 近期短信：只取与**此刻在场者**有关的那几本（无关线程一个字都不给，见 lib/crosslink），
            且在这一趟当场读 —— 短信随时可能在他翻着正文时落进来（主动来信），
            挂成 state 会读到上一轮的那一份。读不动（隐私模式）就整节不出现。 */
@@ -708,7 +732,7 @@ export function Plot() {
         },
       }
     },
-    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, castOfEvent],
+    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, castOfEvent, relOf],
   )
 
   const pushTurn = useCallback(

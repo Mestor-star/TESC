@@ -2561,12 +2561,21 @@ try {
 
      状态句本身是**四档**的（0 未开发 · 1 生涩 · 2 渐熟 · 3 沉溺）：读数走到哪一档，
      卡上摆的就是那一档的那一句。所以这里摆三个读数不同的「口腔」互相对照 ——
-     恋兔（无推进 · 未开发）／露娜（+22 · 生涩）／美菲莎（+90 · 沉溺），三句话必须不一样。 */
+     恋兔（无推进 · 未开发）／露娜（+22 · 生涩）／美菲莎（+90 · 沉溺），三句话必须不一样。
+
+     同一页背面还有两栏，走的是**另外两本账**（见 data/rel.ts 与 data/acts.ts）：
+       · **关系档位**（R8）—— 由剧情给的那一档，**不由羁绊读数换算**。所以那三个人
+         摆在一起正好说明它：露娜「恋人」、恋兔光「朋友」（羁绊却压到底 —— 两者不是
+         一回事）、美菲莎「尚未定下」（没给过就照实写，不硬凑一级）。
+       · **次数账**（R9）—— 八栏各记各的累计，与开发度各记各的：露娜那本 20 回，
+         逐格对得上；美菲莎八栏全 0。规矩（只增不减 / 夹子 / 只对女角色）在 mech 里量。 */
   console.log('\n[Phase R] 私密档案：翻面 · 五根条（含单独的色情度）· 不封存但看法分两段')
   const pSeed = await ev(`(()=>{
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'私密观察员',focusId:'gcn',
       world:{offset:{luna:100,hikari:-100,mefisa:100},locked:{},flags:{},met:{luna:true,hikari:true,mefisa:true,'danae-whitmore':true},ends:{},own:[],records:[],
+        rel:{luna:'lover',hikari:'friend'},
+        acts:{luna:{kiss:3,oral:2,sex:5,anal:1,hand:4,foot:0,breast:2,creampie:3}},
         intim:{mefisa:{dev:{mouth:90}},
           luna:{dev:{mouth:22,vagina:40},lewd:30,
           lastAct:'在港区的旅馆里做了一整晚，从玄关一路做到床上，中间没停过。',
@@ -2574,7 +2583,7 @@ try {
     localStorage.setItem('zts-plot:v1',JSON.stringify({}));
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
-  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（露娜 口腔+22 / 小穴+40 / 色情度+30 · 美菲莎 口腔+90）· 达娜厄一并显影（身量未补录的那一位）',
+  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（露娜 口腔+22 / 小穴+40 / 色情度+30 · 美菲莎 口腔+90）· 关系档位（露娜 恋人 · 恋兔光 朋友 · 美菲莎 未定下）· 次数账（露娜那本 20 回）· 达娜厄一并显影（身量未补录的那一位）',
     pSeed === true, 'seed=' + pSeed)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
@@ -2631,7 +2640,18 @@ try {
         lastAct:(b.querySelector('[data-intimate-lastact]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
         view:(b.querySelector('[data-intimate-view]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
         virgin:(b.querySelector('[data-intimate-virgin]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
-        hasFoot:!!b.querySelector('[data-intimate-first]'),txt}})()`)
+        hasFoot:!!b.querySelector('[data-intimate-first]'),
+        /* 关系档位与次数账：两者都与开发度各记各的（前者由剧情给、后者只增不减），
+           所以都得**单独**量 —— 读数对得上不代表这两栏摆得对。 */
+        rel:(x=>x?x.getAttribute('data-intimate-rel'):null)(b.querySelector('[data-intimate-rel]')),
+        relName:(b.querySelector('[data-intimate-rel-name]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+        relHint:(b.querySelector('[data-intimate-rel-hint]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+        actTotal:(x=>x?x.getAttribute('data-act-total'):null)(b.querySelector('[data-intimate-acts]')),
+        actCells:b.querySelectorAll('[data-intimate-act]').length,
+        acts:(()=>{const o={};[...b.querySelectorAll('[data-intimate-act]')].forEach(x=>{
+          const k=x.getAttribute('data-intimate-act');const n=x.querySelector('[data-act-count]');
+          o[k]=n?Number(n.innerText.trim()):null});return o})(),
+        txt}})()`)
   }
   const flipTo = async (id) => {
     const front = await frontOf(id)
@@ -2721,6 +2741,36 @@ try {
     !!pBack && pBack.phys === '166/83/54/84'
     && /166/.test(pBack.txt) && /83 \/ 54 \/ 84/.test(pBack.txt),
     JSON.stringify({ phys: pBack && pBack.phys }))
+
+  /* 关系档位：**由剧情给**的那一档，光靠羁绊读数换不出来 —— 所以三个人摆在一起正好
+     说明这件事：露娜 恋人（播进去的）· 恋兔光 朋友（也是播进去的，羁绊却压到底）·
+     美菲莎 没给过 → 照实写「尚未定下」，不硬凑一级摆上去。
+     恋兔光那一条最要紧：羁绊 -100 而档位是「朋友」—— 两者本来就不是一回事。 */
+  ok('R8 关系档位照剧情给的那一档摆（露娜 恋人 · 恋兔光 朋友 —— 羁绊压到底也照样是朋友）',
+    !!pBack && pBack.rel === 'lover' && /恋人/.test(pBack.relName)
+    && !!hik.back && hik.back.rel === 'friend' && /朋友/.test(hik.back.relName)
+    && pBack.relHint.length > 0 && pBack.relHint !== hik.back.relHint,
+    JSON.stringify({ luna: pBack && pBack.rel, hik: hik.back && hik.back.rel }))
+  ok('R8b 没给过档位的那位照实写「尚未定下」（「没有」不是「零级」，是剧情还没走到那一步）',
+    !!mef.back && mef.back.rel === '' && /尚未定下/.test(mef.back.relName)
+    && /剧情/.test(mef.back.relHint),
+    JSON.stringify(mef.back && { rel: mef.back.rel, name: mef.back.relName }))
+
+  /* 次数账：八栏各自的累计（只增不减），与开发度各记各的。
+     露娜那本播进去 20 回 —— 八格逐格对得上 + 总回数对得上，才算真的摆对了栏。 */
+  ok('R9 次数账八栏都在（亲吻 / 口交 / 性交 / 肛交 / 手交 / 足交 / 乳交 / 内射）',
+    !!pBack && pBack.actCells === 8
+    && ['kiss','oral','sex','anal','hand','foot','breast','creampie'].every((k) => k in pBack.acts),
+    JSON.stringify(pBack && { cells: pBack.actCells, acts: pBack.acts }))
+  ok('R9b 次数账照播进去的读（露娜 3/2/5/1/4/0/2/3 · 总回数 20）· 没动过的那栏照实读 0',
+    !!pBack && pBack.acts.kiss === 3 && pBack.acts.oral === 2 && pBack.acts.sex === 5
+    && pBack.acts.anal === 1 && pBack.acts.hand === 4 && pBack.acts.foot === 0
+    && pBack.acts.breast === 2 && pBack.acts.creampie === 3 && Number(pBack.actTotal) === 20,
+    JSON.stringify(pBack && { acts: pBack.acts, total: pBack.actTotal }))
+  ok('R9c 没推进过的那位：八栏全 0、总回数 0（没动过就是真没动过，不是「缺数据」）',
+    !!mef.back && mef.back.actCells === 8 && Number(mef.back.actTotal) === 0
+    && Object.values(mef.back.acts).every((n) => n === 0),
+    JSON.stringify(mef.back && { acts: mef.back.acts, total: mef.back.actTotal }))
 
   /* 不相干的说明文字不该出现在这一页上：读的人要看的是她，不是这份档案的规则。
      （底档与推进怎么合成、破处只认第一回 —— 那些话写在源码注释里，不写在卡上。） */
