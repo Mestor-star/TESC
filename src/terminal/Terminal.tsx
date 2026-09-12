@@ -768,7 +768,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /** 羁绊够不够翻开这一页（会长一类恒满值者一并算过） */
   const intimOpen = useCallback((charId: string) => bondNow(charId) >= INTIMATE_BOND, [bondNow])
   /**
-   * 落下一次私密推进。开发度**累加**（不是覆盖）、状态句后写覆盖底档、
+   * 落下一次私密推进。开发度与色情度都**累加**（不是覆盖）、状态句后写覆盖底档、
    * 破处对象**只认第一次落下的那个** —— 与 data/intimate.ts 的合成规则一一对应，
    * 在这里就把「第一次说了算」定住，免得合成时还要倒推先后。
    */
@@ -785,6 +785,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       const next: IntimateProgress = { ...cur }
       if (Object.keys(dev).length) next.dev = dev
       if (prog.state && Object.keys(prog.state).length) next.state = { ...cur.state, ...prog.state }
+      // 色情度不挂部位，与开发度同理只累加（负数抹平）
+      if (typeof prog.lewd === 'number' && Number.isFinite(prog.lewd) && prog.lewd > 0) {
+        next.lewd = (cur.lewd ?? 0) + prog.lewd
+      }
       // 破处对象：已经落下过就不再改 —— 问的是第一回
       if (prog.firstBy?.trim() && !cur.firstBy) next.firstBy = prog.firstBy.trim()
       return { ...prev, intim: { ...prev.intim, [charId]: next } }

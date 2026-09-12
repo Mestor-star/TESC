@@ -5,7 +5,8 @@ import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
 import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
-import { INTIMATE_BOND, SLOT_META } from '../data/intimate'
+import { plotContextFor } from '../lib/crosslink'
+import { INTIMATE_BOND, intimAdvanceLabel } from '../data/intimate'
 import { CgSlot } from '../components/CgSlot'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -262,8 +263,11 @@ export function Tavern() {
       }
 
       const bond = bondNow(charId)
+      /* 正文里与她有关的那一截（她不在场的段落一句不给）：信里要接得上正文刚走过的那一段。
+         当场读 —— 短信这一趟可能在她翻着别的模块时发起，挂成 state 会读到上一轮的那一份。 */
+      const plotCtx = plotContextFor(charId, { records: world.records, epDone })
       const system =
-        systemPrompt(charId, operatorName, bond, meta.scenario)
+        systemPrompt(charId, operatorName, bond, meta.scenario, plotCtx || undefined)
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
@@ -434,6 +438,10 @@ export function Tavern() {
         lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
       }
       const bonds = g.charIds.map((id) => `${charOf(id)?.name ?? id} ${bondNow(id)}`).join(' · ')
+      /* 群聊这一路**刻意不接正文**（lib/crosslink.ts 只管单聊与见面）：
+         互读的筛子是「这一截与**这个人**有关」，而一群人的「有关」无从判起 ——
+         按成员逐个摊开，几张『与他有关的既成事实』堆在同一段提示里，
+         谁在场、说的是谁全糊成一片；宁可这一路照旧只谈各自的日常。 */
       const system =
         groupSystemPrompt(g.charIds, g.name, operatorName, bonds, '各自所在的日常，此刻同时看着这一屏')
         + (preset.pre ? `
@@ -603,8 +611,11 @@ ${preset.post}` : '')
       }
 
       const bond = bondNow(charId)
+      /* 正文里与她有关的那一截（她不在场的段落一句不给）：她答应这一场多半是正文里
+         刚走过的那一段在起作用。与单聊那条一样当場读 —— 见面可能在她翻着别的模块时开。 */
+      const plotCtx = plotContextFor(charId, { records: world.records, epDone })
       const system =
-        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)))
+        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)), plotCtx || undefined)
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
@@ -698,7 +709,7 @@ ${preset.post}` : '')
         if (fx.cg) fxParts.push('换了画面')
         if (fxParts.length) push('success', '见面的推进', `${c.name} · ${fxParts.join(' · ')}`, false)
         if (fx.intim.length) {
-          const parts = fx.intim.map((x) => SLOT_META[x.slot].label).join('、')
+          const parts = fx.intim.map((x) => intimAdvanceLabel(x)).join('、')
           push('decode', '私密档案 · 有更新', `${c.name} · ${parts} —— 角色档案的「私密档案」一栏可见。`, false)
         }
       } catch (e) {

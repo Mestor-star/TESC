@@ -65,6 +65,7 @@ import { SCENES } from '../../src/data/scenes'
 import { MANUAL } from '../../src/data/manual'
 import { CHARACTERS } from '../../src/data/chars'
 import { castOf } from '../../src/lib/cast'
+import { plotContextFor, smsContextFor } from '../../src/lib/crosslink'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -1663,6 +1664,41 @@ export function run(): MechReport {
       mainW.enemies[0]?.namedId === 'master-craft' && mainW.nextBoss === 'black-maou',
       `${mainW.enemies[0]?.name ?? '（空）'}　nextBoss=${mainW.nextBoss ?? '（无）'}`)
 
+    /* ④b 牌面是一段**窗口**，不是一张牌 —— 打赢即「已完成」（不等领取），
+       领取只把这一条收走。旧写法把「打赢」与「领了没」绑在一起，
+       于是打赢了却没回来点领取的人，牌面永远卡在那一段上写着「压制中」，
+       后面真打过的几场根本不上牌面（简报与他打过的仗对不上号）。 */
+    const allDone: Record<string, true> = {}
+    for (const e of TIMELINE) allDone[e.id] = true
+    const fightable = TIMELINE.filter((e) => (e.entities ?? []).some((x) => x && x !== '——')).map((e) => e.id)
+    const wonFirst = (n: number) => (evId: string) => fightable.slice(0, n).includes(evId)
+    const w2 = mainlineMissions(allDone, {}, wonFirst(2))
+    ok('主线牌面：打赢的两场自己翻成「已完成」并留在牌上等人提交，第三场接着上牌面',
+      w2.length === 3 && w2[0].at === fightable[0] && w2[2].at === fightable[2]
+      && w2[0].status === '完成' && w2[1].status === '完成' && w2[2].status === '压制中',
+      `牌面 ${w2.map((m) => `${m.at}:${m.status}`).join(' ')}　（可打的头三段 ${fightable.slice(0, 3).join(' ')}）`)
+    // 提交第一场：它从牌上收走，窗口整体往前挪一格（完成的那一场不回来）
+    const w3 = mainlineMissions(allDone, { [fightable[0]]: true }, wonFirst(3))
+    ok('主线牌面：提交一场只是把它收走 —— 后面那两场（含刚打赢的第三场）照旧在牌上',
+      !w3.some((m) => m.at === fightable[0]) && w3.some((m) => m.at === fightable[2] && m.status === '完成')
+      && w3.some((m) => m.at === fightable[3] && m.status === '压制中'),
+      `牌面 ${w3.map((m) => `${m.at}:${m.status}`).join(' ')}`)
+    /* 没走到那一段（没收束）不上牌面 —— 但牌面停得住：撞见第一场没打赢的，
+       摆完它就收，不会跳过它去摆后面的。一场都没打赢时，牌面就是眼下这一场。 */
+    const partial: Record<string, true> = {}
+    for (const id of fightable.slice(0, 4)) partial[id] = true
+    const w4 = mainlineMissions(partial, {}, () => false)
+    ok('主线牌面：一场没打赢时只摆眼下这一场（没走到的不预先冒出来）',
+      w4.length === 1 && w4[0].at === fightable[0] && w4[0].status === '压制中'
+      && w4.every((m) => partial[m.at!]),
+      `牌面 ${w4.map((m) => m.at).join(' ') || '（空）'}　（收束过 ${fightable.slice(0, 4).join(' ')}）`)
+    // 收束四段、前三段都打赢了：三张「待提交」摞在牌上，眼下这一场接着摆
+    const w5 = mainlineMissions(partial, {}, wonFirst(3))
+    ok('主线牌面：打赢的那几场摞在牌上等人提交，眼下这一场排在末尾',
+      w5.length === 4 && w5.slice(0, 3).every((m) => m.status === '完成')
+      && w5[3].at === fightable[3] && w5[3].status === '压制中',
+      `牌面 ${w5.map((m) => `${m.at}:${m.status}`).join(' ')}`)
+
     /* ⑤ 图鉴实体按**图鉴自己的危险度**站。
        深海异界是原文实测（0.89）的那一处，读数不随危险度走 ——
        拿它当场地，血量若还在动，动的那一处就只可能是 hpStage。 */
@@ -2255,7 +2291,7 @@ export function run(): MechReport {
        否则改 JSON 只有新装机有效，老用户永远停在装机那天的旧稿上，而界面看不出差别。 */
     const refresh: Array<[number, string[], boolean, string]> = [
       [1, [BUILTIN_IDS[0], 'user-made'], true, '旧账本 + 内置那份还在'],
-      [3, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
+      [4, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
       [1, ['user-made'], false, '用户把内置那份删了（尊重这个删除）'],
       [0, [], false, '列表是空的（没有可换的）'],
     ]
@@ -2391,19 +2427,31 @@ export function run(): MechReport {
     ok('台词契约：导演规则里不再重复这一条（同一件事只说一次）',
       !rules.includes('台词行格式'), rules.includes('台词行格式') ? '规则里还留着一份' : '只在契约段说')
 
-    /* ⑤ 拆行器认出模型最可能写的四种写法（含被加粗的名字） */
+    /* ⑤ 拆行器认出模型最可能写的几种写法（含被加粗的名字、以及主角的缩写署名）。
+       「言万：」那一条是实测漏出来的：原文通篇被人叫「言万同学」，模型顺手把署名
+       截成两个字，而契约里没说不许 —— 于是正文里主角一开口，整行掉回旁白，
+       气泡版式看着像坏了而界面不报错。两头都钉：契约要它写全名（⑥），
+       表里也得认得出这个缩写（旧记录里已经写着的那种）。 */
     const cases: Array<[string, DialogueSeg[]]> = [
       [`${luna}：「小主人，你迟到了。」`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
       [`${luna}：小主人，你迟到了。`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
       [`**${luna}**：「小主人，你迟到了。」`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
       [`${luna}“小主人，你迟到了。”`, [{ kind: 'say', id: 'luna', text: '小主人，你迟到了。' }]],
       [`${op}：「我知道了。」`, [{ kind: 'you', text: '我知道了。' }]],
+      ['言万：「我知道了。」', [{ kind: 'you', text: '我知道了。' }]],
+      ['心叶：「我知道了。」', [{ kind: 'you', text: '我知道了。' }]],
     ]
     const wrong = cases.filter(([src, want]) => JSON.stringify(splitSpeech(src)) !== JSON.stringify(want))
-    ok('台词拆行：四种写法（全角冒号／直接接台词／名字被加粗／直接接引号）都认得出，操作员落到右气泡',
+    ok('台词拆行：全角冒号／直接接台词／名字被加粗／直接接引号／主角的三种署名（全名·言万·心叶）都认得出，操作员落到右气泡',
       wrong.length === 0,
       wrong.length ? wrong.map(([src]) => src).join('；')
         : cases.map(([src]) => src.slice(0, 14) + '…').join('　'))
+
+    /* ⑥ 光认得出还不够：得让模型一开始就写全名。契约里那一句必须在，
+       而且必须点到「言万：」这个具体的错法 —— 泛泛说「名字要一致」它不当回事。 */
+    ok('台词契约：明说署名要写全名、不许缩成简称（点名「言万：」这种写法认不出）',
+      seg.includes('全名') && seg.includes('言万：') && seg.includes('简称'),
+      seg.includes('全名') && seg.includes('言万：') ? '已点名缩写' : '契约里没点明')
 
     /* 对照：拿掉契约里那半对引号／换个没登记的名字，同一条判据当场变红 ——
        上面那条不是「怎么拆都过」。 */
@@ -2411,16 +2459,17 @@ export function run(): MechReport {
       JSON.stringify(splitSpeech(`${luna}「小主人`)) === JSON.stringify([{ kind: 'narr', text: `${luna}「小主人` }]),
       `${luna}「小主人 → 留旁白`)
 
-    /* ⑥ 不该切的照样不切：没登记的名字、冒号后没内容、名字在行中间 —— 全留旁白。
+    /* ⑦ 不该切的照样不切：没登记的名字、冒号后没内容、名字在行中间、带称呼后缀的 —— 全留旁白。
        拆行器宁可漏认一个气泡，也不能把叙述切碎（切错了正文就散了）。 */
     const narCases = [
       '林越：「他是谁？」',                        // 未登记的名字
       `${luna}：`,                                  // 冒号后没内容
       `这时${luna}：「小主人。」`,                  // 名字不在行首
       `${luna}「影」是异端。`,                      // 名字后接引号，但整行不收在引号上
+      '言万同学：「我知道了。」',                    // 带称呼后缀：那是别人叫他，不是署名（契约已要求写全名）
     ]
     const cut = narCases.filter((s) => splitSpeech(s).some((x) => x.kind !== 'narr'))
-    ok('台词拆行：未登记的名字／空台词／名字在行中／引号不收尾 —— 一律留旁白（不切碎叙述）',
+    ok('台词拆行：未登记的名字／空台词／名字在行中／引号不收尾／带称呼后缀 —— 一律留旁白（不切碎叙述）',
       cut.length === 0, cut.length ? cut.join('；') : `${narCases.length} 种写法都留了旁白`)
 
     info.push(`台词契约：摆在预设段之后（@${iContract} > @${iPreset}）· 拆行器认 ${cases.length} 种写法、`
@@ -3430,6 +3479,120 @@ export function run(): MechReport {
       + `覆盖 ${areas.length} 个模块（对左侧栏 ${navNames.length} 个模块）`)
   } catch (e) {
     fail.push('操作手册段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 26) 正文 ↔ 短信 互读：筛子就是这条功能本身 ----------
+     用户要的是「两边互相读得到，但与本角色无关的不许管」。所以这一节的每一条
+     都是**成对**的：给一份该给的、再给一份不该给的，证明它认得出来 —— 只验
+     「内容出现了」的话，一个把两本账整个倒出来的实现照样通过。
+
+     两本账都从 localStorage 读，node 里没有它：临时装一个只在内存里活着的替身，
+     这一节自己用、用完还回去（别的节不该因为这里动过全局而变样）。 */
+  try {
+    const g = globalThis as { localStorage?: unknown }
+    const hadLS = 'localStorage' in g
+    const prevLS = g.localStorage
+    const mem = new Map<string, string>()
+    g.localStorage = {
+      getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+      setItem: (k: string, v: string) => { mem.set(k, String(v)) },
+      removeItem: (k: string) => { mem.delete(k) },
+      clear: () => { mem.clear() },
+    }
+    try {
+      /* 取一段真事与一个真在场者，再找一个「这段里没有他」的人 —— 全从时间线上量，
+         不写死 id（写死了，时间线一改这一节就悄悄测起了别的东西）。 */
+      const withCast = TIMELINE.filter((e) => castOf(e).length > 0)
+      const evA = withCast[0]
+      const onIds = castOf(evA)
+      const who = onIds[0]
+      const evB = TIMELINE.find((e) => !castOf(e).includes(who))!
+      /* 「与这两段都无关」的那个人：只挑「这一段里没有他」的话，会挑到一个
+         恰好在另一段里在场的人 —— 那样他从别段拿到内容、断言就假失败（踩过）。 */
+      const offStage = (id: string) => !onIds.includes(id) && !castOf(evB).includes(id)
+      const outsider = PERSON_IDS.find((id) => id !== who && offStage(id))!
+      const rec = (eventId: string, digest: string): WorldRecord =>
+        ({ eventId, mode: 'online', digest, ts: 0 })
+      const recs = [rec(evA.id, '甲段里发生了甲事'), rec(evB.id, '乙段里发生了乙事')]
+
+      const ctxA = plotContextFor(who, { records: recs })
+      ok('互读 · 正文→短信：只交出他在场的那几段（他不在场的那段一个字都不给）',
+        ctxA.includes('甲段里发生了甲事') && !ctxA.includes('乙段里发生了乙事'),
+        ctxA.split('\n')[1] ?? '(空)')
+      ok('互读 · 正文→短信：那段里没有他 → 整节回空串（调用方据此整节不注入）',
+        plotContextFor(outsider, { records: recs }) === '',
+        `outsider=${outsider}`)
+
+      /* 眼下这一段：指针口径与 Plot.tsx 的 focusEv 一致（时间线上第一段没走完的） */
+      const epd: Record<string, boolean> = {}
+      for (const e of TIMELINE) epd[e.id] = e.id !== evA.id
+      mem.set('zts-plot:v1', JSON.stringify({
+        [evA.id]: [
+          { id: 'm1', from: 'user', text: '他说的那一句', time: '10:00' },
+          { id: 'm2', from: 'them', text: '现场的一段旁白', time: '10:01' },
+        ],
+      }))
+      const ctxLive = plotContextFor(who, { records: [], epDone: epd })
+      ok('互读 · 正文→短信：眼下这一段已写下的那几轮照原样交出去（他 = 操作员 · 现场 = 旁白）',
+        ctxLive.includes('他：他说的那一句') && ctxLive.includes('现场：现场的一段旁白'),
+        ctxLive.split('\n').slice(-2).join(' / ') || '(空)')
+      ok('互读 · 正文→短信：眼下这一段的正文只喂在场者，不在场的人照样一个字不给',
+        plotContextFor(outsider, { records: [], epDone: epd }) === '', `outsider=${outsider}`)
+
+      /* 短信那一侧，先看单聊：线程 id 就是本人 */
+      mem.set('zts-tavern:v1', JSON.stringify({
+        [who]: [{ id: 's1', from: 'them', text: '甲写来的信', time: '09:00' }],
+        [outsider]: [{ id: 's2', from: 'them', text: '乙写来的信', time: '09:30' }],
+      }))
+      const smsWho = smsContextFor([who])
+      ok('互读 · 短信→正文：只取在场者的那本单聊（无关的那本一个字都不给）',
+        smsWho.includes('甲写来的信') && !smsWho.includes('乙写来的信'),
+        smsWho.split('\n')[1] ?? '(空)')
+
+      /* 见面线程按它挂在谁名下 —— 同一本账，换个人问就不该交出去 */
+      const rid = 'd:mech-1'
+      mem.set('zts-rendezvous:v1', JSON.stringify([
+        { id: rid, charId: who, kind: 'date', title: '放学后的天台', place: '天台', from: 'them', ts: 5, done: false },
+      ]))
+      mem.set('zts-tavern:v1', JSON.stringify({
+        [rid]: [{ id: 's3', from: 'user', text: '见面里说的那句', time: '11:00' }],
+      }))
+      ok('互读 · 短信→正文：见面线程按它挂在谁名下来取（挂在他名下才给）',
+        smsContextFor([who]).includes('见面里说的那句')
+        && smsContextFor([who]).includes('放学后的天台'),
+        smsContextFor([who]).split('\n')[1] ?? '(空)')
+      ok('互读 · 短信→正文：那场见面挂在别人名下时，问这个人一个字都不给',
+        smsContextFor([outsider]) === '')
+      ok('互读 · 短信→正文：侧栏那条开关没开时，见面只算「信里说过的话」、不单独交出去',
+        smsContextFor([who]).includes('见面里说的那句')
+        && !smsContextFor([who]).includes('尚未发生')
+        && smsContextFor([who], { rendezvous: true }).includes('尚未发生'),
+        'rendezvous 开关')
+
+      /* 群聊：成员里有在场者才算「有关」，且标注群名 —— 是不是这个群，取决于成员 */
+      mem.set('zts-tavern:v1', JSON.stringify({
+        'g:mech-1': [{ id: 's4', from: 'them', text: '群里说的那句', time: '12:00', meta: { who: '某人' } }],
+      }))
+      mem.set('zts-sms-threads:v1', JSON.stringify([
+        { id: 'g:mech-1', name: '恋兔队', charIds: [who, outsider] },
+      ]))
+      ok('互读 · 短信→正文：群聊看成员里有没有在场者（有就给，并标出是哪个群）',
+        smsContextFor([who]).includes('群里说的那句') && smsContextFor([who]).includes('恋兔队'),
+        smsContextFor([who]).split('\n')[1] ?? '(空)')
+      mem.set('zts-sms-threads:v1', JSON.stringify([
+        { id: 'g:mech-1', name: '恋兔队', charIds: [outsider, PERSON_IDS.find((id) => id !== who && id !== outsider)!] },
+      ]))
+      ok('互读 · 短信→正文：群成员里一个在场者都没有 → 那本群聊也不给',
+        smsContextFor([who]) === '')
+
+      info.push('互读：正文→短信按在场名册筛（lib/cast.ts 的 castOf）· 短信→正文按线程归属筛'
+        + '（单聊本人 / 见面挂名 / 群聊成员）· 两本账都只取已经写下来的')
+    } finally {
+      if (hadLS) g.localStorage = prevLS
+      else delete g.localStorage
+    }
+  } catch (e) {
+    fail.push('互读段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

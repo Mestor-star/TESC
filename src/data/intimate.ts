@@ -12,6 +12,10 @@
      · `WorldState.intim` = **推进**（约会与私密往来落下的开发度增量 / 状态改写 / 破处对象）；
      · 合成规则在 `intimateOf`：开发度累加、状态后写覆盖、破处对象只认第一次落下的那个。
 
+   一页上五根条：四处部位（口腔 / 胸部 / 小穴 / 菊穴）的**开发度**，加一根
+   **色情度**（`lewd`）—— 后者不挂部位，说的是她这个人此刻的敏度与淫靡程度，
+   与四处同一口径（0–100 的读数 + 一个档位词）。
+
    门槛：私密档案与私密话题都在羁绊 `INTIMATE_BOND`（70）以上解锁 ——
    与时间线里那道 70 的契约门槛同源：关系没走到这儿，这一页不翻开。
 
@@ -33,6 +37,24 @@ export const SLOT_META: Record<IntimateSlot, { label: string; hint: string }> = 
   breast: { label: '胸部', hint: '胸部的敏感与开发状况' },
   vagina: { label: '小穴', hint: '前庭与内部的开发状况' },
   anus: { label: '菊穴', hint: '后庭的开发状况' },
+}
+
+/**
+ * 第五根条：色情度。它不挂在哪个部位上 —— 四处开发度说的是「这处被开发到哪儿了」，
+ * 色情度说的是**她这个人**此刻对这件事的敏度与淫靡程度：同样的 40，两个人的反应
+ * 完全是两回事。所以它与四处并列成第五行，读数口径一致（0–100）。
+ */
+export const LEWD_META = { label: '色情度', hint: '对这件事的敏度与淫靡程度' } as const
+
+/**
+ * 一条私密推进的显示名 —— 提示条上念的那一句：「口腔」/「色情度」/「口腔 · 色情度」。
+ * 两路各记各的（见 lib/plot.ts 的 IntimateDirective），所以这里也可能两样都念。
+ */
+export function intimAdvanceLabel(it: { slot?: IntimateSlot; lewd?: number }): string {
+  const out: string[] = []
+  if (it.slot) out.push(SLOT_META[it.slot].label)
+  if (it.lewd) out.push(LEWD_META.label)
+  return out.join(' · ')
 }
 
 /** 开发度的档位词（读数之外给一句人话；0 与满值各有专门说法） */
@@ -71,6 +93,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事，本人对这类话题意外地脸皮薄', 2),
       anus: p('全未开发，连触碰都未经设想', 0),
     },
+    lewd: 5,
     virgin: true,
     firstBy: null,
   },
@@ -81,6 +104,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('人造之躯，机能完备而未经使用', 4),
       anus: p('未开发；本人会直白地问「要试这里吗」', 0),
     },
+    lewd: 9,
     virgin: true,
     firstBy: null,
   },
@@ -91,6 +115,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；对这一步有她自己那套审慎的判断', 2),
       anus: p('全未开发', 0),
     },
+    lewd: 5,
     virgin: true,
     firstBy: null,
   },
@@ -101,6 +126,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事，本人甚至没太懂这意味着什么', 1),
       anus: p('全未开发', 0),
     },
+    lewd: 3,
     virgin: true,
     firstBy: null,
   },
@@ -111,6 +137,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('自陈「活得太久，这种事也没那么新鲜了」；实则疏于打理', 8),
       anus: p('未开发；本人表示「懒得试」', 0),
     },
+    lewd: 9,
     virgin: true,
     firstBy: null,
   },
@@ -121,6 +148,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('本人声称「我等你很久了」；档案不作旁证', 10),
       anus: p('未开发', 0),
     },
+    lewd: 13,
     virgin: true,
     firstBy: null,
   },
@@ -131,6 +159,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；知情程度却是队里最高的一个', 2),
       anus: p('全未开发', 0),
     },
+    lewd: 4,
     virgin: true,
     firstBy: null,
   },
@@ -143,6 +172,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；对这一类话题怯生生地回避', 2),
       anus: p('全未开发', 0),
     },
+    lewd: 5,
     virgin: true,
     firstBy: null,
   },
@@ -153,6 +183,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；照顾人的那一面远多过被照顾', 3),
       anus: p('未开发', 0),
     },
+    lewd: 7,
     virgin: true,
     firstBy: null,
   },
@@ -163,6 +194,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；对「夫妻」一类说法毫无抵抗力', 4),
       anus: p('全未开发', 0),
     },
+    lewd: 8,
     virgin: true,
     firstBy: null,
   },
@@ -173,6 +205,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；档案不作旁证', 3),
       anus: p('未开发', 0),
     },
+    lewd: 7,
     virgin: true,
     firstBy: null,
   },
@@ -183,6 +216,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事，却敢把这种事写进稿子', 4),
       anus: p('未开发', 0),
     },
+    lewd: 8,
     virgin: true,
     firstBy: null,
   },
@@ -195,6 +229,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；本人视之为「未开辟的战线」', 4),
       anus: p('未开发', 0),
     },
+    lewd: 8,
     virgin: true,
     firstBy: null,
   },
@@ -205,6 +240,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；舞台上的媚态全是为镜头练的', 2),
       anus: p('全未开发', 0),
     },
+    lewd: 5,
     virgin: true,
     firstBy: null,
   },
@@ -215,6 +251,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；对她而言更像一章还没写的书', 3),
       anus: p('未开发', 0),
     },
+    lewd: 6,
     virgin: true,
     firstBy: null,
   },
@@ -225,6 +262,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；本人对此只是柔和地笑', 4),
       anus: p('未开发', 0),
     },
+    lewd: 8,
     virgin: true,
     firstBy: null,
   },
@@ -237,6 +275,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('如她所言，「吾乃魔王」——这一页尚未开启', 6),
       anus: p('未开发；本人表示「没兴趣，除非你想要」', 0),
     },
+    lewd: 12,
     virgin: true,
     firstBy: null,
   },
@@ -247,6 +286,7 @@ export const INTIMATE: Record<string, IntimateProfile> = {
       vagina: p('未经人事；档案不作旁证', 3),
       anus: p('未开发', 0),
     },
+    lewd: 5,
     virgin: true,
     firstBy: null,
   },
@@ -260,8 +300,9 @@ export function hasIntimate(charId: string): boolean {
 /**
  * 底档 + 推进 → 此刻的一页。
  *
- * 合成规则（三处，缺一不可）：
- *   · 开发度 = 底档 + 增量，夹在 0–100；
+ * 合成规则（四处，缺一不可）：
+ *   · 部位开发度 = 底档 + 增量，夹在 0–100；
+ *   · 色情度     = 同上，只是它不挂在哪个部位上（`IntimateProfile.lewd`）；
  *   · 状态句 = 推进里若有这一段就覆盖底档那一句（后写覆盖）；
  *   · 破处对象 = 第一次落下的那个说了算（`firstBy`）—— 之后再有改写也不顶掉它：
  *     「破处对象是谁」问的是第一回，不是最近一回。
@@ -280,8 +321,14 @@ export function intimateOf(charId: string, progress?: IntimateProgress): Intimat
       dev: Math.max(0, Math.min(100, Math.round(b.dev + add))),
     }
   }
+  const lewdAdd = progress?.lewd ?? 0
   const first = progress?.firstBy?.trim() || base.firstBy
-  return { parts, virgin: !first, firstBy: first ?? null }
+  return {
+    parts,
+    lewd: Math.max(0, Math.min(100, Math.round(base.lewd + lewdAdd))),
+    virgin: !first,
+    firstBy: first ?? null,
+  }
 }
 
 /** 该角色此刻的私密档案（`progress` 一般直接传 `world.intim?.[charId]`） */

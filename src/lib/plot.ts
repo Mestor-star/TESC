@@ -74,9 +74,19 @@ export interface PlotDirective {
 /** 一条私密推进：某角色的某个部位，这一次走到了哪儿 */
 export interface IntimateDirective {
   char: string
-  slot: IntimateSlot
+  /**
+   * 推进的部位。**只有推的是色情度时可以不给** —— 那一根条不挂在部位上
+   * （见 data/intimate.ts 的 LEWD_META）：她这一回没被碰到哪儿、心思却更敏了，
+   * 就是一条只带 `lewd` 的推进。
+   */
+  slot?: IntimateSlot
   /** 开发度增量（一次一小步；上限见 INTIM_DEV_MAX） */
   dev?: number
+  /**
+   * 色情度增量（可选）—— 与部位推进是两件事，可以并列在同一条里给，
+   * 也可以单独给一条（这一回只动了心思、没动身体）。
+   */
+  lewd?: number
   /** 状态句改写（可选；缺省不动底档那一句） */
   state?: string
   /** 这一次是初次破处（'破处对象' 落成言万叶本人） */
@@ -198,26 +208,33 @@ export function sanitizeDirective(v: unknown): PlotDirective {
     }
   }
 
-  /* 私密推进：只认女角色与四个部位；开发度按增量收（负数抹平 —— 这一档只增不减），
-     状态句封顶，避免整段正文塞进来。 */
+  /* 私密推进：只认女角色；部位那一路还要认四个槽位之一。开发度与色情度都按增量收
+     （负数抹平 —— 这一档只增不减），状态句封顶，避免整段正文塞进来。
+     一条里若既没有合法的部位、又没有色情度增量，就是空话，丢掉。 */
   if (Array.isArray(src.intim)) {
     const intim: IntimateDirective[] = []
     for (const item of src.intim) {
       if (!item || typeof item !== 'object') continue
       const o = item as Record<string, unknown>
       const char = typeof o.char === 'string' ? o.char.trim() : ''
-      const slot = typeof o.slot === 'string' ? (o.slot.trim() as IntimateSlot) : null
-      if (!hasIntimate(char) || !slot || !INTIMATE_SLOTS.includes(slot)) continue
+      const raw = typeof o.slot === 'string' ? (o.slot.trim() as IntimateSlot) : null
+      const slot = raw && INTIMATE_SLOTS.includes(raw) ? raw : null
+      if (!hasIntimate(char)) continue
       const dev = finiteNum(o.dev)
+      const lewd = finiteNum(o.lewd)
       const state = typeof o.state === 'string' ? o.state.trim().slice(0, 120) : ''
       const first = o.first === true
-      if (dev === null && !state && !first) continue
+      /* 部位那一支：dev / state / first 都得挂在槽位上才落得下去 */
+      const onSlot = slot !== null && (dev !== null || Boolean(state) || first)
+      const gain = lewd !== null ? clamp(Math.round(lewd * 10) / 10, 0, INTIM_DEV_MAX) : 0
+      if (!onSlot && !gain) continue
       intim.push({
         char,
-        slot,
-        ...(dev !== null ? { dev: clamp(Math.round(dev * 10) / 10, 0, INTIM_DEV_MAX) } : {}),
-        ...(state ? { state } : {}),
-        ...(first ? { first: true } : {}),
+        ...(slot ? { slot } : {}),
+        ...(onSlot && dev !== null ? { dev: clamp(Math.round(dev * 10) / 10, 0, INTIM_DEV_MAX) } : {}),
+        ...(gain ? { lewd: gain } : {}),
+        ...(onSlot && state ? { state } : {}),
+        ...(onSlot && first ? { first: true } : {}),
       })
       if (intim.length >= 4) break
     }
@@ -730,8 +747,8 @@ export interface DirectiveEffects {
   digest?: string
   /** 角色发出的邀约（调用方落成一场约会线程） */
   date?: { kind?: 'date' | 'intimate'; title?: string; place?: string }
-  /** 本次实际推进的私密部位（供提示条念一句） */
-  intim: { char: string; slot: IntimateSlot }[]
+  /** 本次实际推进的私密读数（供提示条念一句；部位与色情度可以只来其一） */
+  intim: { char: string; slot?: IntimateSlot; lewd?: number }[]
 }
 
 /** 把净化后的指令落地到世界状态；返回实际产生的影响（供视图 toast/结算） */
@@ -766,11 +783,15 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
      底下的合成规则只认第一次落下的那个，之后再给也改不动。 */
   for (const it of d.intim ?? []) {
     const prog: IntimateProgress = {}
-    if (typeof it.dev === 'number' && it.dev !== 0) prog.dev = { [it.slot]: it.dev }
-    if (it.state) prog.state = { [it.slot]: it.state }
-    if (it.first) prog.firstBy = 'you'
+    if (it.slot) {
+      if (typeof it.dev === 'number' && it.dev !== 0) prog.dev = { [it.slot]: it.dev }
+      if (it.state) prog.state = { [it.slot]: it.state }
+      if (it.first) prog.firstBy = 'you'
+    }
+    if (typeof it.lewd === 'number' && it.lewd !== 0) prog.lewd = it.lewd
+    if (!prog.dev && !prog.state && !prog.firstBy && !prog.lewd) continue
     api.bumpIntim(it.char, prog)
-    fx.intim.push({ char: it.char, slot: it.slot })
+    fx.intim.push({ char: it.char, ...(it.slot ? { slot: it.slot } : {}), ...(it.lewd ? { lewd: it.lewd } : {}) })
   }
   if (d.date) fx.date = d.date
   fx.diverged = d.diverged === true
@@ -854,6 +875,7 @@ export function dateDirective(d: PlotDirective | null, charId: string): PlotDire
       .map((it) => ({
         ...it,
         ...(typeof it.dev === 'number' ? { dev: clamp(Math.round(it.dev), 1, 3) } : {}),
+        ...(typeof it.lewd === 'number' ? { lewd: clamp(Math.round(it.lewd), 1, 3) } : {}),
       }))
     if (intim.length) out.intim = intim
   }
@@ -885,6 +907,15 @@ export interface DirectorCtx {
   presetPost?: string
   /** 近期作战记录摘要（取自隐藏存档；用来承接已打过的任务，防前后文不搭） */
   battleLog?: string
+  /**
+   * 近期短信摘要 —— **只取与此刻在场者有关的那几本**（由 lib/crosslink.ts 的
+   * `smsContextFor` 生成；无关的线程一个字都不给）。
+   *
+   * 与 battleLog 同格：都是「已经发生的事」，只作延续性背景、不许逐条复述。
+   * 单开一格的理由是它带来的**另一类**事实 —— 作战记录说的是「打过什么」，
+   * 短信说的是「两个人之间说定了什么」（约好的见面就在这一格里）。
+   */
+  smsLog?: string
   /**
    * 本事件登记的场景 CG 候选清单，已渲染成 `- id —— 说明` 的文本
    * （由 lib/cg.ts 的 `cgPaletteBlock` 生成）。
@@ -970,9 +1001,11 @@ function nextAnchorBlock(next: TimelineEvent): string {
 function speechContract(): string {
   return `【台词行格式 · 终端渲染约定】（本条只管「正文怎么写」，与上方预设的「文本格式」「输出格式」冲突时，一律以本条为准）
 终端按**行首**的「角色名：」把正文拆成角色气泡（角色＝左气泡，言万心叶＝右气泡）。要让在场某角色开口时，请让该句台词另起一行，以「角色名：」开头单独成段：
-· 名字用其本名或该角色的常用称呼（与上方【本事件出场角色】里的写法一致），冒号用中文全角「：」；
+· 名字用其**全名**（与上方【本事件出场角色】里的写法一致），冒号用中文全角「：」；
 · 冒号后可直接接台词，也可用「」把台词括起；
 · 台词与名字之间不换行，也不要把旁白与台词挤在同一行。
+· 不要缩成简称、也不要带称呼后缀 —— 别人怎么叫他与署名无关：言万心叶开口就写「言万心叶：」，
+  写成「言万：」「言万同学：」终端认不出来，那一句会整行掉回旁白（正史里主角的话就是这么漏掉气泡的）。
 只有确实作为某角色口中说出的话才用此格式；神态、动作与叙述行一律不要加名字前缀，否则会被终端当成台词，切出不该有的气泡。
 
 一回合里的**配比**：旁白（叙述、动作、神态、场景、心理）可以多写，台词也不能少 —— 不要整段只有叙述、一句台词都没有，也不要通篇都是对白、没有旁白垫着。
@@ -1257,8 +1290,9 @@ ${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
 · 她给到哪一步，由她此刻的关系与性格定 —— 有的只肯说，有的肯赴约，有的已不在意距离。
 · 推进要**跟着言万心叶的行动走**：他给了那层意思、她也接得住，才往前挪一步；
   他没给的就别替她安排。拿不准就停在当下，不必每回合都往前推。
-· 私密场面照常上屏、详略自便；真正推进到身体哪一步，用下面事件指令里的 intim 落成读数
-  （那几个数进的是档案页「私密档案」，不是正文）。`
+· 私密场面照常上屏、详略自便；真正推进到哪一步，用下面事件指令里的 intim 落成读数
+  （那几个数进的是档案页「私密档案」的背面，不是正文）：部位那一路给 dev，
+  她整个人的敏度往前挪了就另外给 lewd —— 两件事各记各的。`
     : ''
 
   const notesSection = notesSectionFor(ev)
@@ -1270,6 +1304,8 @@ ${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
     : ctx.idle ? idleSection() : ''
   // 近期作战：与 loreContext 同格（都是「已发生的事实」，只作延续性背景）
   const opsSection = ctx.battleLog ? `\n\n${ctx.battleLog}` : ''
+  // 近期短信：同一格，紧挨着它 —— 两边都是「他做过什么、与谁说过什么」
+  const smsSection = ctx.smsLog ? `\n\n${ctx.smsLog}` : ''
 
   return `${outlineRules(ctx.operatorName || '言万心叶')}${presetSection(ctx.presetPre)}
 
@@ -1297,7 +1333,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${reask}${loreSection}${opsSection}${varBlock}${cgSection}${intimSection}${anchor}${presetSection(ctx.presetPost)}${will}
+${reask}${loreSection}${opsSection}${smsSection}${varBlock}${cgSection}${intimSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 
@@ -1324,12 +1360,13 @@ ${speechContract()}
     "squad": ["在场的参战角色id"],              // 只列此刻确实在场的人；空 = 由已遇见者里挑
     "force": true                              // true = 本段必然开打
   }${intimIds.length ? `,
-  "intim": [                                  // 私密档案推进（仅【私密往来】名单上的人；本回合确实推进了哪个部位才给）
+  "intim": [                                  // 私密档案推进（仅【私密往来】名单上的人；本回合确实推进了才给）
     { "char": "角色id", "slot": "mouth|breast|vagina|anus",
       "dev": 1,                               // 这一次的开发度增量，1~3（一回合一小步）
+      "lewd": 1,                              // 色情度增量，1~3（可选；说不清就别给）
       "state": "改写该部位状态的一句话（可选，不写就沿用原句）",
       "first": true }                         // 仅当**这一回是初次破处**时置 true（此后不要再给）
-  ]` : ''}
+  ]                                             // slot 可以省：这一回没碰哪儿、心思却更敏了，就只给 lewd` : ''}
 }
 无任何变化时输出 { }。不要把本说明当作文本念出来。
 

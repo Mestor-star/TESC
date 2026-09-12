@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { X } from '@phosphor-icons/react'
+import { X, ArrowUUpLeft } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
@@ -25,9 +25,10 @@ import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
 import {
-  INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META, VIRGIN, devStage, firstByName,
+  INTIMATE_BOND, INTIMATE_SLOTS, LEWD_META, SLOT_META, VIRGIN, devStage, firstByName,
 } from '../data/intimate'
 import { Portrait, useCharImg } from '../components/Portrait'
+import { CgSlot } from '../components/CgSlot'
 
 import css from './Archive.module.css'
 
@@ -329,24 +330,19 @@ function SkillIcon({ id }: { id: string }) {
   return <Ico size={14} weight="bold" className={css.opAbilIco} data-skill-ico={iconNameOf(id)} />
 }
 
-/* ---------------- 私密档案（只对女角色生效） ---------------- */
+/* ---------------- 私密档案（只对女角色生效 · 写在卡的背面） ---------------- */
 /**
- * 私密档案面板。
+ * 私密档案的入口 —— 摆在正面档案最末。
  *
- * 底档在 `data/intimate.ts`（游戏内拟制，非原文考据），推进在 `world.intim`
- * （约会与私密往来落下）—— 这一栏只把两者合成之后照搬上屏，自己不算任何数。
- *
- * 两道门：
- *   ① 只对女角色生效 —— 非女角色 / 无底档者整节不出现（`hasIntimate`）；
- *   ② 羁绊到 `INTIMATE_BOND` 才翻开 —— 关系没走到那儿，这一页就还是封存的，
- *      界面只说还差多少，不预告里面写了什么。
- * 展开是**点出来的**（默认收起）：这一页放在档案最末，点开才铺开。
+ * 这一页不是「展开一段」而是**把整张卡翻过来**（见 Archive 里的 flip 状态）：
+ * 背面另起一版，左栏一个立绘位、右栏五根读数条。所以这里只留一个门：
+ *   · 只对女角色生效 —— 非女角色 / 无底档者整节不出现（`hasIntimate`）；
+ *   · 羁绊到 `INTIMATE_BOND` 才解封 —— 没走到那儿就还是封存的那一句话，
+ *     只说还差多少，不预告背面写了什么，也不给翻的按钮。
  */
-function IntimatePanel({ charId }: { charId: string }) {
-  const { intimOf, intimOpen, bondNow, operatorName } = useTerminal()
-  const [shown, setShown] = useState(false)
-  const prof = intimOf(charId)
-  if (!prof) return null
+function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }) {
+  const { intimOf, intimOpen, bondNow } = useTerminal()
+  if (!intimOf(charId)) return null
   const open = intimOpen(charId)
   const bond = bondNow(charId)
 
@@ -370,64 +366,140 @@ function IntimatePanel({ charId }: { charId: string }) {
   return (
     <div className={css.dialogSection} data-intimate="open" data-intimate-ready>
       <h4>私密档案</h4>
-      <button
-        type="button"
-        className="btn btn--ghost"
-        data-intimate-toggle
-        aria-expanded={shown}
-        onClick={() => setShown((v) => !v)}
-      >
-        {shown ? '收起私密档案' : '展开私密档案'}
-      </button>
+      <div className={css.intimTease} data-intimate-tease>
+        <span className="tiny muted">
+          档案卡的另一面记着别的东西：口腔 / 胸部 / 小穴 / 菊穴 的开发度，与色情度。
+        </span>
+        <button type="button" className="btn btn--ghost" data-intimate-toggle onClick={onFlip}>
+          翻到背面
+        </button>
+      </div>
+    </div>
+  )
+}
 
-      {shown ? (
-        <div className={css.intimBody} data-intimate-body>
-          <div className={css.intimParts}>
-            {INTIMATE_SLOTS.map((slot) => {
-              const part = prof.parts[slot]
-              const meta = SLOT_META[slot]
-              return (
-                <div key={slot} className={css.intimRow} data-intimate-slot={slot}>
-                  <span className={css.intimLabel}>
-                    <b>{meta.label}</b>
-                    <i>{meta.hint}</i>
-                  </span>
-                  <span className={css.intimState}>{part.state}</span>
-                  <span className={css.intimDev}>
-                    <span className="meter">
-                      <span
-                        className="meter__fill"
-                        style={{
-                          width: `${part.dev}%`,
-                          background: 'linear-gradient(90deg, color-mix(in srgb, var(--red) 45%, transparent), var(--red))',
-                        }}
-                      />
-                    </span>
-                    <b className="mono">{part.dev}</b>
-                    <i>{devStage(part.dev)}</i>
-                  </span>
-                </div>
-              )
-            })}
+/**
+ * 卡的背面 —— 私密档案本体。
+ *
+ * 版面与正面同构（左立绘 / 右档案），读数是**五根条**：四处部位开发度 + 色情度，
+ * 与「能力参数」用同一套条（`.stat` + `.meter`），只是那五轴说的是战斗力，
+ * 这五根说的是这一件事。
+ *
+ * 立绘位走 CgSlot：素材丢 `public/cg/cg-intim-<角色id>.webp|png|jpg` 即点亮，
+ * 缺图时摆「待补」虚线框 —— 版位先占住，补图之后版面不跳。
+ *
+ * 底档在 `data/intimate.ts`（游戏内拟制，非原文考据），推进在 `world.intim`
+ * （约会与私密往来落下）—— 这一页只把两者合成之后照搬上屏，自己不算任何数。
+ */
+function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: string; name: string; onBack: () => void }) {
+  const { intimOf, operatorName } = useTerminal()
+  const prof = intimOf(charId)
+  if (!prof) return null
+  const opName = operatorName.trim() || '言万心叶'
+
+  /**
+   * 一根条：标签 / 条 / 读数 / 档位词 —— 与「能力参数（五轴评定）」同一副骨架。
+   * 底下那行状态句只有部位条有（色情度不挂部位，没有「那一处的状态」这回事）。
+   */
+  const bar = (key: string, label: string, hint: string, dev: number, color: string, state?: string) => (
+    <div className={css.intimStat} key={key} data-intimate-slot={key}>
+      <div className={css.stat} title={hint}>
+        <small>{label}</small>
+        <div className="meter">
+          <div
+            className="meter__fill"
+            style={{ width: `${dev}%`, background: `linear-gradient(90deg, ${color}66, ${color})` }}
+          />
+        </div>
+        <span className="num">{dev}</span>
+        <i className={css.intimStage}>{devStage(dev)}</i>
+      </div>
+      {state ? (
+        <p className={css.intimState}>
+          <span className={css.intimStateK}>状态</span>{state}
+        </p>
+      ) : null}
+    </div>
+  )
+
+  return (
+    <div className={css.intimBack} data-intimate-back>
+      {/* 左栏：私密档案的立绘位。图待补 —— 丢一张同名图进 public/cg/ 即点亮 */}
+      <div className={css.intimBackArt}>
+        <CgSlot
+          cgId={`cg-intim-${charId}`}
+          caption={`${name} · 私密档案立绘（图待补）`}
+          ratio="3 / 4"
+        />
+      </div>
+
+      <div className={css.intimBackText}>
+        <div className={css.dialogHead}>
+          <Portrait avatarId={charId} name={name} hue={hue} sigil="密" size={54} round />
+          <div className={css.dialogTitle}>
+            <small>PRIVATE DOSSIER · 背面</small>
+            <h3>{name}</h3>
+            <div style={{ color: hue, fontSize: 13, marginTop: 2 }}>私密档案（非原文考据 · 本终端拟制）</div>
+          </div>
+          <button className={css.dialogClose} onClick={onBack} aria-label="翻回正面" data-intimate-back-close>
+            <ArrowUUpLeft size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className={css.dialogBody}>
+          {/* 五根读数条：先单独一根色情度（不挂部位，整幅一条长条），
+              再是四处部位的开发度 —— 每一处「条」与「那一处的状态句」分开摆：
+              条给数，状态句给话，两样不是一回事。 */}
+          <div className={css.dialogSection}>
+            <h4>{LEWD_META.label}</h4>
+            {/* 第五根条也挂 data-intimate-slot —— 读数条一共五根，DOM 自己把它说全，
+                外部的量尺（冒烟）才不必靠猜哪一根是它 */}
+            <div className={css.intimLewd} data-intimate-slot="lewd" data-intimate-lewd={prof.lewd}>
+              <div className="meter meter--thick">
+                <div
+                  className="meter__fill"
+                  style={{ width: `${prof.lewd}%`, background: 'linear-gradient(90deg, var(--red-deep), var(--red))' }}
+                />
+              </div>
+              <b className="num">{prof.lewd}</b>
+              <i className={css.intimStage}>{devStage(prof.lewd)}</i>
+            </div>
+            <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.7 }}>
+              {LEWD_META.hint}。不挂在哪一处上 —— 说的是她这个人此刻的状态，
+              与底下四处开发度各记各的：没被碰到哪儿、心思却更敏了，这一根也会往上走。
+            </div>
           </div>
 
-          <div className={css.intimFoot}>
-            <div className={css.intimFootCell} data-intimate-virgin={prof.virgin ? '1' : '0'}>
-              <small>处女</small>
-              <b>{prof.virgin ? '是' : '否'}</b>
-            </div>
-            <div className={css.intimFootCell} data-intimate-first>
-              <small>破处对象</small>
-              <b>{prof.virgin ? VIRGIN : firstByName(prof.firstBy, operatorName.trim() || '言万心叶')}</b>
+          <div className={css.dialogSection}>
+            <h4>开发度（四处）</h4>
+            <div className={css.intimBars}>
+              {INTIMATE_SLOTS.map((slot) => {
+                const meta = SLOT_META[slot]
+                const part = prof.parts[slot]
+                return bar(slot, meta.label, meta.hint, part.dev, hue, part.state)
+              })}
             </div>
           </div>
 
-          <div className="tiny muted" style={{ lineHeight: 1.7 }}>
-            开发度随约会与私密往来累积，状态句后写覆盖；「破处对象」记的是第一回，之后不再改写。
-            这一页是本终端的游戏内档案，非原文考据；真正的经过写在你与她的会话里。
+          <div className={css.dialogSection}>
+            <h4>破处</h4>
+            <div className={css.intimFoot}>
+              <div className={css.intimFootCell} data-intimate-virgin={prof.virgin ? '1' : '0'}>
+                <small>处女</small>
+                <b>{prof.virgin ? '是' : '否'}</b>
+              </div>
+              <div className={css.intimFootCell} data-intimate-first>
+                <small>破处对象</small>
+                <b>{prof.virgin ? VIRGIN : firstByName(prof.firstBy, opName)}</b>
+              </div>
+            </div>
+            <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.7 }}>
+              「破处对象」记的是第一回，之后不再改写。开发度与色情度随约会与私密往来累积，
+              状态句后写覆盖；真正的经过写在你与她的会话里。
+            </div>
           </div>
         </div>
-      ) : null}
+      </div>
     </div>
   )
 }
@@ -587,11 +659,28 @@ function GearSwap({ id, gearId, owned, onPick }: {
   )
 }
 
+/** 翻面那两拍的时长（与 Archive.module.css 的 cardTurn* 对齐：每拍各一半） */
+const FLIP_MS = 240
+
 export function Archive() {
-  const { operatorName, epDone, cur, bondNow, push, profileRequest, clearProfileRequest, isMet } = useTerminal()
+  const {
+    operatorName, epDone, cur, bondNow, push, profileRequest, clearProfileRequest, isMet,
+    intimOf, intimOpen,
+  } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  /**
+   * 档案卡的正反两面。'front' = 平常那份档案，'back' = 私密档案。
+   * `turn` 是翻面动画的两拍：'out' 把当前这面转出去，'in' 把另一面转回来 ——
+   * 中间那一拍（两张都立着、卡片正侧着身）才是换内容的时候，所以只看得到「翻过去」，
+   * 看不到「跳一下」。两拍各占 FLIP_MS 的一半。
+   */
+  const [side, setSide] = useState<'front' | 'back'>('front')
+  const [turn, setTurn] = useState<'' | 'out' | 'in'>('')
+  const turnTimers = useRef<number[]>([])
+  /** 翻面这道闸门（翻的过程中不接第二下）。用 ref：同一拍里连点两下时 state 还没落地 */
+  const turning = useRef(false)
   /* 立绘全图查看器：看的那个人（档案里点开的那位，或操作员自己）。
      从前是个 bool —— 只有档案弹窗会用到；主角专档也要看全图之后，
      得记下「看的是谁的」，否则关弹窗那一刻图就没了。 */
@@ -601,6 +690,11 @@ export function Archive() {
 
   const rows = useMemo(buildRows, [])
   const focus = rows.find((r) => r.id === openId) ?? null
+  /**
+   * 这一张卡翻不翻得过去：有底档（女角色）且已解封（羁绊到了）。
+   * 门槛在翻之前就判 —— 翻到一半被人拦下会剩一张空白的背面。
+   */
+  const backOk = side === 'back' && !!focus && intimOf(focus.id) !== null && intimOpen(focus.id)
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const sit = opSituation(epDone)
   /** 主角档案：随已收束的事件换页（原文里他每一段时期都不同） */
@@ -635,21 +729,62 @@ export function Archive() {
   }, [])
   const progress = useMemo(() => periodProgress(epDone), [epDone])
 
+  /* 把翻面收回原位 —— 换一个人看、关掉弹窗都得走这里：
+     翻面是某一张卡上的动作，不是模块级的开关，上一张停在哪一面都不该跟着走。
+     排出去的两拍也要一并撤掉，否则那一拍会落到新点开的这张卡上。 */
+  const resetFlip = useCallback(() => {
+    for (const t of turnTimers.current) window.clearTimeout(t)
+    turnTimers.current = []
+    turning.current = false
+    setSide('front')
+    setTurn('')
+  }, [])
   /* 展开某档案（卡片就近） */
   const openFromId = useCallback((id: string) => {
     const el = rootRef.current?.querySelector(`[data-archive-card="${id}"]`) as HTMLElement | null
     setOpenRect(el ? el.getBoundingClientRect() : null)
     setPos(null)
+    resetFlip()
     setOpenId(id)
-  }, [])
+  }, [resetFlip])
   const onCardOpen = useCallback((id: string, e: MouseEvent<HTMLElement>) => {
     const el = e.currentTarget as HTMLElement
     setOpenRect(el.getBoundingClientRect())
     setPos(null)
     setViewer(null)
+    resetFlip()
     setOpenId(id)
+  }, [resetFlip])
+  const close = useCallback(() => {
+    setOpenId(null); setViewer(null); setOpenRect(null); setPos(null)
+    resetFlip()
+  }, [resetFlip])
+  useEffect(() => resetFlip, [resetFlip])
+
+  /**
+   * 翻面。两拍各 FLIP_MS/2：先转出去，中间那一拍换内容，再转回来。
+   * 动画进行中不接第二次点击（转到一半再翻会从正侧面弹回去，很难看）。
+   *
+   * 两拍**各自排定**，第二拍不嵌在第一拍的回调里 —— 嵌在里头的话，中间那点杂事
+   * （换页、滚动）出一丁点岔子，`turn` 就永远停在 'in'：动画看着是翻完了，
+   * 可这道闸门就此卡死，卡只出得去、回不来。排成两条平铺的定时器，归位那一拍
+   * 无论如何都会到。（闸门用 ref 不用 state：同一拍里连点两下时，state 还没落地。）
+   */
+  const flipTo = useCallback((to: 'front' | 'back') => {
+    if (turning.current) return
+    turning.current = true
+    setTurn('out')
+    const t1 = window.setTimeout(() => {
+      setSide(to)
+      setTurn('in')
+      dlgRef.current?.scrollTo({ top: 0 })
+    }, FLIP_MS / 2)
+    const t2 = window.setTimeout(() => {
+      turning.current = false
+      setTurn('')
+    }, FLIP_MS)
+    turnTimers.current.push(t1, t2)
   }, [])
-  const close = useCallback(() => { setOpenId(null); setViewer(null); setOpenRect(null); setPos(null) }, [])
 
   /* 打开后测量真实尺寸再就近落位。
      尺寸**要跟着长**：落位那一刻量到的高度未必是最终高度（立绘解码、装具区与作战面板随后撑开），
@@ -809,7 +944,8 @@ export function Archive() {
                   width={200}
                   height={280}
                   eager
-                  style={{ width: 'auto', height: 'auto' }}
+                  /* 尺寸交回 CSS：铺满栏宽、高度随图（见 .opArtImg），不钉像素 */
+                  style={{ width: '100%', height: 'auto' }}
                   className={css.opArtImg}
                 />
                 <span className={css.opArtFade} aria-hidden />
@@ -1015,11 +1151,16 @@ export function Archive() {
           <div
             ref={dlgRef}
             data-archive-dialog
+            data-side={side}
+            data-turn={turn || undefined}
             className={`${css.dialog} ${pos ? css.open : ''}`}
             style={{ '--c': focus.hue, ...(pos ? { left: pos.left, top: pos.top } : {}) } as CSSProperties}
             role="dialog"
             aria-modal="true"
           >
+            {backOk ? (
+              <IntimateBack charId={focus.id} hue={focus.hue} name={focus.name} onBack={() => flipTo('front')} />
+            ) : (
             <div className={css.dossier}>
               {/* 左三分之一：立绘整身。右缘渐隐进档案底色，两张纸拼成一张 */}
               <DossierArt focus={focus} onView={() => setViewer(focus)} />
@@ -1139,11 +1280,12 @@ export function Archive() {
                 })()}
               </div>
 
-              {/* 私密档案：只对女角色生效，羁绊解封前只说还差多少 */}
-              <IntimatePanel charId={focus.id} />
+              {/* 私密档案：只对女角色生效。解封之后这儿是翻到背面的门 */}
+              <IntimateGate charId={focus.id} onFlip={() => flipTo('back')} />
             </div>
               </div>
             </div>
+            )}
           </div>
         </>
       ) : null}

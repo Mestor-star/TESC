@@ -172,10 +172,19 @@ export const CAST: CastPerson[] = buildCast()
 /** 24 位档案角色 id（供羁绊/图鉴白名单遍历） */
 export const PERSON_IDS: string[] = CAST.map((p) => p.id)
 
-/** 操作员条目 */
+/**
+ * 操作员条目。
+ *
+ * `names` 是**台词行署名**的识别表（见 lib/dialogue.ts），不是「别人怎么叫他」：
+ * 原文里别人叫他「言万同学」「小主人」「低语者」，那些是对话里的称呼，不该
+ * 混进来（写成台词行反倒不是他说话了）。表里只收他本人署名的几种写法。
+ *   · 「言万」—— 模型最顺手的一处缩写（原文通篇「言万同学」，它据此把复姓截短）。
+ *     少了它，`言万：……` 整行会掉回旁白，正文里的主角一开口就没有气泡；
+ *     而这条是复核在读的（scripts/mech 的台词拆行那一节）。
+ */
 export const OPERATOR_PERSON: CastPerson = {
   id: OPERATOR_ID, kind: 'operator', name: '言万心叶',
-  names: ['言万心叶', '心叶'],
+  names: ['言万心叶', '言万', '心叶'],
   gender: 'm', defaultBond: 0,
   hue: '#58c6ff', sigil: '心', avatarId: OPERATOR_ID,
 }

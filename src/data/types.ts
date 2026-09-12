@@ -483,6 +483,12 @@ export interface IntimatePart {
 /** 一名角色的私密档案（底档 + 已落地的推进合成之后的结果） */
 export interface IntimateProfile {
   parts: Record<IntimateSlot, IntimatePart>
+  /**
+   * 色情度 0-100 —— 不挂在某个部位上，说的是**她这个人**此刻对这件事的
+   * 敏度与淫靡程度：同样是开发度 40，色情度高的人反应完全是另一回事。
+   * 与四处开发度并列成第五根条，取值口径同样由 data/intimate.ts 拟制。
+   */
+  lewd: number
   /** 是否仍为处女 */
   virgin: boolean
   /** 破处对象（未破处 → null；'you' = 言万心叶本人） */
@@ -499,6 +505,8 @@ export interface IntimateProgress {
   dev?: Partial<Record<IntimateSlot, number>>
   /** 各部位状态改写（后写覆盖底档那句话） */
   state?: Partial<Record<IntimateSlot, string>>
+  /** 色情度**增量**（与 dev 同理累加，只是它不挂在哪个部位上） */
+  lewd?: number
   /** 破处对象（落下即非处女；只认第一次落下的那个） */
   firstBy?: string
 }

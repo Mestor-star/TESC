@@ -133,14 +133,48 @@ export function Missions() {
     return rows
   }, [operatorName, isMet])
 
-  /* 剧情作战：一场一场来 —— 打赢一场、领取归档，下一场才上牌面 */
-  const mainline = useMemo(() => mainlineMissions(epDone, mainClaimed), [epDone, mainClaimed])
+  /** 有胜仗记录的任务 id —— 归档只看它，不看点了多少次 */
+  const wonIds = useMemo(
+    () => new Set(records.filter((r) => r.outcome === '胜').map((r) => r.missionId)),
+    [records],
+  )
+
+  /** 那一段事件的仗打赢了没有。
+      主线作战不是在任务简报里打起来的 —— 它由剧情推演现场触发，
+      归档时按「同属那一段事件」认领（作战记录的编号是 plot-<事件 id>-序号）。 */
+  const hasWinEv = useCallback(
+    (evId: string) => [...wonIds].some((id) => id.startsWith(`plot-${evId}-`)),
+    [wonIds],
+  )
+
+  /** 这一条任务的胜仗打过了没有（剧情作战按事件 id 认，派单按任务 id 认） */
+  const hasWin = useCallback(
+    (m: Mission) => wonIds.has(m.id) || (!!m.at && hasWinEv(m.at)),
+    [wonIds, hasWinEv],
+  )
+
+  /**
+   * 剧情作战：牌面摆的是一段窗口 —— 已打赢但没提交的那几场 +
+   * 眼下还没打赢的这一场。打赢即「已完成」（不等领取），窗口随之往前挪。
+   * 已领取的从牌面上收走，故 claimed 一并喂进去。
+   * 状态由**战果**推（不落在 status 覆盖表里）：它是记录的影子，不是点击的结果。
+   */
+  const mainline = useMemo(
+    () => mainlineMissions(epDone, mainClaimed, hasWinEv),
+    [epDone, mainClaimed, hasWinEv],
+  )
 
   const list = useMemo(() => {
     // 主线排在最前：正史优先于巡逻任务，其余照旧按危险度排
-    const rows = [...mainline, ...board].map((m) => ({ ...m, status: status[m.id] ?? m.status }))
+    const rows = [...mainline, ...board].map((m) => ({
+      ...m,
+      // 剧情作战的状态以推导为准：覆盖表是给派单点按钮用的，别把它按上去
+      status: m.mainline ? m.status : (status[m.id] ?? m.status),
+    }))
     const sorted = [...rows].sort((a, b) => {
       if (!!a.mainline !== !!b.mainline) return a.mainline ? -1 : 1
+      // 主线按编号正序：牌面读下来就是时间线的顺序（第一场 → 眼下这一场）
+      if (a.mainline && b.mainline) return a.no.localeCompare(b.no)
       return filter === '高威胁' ? a.stage - b.stage : b.stage - a.stage
     })
     if (filter === '全部') return sorted
@@ -150,29 +184,27 @@ export function Missions() {
 
   const counts = useMemo(() => {
     const s: Record<string, number> = {}
-    for (const m of board) {
-      const st = status[m.id] ?? m.status
+    for (const m of [...mainline, ...board]) {
+      const st = m.mainline ? m.status : (status[m.id] ?? m.status)
       s[st] = (s[st] ?? 0) + 1
     }
     return s
-  }, [board, status])
+  }, [mainline, board, status])
 
-  /** 有胜仗记录的任务 id —— 归档只看它，不看点了多少次 */
-  const wonIds = useMemo(
-    () => new Set(records.filter((r) => r.outcome === '胜').map((r) => r.missionId)),
-    [records],
-  )
-
-  /** 这一条任务的胜仗打过了没有。
-      主线作战不是在任务简报里打起来的 —— 它由剧情推演现场触发，
-      归档时按「同属那一段事件」认领（作战记录的编号是 plot-<事件 id>-序号）。 */
-  const hasWin = useCallback(
-    (m: Mission) => wonIds.has(m.id) || (!!m.at && [...wonIds].some((id) => id.startsWith(`plot-${m.at}-`))),
-    [wonIds],
-  )
+  /** 把一场剧情作战收进档案：牌面上把这一条收走，窗口随之往前挪一格。
+      注意它**不是**「完成」这个动作 —— 完成与否由战果推（见 mainlineMissions），
+      这里做的只是归档。 */
+  const claimMain = (m: Mission) => {
+    setMainClaimed((prev) => {
+      const next = { ...prev, [m.at as string]: true as const }
+      void writeMainClaimed(next)
+      return next
+    })
+    push('success', '剧情战斗归档', `${m.no}「${m.title}」战果已提交 · 简报翻到下一场`, false)
+  }
 
   const act = (m: Mission) => {
-    const cur = status[m.id] ?? m.status
+    const cur = m.mainline ? m.status : (status[m.id] ?? m.status)
     if (cur === '待接取') {
       set(m.id, '已派遣')
       push('success', '任务已接取', `${m.no}「${m.title}」已派遣至 ${m.place}`, false)
@@ -188,17 +220,18 @@ export function Missions() {
         return
       }
       if (m.mainline && m.at) {
-        // 剧情作战领取即翻页：这一场收了，牌面才轮到下一场
-        setMainClaimed((prev) => {
-          const next = { ...prev, [m.at as string]: true as const }
-          void writeMainClaimed(next)
-          return next
-        })
-        push('success', '剧情战斗归档', `${m.no}「${m.title}」战果已领取 · 简报翻到下一场`, false)
+        claimMain(m)
         return
       }
       set(m.id, '完成')
       push('success', '任务完成', `${m.no}「${m.title}」已归档，简报更新`, false)
+    } else if (cur === '完成') {
+      // 剧情作战的「完成」是自己翻上来的（打赢即完成），所以这里还能领 —— 领取只收牌
+      if (m.mainline && m.at) {
+        claimMain(m)
+        return
+      }
+      push('info', '已归档', `${m.no}「${m.title}」的战果已在档案里，不必再提交。`, false)
     } else if (cur === '锁定') {
       push('warn', '等待签署', '本任务需要执行委员长签署，目前无法由你直接下达。', false)
     }
@@ -699,6 +732,24 @@ ${rb.f.word}`}
                       <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m2)}>
                         <PaperPlaneTilt size={13} /> 等待签署
                       </button>
+                    ) : done && m2.mainline ? (
+                      /* 剧情作战打赢了就是「已完成」，但还挂在牌面上等人提交 ——
+                         不提交它就一直在（战果已经在记录里，别让人以为白打了） */
+                      <>
+                        <button
+                          className="btn btn--primary"
+                          style={{ fontSize: 12 }}
+                          title="现场那一仗的胜果已经在作战记录里 —— 提交只把这一段收进档案"
+                          data-archive={m2.id}
+                          data-act="提交"
+                          onClick={() => act(m2)}
+                        >
+                          提交归档 <Check size={13} weight="bold" />
+                        </button>
+                        <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('plot')} data-mainline-fight={m2.at}>
+                          <Crosshair size={13} /> 回推演现场
+                        </button>
+                      </>
                     ) : done ? (
                       <>
                         <button className="btn btn--ghost" style={{ fontSize: 12 }} disabled>已归档</button>

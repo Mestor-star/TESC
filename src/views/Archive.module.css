@@ -515,14 +515,20 @@
 }
 .opArc[data-op-art='img'] {
   display: grid;
-  grid-template-columns: minmax(180px, 232px) 1fr;
+  /* 立绘那一栏给得比别处宽：整身稿是竖的，栏宽就是它的实际大小（约 300×520） */
+  grid-template-columns: minmax(200px, 300px) 1fr;
   align-items: start;
   gap: 16px;
 }
+/* 立绘一格：**盒子跟着图走**，不是图去将就盒子。
+   右栏那摞块比立绘高得多，若把这一格拉成行高（stretch），一张 ~0.58 的竖图
+   在又高又窄的框里按 contain 缩下来，只在正中占一条，上下全是空框 ——
+   看着就是「立绘很小、图位空着」。改成 height:auto：图铺满栏宽，盒子到脚为止，
+   下缘的渐隐与「查看全图」正好压在图的脚边（本来就是照着这个位置摆的）。 */
 .opArt {
   position: relative;
-  align-self: stretch;
-  min-height: 320px;
+  align-self: start;
+  min-height: 260px;
   overflow: hidden;
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
@@ -530,11 +536,11 @@
     radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--red) 14%, transparent), transparent 72%),
     var(--bg-2);
 }
-/* 整身完整可见（contain），铺满这一栏靠 inset，不靠 Portrait 的像素尺寸 */
+/* 整身完整可见（contain），铺满这一栏靠栏宽，不靠 Portrait 的像素尺寸 */
 .opArtImg {
-  position: absolute;
-  inset: 0 0 54px 0;
-  width: auto;
+  position: relative;
+  display: block;
+  width: 100%;
   height: auto;
   border-radius: var(--radius);
 }
@@ -557,11 +563,11 @@
 }
 .opArtCap .btn { cursor: pointer; }
 
-/* 窄屏 / 小屏：左栏并不下，退回一列（立绘摆在最上面，限高） */
+/* 窄屏 / 小屏：左栏并不下，退回一列（立绘限宽居中，别让一张整身稿撑成一屏高） */
 @media (max-width: 860px) {
   .opArc[data-op-art='img'] { grid-template-columns: 1fr; }
-  .opArt { min-height: 0; height: 280px; }
-  .opArtImg { inset: 0 0 54px 0; }
+  .opArt { min-height: 0; }
+  .opArtImg { max-width: 320px; margin: 0 auto; }
 }
 
 .opArcAxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 9px; }
@@ -750,9 +756,9 @@
   font-family: var(--font-mono); font-size: 10px; line-height: 1.65; color: var(--ink-dim);
 }
 
-/* ---------------- 私密档案（只对女角色生效 · 见 Archive.tsx 的 IntimatePanel） ----------------
-   这一栏放在档案最末、默认收起：点「展开私密档案」才铺开。
-   配色走红色系（与极限条同一支），与上方紫/蓝的常规档案读数分开，一眼看出是另一档信息。 */
+/* ---------------- 私密档案（只对女角色生效 · 见 Archive.tsx 的 IntimateBack） ----------------
+   这一页不在正面的档案流里，而是**卡的另一面**：点档案最末那一栏的门，整张卡翻过去。
+   配色走红色系（与极限条同一支），与正面紫/蓝的常规档案读数分开，一眼看出是另一档信息。 */
 .intimLock {
   padding: 10px 12px;
   border: 1px dashed var(--line-2);
@@ -762,26 +768,69 @@
 .intimLock b { display: block; font-size: 12.5px; letter-spacing: 0.06em; color: var(--red); }
 .intimLock p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.85; color: var(--ink-dim); }
 
-.intimBody { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-.intimParts { display: flex; flex-direction: column; gap: 6px; }
-.intimRow {
-  display: grid;
-  grid-template-columns: 96px 1fr 128px;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-left: 2px solid color-mix(in srgb, var(--red) 60%, transparent);
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+/* 正面最末那一栏：解封之后只剩一句提示与一枚「翻到背面」 */
+.intimTease { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.intimTease .btn { cursor: pointer; margin-left: auto; }
+
+/* ---- 翻面：整张卡转过去。两拍，中间换内容（见 Archive.tsx 的 flipTo） ---- */
+.dialog[data-turn='out'] { animation: cardTurnOut 120ms ease-in both; }
+.dialog[data-turn='in'] { animation: cardTurnIn 120ms ease-out both; }
+@keyframes cardTurnOut {
+  from { transform: perspective(1600px) rotateY(0deg); }
+  to { transform: perspective(1600px) rotateY(-90deg); opacity: 0.25; }
 }
-.intimLabel { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.intimLabel b { font-size: 12.5px; color: var(--ink); }
-.intimLabel i { font-style: normal; font-size: 9.5px; line-height: 1.4; color: var(--ink-mute); }
-.intimState { font-size: 11.5px; line-height: 1.7; color: var(--ink-dim); }
-.intimDev { display: flex; align-items: center; gap: 7px; }
-.intimDev .meter { flex: 1; min-width: 48px; }
-.intimDev b { font-size: 11px; color: var(--red); }
-.intimDev i { font-style: normal; font-size: 9.5px; color: var(--ink-mute); white-space: nowrap; }
+@keyframes cardTurnIn {
+  from { transform: perspective(1600px) rotateY(90deg); opacity: 0.25; }
+  to { transform: perspective(1600px) rotateY(0deg); opacity: 1; }
+}
+
+/* ---- 背面：与正面同构（左立绘 / 右档案），只是右边换成五根条 ---- */
+.intimBack {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 2fr;
+  align-items: stretch;
+  min-height: min(84vh, 760px);
+}
+.intimBackArt {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 22px 16px;
+  background:
+    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--red) 16%, transparent), transparent 72%),
+    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--red) 4%, transparent) 26px 52px),
+    var(--bg-2);
+}
+.intimBackArt figure { width: 100%; }
+.intimBackText { min-width: 0; }
+
+/* 一根条 = 一行读数 + 底下一行状态句。读数那行与「能力参数」共用 .stat 骨架，
+   只是多一列档位词（「初识 / 熟稔 / 沉溺」这类人话）。
+   一处两样东西：**条**是开发度（数），**状态句**是她那一处此刻的写法（话）——
+   所以状态句不塞进条里，另起一行、带「状态」二字，一眼看得出这不是读数。 */
+.intimBars { display: flex; flex-direction: column; gap: 10px; }
+.intimStat { display: flex; flex-direction: column; gap: 4px; }
+.intimStat .stat { grid-template-columns: 46px 1fr 30px max-content; }
+.intimStage { font-style: normal; font-size: 10px; color: var(--ink-mute); white-space: nowrap; text-align: right; }
+.intimState {
+  margin: 0 0 0 46px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-dim);
+}
+.intimStateK {
+  margin-right: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+
+/* 色情度：整幅一条长条，与四处部位那几根分开摆（更粗、读数更大） */
+.intimLewd { display: grid; grid-template-columns: 1fr max-content max-content; align-items: center; gap: 10px; }
+.intimLewd .num { font-family: var(--font-mono); font-size: 15px; color: var(--red); }
+.intimLewd .meter { height: 14px; }
 
 .intimFoot { display: grid; grid-template-columns: 120px 1fr; gap: 8px; }
 .intimFootCell {
@@ -794,6 +843,8 @@
 .intimFootCell[data-intimate-virgin='0'] b { color: var(--red); }
 
 @media (max-width: 520px) {
-  .intimRow { grid-template-columns: 1fr; }
+  .intimBack { grid-template-columns: 1fr; min-height: 0; }
+  .intimStat .stat { grid-template-columns: 40px 1fr 26px max-content; }
+  .intimState { margin-left: 40px; }
   .intimFoot { grid-template-columns: 1fr; }
 }

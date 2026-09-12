@@ -164,12 +164,18 @@ export function markUnread(threadId: string): void {
 /**
  * 人格系统提示：**分层人物卡优先**（data/personas.ts 的 profileLinesOf），
  * 没登记卡面的角色回退平铺档案。两条路都只写已入库的原文，不虚构设定。
+ *
+ * `plotContext` 是正文那一侧已经发生过、**且与她有关**的那一截（由
+ * lib/crosslink.ts 的 `plotContextFor` 生成；她不在场的事一句都不给）。
+ * 与「此刻情境」（data/personas 里写死的日常场景）不是一回事：那个是常驻布景，
+ * 这个是**一路推下来真发生的事** —— 有了它，信里才接得上正文里刚走过的那一段。
  */
 export function systemPrompt(
   charId: string,
   opName: string,
   bond: number,
   scenario: string,
+  plotContext?: string,
 ): string {
   const c = charOf(charId)
   const you = opName === '言万心叶' ? '言万心叶' : `操作员「${opName}」`
@@ -183,7 +189,7 @@ export function systemPrompt(
      所以措辞上把主动权交回给对方，不写成一份推进清单。 */
   const intimate = bond >= INTIMATE_BOND
   return `${core}
-\n此刻情境：${scenario}
+\n此刻情境：${scenario}${plotContext ? `\n\n${plotContext}` : ''}
 \n当前与${you}的羁绊约 ${bond}/100（仅作语气参考，别把数字说出口）。
 \n规则：
 1. 始终以第一人称扮演，绝不脱离角色、绝不替${you}说话。

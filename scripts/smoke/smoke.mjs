@@ -1182,8 +1182,13 @@ try {
   /* 台词那一行**故意写长**（远超一行，且中间夹一对「」引号 → 拆出多个兄弟 span）：
      一行以内的短句看不出气泡的排版毛病，超过一行才见分晓（见 I2b）。 */
   const sayLong = '露娜：别走神，先听我说。你手里那台终端的读数一直在跳，跳得比昨夜还快；他临走前说的那句「不许回头」，你最好也一并记着，别装作没听懂，也别急着替他找理由，先把这一段听完。'
-  const seedOk = await ev(`(()=>{try{const k=${JSON.stringify(fid)};if(!k)return 'no-key';const text=['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。',${JSON.stringify(sayLong)},'她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n');const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');o[k]=[{id:'p6-'+Date.now().toString(36),from:'them',text:text,time:'20:00'}];localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true}catch(e){return String(e)}})()`)
-  ok('I1 预置含台词行的叙述到当前会话', seedOk === true, 'seed=' + seedOk)
+  /* 主角那一行**用缩写署名**（「言万：」）—— 实测里模型就是这么写的：原文通篇
+     被人叫「言万同学」，它把署名截成两个字。这一行必须也切出右气泡：
+     它既验拆行器认这个缩写，也验「导演叙述里主角开口」整条链（他本人发的那条
+     走的是另一条路，顶不了这一条）。 */
+  const youShort = '言万：「别装傻，我问你话呢。」'
+  const seedOk = await ev(`(()=>{try{const k=${JSON.stringify(fid)};if(!k)return 'no-key';const text=['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。',${JSON.stringify(sayLong)},${JSON.stringify(youShort)},'她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n');const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');o[k]=[{id:'p6-'+Date.now().toString(36),from:'them',text:text,time:'20:00'}];localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true}catch(e){return String(e)}})()`)
+  ok('I1 预置含台词行的叙述到当前会话（露娜的台词 + 主角的缩写署名「言万：」）', seedOk === true, 'seed=' + seedOk)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('剧情推进')
@@ -1199,6 +1204,16 @@ try {
   ok('I2 台词行拆成左头像气泡（say 含说话人+正文）',
     !!sayProbe && sayProbe.hasAvatar === true && (sayProbe.text || '').includes('别走神')
     && sayProbe.forWho === 'luna', JSON.stringify(sayProbe))
+  /* 主角那一行（缩写署名「言万：」）必须也切出右气泡，而且得是**导演叙述块里**的气泡 ——
+     他本人发的那条消息走的是另一条路（data-you 直接渲染整条），顶不了这一条。
+     实测里正文的主角一开口就没有气泡，正是栽在这一格上。 */
+  const youInNarr = await ev(`(()=>{const all=[...document.querySelectorAll('[data-narration] [data-you]')];
+    const el=all.find(x=>x.innerText.includes('别装傻'));
+    if(!el)return {found:false,n:all.length};
+    return {found:true,text:el.innerText.replace(/\\s+/g,' ').slice(0,40),
+      hasAvatar:!!el.querySelector('[role="img"]')}})()`)
+  ok('I2a 正文里主角的台词行（行首缩写署名「言万：」）切出右气泡（导演叙述块内 · 非他本人发的消息）',
+    youInNarr.found === true && youInNarr.hasAvatar === true, JSON.stringify(youInNarr))
   /* 气泡超过一行不许散成并排窄柱：正文那一格必须是整格、行是接着排的。
      判据不看类名，只看版面 —— 一格正文里，最宽的那一小段该占满整格宽度；
      真散了的话，每一段各自成列，最宽的一段只剩整格的 1/N。（I2 那条长台词正是为此写的。） */
@@ -2416,6 +2431,168 @@ try {
   ok('O6c 栏头里带跳转按钮的那一块也收得起来（开关在行右端 · 跳转按钮不受影响）',
     dFold3.body === false && dFold3.link === true && !!dFold3.title, JSON.stringify(dFold3))
   await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-rec"]');if(h)h.click();return true})()`)
+
+  /* ============ Phase R：私密档案（只对女角色 · 整张卡翻到背面 · 五根条） ============
+     播一份「露娜的羁绊已经过线」的账，看她那张卡：正面最末留一扇门，翻过去才是背面 ——
+     左一个立绘位（图待补），右五根读数条（四处开发度 + 一根单独的色情度），
+     外加「处女 / 破处对象」。另拿羁绊没到的恋兔光做对照：她那一页还封着，门都不给。 */
+  console.log('\n[Phase R] 私密档案：翻面 · 五根条（含单独的色情度）· 未解封不给门')
+  const pSeed = await ev(`(()=>{
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'私密观察员',focusId:'gcn',
+      world:{offset:{luna:100,hikari:-100},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],records:[]}}));
+    localStorage.setItem('zts-plot:v1',JSON.stringify({}));
+    localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
+    return true})()`)
+  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）', pSeed === true, 'seed=' + pSeed)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('角色档案')
+  await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'P archive 24 cards')
+
+  // 对照：羁绊没到的那位 —— 只说封存，不给翻的门
+  await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
+  await poll(`!!document.querySelector('[data-archive-dialog]')`, 15000, 'R hikari dialog')
+  const pLocked = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;
+    return {locked:!!d.querySelector('[data-intimate="locked"]'),toggle:!!d.querySelector('[data-intimate-toggle]'),
+      back:!!d.querySelector('[data-intimate-back]'),txt:(d.querySelector('[data-intimate="locked"]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim()}})()`)
+  ok('R1 羁绊没到 → 私密档案只写「封存中」，翻面的门不出现',
+    !!pLocked && pLocked.locked === true && pLocked.toggle === false && pLocked.back === false
+    && /封存/.test(pLocked.txt), JSON.stringify(pLocked))
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, 'R hikari dialog close')
+
+  // 露娜：正面最末有门，点一下整张卡翻过去
+  await ev(`(()=>{const c=document.querySelector('[data-archive-card="luna"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
+  await poll(`!!document.querySelector('[data-archive-dialog]')`, 15000, 'R luna dialog')
+  const pFront = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;
+    return {side:d.getAttribute('data-side'),open:!!d.querySelector('[data-intimate="open"]'),
+      toggle:!!d.querySelector('[data-intimate-toggle]'),back:!!d.querySelector('[data-intimate-back]')}})()`)
+  ok('R2 羁绊过线 → 正面最末留一扇「翻到背面」的门（此时仍是正面）',
+    !!pFront && pFront.side === 'front' && pFront.open === true && pFront.toggle === true && pFront.back === false,
+    JSON.stringify(pFront))
+  await ev(`(()=>{const b=document.querySelector('[data-intimate-toggle]');if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-intimate-back]')`, 15000, 'R back face')
+  // 翻面是两拍共 240ms —— 等它走完再量，否则量到的是转到一半的那一帧
+  await sleep(500)
+  const pBack = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');const b=d.querySelector('[data-intimate-back]');
+    if(!b)return null;
+    const slots=[...b.querySelectorAll('[data-intimate-slot]')].map(x=>x.getAttribute('data-intimate-slot'));
+    const lewd=b.querySelector('[data-intimate-lewd]');
+    const ph=b.querySelector('figure code');
+    const bars=[...b.querySelectorAll('.meter__fill')].length;
+    /* 两节各装着什么：一节一声 h4，靠抬头认节，不靠会哈希的类名 */
+    const sectOf=(t)=>{const h=[...b.querySelectorAll('h4')].find(x=>x.innerText.trim()===t);
+      return h&&h.parentElement?h.parentElement:null};
+    const lewdSect=sectOf('色情度'),barsSect=sectOf('开发度（四处）');
+    return {side:d.getAttribute('data-side'),turn:d.getAttribute('data-turn'),slots,bars,lewdVal:lewd?lewd.getAttribute('data-intimate-lewd'):null,
+      lewdText:lewd?lewd.innerText.replace(/\\s+/g,' ').trim():'',
+      lewdHead:!!lewdSect,
+      lewdSectSlots:lewdSect?lewdSect.querySelectorAll('[data-intimate-slot]').length:-1,
+      lewdSectThick:lewdSect?!!lewdSect.querySelector('.meter--thick'):false,
+      barsSectSlots:barsSect?barsSect.querySelectorAll('[data-intimate-slot]').length:-1,
+      states:b.querySelectorAll('[data-intimate-slot] p').length,
+      placeholder:ph?ph.innerText.trim():null,
+      placeholderFig:!!b.querySelector('figure'),
+      virgin:(b.querySelector('[data-intimate-virgin]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+      hasFoot:!!b.querySelector('[data-intimate-first]')}})()`)
+  ok('R3 翻过去 → 卡的另一面（翻完两拍都归零，不留半道上的那一帧）',
+    !!pBack && pBack.side === 'back' && (pBack.turn || '') === '',
+    JSON.stringify(pBack && { side: pBack.side, turn: pBack.turn }))
+  ok('R4 五根条：四处部位 + 一根单独的色情度（五根都在，缺一项就报）',
+    !!pBack && pBack.slots.length === 5
+    && ['mouth','breast','vagina','anus','lewd'].every((k) => pBack.slots.includes(k))
+    && pBack.bars === 5,
+    JSON.stringify(pBack && { slots: pBack.slots, bars: pBack.bars }))
+  ok('R5 色情度自成一节（整幅的一条粗条，独自摆，不混进四处里）；四处部位各有自己的「状态」文字',
+    !!pBack && pBack.lewdVal !== null && Number(pBack.lewdVal) > 0
+    && pBack.lewdHead === true && pBack.lewdSectSlots === 1 && pBack.lewdSectThick === true
+    && pBack.barsSectSlots === 4 && pBack.states === 4,
+    JSON.stringify(pBack && { lewdVal: pBack.lewdVal, head: pBack.lewdHead, lewdSect: pBack.lewdSectSlots,
+      thick: pBack.lewdSectThick, barsSect: pBack.barsSectSlots, states: pBack.states, lewdText: pBack.lewdText }))
+  ok('R6 立绘位先占住（图待补，写明该补到哪个文件名）· 破处那一栏在',
+    !!pBack && pBack.placeholderFig === true && pBack.placeholder === 'public/cg/cg-intim-luna.webp'
+    && pBack.hasFoot === true && /是/.test(pBack.virgin),
+    JSON.stringify(pBack && { ph: pBack.placeholder, virgin: pBack.virgin }))
+  const pClicked = await ev(`(()=>{const b=document.querySelector('[data-intimate-back-close]');if(!b)return false;b.click();return true})()`)
+  // 两拍各 120ms —— 等它转完再量，别在动画中转着的时候量到半道上的那一帧
+  await sleep(700)
+  const pReturn = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');
+    return {hasDialog:!!d,side:d?d.getAttribute('data-side'):null,turn:d?d.getAttribute('data-turn'):null,
+      toggle:!!document.querySelector('[data-intimate-toggle]'),
+      back:!!document.querySelector('[data-intimate-back]'),
+      gateOpen:!!document.querySelector('[data-intimate="open"]'),
+      art:d?!!d.querySelector('[data-dossier-art]'):false}})()`)
+  pReturn.clicked = pClicked === true
+  ok('R7 翻得回来：回到正面，正面那一栏（含立绘）原样在',
+    pReturn.clicked && pReturn.hasDialog && pReturn.side === 'front' && (pReturn.turn || '') === ''
+    && pReturn.back === false && pReturn.gateOpen === true && pReturn.toggle === true && pReturn.art === true,
+    JSON.stringify(pReturn))
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+  await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, 'R luna dialog close')
+
+  /* ============ Phase S：剧情作战的牌面是一段**窗口**（打赢即已完成 · 领取只是收走）===
+     播一份「正史已经走到第五段、第二段那一仗早打赢了」的账：
+       · 牌面上第二段自己翻成「已完成」，末尾挂着「提交归档」等人点；
+       · 眼下这一场（第五段）接着摆在后面 —— 不等领取才往前挪；
+       · 点提交 → 那一条从牌面上收走，且**落库**：重载之后不会又冒出来。
+     旧写法把「打赢」与「领了没」绑在一起，于是打赢了没回来点领取的人，
+     牌面永远卡在那一段写着「压制中」，后面真打过的仗根本不上牌面。 */
+  console.log('\n[Phase S] 剧情作战牌面：打赢即已完成 → 待提交摞着 → 提交收走并落库')
+  await ev(`(async()=>{try{const db=await new Promise(res=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result)});
+    await new Promise(res=>{const t=db.transaction(['records','meta'],'readwrite');
+      t.objectStore('records').clear();t.objectStore('meta').delete('mainclaimed');t.oncomplete=()=>res(true)});
+    return true}catch(e){return String(e)}})()`)
+  await ev(`(()=>{
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true,'v1-5':true},cur:'v1-5',
+      operatorName:'牌面观察员',focusId:'gcn',
+      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],records:[]}}));
+    return true})()`)
+  // 第二段那一仗的胜果：编号是 plot-<事件 id>-<序号>（见 from-directive 的 battleMissionOf）
+  await ev(`(async()=>{try{const db=await new Promise(res=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result)});
+    await new Promise(res=>{const t=db.transaction('records','readwrite');
+      t.objectStore('records').put({id:'smoke-plot-win',missionId:'plot-v1-2-1',no:'MST-002',title:'这里是，终末停滞委员会',
+        place:'集市外环',stage:3,outcome:'胜',rounds:4,ticks:31,at:Date.now(),squad:['luna'],mvp:'露娜',
+        digest:'',turns:[],narrative:'',narrativeBy:'模板',loot:[],coin:12,mainline:true});
+      t.oncomplete=()=>res(true)});
+    return true}catch(e){return String(e)}})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('任务简报')
+  await poll(`document.querySelectorAll('[data-mainline-mission]').length>=2`, 20000, 'S mainline window')
+  const sBoard = await ev(`(()=>{const cs=[...document.querySelectorAll('[data-mainline-mission]')];
+    const read=(c)=>{const a=c.querySelector('[data-archive]');
+      return {id:c.getAttribute('data-mainline-mission'),act:a?a.getAttribute('data-act'):'',
+        disabled:a?a.disabled:null,fight:!!c.querySelector('[data-mainline-fight]')}};
+    return {n:cs.length,first:read(cs[0]),last:read(cs[cs.length-1]),
+      ids:cs.map(c=>c.getAttribute('data-mainline-mission'))}})()`)
+  ok('S1 打过的第二段自己翻成「已完成」并挂在牌面上等人提交（这一条开着，不是灰的）',
+    sBoard.n === 2 && sBoard.first.id === 'main-v1-2' && sBoard.first.act === '提交' && sBoard.first.disabled === false,
+    JSON.stringify(sBoard))
+  ok('S2 窗口往前挪了一格：眼下这一场（第五段）接着摆在后面，仍是「待剧情战斗」',
+    sBoard.last.id === 'main-v1-5' && sBoard.last.act === '待战',
+    `牌面 ${(sBoard.ids || []).join(' ')}`)
+
+  // 提交：那一条从牌面上收走（不是把它标成已完成 —— 它本来就是「已完成」）
+  await ev(`(()=>{const b=document.querySelector('[data-mainline-mission="main-v1-2"] [data-archive]');if(b)b.click();return !!b})()`)
+  await poll(`document.querySelectorAll('[data-mainline-mission]').length===1`, 8000, 'S claim collects the card')
+  const sAfter = await ev(`(()=>{const cs=[...document.querySelectorAll('[data-mainline-mission]')];
+    return {n:cs.length,ids:cs.map(c=>c.getAttribute('data-mainline-mission'))}})()`)
+  ok('S3 提交归档只是把这一条从牌面上收走（窗口随之挪到眼下这一场）',
+    sAfter.n === 1 && sAfter.ids[0] === 'main-v1-5', JSON.stringify(sAfter))
+
+  // 落库：重载之后不会又冒出来
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('任务简报')
+  await poll(`document.querySelectorAll('[data-mainline-mission]').length>=1`, 20000, 'S mainline after reload')
+  const sReload = await ev(`(()=>{const cs=[...document.querySelectorAll('[data-mainline-mission]')];
+    return {n:cs.length,ids:cs.map(c=>c.getAttribute('data-mainline-mission'))}})()`)
+  ok('S4 归档落库：重载之后那一条不再回来（领取是永久的收走，不是这一屏的临时状态）',
+    sReload.n === 1 && sReload.ids[0] === 'main-v1-5', JSON.stringify(sReload))
 
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */

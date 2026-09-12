@@ -42,7 +42,8 @@ import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, 
 import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
-import { SLOT_META } from '../data/intimate'
+import { smsContextFor } from '../lib/crosslink'
+import { intimAdvanceLabel } from '../data/intimate'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 
@@ -443,7 +444,7 @@ export function Plot() {
       /* 私密档案推进：报一句「动的是哪一位的哪一处」，数本身在档案页看 */
       if (fx.intim.length) {
         const parts = fx.intim
-          .map((x) => `${personOf(x.char)?.name ?? x.char} · ${SLOT_META[x.slot].label}`)
+          .map((x) => `${personOf(x.char)?.name ?? x.char} · ${intimAdvanceLabel(x)}`)
           .join(' · ')
         push('decode', '私密档案 · 有更新', `${parts} —— 角色档案的「私密档案」一栏可见。`, false)
       }
@@ -603,6 +604,10 @@ export function Plot() {
         presetPre: preset.pre || undefined,
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
+        /* 近期短信：只取与**此刻在场者**有关的那几本（无关线程一个字都不给，见 lib/crosslink），
+           且在这一趟当场读 —— 短信随时可能在他翻着正文时落进来（主动来信），
+           挂成 state 会读到上一轮的那一份。读不动（隐私模式）就整节不出现。 */
+        smsLog: smsContextFor(castOf(ev), { rendezvous: true }) || undefined,
         /* 本段登记了 CG 位才注入【场景 CG】一节（清单含每张的一行说明，导演照它点名） */
         cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
         operatorAction: myTurn || undefined,

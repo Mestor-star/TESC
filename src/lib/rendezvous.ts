@@ -194,6 +194,9 @@ export function rendezvousPrompt(
   bond: number,
   rv: Rendezvous,
   cgPalette: string,
+  /** 正文里与她有关的那一截（lib/crosslink.ts 的 plotContextFor；她不在场的一句不给）。
+      见面不是凭空来的：她答应这一场，多半是正文里刚走过的那一段在起作用。 */
+  plotContext?: string,
 ): string {
   const c = charOf(charId)
   const you = opName === '言万心叶' ? '言万心叶' : `操作员「${opName}」`
@@ -203,9 +206,11 @@ export function rendezvousPrompt(
       + (card.length ? `\n人物卡：\n${card.join('\n')}` : '')
     : '你是该作品中的一位角色。'
   const intimate = rv.kind === 'intimate'
+  /* 正文那一截紧跟在情境后面 —— 与短信那一条同一个位置、同一个用法：
+     都是「一路推下来真发生的事」，只作延续性背景，不许逐条复述。 */
   return `${core}
 \n此刻情境：你与${you}在「${rv.place}」见面 —— 这一场的名目是「${rv.title}」。
-不是隔着屏幕打字，是你们两个人在同一处：你看得见她的表情，她也听得见你的声音。
+不是隔着屏幕打字，是你们两个人在同一处：你看得见她的表情，她也听得见你的声音。${plotContext ? `\n\n${plotContext}` : ''}
 \n当前与${you}的羁绊约 ${bond}/100（仅作语气参考，别把数字说出口）。
 \n规则：
 1. 始终以第一人称扮演，绝不脱离角色、绝不替${you}说话。
@@ -229,13 +234,15 @@ export function dateBondRule(charId: string): string {
   const slots = INTIMATE_SLOTS.map((s) => `${s}（${SLOT_META[s].label}）`).join(' / ')
   return `\n（可选 · 本回合的推进：若这一场让这段关系或气氛有明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
 { "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "cg": "上面清单里的一个 id",
-  "intim": [{ "char": "${charId}", "slot": "mouth", "dev": 1, "state": "改写该部位状态的一句话（可选）" }] }
+  "intim": [{ "char": "${charId}", "slot": "mouth", "dev": 1, "lewd": 1, "state": "改写该部位状态的一句话（可选）" }] }
 说明：
 · bond.delta 只针对该角色取 ±1~5（正=更亲近）；flag 为可选的分支标记；
 · cg 只从上面那份【场景 CG】清单里挑，且**画面真的换了**才给，一直同画面就别重复给；
-· intim 只在**这一回合确实推进了身体上的哪一处、且她确实接受了**时才给 ——
-  slot 取 ${slots} 之一，dev 为这一次的增量（1~3，一回合一小步），state 可选（覆盖原状态句）；
-  若这一回是**初次**，另加 "first": true（此后不要再给）。
+· intim 只在**这一回合确实往前走了、且她确实接受了**时才给，两路各记各的：
+    · slot 取 ${slots} 之一（哪一处被开发了），dev 为这一次的增量（1~3，一回合一小步），
+      state 可选（覆盖原状态句）；若这一回是**初次**，另加 "first": true（此后不要再给）；
+    · lewd 是她**整个人的色情度**增量（1~3）—— 与部位无关：这一回没碰哪儿、心思却更敏了，
+      就只给 lewd、不给 slot；两样都动了就写在同一条里。
 · 拿不准就整条不给 —— 不给即这一场什么也没推进。）`
 }
 

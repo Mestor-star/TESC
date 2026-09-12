@@ -134,22 +134,37 @@ function targetLine(foes: string[]): string {
 /**
  * 可复盘的剧情作战 —— 一场一场来。
  *
- * 摆出来的永远只有眼下这一场：按时间线正序，取第一个还没「领取归档」的事件
- * （从 v1-1 灵魂蓄积器TM 讨伐起）。前一场没在推演里打赢，后一场就不上牌面。
- * 打赢了它才变成「待领取」，去任务简报点一下归档，牌面才翻到下一场。
+ * 牌面摆的是**一段窗口**：已经打赢、还没领取归档的那几场（各自停在「已完成」，
+ * 摆在那里等人点提交），加上眼下这一场（推演现场还没打赢的那一场）。
+ * 上一场打赢了、状态自己翻成「已完成」，窗口就往前挪一格 —— 不等领取。
  *
- * 收束过没走过（epDone）不再作为展示条件：牌面要一直在，人才知道
+ * 为什么不等领取才翻页：领取是**归档**这个动作，不是打赢这个事实。
+ * 旧写法把两件事绑在一起，于是「打赢了却没回来点领取」的人，
+ * 牌面会一直卡在那一场上（写着「压制中」），后面已经打过的几场根本不上牌面 ——
+ * 简报与他真打过的仗对不上号。现在战果由作战记录（`won`）推，
+ * 领取只负责把这一条从牌面上收走。
+ *
+ * 收束过没走过（epDone）仍是展示前提：牌面要一直在，人才知道
  * 眼下该打完的是哪一场 —— 但没走到那一段时，作战无从谈起，所以要等收束。
  */
-export function mainlineMissions(epDone: Record<string, true>, claimed: Record<string, true> = {}): Mission[] {
+export function mainlineMissions(
+  epDone: Record<string, true>,
+  claimed: Record<string, true> = {},
+  /** 这一段在作战记录里有没有胜仗（见 Missions 的 hasWin —— 编号是 plot-<事件 id>-序号） */
+  won: (evId: string) => boolean = () => false,
+): Mission[] {
   const out: Mission[] = []
   const last = Math.max(1, TIMELINE.length - 1)
+  /** 窗口在还没有「打完但没领」的场次时也停得住：撞见第一场没打赢的，摆完它就收 */
+  let frontier = false
   TIMELINE.forEach((e, i) => {
-    if (out.length) return
+    if (frontier) return
     if (claimed[e.id]) return
     if (!epDone[e.id]) return
     const foes = (e.entities ?? []).filter((x) => x && x !== NO_FOE)
     if (!foes.length) return
+    const done = won(e.id)
+    if (!done) frontier = true
     // 头名：认得出档案的那一只（见 EVENT_HEAD）。认不出就照旧是现推的观测体
     const bossId = headFoeOf(e.id)
     const head = namedBossOf(bossId)
@@ -164,13 +179,16 @@ export function mainlineMissions(epDone: Record<string, true>, claimed: Record<s
       nature: natureOf(foes),
       ...(bossId ? { bossId } : {}),
       recommend: (e.chars ?? []).map((id) => id),
-      // 剧情作战不是派单，没得接取：它只在推演里发生，牌面只负责告诉你眼下该打哪一场
-      status: '压制中',
-      deadline: '剧情战斗 · 在推演现场发生',
+      /* 剧情作战不是派单，没得接取：它只在推演里发生，牌面只负责告诉你眼下该打哪一场。
+         打赢了它自己就是「已完成」（不等领取）—— 领取只是把这一条从牌面上收走。 */
+      status: done ? '完成' : '压制中',
+      deadline: done ? '战果已入档 · 待提交' : '剧情战斗 · 在推演现场发生',
       desc: `${e.summary}`
         + `\n\n本作战为主线第 ${i + 1} 段「${e.phase}」：对手是 ${foes.join('、')}。`
         + (head ? `\n站在对面的头一位是 ${head.name}；${head.from}。` : '')
-        + `\n它不在这里下令开打 —— 到剧情推进里走到这一段，现场自然会撞上；那一仗赢了，再回这里点「领取归档」。`
+        + (done
+          ? `\n现场那一仗已经赢了，战果记在作战记录里 —— 点「提交归档」把这一段收进档案；不提交，它就一直挂在牌面上。`
+          : `\n它不在这里下令开打 —— 到剧情推进里走到这一段，现场自然会撞上；那一仗赢了，这一条自己翻成「已完成」。`)
         + `\n战果以档案为准，不与观测记录冲突；记录会按「详细战斗过程」逐手归档。`,
       reward: [`${targetLine(foes)} · 处置确认`, '剧情战斗归档'],
       mainline: true,

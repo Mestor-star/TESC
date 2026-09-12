@@ -24,6 +24,7 @@ import { extractLiveDisplay, parseDirectorReply, replyDisplayText, smsDirective 
 import { appendSmsMsg, incomingSms, loadSmsLogs, markUnread, smsTurns, systemPrompt } from './sms'
 import { INTIMATE_BOND } from '../data/intimate'
 import { openDateOf, openRendezvous } from './rendezvous'
+import { plotContextFor } from './crosslink'
 
 export const AUTO_KEY = 'zts-sms-auto:v1'
 
@@ -137,8 +138,11 @@ export function useProactiveSms(): void {
         // scope='sms'：主动来信也是一条短信，只取管短信的那一支
         const preset = buildPresetContext(readActivePreset(), scan, 'sms')
         const bond = c.bondNow(charId)
+        /* 正文里与她有关的那一截（她不在场的段落一句不给）—— 主动来信是她说起
+           「最近怎么样」的那一类，接得上正文才像同一个人。读不动（隐私模式）就整节不出现。 */
+        const plotCtx = plotContextFor(charId, { records: c.world.records, epDone: c.epDone })
         const system =
-          systemPrompt(charId, c.operatorName, bond, meta?.scenario ?? '各自的日常')
+          systemPrompt(charId, c.operatorName, bond, meta?.scenario ?? '各自的日常', plotCtx || undefined)
           + (preset.pre ? `\n\n${preset.pre}` : '')
           + proactiveRule(bond)
           + (preset.post ? `\n\n${preset.post}` : '')
