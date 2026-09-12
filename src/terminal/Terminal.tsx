@@ -9,6 +9,7 @@ import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta
 import { intimateOf, mergeIntim } from '../data/intimate'
 import { mergeActs } from '../data/acts'
 import { clamp } from '../lib/format'
+import { isFreeId } from '../lib/freetime'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
 import { ensureSeeded } from '../lib/lorestore'
@@ -183,6 +184,26 @@ export interface TerminalState {
   /** 落下一次关系档位（**绝对**档位：往上、往下都给同一个入口；相同则不写） */
   setRel: (charId: string, tier: RelId) => void
 
+  /**
+   * **自由活动**开关（`WorldState.free`）—— 主线走到一半想脱纲一会儿时按下去。
+   *
+   * 它动的只有一条规矩：**这期间羁绊一律不动**（拦在落地那一层，见 lib/plot.ts 的
+   * `applyDirective` 第三个参数）。开发度 / 次数账 / 关系档位 / CG 照常各记各的。
+   * 卷与卷之间那一格（`EPISODES` 里的 `free:<卷>` 段）走的是同一个状态 ——
+   * 到了那一格它自己就是开着的，不必操作员再按一次。
+   */
+  freeMode: boolean
+  setFreeMode: (on: boolean) => void
+  /**
+   * 结束卷间那一格自由时间（「进入下一卷」）：只标收束，**不写记录**。
+   *
+   * 与 `completeEvent` 的分工是清楚的：那一条是「原文里这一段走完了」，要落摘要、
+   * 要点名解锁、要算图鉴；自由段**不是原文里的一段**（见 lib/freetime.ts），
+   * 没有可归档的摘录，也不该在低语者日志上占一条 —— 它只该让推演指针往下走。
+   * 返回是否真的收束了。
+   */
+  closeFreeSlot: (id: string) => boolean
+
   /** 已归档「记录」（按阅读序） */
   records: WorldRecord[]
   /** 立即把某角色标记为「遇见」（结构化指令在事件完结前先解锁用） */
@@ -310,6 +331,9 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     // 次数账与关系档位同为后加 → 旧档空表：八栏读作 0、档位读作「尚未定下」
     acts: raw?.acts ?? {},
     rel: raw?.rel ?? {},
+    /* 自由活动开关（后加）：旧档没有 → 关着。它只是个开关，不落档也不会怎样 ——
+       读作关就是当初的样子（主线一段咬着一段走）。 */
+    free: raw?.free === true,
     records: [],
   }
   const doneIds = new Set(Object.keys(epDone))
@@ -878,6 +902,34 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /**
+   * 自由活动开关。写进 `world.free` —— 它跟存档走，读档回来还在原来的状态。
+   *
+   * 同一状态还有第二个入口：卷与卷之间那一格（`isFreeId(ev.id)`）。
+   * 那一格**不用**操作员按这一枚开关，推演那边按段 id 自己就认（见 lib/plot.ts）；
+   * 两者合流成同一个「羁绊不动」的落地口径，不必在这儿互相写来写去。
+   */
+  const freeMode = world.free === true
+  const setFreeMode = useCallback((on: boolean) => {
+    setWorld((prev) => (prev.free === on ? prev : { ...prev, free: on }))
+  }, [])
+
+  /**
+   * 结束卷间那一格自由时间。只落 `epDone[id]` 一格 —— 照 `closeFreeSlot` 契约
+   * 里那条：**不写记录**（自由段不是原文里的一段，没有可归档的摘录）。
+   *
+   * 进度那一本账不受影响：数进度的地方一律照 `TIMELINE` 过（`countMainlineDone`
+   * 亦然），这一个 `free:` 键在那些地方 `readingIndexOf` 读作 -1 就被跳过了。
+   * `cur`（「目前最靠前的已读段」）同样不动 —— 那一栏是给读档回填「见过谁 / 登记过
+   * 什么」用的，而自由时间不揭新角色、不登新图鉴；且指针本身照 `epDone` 现算
+   * （见 Plot 的 `focusEv`），不靠 `cur`。
+   */
+  const closeFreeSlot = useCallback((id: string): boolean => {
+    if (!isFreeId(id)) return false
+    setEpDone((prev) => (prev[id] ? prev : { ...prev, [id]: true }))
+    return true
+  }, [])
+
   /** 请求打开某角色档案（自动切到档案页；档案页受门禁保护，未解锁时 navigate 会被拦下） */
   const requestProfile = useCallback(
     (id: string) => {
@@ -1185,6 +1237,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     bumpActs,
     relOf,
     setRel,
+    freeMode,
+    setFreeMode,
+    closeFreeSlot,
     varsOpen,
     setVarsOpen,
     records: world.records,

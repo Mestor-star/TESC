@@ -63,6 +63,9 @@
    · 新账
      31  次数账 / 关系 / 多女同场 —— 八栏只增不减 · 九级梯子由剧情给 ·
                                   那一条只在真不止一个人时挂
+   · 空档
+     32  自由时间     —— 两处入口一个状态 · 羁绊拦在落地那一层 ·
+                        自由段不算主线进度、也不冠「· 原文」
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -135,7 +138,10 @@ import {
 } from '../../src/data/intimate'
 import { ACT_KINDS, ACT_META, actOf, actTotal, isActReceive, mergeActs } from '../../src/data/acts'
 import { REL_IDS, REL_TIERS, isRelId, relIndex, relLadderText, relName } from '../../src/data/rel'
-import { directiveHasFx, dateDirective, sanitizeDirective } from '../../src/lib/plot'
+import { applyDirective, directiveHasFx, dateDirective, dateReady, sanitizeDirective } from '../../src/lib/plot'
+import {
+  EPISODES, countMainlineDone, episodeOf, freeIdAfterVol, freeLabel, isFreeId, nextEpisodeAfter,
+} from '../../src/lib/freetime'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -4287,6 +4293,197 @@ export function run(): MechReport {
       + '多女同场那一条只在真不止一个人时挂（提示词与收尾指令都逐人分条，见面只记在场的人）')
   } catch (e) {
     fail.push('次数账 / 关系 / 多女同场段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 32) 自由时间：两处入口 · 羁绊不动 · 那一格没有原文 ----------
+     自由时间有**两处入口**，走的是同一个状态：卷与卷之间那一格（`EPISODES` 里插进来的
+     `free:<卷>` 段），以及操作员自己按下的那一枚开关（`WorldState.free`）。
+     两处合流的地方只有一条规矩：**这期间羁绊一律不动**。
+
+     它拦在哪儿，是这一节最要紧的一件事：不是在提示词里求模型别给（那只算礼貌），
+     是在落地那一层 `applyDirective(d, api, { freezeBond })` 里把整条 bond 跳过去。
+     所以这里量三样：
+       · 段本身 —— 插在哪儿、id 不重、名字不冠「原文」、在场名册续着上一段；
+       · 提示词 —— 【事件大纲】换成自由那一份，bond 与 eventDone 两个字段一起撤掉；
+       · 落地 —— bond 给不进去（且连 fx 都不记），开发度 / 次数账 / 关系档位照给。
+     界面上看得见的那一半（开关按钮、进入下一卷）归 smoke。 */
+  try {
+    /* —— 段本身 —— */
+    const freeIds = EPISODES.filter((e) => isFreeId(e.id)).map((e) => e.id)
+    const vols = [...new Set(TIMELINE.map((e) => e.vol))].filter((v) => v > 0)
+    ok('自由时间 · 每一卷收束之后插一格，最后一卷不插（没有「下一卷」可进时，自由由开关接手）',
+      freeIds.length === vols.length - 1
+      && freeIds.length > 0
+      && freeIds.every((id, i) => id === freeIdAfterVol(vols[i]!)),
+      `${vols.length} 卷 → ${freeIds.length} 格：${freeIds.join(' · ')}`)
+
+    ok('自由时间 · 段 id 不重（同一个 id 出现两次会互相顶掉）',
+      new Set(EPISODES.map((e) => e.id)).size === EPISODES.length,
+      `EPISODES ${EPISODES.length} 段 · 唯一 id ${new Set(EPISODES.map((e) => e.id)).size} 个`)
+
+    ok('自由时间 · 主线一段不丢、次序不动（插进来只是插进来）',
+      EPISODES.filter((e) => !isFreeId(e.id)).length === TIMELINE.length
+      && EPISODES.filter((e) => !isFreeId(e.id)).every((e, i) => e.id === TIMELINE[i]!.id),
+      `EPISODES ${EPISODES.length} = 主线 ${TIMELINE.length} + 自由 ${freeIds.length}`)
+
+    /* 插的位置：每一格都紧跟在**它那一卷的最后一节**（外传算同一段，跟在它后面）之后 */
+    const afterOf = (id: string) => {
+      const i = EPISODES.findIndex((e) => e.id === id)
+      return i > 0 && isFreeId(EPISODES[i]!.id) && !isFreeId(EPISODES[i - 1]!.id)
+    }
+    ok('自由时间 · 每一格都落在「刚读完一段非自由段」之后（不会连着两格，也不会打头）',
+      freeIds.every(afterOf),
+      freeIds.map((id) => {
+        const i = EPISODES.findIndex((e) => e.id === id)
+        return `${id} ← ${EPISODES[i - 1]?.id}`
+      }).join(' · '))
+
+    const f1 = episodeOf(freeIdAfterVol(1))!
+    ok('自由时间 · 拿得出来，且长得像一段（形状不另起一套，整条流程才不改）',
+      !!f1 && f1.phase === '自由时间' && f1.summary === ''
+      && Array.isArray(f1.entities) && Array.isArray(f1.script),
+      `${f1.id} · ${f1.group} · place=${f1.place}`)
+
+    ok('自由时间 · 档期名念得出是哪一卷之后（右栏与段头都念它）',
+      f1.group === freeLabel(1) && f1.title === '自由时间',
+      `${f1.group} / ${f1.title}`)
+
+    /* 在场名册续着上一段：空名单会连着坏三处（右栏空掉 / 提示词没可写的人 /
+       主动来信把所有人都算成「不在眼前」）。这里量的是「与上一段同一个名单」。 */
+    const prevOfFree = EPISODES[EPISODES.findIndex((e) => e.id === f1.id) - 1]!
+    ok('自由时间 · 在场名册续着上一段（空名单会让右栏空掉、提示词没人可写、主动来信全放行）',
+      castOf(f1).length > 0 && castOf(f1).join() === castOf(prevOfFree).join(),
+      `${f1.id} 在场：${castOf(f1).map((x) => castName(x)).join(' · ')}`)
+
+    /* —— 提示词：两处入口合流成同一个 free —— */
+    const sysFree = buildDirectorSystem(f1, {
+      operatorName: '言万心叶', bondNow: () => 50, epDone: {}, flags: {}, needDirective: true,
+      freeMode: false, // 段 id 自己就够 —— 开关关着也认
+    })
+    const sysMain = buildDirectorSystem(TIMELINE[0]!, {
+      operatorName: '言万心叶', bondNow: () => 50, epDone: {}, flags: {}, needDirective: true,
+    })
+    /* 开关那一处：拿一段**主线**段，把 freeMode 打开 —— 应当与拿自由段同一个效果 */
+    const sysMainFree = buildDirectorSystem(TIMELINE[0]!, {
+      operatorName: '言万心叶', bondNow: () => 50, epDone: {}, flags: {}, needDirective: true,
+      freeMode: true,
+    })
+
+    ok('自由时间 · 段 id 就够（开关关着，自由段的提示词也照自由那一套走）',
+      sysFree.includes('本段**没有原文大纲**') && !sysFree.includes('（下面是**原著里**这一段怎么走的'),
+      'free:v1 → 换上自由框架')
+
+    ok('自由时间 · 开关那一处与卷间那一格同一个效果（两处入口合流成一个状态）',
+      sysMainFree.includes('本段**没有原文大纲**')
+      && !sysMainFree.includes('（下面是**原著里**这一段怎么走的'),
+      '主线段 + freeMode → 同一份自由框架')
+
+    ok('自由时间 · 主线段照旧喂大纲（对照：不自由就不换）',
+      sysMain.includes('（下面是**原著里**这一段怎么走的') && !sysMain.includes('本段**没有原文大纲**'),
+      `${TIMELINE[0]!.id} → 照旧`)
+
+    /* 大纲不喂了，但**原文那一份**也一个字都不许进去：自由时间不是原作里的一段 */
+    ok('自由时间 · 自由那一份里不出现这一段的大纲正文（没大纲就是没大纲，不许拿原文冒充）',
+      !sysFree.includes('（下面是**原著里**这一段怎么走的')
+      && sysFree.includes('怎么收'),
+      '换成「怎么起 / 能发生什么 / 怎么收」三段')
+
+    /* bond 与 eventDone 两个字段一起撤：前者是「羁绊不动」，后者是「收由操作员说了算」 */
+    ok('自由时间 · 指令 schema 里撤掉 bond（羁绊不动，说了也白说）',
+      sysFree.includes('"eventDone"') === false
+      && sysFree.includes('"bond":   [{ "char"') === false
+      && sysMain.includes('"bond":   [{ "char"'),
+      'free → 撤 bond / eventDone 两行；主线 → bond 那一行在')
+
+    ok('自由时间 · 指令 schema 里也撤掉 eventDone（什么时候收由操作员按按钮说了算）',
+      sysFree.includes('"digest"') === false && sysMain.includes('"digest"'),
+      'free → 撤 digest；主线 → 在')
+
+    ok('自由时间 · 明说「不要给 bond 那一条」（省得模型白写一条再被默默丢掉）',
+      sysFree.includes('自由活动期间羁绊一律不动') && sysFree.includes('不要给 bond 那一条'),
+      'FREE_BOND_NOTE 进提示词')
+
+    /* 后接事件锚也得换口径：照原样摆「置 eventDone」会与上面那两条正面打架 */
+    const nextOfFree = EPISODES[EPISODES.findIndex((e) => e.id === f1.id) + 1]!
+    const sysFreeNext = buildDirectorSystem(f1, {
+      operatorName: '言万心叶', bondNow: () => 50, epDone: {}, flags: {}, needDirective: true,
+      nextEvent: nextOfFree,
+    })
+    ok('自由时间 · 后接事件锚换成「别往那儿收」（照原样摆软门禁会与「不给 eventDone」打架）',
+      sysFreeNext.includes('这一格之后去哪')
+      && !sysFreeNext.includes('软门禁：仅当这一段该了结的事已经了结'),
+      `后接《${nextOfFree.title}》→ 只作参照`)
+
+    /* —— 落地那一层：真正拦住 bond 的是这里 —— */
+    const bondIn = sanitizeDirective({ bond: [{ char: 'luna', delta: 3 }] })
+    const seen: string[] = []
+    const api = {
+      meetChar: () => {}, bumpBond: (c: string) => { seen.push(c) },
+      registerEnd: () => {}, setFlag: () => {},
+      bumpIntim: () => {}, bumpActs: () => {}, setRel: () => {},
+    }
+    const fxFrozen = applyDirective(bondIn, api, { freezeBond: true })
+    const fxOpen = applyDirective(bondIn, api, {})
+    ok('自由时间 · 羁绊拦在落地那一层（不是求模型别给）',
+      fxFrozen.bonds.length === 0 && seen.length === 1 && seen[0] === 'luna'
+      && fxOpen.bonds.length === 1,
+      `freezeBond → bond 一条不落、连 fx 都不记（提示条不念一件没落的事）；缺省 → 照落`)
+
+    const mixed = sanitizeDirective({
+      bond: [{ char: 'luna', delta: 3 }],
+      intim: [{ char: 'luna', slot: 'mouth', dev: 1 }],
+      acts: { luna: { kiss: 1 } },
+      rel: { luna: 'lover' },
+    })
+    const fxMixed = applyDirective(mixed, api, { freezeBond: true })
+    ok('自由时间 · 只冻羁绊那一条线（开发度 / 次数账 / 关系档位照常各记各的）',
+      fxMixed.bonds.length === 0
+      && fxMixed.intim.length === 1 && fxMixed.acts.length === 1 && fxMixed.rel.length === 1,
+      'freezeBond 只管 bond；私密档案 / 八栏账 / 九级梯子照推')
+
+    /* —— 收束：自由段不走 completeEvent（它不是原文里的一段） —— */
+    ok('自由时间 · 自由段的名字里不出现「· 原文」（它不是原文，转述更不行）',
+      !f1.title.includes('原文') && !f1.group.includes('原文') && !f1.summary.includes('原文'),
+      `${f1.group} · ${f1.title}`)
+
+    /* —— 邀约那道门槛：时间与地点缺一不可 —— */
+    const dOk = sanitizeDirective({ date: { title: '天台', place: '天台', time: '明天放学后' } }).date
+    const dNoTime = sanitizeDirective({ date: { title: '天台', place: '天台' } }).date
+    const dNoPlace = sanitizeDirective({ date: { title: '天台', time: '明天放学后' } }).date
+    ok('自由时间 · 说定一场见面要时间与地点两样齐（缺一样就当没约成）',
+      dateReady(dOk) && !dateReady(dNoTime) && !dateReady(dNoPlace),
+      `齐 → ${dateReady(dOk)}；缺时间 → ${dateReady(dNoTime)}；缺地点 → ${dateReady(dNoPlace)}`)
+
+    ok('自由时间 · 缺一样时那一条**不生成**，但指令本身不被悄悄丢掉（守卫在 dateReady，不在净化）',
+      !!dNoTime && !!dNoPlace,
+      '净化只裁形状；能不能开一场由 dateReady 判')
+
+    /* —— 进度那一本账：自由段不算主线 —— */
+    const withFree = { [TIMELINE[0]!.id]: true as const, [f1.id]: true as const }
+    ok('自由时间 · 自由段不算主线进度（进度条不许虚涨）',
+      countMainlineDone(withFree) === 1
+      && Object.keys(withFree).length === 2,
+      `收束 1 段主线 + 1 格自由 → 进度读作 ${countMainlineDone(withFree)}/${TIMELINE.length}`)
+
+    /* —— 刻度：下一格是照账上第一个没收束的找，且不越过自由段 —— */
+    const doneUpToVol1 = Object.fromEntries(
+      TIMELINE.filter((e) => e.vol === 1 && !e.ga).map((e) => [e.id, true] as const),
+    ) as Record<string, boolean>
+    ok('自由时间 · 本卷读完 → 下一格就是这一格自由时间，不越过去够下一卷',
+      nextEpisodeAfter(TIMELINE.filter((e) => e.vol === 1).at(-1)!.id, doneUpToVol1)?.id === f1.id,
+      `第 1 卷末 → ${nextEpisodeAfter(TIMELINE.filter((e) => e.vol === 1).at(-1)!.id, doneUpToVol1)?.id}`)
+
+    ok('自由时间 · 自由段收束后 → 下一格是下一段主线（不必另外记「现在在不在自由时间里」）',
+      nextEpisodeAfter(f1.id, { ...doneUpToVol1, [f1.id]: true })?.id
+        === EPISODES[EPISODES.findIndex((e) => e.id === f1.id) + 1]!.id,
+      `${f1.id} 收束 → ${nextEpisodeAfter(f1.id, { ...doneUpToVol1, [f1.id]: true })?.id}`)
+
+    info.push('自由时间：两处入口（卷间那一格 · 操作员按下的开关）合流成一个状态 —— '
+      + '提示词换掉【事件大纲】并撤掉 bond / eventDone 两个字段，'
+      + '**羁绊拦在落地那一层**（freezeBond 把整条 bond 跳过、连 fx 都不记），'
+      + '开发度 / 次数账 / 关系档位照常；自由段不算主线进度，也不冠「· 原文」')
+  } catch (e) {
+    fail.push('自由时间段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

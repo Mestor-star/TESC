@@ -58,6 +58,15 @@ export interface Rendezvous {
   title: string
   /** 地点 */
   place: string
+  /**
+   * 什么时候（「明天放学后」「周六下午三点」这类）。
+   *
+   * 这一栏是与 `place` **成对**的：短信里那条 `date` 指令要两样都有才算说定
+   * （见 lib/plot.ts 的 `dateReady`）—— 只有地点没有时间是「改天出来玩」那种
+   * 没有落点的客气话，那样就不该另开一场。开出来之后它照旧可以是空的
+   * （旧档、操作员自己按「约 TA」开的），所以上屏时**没给就不念**。
+   */
+  time?: string
   /** 谁起的头：'you' = 操作员约的 · 'them' = 对方在短信里先开的口 */
   from: 'you' | 'them'
   /**
@@ -119,6 +128,8 @@ export function listRendezvous(): Rendezvous[] {
         kind: o.kind === 'intimate' ? 'intimate' : 'date',
         title: typeof o.title === 'string' && o.title.trim() ? o.title.trim() : '一次见面',
         place: typeof o.place === 'string' && o.place.trim() ? o.place.trim() : '学园外',
+        /* 旧档没有这一栏 → 不写这个键（`time` 缺省即「没说定什么时候」） */
+        ...(typeof o.time === 'string' && o.time.trim() ? { time: o.time.trim().slice(0, 40) } : {}),
         from: o.from === 'them' ? 'them' : 'you',
         ...(party.length ? { party } : {}),
         ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : 0,
@@ -146,7 +157,7 @@ function store(list: Rendezvous[]): Rendezvous[] {
 export function openRendezvous(
   charId: string,
   opts: {
-    kind?: 'date' | 'intimate'; title?: string; place?: string; from?: 'you' | 'them'
+    kind?: 'date' | 'intimate'; title?: string; place?: string; time?: string; from?: 'you' | 'them'
     /** 一并带着去的几位（1 男多女的那一场；主位之外的） */
     party?: string[]
   } = {},
@@ -163,6 +174,7 @@ export function openRendezvous(
     kind: opts.kind === 'intimate' ? 'intimate' : 'date',
     title: opts.title?.trim() || '一次见面',
     place: opts.place?.trim() || '学园外',
+    ...(opts.time?.trim() ? { time: opts.time.trim().slice(0, 40) } : {}),
     from: opts.from === 'them' ? 'them' : 'you',
     ...(party.length ? { party } : {}),
     ts: Date.now(),
@@ -174,7 +186,7 @@ export function openRendezvous(
 
 export function patchRendezvous(
   id: string,
-  patch: Partial<Pick<Rendezvous, 'kind' | 'title' | 'place' | 'done' | 'party'>>,
+  patch: Partial<Pick<Rendezvous, 'kind' | 'title' | 'place' | 'time' | 'done' | 'party'>>,
 ): void {
   store(listRendezvous().map((r) => (r.id === id ? { ...r, ...patch } : r)))
 }
@@ -278,7 +290,7 @@ export function rendezvousPrompt(
   /* 正文那一截紧跟在情境后面 —— 与短信那一条同一个位置、同一个用法：
      都是「一路推下来真发生的事」，只作延续性背景，不许逐条复述。 */
   return `${core}
-\n此刻情境：你与${you}在「${rv.place}」见面 —— 这一场的名目是「${rv.title}」。
+\n此刻情境：你与${you}在「${rv.place}」见面${rv.time ? `（说定的是「${rv.time}」）` : ''} —— 这一场的名目是「${rv.title}」。
 不是隔着屏幕打字，是你们两个人在同一处：你看得见她的表情，她也听得见你的声音。
 你是这一场里与${you}说话的那一位 —— 下面每一条都照**你自己**的性子来，别替别人开口。${others}${plotContext ? `\n\n${plotContext}` : ''}
 \n当前与${you}的羁绊约 ${bond}/100（仅作语气参考，别把数字说出口）。

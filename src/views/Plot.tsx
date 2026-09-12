@@ -17,6 +17,7 @@ import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
+import { EPISODES, isFreeId, nextEpisodeAfter } from '../lib/freetime'
 import {
   effectiveGrowth, listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth,
   readLevels, readStamina,
@@ -275,6 +276,7 @@ export function Plot() {
     bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
     records, requestProfile, setCg, bumpIntim, castOfEvent, setCast,
     bumpActs, setRel, relOf,
+    freeMode, setFreeMode, closeFreeSlot,
   } = useTerminal()
 
   /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
@@ -417,16 +419,20 @@ export function Plot() {
   const ready = !!cfgMain && isReady(cfgMain)
   const showOnline = mode === 'online'
 
+  /* 进度只数**主线**：`total`/`doneCount` 一律照 `TIMELINE` 过，卷间那几格自由时间
+     不算在里面（它们不是原文里的一段）—— 所以插进 `EPISODES` 也不会让进度条虚涨。 */
   const total = TIMELINE.length
   const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
-  const allDone = doneCount === total
-  const focusEv = useMemo(
-    () => (allDone ? null : TIMELINE.find((e) => !epDone[e.id]) ?? null),
-    [epDone, allDone],
-  )
+  /* 推演指针走的是 `EPISODES`（主线 + 每卷收束后那一格自由时间）。自由段收束后，
+     下一个没收束的就是下一卷开头 —— 不必另外记「现在在自由时间里没有」。
+     最后一格也走完了 → null，与从前全篇读完是同一副样子。 */
+  const focusEv = useMemo(() => EPISODES.find((e) => !epDone[e.id]) ?? null, [epDone])
   const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
-  /* 本段是否由导演自动开篇（只有序章与第 1 话） */
-  const autoOpens = !!focusEv && TIMELINE.findIndex((e) => e.id === focusEv.id) <= AUTO_OPEN_THRU_IDX
+  /* 本段是否由导演自动开篇（只有序章与第 1 话）。自由段一律不算 —— 它在
+     `TIMELINE` 里根本没有下标（findIndex 读作 -1，照原样判就会落进「自动开篇」）；
+     何况自由时间没有原文可铺陈，开篇本就该等操作员先开口。 */
+  const autoOpens = !!focusEv && !isFreeId(focusEv.id)
+    && TIMELINE.findIndex((e) => e.id === focusEv.id) <= AUTO_OPEN_THRU_IDX
 
   /* 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
   /* 右栏的「在场人物」：**此刻**在场上的人 —— 导演实时改过就拿改过的（world.cast），
@@ -439,6 +445,14 @@ export function Plot() {
     requestProfile(id)
     navigate('archive')
   }, [requestProfile, navigate])
+
+  /**
+   * 某一段此刻算不算「自由时间」。两处入口合流成这一个判据：
+   *   · 卷间那一格 —— 段 id 本身就带 `free:`（见 lib/freetime.ts）；
+   *   · 自由活动开关 —— 主线走到一半，操作员自己按下的那一枚。
+   * 提示词（`freeMode`）与落地（`freezeBond`）都照这一个判据，两处口径不会打架。
+   */
+  const freeOf = useCallback((id: string | null | undefined) => isFreeId(id) || freeMode, [freeMode])
 
   /* —— 通道配置：读取主线直连配置 —— */
   useEffect(() => {
@@ -492,8 +506,15 @@ export function Plot() {
     (parsed: PlotReply, evId: string) => {
       const d = parsed.directive
       if (!d || Object.keys(d).length === 0) return
-      const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel })
-      const ev = TIMELINE.find((e) => e.id === evId)
+      /* 自由时间里**羁绊一律不动**：拦在落地这一层，不是求模型别给（见 lib/freetime.ts）。
+         两处入口合流成这一个判据 —— 卷间那一格（段 id 就带 free:）与开关。 */
+      const freeNow = freeOf(evId)
+      const fx = applyDirective(
+        d,
+        { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel },
+        { freezeBond: freeNow },
+      )
+      const ev = EPISODES.find((e) => e.id === evId)
       if (fx.met.length) {
         const names = fx.met.map((id) => personOf(id)?.name ?? id).join(' · ')
         push('decode', '档案解锁 · 新遇见', `${names}，已录入角色档案。`, false)
@@ -568,6 +589,13 @@ export function Plot() {
         }
       }
       if (fx.eventDone) {
+        /* 自由时间里 eventDone 不作数 —— 这一格什么时候收，由操作员按「进入下一卷」说了算，
+           不由回执说了算（见 lib/freetime.ts 的 FREE_FRAME：别自己宣布自由时间结束）。
+           也不落 `concluded`：那一条会摆出「进入下一事件」的收束栏，而这一格没有记录可写。 */
+        if (isFreeId(evId)) {
+          push('info', '这一段还在自由时间里', '收束由你说了算 —— 右栏「进入下一卷」才接回主线。', false)
+          return
+        }
         const digest = (fx.digest?.trim() || ev?.summary || '').trim()
         // 收束不再立即归档推进：正文留在当前事件不消失，等操作员点「进入下一事件」才写记录；
         // 期间不锁输入——直接继续回话即视为留在本事件，取消收束标记（未归档故无副作用）。
@@ -580,7 +608,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCg, setCast, bumpIntim, bumpActs, setRel, push],
+    [meetChar, bumpBond, registerEnd, setFlag, setCg, setCast, bumpIntim, bumpActs, setRel, push, freeOf],
   )
 
   /**
@@ -601,6 +629,7 @@ export function Plot() {
       try {
         const system = buildDirectorSystem(ev, {
           operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+          freeMode: freeOf(ev.id),
           cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
         })
         /* 问两次再交回给操作员。只问一次的话，模型答偏一次就得他自己点「要求补发指令」——
@@ -641,7 +670,7 @@ export function Plot() {
         dirRetry.current = false
       }
     },
-    [applyReply, push, cfgMain, operatorName, bondNow, epDone, world.flags],
+    [applyReply, push, cfgMain, operatorName, bondNow, epDone, world.flags, freeOf],
   )
 
   /**
@@ -666,9 +695,10 @@ export function Plot() {
       scanText: string,
       extra: { act: string; needDirective: boolean; operatorAction?: string; idle?: boolean },
     ): Promise<{ system: string; logMeta: AiLogMeta }> => {
-      // 后接事件锚（软门禁）：当前事件之后第一个尚未完成的事件；无则 null
-      const evIdx = TIMELINE.findIndex((t) => t.id === ev.id)
-      const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id]) ?? null) : null
+      /* 后接事件锚（软门禁）：这一格之后第一个尚未完成的**段**；无则 null。
+         走 `nextEpisodeAfter` 而不是自己 slice —— 它认得卷间那几格自由时间，
+         不会从本卷末尾一步跨到下一卷开头去（那正是「一段咬着一段」要断掉的地方）。 */
+      const nextEv = nextEpisodeAfter(ev.id, epDone)
 
       /* 在场那一份名单：在这一趟当场读（导演可能刚改了名册）。
          提示词里凡是「谁在场」都取它 —— 一处口径，别有的地方读实时、有的地方读静态。 */
@@ -718,6 +748,9 @@ export function Plot() {
         operatorAction: extra.operatorAction || undefined,
         /* 空输入的那一趟：提示词末尾换成「他没有指示」，别让模型停下来等他 */
         idle: extra.idle === true,
+        /* 自由时间（卷间那一格 / 操作员按下的开关）：【事件大纲】换成自由那一份模板，
+           并且明写「这一格羁绊不动」—— 落地那边也照同一个判据拦（见 applyReply）。 */
+        freeMode: freeOf(ev.id),
       })
 
       // 通联日志身份：这一趟是谁在问、预设实际进了哪几条、世界书命中多少
@@ -732,12 +765,12 @@ export function Plot() {
         },
       }
     },
-    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, castOfEvent, relOf],
+    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, castOfEvent, relOf, freeOf],
   )
 
   const pushTurn = useCallback(
     async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean; idle?: boolean }) => {
-      const ev = TIMELINE.find((e) => e.id === evId)
+      const ev = EPISODES.find((e) => e.id === evId)
       if (!ev || busy || !ready) return
       setBusy(true)
       setErr(null)
@@ -855,7 +888,7 @@ export function Plot() {
             applyReply(parsed, evId)
             // 观测者已切到别的模块：这一回合是在后台跑完的，报一声，别忘了它
             if (plotMounts === 0) {
-              const evTitle = TIMELINE.find((e) => e.id === evId)?.title ?? '本段'
+              const evTitle = EPISODES.find((e) => e.id === evId)?.title ?? '本段'
               push('decode', '推演已完成', `《${evTitle}》的新一段已写定，回到剧情推进即可查看。`, false)
             }
             return
@@ -1011,6 +1044,7 @@ export function Plot() {
   const advanceFromConcluded = async () => {
     const ev = focusEv
     if (!ev || busy || !ready || !concluded || concluded.evId !== ev.id) return
+    /* 卷间那一格不走这条路 —— 见下面 `endFree`。走到这儿说明是主线的一段。 */
     // 这一格里有还没了结的交战：打赢它，才走得下去
     if (pendingBattle && pendingBattle.evId === ev.id) {
       push('warn', '尚有交战未了', `《${pendingBattle.name}》还在现场 —— 打赢它，这一段才继续。`, false)
@@ -1026,8 +1060,7 @@ export function Plot() {
     completeEvent(ev.id, digest, 'online', concluded.diverged) // 此刻才写记录 + epDone → focus 落到下一事件
     setConcluded(null)
     push('decode', '事件收束 · 已写入记录', `${ev.title}（已写入低语者日志）`, false)
-    const evIdx = TIMELINE.findIndex((t) => t.id === ev.id)
-    const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id] && t.id !== ev.id) ?? null) : null
+    const nextEv = nextEpisodeAfter(ev.id, epDone)
     if (BRIDGE_ON_ADVANCE && nextEv && showOnline && ready) {
       const lastUser = [...(logs[ev.id] ?? [])].reverse().find((m) => m.from === 'user')?.text
       skipAutoOpen.current = true // 先按住自动开场，避免抢跑
@@ -1039,6 +1072,25 @@ export function Plot() {
     }
   }
 
+  /**
+   * 结束卷间那一格自由时间（「进入下一卷」）。
+   *
+   * 与 `advanceEvent` 的分工写在 `closeFreeSlot` 的契约里：自由段**不是原文里的一段**，
+   * 没有摘要可写、没有记录可归档、没有门禁要过 —— 所以它不走 `completeEvent`，
+   * 只把这一格标成收束。推演指针照 `epDone` 现算，下一格自然就是下一卷开头。
+   *
+   * 它也不吃 `concluded` 那一套：那一条说的是「模型的收官叙述已经写完」，
+   * 而这一格什么时候结束由操作员说了算（见 lib/freetime.ts 的 FREE_FRAME）。
+   */
+  const endFree = () => {
+    const ev = focusEv
+    if (!ev || busy || !isFreeId(ev.id)) return
+    if (!closeFreeSlot(ev.id)) return
+    setConcluded(null)
+    setLastEnded(null)
+    push('decode', '自由时间 · 到此为止', `${ev.group} —— 推演接回主线。这一格发生过的事仍留在会话里，可重读。`, false)
+  }
+
   /** 补发指令：仅要求模型回一个事件指令块 */
   const resendDirective = async () => {
     if (!focusEv || busy || !ready) return
@@ -1047,6 +1099,7 @@ export function Plot() {
     const ev = focusEv
     const system = buildDirectorSystem(ev, {
       operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+      freeMode: freeOf(ev.id),
       cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
       // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
       operatorAction: lastActOf(logs[ev.id]) || undefined,
@@ -1097,8 +1150,8 @@ export function Plot() {
     if (lastOpen.current === evId) return
     lastOpen.current = evId
 
-    // 序章与第 1 话之外，导演一律不自动开篇
-    const auto = TIMELINE.findIndex((e) => e.id === evId) <= AUTO_OPEN_THRU_IDX
+    // 序章与第 1 话之外，导演一律不自动开篇（自由段同此理：没有原文可铺陈）
+    const auto = !isFreeId(evId) && TIMELINE.findIndex((e) => e.id === evId) <= AUTO_OPEN_THRU_IDX
 
     const scOpen = SCENES[evId]?.open?.trim()
 
@@ -1142,7 +1195,9 @@ export function Plot() {
   /* —— 离线原文加载 —— */
   useEffect(() => {
     let on = true
-    if (!focusEv || showOnline) {
+    /* 自由段没有切片可读（它不是原作里的一段）—— 别去 `public/offtext/` 找一个
+       注定不存在的文件：那会落成一条「原文未收录」的误报。那一段的离线视图另有版位。 */
+    if (!focusEv || showOnline || isFreeId(focusEv.id)) {
       setOffState({ id: null, state: 'idle' })
       return
     }
@@ -1261,12 +1316,23 @@ export function Plot() {
       </div>
       <div className="panel__body" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
-          <div className="vhead__kicker" style={{ fontSize: 9 }}>EVENT / {focusEv.id.toUpperCase()}</div>
+          {/* 自由段不是原文里的一段（见 lib/freetime.ts），所以不冠「EVENT /」那个编号 ——
+              它不是第几话，是两卷之间本终端留的空档。段头也照这个口径，别处都一致。 */}
+          <div className="vhead__kicker" style={{ fontSize: 9 }}>
+            {isFreeId(focusEv.id) ? 'FREE TIME / 非原文 · 本终端拟制' : `EVENT / ${focusEv.id.toUpperCase()}`}
+          </div>
           <b style={{ fontSize: 17, lineHeight: 1.4 }}>{focusEv.title}</b>
           <div className="muted tiny" style={{ marginTop: 3, color: 'var(--ink-mute)' }}>
             {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
           </div>
         </div>
+        {isFreeId(focusEv.id) ? (
+          <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.85, margin: 0, color: 'var(--ink-mute)' }}>
+            两卷之间的空档。这一段<b>不按大纲走</b> —— 闲逛、找人说话、接件要办的事、赴一场约、
+            两个人的私密往来都行。只有一条：<b>这期间羁绊一律不动</b>（开发度、次数账、关系档位、
+            CG 照常各记各的）。什么时候收，由你说了算 —— 按「进入下一卷」接回主线。
+          </p>
+        ) : null}
         {/* 大纲默认不显示（尚未发生的收束摆在侧栏＝剧透），但代码留着：
             把 SHOW_OUTLINE 改回 true 即可恢复。导演照常拿到它，见 plot.ts 的事件大纲。 */}
         {SHOW_OUTLINE ? (
@@ -1472,7 +1538,7 @@ export function Plot() {
   }
 
   /* 往期正文：推过的事件不从版面上撤走，玩家要能一直往回翻（不缓存，代价可忽略） */
-  const pastBlocks = TIMELINE
+  const pastBlocks = EPISODES
     .filter((e) => e.id !== focusEv?.id && (logs[e.id]?.length ?? 0) > 0)
     .map((e) => ({ ev: e, msgs: logs[e.id] }))
 
@@ -1520,7 +1586,8 @@ export function Plot() {
 
       <div className={css.bar} data-focus-ev={focusEv.id}>
         <div className={css.barMain}>
-          <span className="tag">{focusEv.id.toUpperCase()}</span>
+          {/* 自由段没有话数编号可念（它不是第几话），段头照 FREE TIME 那一档 */}
+          <span className="tag">{isFreeId(focusEv.id) ? 'FREE TIME' : focusEv.id.toUpperCase()}</span>
           <b>{focusEv.title}</b>
           <span className="muted tiny" style={{ color: 'var(--ink-mute)' }}>
             {focusEv.group} · {focusEv.phase} · {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
@@ -1529,6 +1596,41 @@ export function Plot() {
         <div className={css.barRight}>
           <span className="chip">{doneCount}/{total} 事件</span>
           <span className="chip" data-records={records.length}>{records.length} 记录</span>
+          {/* 自由活动开关。与卷间那一格**同一个状态**：开到哪儿都算「这一段羁绊不动」。
+              卷间那一格自己就是开着的（段 id 带 free:）—— 这一枚按钮照的是**段外**的那一路，
+              所以它只改操作员按下与否，不改段本身。 */}
+          <button
+            className={`btn ${freeMode ? 'btn--primary' : 'btn--ghost'}`}
+            style={{ fontSize: 12 }}
+            data-free-toggle={freeMode ? '1' : '0'}
+            onClick={() => {
+              const on = !freeMode
+              setFreeMode(on)
+              push('info', on ? '自由活动 · 开' : '自由活动 · 关',
+                on
+                  ? '从此刻起不走大纲：想做什么都行。这期间羁绊不动，开发度 / 次数账 / 关系档位 / CG 照常记。'
+                  : '接回主线 —— 推演重回大纲。',
+                false)
+            }}
+            title={freeMode
+              ? '此刻是自由活动：推演脱纲，羁绊不动。按一下接回主线。'
+              : '进入自由活动：推演脱纲一会儿 —— 闲逛、办事、赴约、私密往来都行，这期间羁绊不动。'}
+          >
+            {freeMode ? '自由活动中' : '自由活动'}
+          </button>
+          {/* 卷间那一格：结束它的是操作员，不是模型（见 lib/freetime.ts 的 FREE_FRAME） */}
+          {isFreeId(focusEv.id) ? (
+            <button
+              className="btn btn--primary"
+              style={{ fontSize: 12 }}
+              data-free-advance={focusEv.id}
+              disabled={busy}
+              onClick={endFree}
+              title="结束这一格自由时间，推演接回下一卷。"
+            >
+              <ArrowRight size={13} weight="bold" /> 进入下一卷
+            </button>
+          ) : null}
           {/* 回退到上一段：撤最近收束的那一段**连同它那一条记录**（退干净）。
               收束之后觉得这一段不对、想重推一遍，就走这里 —— 一直在，不必非等收束那一屏。 */}
           {backEv ? (
@@ -1926,6 +2028,22 @@ export function Plot() {
                 </>
               ) : null}
             </div>
+          ) : isFreeId(focusEv.id) ? (
+            /* 自由段没有原文可通读：它不是原作里的一段，也没有切片文件。
+               这一格只能在「在线推演」里走 —— 这里把话说清，别让它读成一个缺口。 */
+            <div className={css.offBody}>
+              <div className={css.offNote}>
+                <b>自由时间 · 没有原文可读</b> 这一格不是原作里的一段，
+                是两卷之间本终端留的空档 —— 没有切片，也没有大纲。它只能在「在线推演」里走：
+                闲逛、办事、赴约、私密往来都行，这期间羁绊不动。
+              </div>
+              <div className={css.offFoot}>
+                <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>走完这一格，点右侧接回主线</span>
+                <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={endFree}>
+                  <Check size={14} weight="bold" /> 进入下一卷
+                </button>
+              </div>
+            </div>
           ) : (
             <div className={css.offBody}>
               {cfgMain !== undefined && !ready ? (
@@ -2010,7 +2128,9 @@ export function Plot() {
                同一套底层规矩，内容就是刚打完的这一仗 —— 经过、战斗里各人真说出口的话、
                以及战后的现场与对话（口径见 lib/battle/storylog.ts）。 */
             const evId = pendingBattle?.evId
-            const ev = evId ? TIMELINE.find((e) => e.id === evId) : undefined
+            /* 自由时间里也可能打起来（FREE_FRAME 明说 battle 照常给），所以这里也按
+               `EPISODES` 找 —— 照 TIMELINE 找的话那一场就成不了文。 */
+            const ev = evId ? EPISODES.find((e) => e.id === evId) : undefined
             if (evId && ev) {
               push('info', '成文 · 交战回填正文', '正在把这一仗写成正文，接进本事件的推演里 —— 稍候。', false)
               const brief = battleStoryBrief(rec)

@@ -21,7 +21,8 @@ import { cgIdOf, cgNoteOf } from '../lib/cg'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import {
-  applyDirective, dateDirective, extractLiveDisplay, parseDirectorReply, replyDisplayText, smsBondRule, smsDirective,
+  applyDirective, dateDirective, dateReady, extractLiveDisplay, parseDirectorReply, replyDisplayText,
+  smsBondRule, smsDirective,
 } from '../lib/plot'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
@@ -365,14 +366,17 @@ export function Tavern() {
         }
         const flags = Object.entries(sd.flag ?? {})
         for (const [k, v] of flags) setFlag(k, v)
-        /* 她在信里把人约出去了（羁绊过线才认）：落成一场**待人赴**的见面。
-           同一时间只留一场 —— 手边还有没走完的那一场时，这一条不另开。 */
+        /* 她在信里把人约出去了（羁绊过线、且时间与地点都说定了才认，见 dateReady）：
+           落成一场**待人赴**的见面。同一时间只留一场 —— 手边还有没走完的那一场时，
+           这一条不另开。「改天一起出来嘛」那种没有落点的客气话不算数。 */
         let invited: Rendezvous | null = null
-        if (sd.date && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+        if (dateReady(sd.date) && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+          const d = sd.date!
           invited = openRendezvous(charId, {
-            kind: sd.date.kind === 'intimate' ? 'intimate' : 'date',
-            title: sd.date.title,
-            place: sd.date.place,
+            kind: d.kind === 'intimate' ? 'intimate' : 'date',
+            title: d.title,
+            place: d.place,
+            time: d.time,
             from: 'them',
           })
           setRvs(listRendezvous())
@@ -1084,6 +1088,8 @@ ${preset.post}` : '')
                         </span>
                         <span className={css.castSub} style={{ color: 'var(--ink-faint)' }}>
                           <MapPin size={10} weight="bold" /> {rv.place}
+                          {/* 说定的时候才念 —— 旧档与操作员自己开的那一场都没有这一栏 */}
+                          {rv.time ? ` · ${rv.time}` : ''}
                         </span>
                       </span>
                     </button>

@@ -15,12 +15,12 @@
 import { useEffect, useRef } from 'react'
 
 import { useTerminal } from '../terminal/Terminal'
-import { TIMELINE } from '../data/timeline'
+import { EPISODES } from './freetime'
 import { castOf } from './cast'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { chatCompletion, isReady, loadProfile } from './api'
 import { activePresetInfo, buildPresetContext, readActivePreset } from './preset'
-import { extractLiveDisplay, parseDirectorReply, replyDisplayText, smsDirective } from './plot'
+import { dateReady, extractLiveDisplay, parseDirectorReply, replyDisplayText, smsDirective } from './plot'
 import { appendSmsMsg, incomingSms, loadSmsLogs, markUnread, smsTurns, systemPrompt } from './sms'
 import { INTIMATE_BOND } from '../data/intimate'
 import { openDateOf, openRendezvous } from './rendezvous'
@@ -83,9 +83,15 @@ function jitter(last: number): number {
   return (last % 7) * (GAP_JITTER_MS / 7)
 }
 
-/** 本段事件里的在场者（这些人在眼前，不主动发短信） */
+/**
+ * 本段事件里的在场者（这些人在眼前，不主动发短信）。
+ *
+ * 走 `EPISODES` 而不是 `TIMELINE`：卷间那几格自由时间也有一段「此刻在场上的是谁」
+ * （它续着上卷末尾那一节，见 lib/freetime.ts），照 `TIMELINE` 找会跳过那一格、
+ * 落到**下一卷开头**的名册上 —— 那就会出现「这一格演的是谁都不对」的错位。
+ */
 function onStageIds(epDone: Record<string, boolean>): Set<string> {
-  const focus = TIMELINE.find((e) => !epDone[e.id])
+  const focus = EPISODES.find((e) => !epDone[e.id])
   return new Set(focus ? castOf(focus) : [])
 }
 
@@ -173,15 +179,20 @@ export function useProactiveSms(): void {
         appendSmsMsg(charId, incomingSms(charId, clean))
         markUnread(charId)
         c.push('decode', '新的角色短信', `${charOf(charId)?.name ?? charId} 发来一条消息，在「角色短信」里。`, false)
-        // 她在信里约了：落成一场待人赴的见面（「约会」一栏里会亮起来）
-        if (sd.date && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+        /* 她在信里约了：落成一场待人赴的见面（「约会」一栏里会亮起来）。
+           门槛两道：羁绊到了 INTIMATE_BOND，且这一条**真把时间与地点都说出口了**
+           （`dateReady`）—— 「改天一起出来嘛」那种没有落点的客气话不另开一场，
+           否则每封闲聊都会长出一场没头没尾的见面来。 */
+        if (dateReady(sd.date) && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+          const d = sd.date!
           const rv = openRendezvous(charId, {
-            kind: sd.date.kind === 'intimate' ? 'intimate' : 'date',
-            title: sd.date.title,
-            place: sd.date.place,
+            kind: d.kind === 'intimate' ? 'intimate' : 'date',
+            title: d.title,
+            place: d.place,
+            time: d.time,
             from: 'them',
           })
-          c.push('decode', '有人约你', `${charOf(charId)?.name ?? charId} · ${rv.title}（${rv.place}）—— 在「角色短信 · 约会」里应约。`, false)
+          c.push('decode', '有人约你', `${charOf(charId)?.name ?? charId} · ${rv.title}（${rv.place}${rv.time ? ` · ${rv.time}` : ''}）—— 在「角色短信 · 约会」里应约。`, false)
         }
       } catch {
         /* 通道不给力就安静跳过，下一轮再说 */
@@ -223,8 +234,10 @@ function proactiveRule(bond: number): string {
    一句一条，留白比说满更贴近真实的短信。
 8. 你也可以**自己在信里约**对方出来：想见就直说，别绕圈子。
    若这一条确实把约开出来了，在整条短信的最末尾另起一行放一个纯 JSON 对象：
-   { "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方" } }
-   只有真的开口约了才给（随口说说、只是想念不算）；约会这一条也不要每封都提。`
+   { "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方", "time": "什么时候" } }
+   **时间与地点两样都得在信里说出口** —— time 写「明天放学后」「周六下午三点」这种，
+   place 写去哪；缺一样就当没约成，那一条不会生成。只有真的开口约了才给
+   （随口说说、只是想念不算）；约会这一条也不要每封都提。`
 }
 
 const PROACTIVE_PROMPT = '（现在请你主动发一条短信过来。只写发出去的那一两句话，不要旁白、不要加引号。）'

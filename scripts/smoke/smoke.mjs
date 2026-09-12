@@ -2911,6 +2911,95 @@ try {
     && tAfter.rec.includes('v1-3') && Number(tAfter.chip) === Number(tBefore.chip) - 1,
     JSON.stringify(tAfter))
 
+  /* ============ Phase U：自由时间（卷间那一格 · 开关 · 进入下一卷） ============
+     第 1 卷九段全部读完之后，推演指针**不该直接落到第 2 卷开头** —— 中间那一格
+     是本终端留的自由时间（见 lib/freetime.ts）。这一相量的是界面上那一半：
+
+       · 段头认出它来（FREE TIME · 不冠「EVENT / v2-1」那种话数编号）；
+       · 离线视图**没有原文可读**（它不是原作里的一段），且不摆「读毕本段」；
+       · 收束**不走事件指令**：那一格上没有 `data-concluded`，只有右栏一枚
+         「进入下一卷」按钮（用户口径：「不是事件指令，而是一个按钮」）；
+       · 按下去之后：指针落到 v2-1，`free:v1` 进了 epDone，但**低语者日志不多一条**
+         （自由段不是原文里的一段，没有可归档的摘录）；
+       · 进度条不许虚涨（仍是 9/57 —— 9 段主线，不是 10）；
+       · 自由活动开关在，按下去变成「自由活动中」（它是段外的那一路）。
+
+     羁绊拦在落地那一层（`freezeBond`）与段本身那几条归 mech 的 §32 量。 */
+  console.log('\n[Phase U] 自由时间：卷间那一格 · 没有原文 · 进入下一卷是个按钮 · 开关')
+  await ev(`(()=>{
+    localStorage.removeItem('zts-plot:v1');
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true,
+      epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true,'v1-5':true,'v1-6':true,'v1-7':true,'v1-8':true,'v1-9':true},
+      cur:'v1-9', operatorName:'空档观察员', focusId:'gcn',
+      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],cg:{},cast:{},
+        records:[{eventId:'v1-9',mode:'offline',digest:'第九段收束',ts:9}]}}));
+    return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-focus-ev]')`, 20000, 'U plot bar')
+
+  const uBar = await ev(`(()=>{const bar=document.querySelector('[data-focus-ev]');
+    const adv=document.querySelector('[data-free-advance]');
+    const tog=document.querySelector('[data-free-toggle]');
+    return {ev:bar?bar.getAttribute('data-focus-ev'):'',
+      tag:bar?bar.querySelector('.tag').textContent.trim():'',
+      adv:adv?adv.getAttribute('data-free-advance'):null,
+      advText:adv?adv.innerText.replace(/\\s+/g,' ').trim():'',
+      tog:tog?tog.getAttribute('data-free-toggle'):null,
+      togText:tog?tog.innerText.replace(/\\s+/g,' ').trim():'',
+      chip:[...document.querySelectorAll('.chip')].map(x=>x.innerText.replace(/\\s+/g,' ').trim()).find(x=>x.includes('事件'))||''}})()`)
+  ok('U1 第 1 卷读完之后落在自由时间那一格（不直接跳到第 2 卷开头）',
+    uBar.ev === 'free:v1', JSON.stringify(uBar))
+  ok('U2 段头认出它不是话数（FREE TIME · 不冠 EVENT /）',
+    uBar.tag === 'FREE TIME', uBar.tag)
+  ok('U3 「进入下一卷」是一枚按钮，不是等事件指令（收束栏那一套在这儿不出现）',
+    uBar.adv === 'free:v1' && uBar.advText.includes('进入下一卷'), uBar.advText)
+  ok('U4 自由活动开关在，且此刻是关着的（段内与开关是两处入口，互不冒充）',
+    uBar.tog === '0' && uBar.togText === '自由活动', JSON.stringify({ t: uBar.tog, s: uBar.togText }))
+  ok('U5 进度只数主线（9 段，不是 10 —— 自由段不许让进度条虚涨）',
+    uBar.chip.startsWith('9/57'), uBar.chip)
+
+  /* 离线视图：这一格没有原文可读，也不摆「读毕本段」（它是按钮收束，不是读原文归档） */
+  const uOff = await ev(`(()=>{const t=document.body.innerText;
+    return {note:t.includes('自由时间 · 没有原文可读'),
+      arch:t.includes('读毕本段'),
+      adv:[...document.querySelectorAll('button')].filter(x=>x.innerText.includes('进入下一卷')).length}})()`)
+  ok('U6 离线视图照实说「没有原文可读」（它不是原作里的一段，去 offtext 找只会落成误报）',
+    uOff.note === true, JSON.stringify(uOff))
+  ok('U7 自由段不摆「读毕本段 · 写入记录并推进」（那一格没有记录可写）',
+    uOff.arch === false && uOff.adv >= 1, JSON.stringify(uOff))
+
+  /* 开关：按一下 → 「自由活动中」 */
+  await ev(`(()=>{const b=document.querySelector('[data-free-toggle]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const b=document.querySelector('[data-free-toggle]');return !!b&&b.getAttribute('data-free-toggle')==='1'})()`, 8000, 'U toggle on')
+  const uTog = await ev(`(()=>{const b=document.querySelector('[data-free-toggle]');
+    const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));return {t:b.getAttribute('data-free-toggle'),
+      txt:b.innerText.replace(/\\s+/g,' ').trim(), stored:!!(s.world&&s.world.free)}})()`)
+  ok('U8 自由活动开关按下去变「自由活动中」，且写进存档（跟档走，读档回来还在原状态）',
+    uTog.t === '1' && uTog.txt === '自由活动中' && uTog.stored === true, JSON.stringify(uTog))
+  // 关回去：别让这一个状态渗到后面的相
+  await ev(`(()=>{const b=document.querySelector('[data-free-toggle]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const b=document.querySelector('[data-free-toggle]');return !!b&&b.getAttribute('data-free-toggle')==='0'})()`, 8000, 'U toggle off')
+
+  /* 「进入下一卷」：指针落到 v2-1，free:v1 进 epDone，但日志不多一条 */
+  await ev(`(()=>{const b=document.querySelector('[data-free-advance]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const bar=document.querySelector('[data-focus-ev]');return !!bar&&bar.getAttribute('data-focus-ev')==='v2-1'})()`, 10000, 'U advance to v2-1')
+  const uAfter = await ev(`(()=>{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));const w=s.world||{};
+    const bar=document.querySelector('[data-focus-ev]');
+    const chip=[...document.querySelectorAll('.chip')].map(x=>x.innerText.replace(/\\s+/g,' ').trim()).find(x=>x.includes('事件'))||'';
+    return {focus:bar?bar.getAttribute('data-focus-ev'):'',chip:chip,
+      freeDone:!!(s.epDone||{})['free:v1'],
+      rec:(w.records||[]).map(r=>r.eventId),
+      adv:!!document.querySelector('[data-free-advance]')}})()`)
+  ok('U9 「进入下一卷」：指针落到下一卷开头 · 那一格进 epDone · 按钮随之收走',
+    uAfter.focus === 'v2-1' && uAfter.freeDone === true && uAfter.adv === false, JSON.stringify(uAfter))
+  ok('U10 自由段不写记录（它不是原文里的一段，低语者日志上不该多一条写着「自由时间」的摘录）',
+    !uAfter.rec.includes('free:v1'), JSON.stringify(uAfter.rec))
+  ok('U11 收束自由段之后进度照旧只数主线（9/57；下一卷还没读，不许跟着涨）',
+    uAfter.chip.startsWith('9/57'), uAfter.chip)
+
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */
   if (process.env.SHOT) {

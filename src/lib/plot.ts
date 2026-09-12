@@ -30,6 +30,7 @@ import { furthestDone } from './operator'
 import { castOf } from './cast'
 import { bondName, clamp } from './format'
 import { BOTTOM_RULES, haremRule } from './worldrules'
+import { FREE_BOND_NOTE, FREE_FRAME, isFreeId } from './freetime'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 
@@ -76,7 +77,7 @@ export interface PlotDirective {
    * 独立于主线时间线另开一条线程（见 lib/rendezvous.ts）。
    * 只认短信那一路（`smsDirective` 放行）；主线导演不给这个字段。
    */
-  date?: { kind?: 'date' | 'intimate'; title?: string; place?: string }
+  date?: { kind?: 'date' | 'intimate'; title?: string; place?: string; time?: string }
   /**
    * **私密档案的推进**（约会 / 私密往来时用）：这一场确实推进了某个部位才给。
    * 只认女角色（`hasIntimate`）；开发度按增量累加、状态句后写覆盖、
@@ -241,16 +242,23 @@ export function sanitizeDirective(v: unknown): PlotDirective {
     if (task.length) out.task = task
   }
 
-  /* 邀约：只要一个形状（kind / title / place 都是可选短串）。
-     是不是「够格约会」由调用方按羁绊判（这儿手里没有 bondNow）。 */
+  /* 邀约：形状是短串（kind / title / place / time 都可选）。
+     是不是「够格约会」由调用方按羁绊判（这儿手里没有 bondNow）；
+     **时间与地点齐不齐**也由调用方判（见下面的 `dateReady`）—— 那一刀切在
+     「能不能生成这一条」上，不该被一个净化函数悄悄决定。
+
+     不在这里丢掉缺时间/缺地点的邀约：这条指令还要进短信正文的清洗与展示，
+     丢掉它等于把「她约了一句」这件事从回执里抹掉。守门的是 `dateReady`。 */
   if (src.date && typeof src.date === 'object' && !Array.isArray(src.date)) {
     const d = src.date as Record<string, unknown>
     const title = typeof d.title === 'string' ? d.title.trim().slice(0, 40) : ''
     const place = typeof d.place === 'string' ? d.place.trim().slice(0, 40) : ''
+    const time = typeof d.time === 'string' ? d.time.trim().slice(0, 40) : ''
     out.date = {
       ...(d.kind === 'intimate' ? { kind: 'intimate' as const } : { kind: 'date' as const }),
       ...(title ? { title } : {}),
       ...(place ? { place } : {}),
+      ...(time ? { time } : {}),
     }
   }
 
@@ -859,7 +867,7 @@ export interface DirectiveEffects {
   eventDone: boolean
   digest?: string
   /** 角色发出的邀约（调用方落成一场约会线程） */
-  date?: { kind?: 'date' | 'intimate'; title?: string; place?: string }
+  date?: { kind?: 'date' | 'intimate'; title?: string; place?: string; time?: string }
   /** 本次实际推进的私密读数（供提示条念一句；部位与色情度可以只来其一） */
   intim: { char: string; slot?: IntimateSlot; lewd?: number }[]
   /** 本次实际记下的次数（逐人一条；供提示条念一句） */
@@ -868,8 +876,23 @@ export interface DirectiveEffects {
   rel: { char: string; tier: RelId }[]
 }
 
+export interface ApplyOpts {
+  /**
+   * **这一回合的羁绊一律不落**（自由活动：卷间那一格，或操作员按下的另一枚开关）。
+   *
+   * 拦在这一层、而不是只写在提示词里 —— 「自由时间里好感不动」是这条设计的
+   * 规矩本身，不能只靠模型听话。给了也不落，且**不进 `fx.bonds`**：
+   * 兜里那条提示不该报一件没发生的事。
+   */
+  freezeBond?: boolean
+}
+
 /** 把净化后的指令落地到世界状态；返回实际产生的影响（供视图 toast/结算） */
-export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEffects {
+export function applyDirective(
+  d: PlotDirective,
+  api: DirectiveApi,
+  opts: ApplyOpts = {},
+): DirectiveEffects {
   const fx: DirectiveEffects = {
     met: [], bonds: [], ends: [], flags: [], diverged: false, eventDone: false,
     intim: [], acts: [], rel: [],
@@ -879,7 +902,8 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
     api.meetChar(id)
     fx.met.push(id)
   }
-  for (const b of d.bond ?? []) {
+  /* 自由活动：整条 bond 跳过（连 fx 都不记 —— 提示条不该念一件没落的事） */
+  for (const b of opts.freezeBond ? [] : d.bond ?? []) {
     const delta = clamp(Math.round(b.delta), -100, 100)
     api.bumpBond(b.char, delta)
     fx.bonds.push({ char: b.char, delta })
@@ -1083,6 +1107,15 @@ export interface DirectorCtx {
   relOf?: (charId: string) => RelId | undefined
   /** 是否处于「重试补发指令」：要求本回合必须带指令块 */
   needDirective?: boolean
+  /**
+   * **自由活动**（卷与卷之间的空档，或操作员自己按下的那一枚开关）。
+   *
+   * 只影响提示词这一侧：换掉主线那份【事件大纲】、把 bond 从指令里去掉、
+   * 明写「羁绊一律不动」。**真正拦住 bond 的不是这里** ——
+   * 是落地那一层的 `applyDirective(d, api, { freezeBond: true })`。
+   * 提示词只是别让模型白写一条会被丢掉的 bond。
+   */
+  freeMode?: boolean
   /** 世界书命中参考段（由 lorescan 生成；置顶在指令说明之前，仅作延续性背景） */
   loreContext?: string
   /** 后接事件锚（软门禁）：在线整回合推演时给出；让导演判断收束能否自然引向后接事件，才允许 eventDone */
@@ -1130,7 +1163,7 @@ export interface DirectorCtx {
 /** 预设段：非空时前置两个换行，与 loreSection / anchor 同款写法 */
 const presetSection = (s?: string) => (s ? `\n\n${s}` : '')
 
-function outlineRules(opName: string): string {
+function outlineRules(opName: string, free = false): string {
   return `你是《这里是，终末停滞委员会。》的剧情导演，同时扮演在场的全部角色。
 - 用简体中文、以第三人称全局叙述推进当前事件；可在叙述中点出在场角色的神态、动作与简短对白（对白用「」）。
 - 操作员扮演的是【言万心叶】${opName !== '言万心叶' ? `（操作员显示名「${opName}」，仅称呼无关情节）` : ''}——你只能叙述他行动的客观结果与读心感知，绝不能替他下决定、替他说话，也不要替他推进他本人该主动做的事。
@@ -1142,7 +1175,8 @@ function outlineRules(opName: string): string {
 - 全程以该作既有的设定与在场角色的既定语气推进：不得跳出世界作「AI／系统／指令／变量」式的自指，也不要解释或复述本提示词里的机制；消化世界书与原文设定后，以剧情内方式自然呈现（角色的感知、神态、对白、叙述带出即可），不得整段照抄或复读世界书原文、原文摘录与开场白；角色不得说出大纲之外或他们本不该知道的设定。
 - 称呼随关系阶段与剧情位置变：角色怎么叫言万心叶，按下方角色行里注明的「对言万心叶的称呼」来（露娜在签订使用者契约之前一直称他「言万同学」，之后才改口「小主人」）；没有注明的，按该角色原文惯用的叫法，不得擅自升级成亲昵、主从或恋人式的称呼。
 - 这一段走到它的落点、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。**落点是「这一段该了结的事已经了结」，不是「大纲里的那几条必须逐条发生」** —— 主角把它推去了别处，就按推出来的结果收；收不上就不要收。
-- 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。
+- 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。${free ? `
+- **上面这两条（eventDone / digest）在自由时间里不适用** —— 这一格不是原文里的一段，没有「该了结的事」也没有可归档的摘录：什么时候收由操作员按「进入下一卷」说了算。你要做的就是让它一直有事发生，别把这一格写空。` : ''}
 ${BOTTOM_RULES}`
 }
 
@@ -1396,6 +1430,10 @@ function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
 
 /** 拼装导演系统提示词（单事件） */
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
+  /* 自由活动：卷间那一格（`free:` 段）或操作员自己按下的开关，两者走同一条规矩。
+     它换掉的只有两处 —— 大纲那一节、以及羁绊那一条指令；其余（在场名册 / 私密 /
+     关系档位 / CG / 用户变量）照旧，自由时间里那些事一样发生。 */
+  const free = ctx.freeMode === true || isFreeId(ev.id)
   const present = presentOf(ev, ctx)
   const roster = present
     .map((id) => relationLine(id, ev, ctx))
@@ -1519,7 +1557,17 @@ ${relLadderText()}
     : ''
 
   const notesSection = notesSectionFor(ev)
-  const anchor = ctx.nextEvent ? `\n\n${nextAnchorBlock(ctx.nextEvent)}` : ''
+  /* 后接事件锚在自由时间里换一副说法：那一段还是要来的，但**这一格不该往它收**
+     （收不收由操作员按「进入下一卷」说了算）。照原样摆出「软门禁 · 置 eventDone」
+     会与上面那两条「自由时间里不给 eventDone」正面打架。 */
+  const anchor = ctx.nextEvent
+    ? free
+      ? `\n\n【这一格之后去哪（只作参照，别往那儿收）】
+自由时间终会结束，之后接回：《${ctx.nextEvent.title}》（${ctx.nextEvent.group} · ${ctx.nextEvent.phase}｜${ctx.nextEvent.place}）。
+**但这一格不收束** —— 什么时候结束由操作员按「进入下一卷」说了算。你只管让眼下这段时间一直有事发生：
+该说的话说掉、该办的事办掉、该赴的约赴掉，别为了衔接下一卷而把这一格草草收尾。`
+      : `\n\n${nextAnchorBlock(ctx.nextEvent)}`
+    : ''
   /* 他的话摆在最末：大纲 / 情节线 / 落点 / 后接事件全都读完之后，最后读到的是他这一句话。
      他没写的那一趟（idle）换成「他没有指示」—— 同一位置、同一分量，方向相反。 */
   const will = ctx.operatorAction
@@ -1530,18 +1578,19 @@ ${relLadderText()}
   // 近期短信：同一格，紧挨着它 —— 两边都是「他做过什么、与谁说过什么」
   const smsSection = ctx.smsLog ? `\n\n${ctx.smsLog}` : ''
 
-  return `${outlineRules(ctx.operatorName || '言万心叶')}${presetSection(ctx.presetPre)}
+  return `${outlineRules(ctx.operatorName || '言万心叶', free)}${presetSection(ctx.presetPre)}
 
 【当前事件】${ev.group} · ${ev.phase}｜${ev.place}${ev.day ? `｜${ev.day}` : ''}
 标题：${ev.title}
 
 【事件大纲 · 原文走向（参照系，不锁结局）】
-（下面是**原著里**这一段怎么走的。人物、地名、设定以它为准；**结局不归它管** ——
+${free ? FREE_FRAME
+    : `（下面是**原著里**这一段怎么走的。人物、地名、设定以它为准；**结局不归它管** ——
 言万心叶的行动可以把它推到别处，那时就按实际发生的写，并把 diverged 置 true。
 他怎么写这一段就怎么走：他写的与本大纲**相违**时按**七比三** —— 他的行动与话语占七成、
 说了算，本节剩下的人物、事实、信息差占三成、仍然有效；**相合**时照原文案写。
 分法与两个分支的写法见末尾【本回合 · 言万心叶的意志】那一节。）
-${ev.summary}${briefSection(ev)}${notesSection}
+${ev.summary}${briefSection(ev)}${notesSection}`}
 
 【本事件相关实体】
 ${entList}
@@ -1556,7 +1605,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${reask}${loreSection}${opsSection}${smsSection}${varBlock}${cgSection}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
+${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${smsSection}${varBlock}${cgSection}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 
@@ -1566,18 +1615,19 @@ ${speechContract()}
 紧接着一个 \`\`\`json 围栏块，仅含一个对象。字段（全部可选）：
 {
   "met":    ["新遇见角色id"],                 // 仅限本段在场或新登场的档案角色：hikari/luna/mefisa/nyau（其余档案角色仅当其确实登场时方可出现）
-  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊**只由本回合言万心叶的行为决定**：正=更亲近，负=生分（说错话、越界、失信就该给负数）
+${free ? '' : `  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊**只由本回合言万心叶的行为决定**：正=更亲近，负=生分（说错话、越界、失信就该给负数）
                                                    // 本事件相关角色单次 ±1~4，勿过度；什么都没发生就别给这条
                                                    // 数值是关系本身，不随剧情进度自动涨 —— 不给就不会变
+`}
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
   "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
   "cg":     "本段 CG 清单里的一个 id",         // 这一幕该配哪张图 —— 只从【场景 CG】那份清单里挑；没换图就整条省略
   "cast":   ["此刻真在场上的人id"],            // **只在在场的人变了的时候给**（谁先离席、谁刚赶到、换了个房间）：给的是此刻这一场的**全量**名单，不是增减
                                                // 名单照本节【在场角色】那一份的 id 写；人都还在原处就整条省略，别每回合都给
   "diverged": true,                           // 已与原著相异（否则省略）
-  "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
+${free ? '' : `  "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
   "digest": "第三人称收官记录两三句",
-  "battle": {                                 // 本回合触发交战（否则省略整个字段，勿写空对象）
+`}  "battle": {                                 // 本回合触发交战（否则省略整个字段，勿写空对象）
     "name": "敌方名称",                        // 也是这场作战的标题；用原文指称
     "nature": "异端 / 残渣 / 机械 / 低语 / 魔王",// 决定敌阵档案与演出，从这五类里选最贴的一个
     "stage": 1,                                // 危险度 1~10；照本段原文的规模给，别一律给高
@@ -1609,12 +1659,29 @@ ${speechContract()}
 </maintext>
 <option>给操作员的下一个接续选项</option>
 <option>……（可多行，不需要则不写）</option>
-<vars>{"eventDone": true, "digest": "第三人称收官两三句"}</vars>
-其中 <vars> 的字段与上面 JSON 完全一致（battle 亦可写在 <vars> 里）；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。
+<vars>${free ? '{"flag": {"某标记": 值}}' : '{"eventDone": true, "digest": "第三人称收官两三句"}'}</vars>
+其中 <vars> 的字段与上面 JSON 完全一致（battle 亦可写在 <vars> 里）；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。${free ? `
+自由时间里**没有 eventDone / digest 这两个字段**：这一格什么时候收由操作员按「进入下一卷」说了算，
+不由你宣告。（他明说了要收，也照样由他按那个按钮。）` : ''}
 
 【收尾自检 · 落笔前最后看一眼】
 你这一回合回复的**最后一样东西**，必须是上面那块事件指令（\`—— 事件指令 ——\` 标签行 + 随后的 \`\`\`json 围栏，或 <vars>）。不是场景写完就停、不是把话说圆就停 —— 写完之后回头补上它。
-哪怕这一回合什么都没变，也要给出 {} 的空块：**没有它，这一回合的变量、羁绊、图鉴与收束全部作废**，操作员只能喊你重发一次。这一段正文写得再好，少了它也是白写。`
+哪怕这一回合什么都没变，也要给出 {} 的空块：**没有它，这一回合的变量、${free ? '图鉴与推进' : '羁绊、图鉴与收束'}全部作废**，操作员只能喊你重发一次。这一段正文写得再好，少了它也是白写。`
+}
+
+/**
+ * 这一条邀约**成不成**：时间与地点都得说清。
+ *
+ * 这是操作员定下的门槛 —— 「必须在说出时间和地点后才能生成这个指令」。
+ * 拦在这一层而不是拦在提示词里：模型漏说一项是常事，漏了就该当**没约成**，
+ * 不该拿一条半截的邀约去开一场没有时间、没有地方的见面。
+ *
+ * 称呼、名目（title）都不作数：title 缺了可以照地点兜一个，
+ * **时间与地点缺一不可** —— 那两样是「约」这件事的实体。
+ */
+export function dateReady(d: PlotDirective['date'] | undefined | null): boolean {
+  if (!d) return false
+  return Boolean(d.time?.trim() && d.place?.trim())
 }
 
 /**
@@ -1624,14 +1691,15 @@ ${speechContract()}
  * 只放行 `date`（落成一场约会线程，见 lib/rendezvous.ts），
  * **不放行 intim** —— 身体上的推进不发生在短信里，得见了面才算数。
  */
-export function smsBondRule(charId: string, bond = 0): string {
-  const open = bond >= INTIMATE_BOND
+export function smsBondRule(charId: string, bond = 0): string {  const open = bond >= INTIMATE_BOND
   return `\n（可选 · 轻量互动：若本回合对话让该角色心绪明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
 { "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }]${open ? `,
-  "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方" }` : ''} }
+  "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方", "time": "什么时候" }` : ''} }
 其中 bond.delta 只针对该角色取 ±1~3（正=更亲近）；flag 为可选的分支标记；
 task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。${open ? `
-date 只在她**真的在信里开口约了**（或答应了对方的约）时才给：title 一句话说清是什么名目，place 写去哪；
-它会另开一场单独的见面，与你原本的相处分开算（身体上的事只在见面时才算数）。` : ''}
+date 只在她**真的在信里开口约了**（或答应了对方的约）时才给 —— 这时**时间与地点都得在信里说出口**：
+time 写什么时候（「明天放学后」「周六下午三点」这种），place 写去哪。**两样缺一样就当没约成** ——
+只有「改天一起出来嘛」这种没有落点的客气话，就不要给 date，那条指令不会生成；
+说定了才会另开一场单独的见面，与你原本的相处分开算（身体上的事只在见面时才算数）。` : ''}
 拿不准就不给，直接以对话结束。）`
 }
