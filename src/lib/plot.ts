@@ -13,9 +13,11 @@
    ============================================================ */
 
 import type {
-  ActCount, ActKind, FlagValue, IntimateProgress, IntimateSlot, RelId, TimelineEvent,
+  ActCount, ActKind, AttireProgress, AttireSlot, AttireWear, FlagValue, IntimateProgress,
+  IntimateSlot, RelId, TimelineEvent,
 } from '../data/types'
 import { INTIMATE_BOND, INTIMATE_SLOTS, hasIntimate } from '../data/intimate'
+import { ATTIRE_SLOTS, WET_PER_LEWD, hasAttire } from '../data/attire'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { isRelId, relLadderText, relTier, REL_IDS } from '../data/rel'
 import { CHARACTERS } from '../data/chars'
@@ -80,6 +82,14 @@ export interface PlotDirective {
    */
   intim?: IntimateDirective[]
   /**
+   * **贴身衣物的推进**（约会 / 私密往来时用）：这一场里真的脱了 / 解开 / 湿了才给。
+   * 与 `intim` 同一道门槛（只认女角色），但记的是**此刻**而不是账 ——
+   * 穿着档位后写覆盖（她可以又穿回去），湿润增量可正可负（缓过来了就回落）。
+   * 给的湿润只是**这一回的增量**，不是总数；另外那条「因发情而湿润」的耦合
+   * 不必在这儿报（见 data/attire.ts 的 mergeAttire）。
+   */
+  attire?: AttireDirective[]
+  /**
    * **次数账的增量**（约会 / 私密往来时用）：角色 id → 八栏里哪几栏、各加几回。
    *
    * 与 `intim` 的分工写在 data/acts.ts 的开头：intim 是「这一处此刻是什么样」
@@ -124,6 +134,28 @@ export interface IntimateDirective {
   view?: string
 }
 
+/**
+ * 一条贴身衣物的推进：某角色这两件此刻穿成什么样 / 内裤湿了几分。
+ *
+ * 三路各记各的（与 IntimateDirective 同一写法）：
+ *   · `bra` / `panties`：**此刻那一档**（绝对值，不是「脱掉了一层」这种增量）——
+ *     给的就是她此刻穿成什么样，与上一回合无关。两件可以只给一件。
+ *   · `wet`：湿润读数的**增量**（可正可负）。它只在**真的湿了 / 缓过来了**的
+ *     时候给；「因为发情而湿润」那一半不必给 —— 同一次里色情度涨了，湿润跟着
+ *     涨一半（见 data/attire.ts 的 WET_PER_LEWD 与 mergeAttire）。
+ *
+ * 一条里两样都没有就是空话，丢掉。
+ */
+export interface AttireDirective {
+  char: string
+  /** 内衣此刻穿成什么样（三档；不给即维持此刻那一档） */
+  bra?: AttireWear
+  /** 内裤此刻穿成什么样（三档；不给即维持此刻那一档） */
+  panties?: AttireWear
+  /** 湿润增量（可正可负：缓过来了、擦干净了就往下走） */
+  wet?: number
+}
+
 /** 剧情触发的交战规格 —— 由模型在事件指令里输出 */
 export interface PlotBattle {
   /** 敌方名称（也是这场作战的标题） */
@@ -149,7 +181,7 @@ const KNOWN_FIELDS = new Set([
   // 任务却永远落不了地，而且一声不吭。
   'task',
   // 私密那一支（约会 / 私密往来）：同样是漏一个就整条安静地丢
-  'date', 'intim',
+  'date', 'intim', 'attire',
   // 次数账与关系档位：同上 —— 漏在名单外就整条安静地丢，账永远记不上
   'acts', 'rel',
 ])
@@ -164,6 +196,16 @@ const ACT_KINDS_MAX = 8
 const ACT_TIMES_MAX = 9
 /** 一回合最多落下几条私密推进（多女同场时逐人分条，所以比从前宽） */
 const INTIM_ITEMS_MAX = 8
+
+/**
+ * 湿润读数一次能挪多少（绝对值）。
+ *
+ * 比开发度那 8 给得宽，是因为它记的东西不一样：开发度是**账**，一次一小步；
+ * 湿润是**此刻的读数**，同一场里从干爽到透湿本来就可以是一段连续的过程
+ * （所以它也不止往上走 —— 增量可以是负的，缓过来了就往下）。
+ * 上下各 30 是「一次不用报满」，不是「一共能有多少」。
+ */
+const ATTIRE_WET_MAX = 30
 
 /** 把「图鉴 id 或原文实体标注」归一化为图鉴条目 id；无法识别返回 null */
 export function resolveEndKey(key: string): string | null {
@@ -289,6 +331,35 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       if (intim.length >= INTIM_ITEMS_MAX) break
     }
     if (intim.length) out.intim = intim
+  }
+
+  /* 贴身衣物：两件此刻穿成什么样 / 内裤湿了几分。与 intim 同一道门槛（只认女角色），
+     但收法有两处不一样，都因为这一栏记的是**此刻**而不是账：
+       · 两件收的是**绝对值**（三档），不是增量 —— 编出来的档位直接丢，不落；
+       · 湿润收的是**增量**，且**允许为负**（缓过来了、擦干净了就往下走），
+         夹 ±ATTIRE_WET_MAX。这一条与开发度只增不减恰好相反，见 data/attire.ts。
+     一条里两件都没给、湿润也没有，就是空话，丢掉。 */
+  if (Array.isArray(src.attire)) {
+    const attire: AttireDirective[] = []
+    for (const item of src.attire) {
+      if (!item || typeof item !== 'object') continue
+      const o = item as Record<string, unknown>
+      const char = typeof o.char === 'string' ? o.char.trim() : ''
+      if (!hasAttire(char)) continue
+      const one: AttireDirective = { char }
+      for (const slot of ATTIRE_SLOTS) {
+        const v = o[slot]
+        if (v === 'worn' || v === 'half' || v === 'off') one[slot] = v
+      }
+      const wet = finiteNum(o.wet)
+      if (wet !== null && wet !== 0) {
+        one.wet = clamp(Math.round(wet * 10) / 10, -ATTIRE_WET_MAX, ATTIRE_WET_MAX)
+      }
+      if (!one.bra && !one.panties && one.wet === undefined) continue
+      attire.push(one)
+      if (attire.length >= INTIM_ITEMS_MAX) break
+    }
+    if (attire.length) out.attire = attire
   }
 
   /* 次数账：角色 → 八栏里哪几栏各加几回。三样都得对上才落：
@@ -831,6 +902,13 @@ export interface DirectiveApi {
   setFlag: (k: string, v: FlagValue) => void
   /** 私密档案推进（约会 / 私密往来落下的开发度与状态；见 data/intimate.ts） */
   bumpIntim: (charId: string, p: IntimateProgress) => void
+  /**
+   * 贴身衣物推进（穿着档位 / 湿润增量；见 data/attire.ts）。
+   *
+   * `arouse` = 同一次里这个人涨了多少色情度 —— 「因为发情而湿润」那一半的耦合
+   * 落在 `mergeAttire` 里（规矩在那儿，这里只负责把数递下去）。
+   */
+  bumpAttire: (charId: string, p: AttireProgress, arouse: number) => void
   /** 次数账推进（八栏增量；见 data/acts.ts） */
   bumpActs: (charId: string, add: ActCount) => void
   /** 关系档位（**绝对**档位，不是增量；见 data/rel.ts） */
@@ -851,6 +929,11 @@ export interface DirectiveEffects {
   date?: { kind?: 'date' | 'intimate'; title?: string; place?: string; time?: string }
   /** 本次实际推进的私密读数（供提示条念一句；部位与色情度可以只来其一） */
   intim: { char: string; slot?: IntimateSlot; lewd?: number }[]
+  /**
+   * 本次实际落下的贴身衣物推进（供提示条念一句）。
+   * 含**只由色情度带出来**的那一半 —— 那一半也是真的落了，不该瞒着操作员。
+   */
+  attire: AttireDirective[]
   /** 本次实际记下的次数（逐人一条；供提示条念一句） */
   acts: { char: string; add: ActCount }[]
   /** 本次实际落下的关系档位（逐人一条；绝对档位） */
@@ -876,7 +959,7 @@ export function applyDirective(
 ): DirectiveEffects {
   const fx: DirectiveEffects = {
     met: [], bonds: [], ends: [], flags: [], diverged: false, eventDone: false,
-    intim: [], acts: [], rel: [],
+    intim: [], attire: [], acts: [], rel: [],
   }
 
   for (const id of d.met ?? []) {
@@ -928,6 +1011,35 @@ export function applyDirective(
       ...(it.view ? { view: it.view } : {}),
     })
   }
+  /* 贴身衣物：先收一遍这一回合各人的色情度增量 —— 湿润的另一半来路是它
+     （「因为发情而湿润」；规矩在 data/attire.ts 的 mergeAttire 里，这里只递数）。 */
+  const arouse = new Map<string, number>()
+  for (const it of d.intim ?? []) {
+    if (it.lewd) arouse.set(it.char, (arouse.get(it.char) ?? 0) + it.lewd)
+  }
+  const dressed = new Set<string>()
+  for (const at of d.attire ?? []) {
+    dressed.add(at.char)
+    const prog: AttireProgress = {}
+    const wear: Partial<Record<AttireSlot, AttireWear>> = {}
+    if (at.bra) wear.bra = at.bra
+    if (at.panties) wear.panties = at.panties
+    if (Object.keys(wear).length) prog.wear = wear
+    if (typeof at.wet === 'number' && at.wet !== 0) prog.wet = at.wet
+    api.bumpAttire(at.char, prog, arouse.get(at.char) ?? 0)
+    fx.attire.push(at)
+  }
+  /* 没给 attire 那一条、色情度却真的涨了的人：补一次**只带耦合那一半**的推进。
+     发情本来就该把内裤洇开 —— 让模型为这件事再报第二遍是白费一次机会
+     （它同一次里报得越少，别处就报得越准）；涨不够一分的（WET_PER_LEWD）不补。
+     递下去的是空推进 + `arouse`，湿润那一分由 mergeAttire 自己算，不重复计。 */
+  for (const [char, amount] of arouse) {
+    if (dressed.has(char)) continue
+    const coupled = Math.floor(amount / WET_PER_LEWD)
+    if (coupled <= 0) continue
+    api.bumpAttire(char, {}, amount)
+    fx.attire.push({ char, wet: coupled })
+  }
   /* 次数账：逐人并进那本累计账（`mergeActs` 只加不减，这里只负责递下去）。
      与 intim 各自独立 —— 同一次里可以只动次数不动开发度（例如只是多亲了几回），
      也可以只动开发度而没有新的回数（第一次那一下未必由增量带出来）。 */
@@ -964,6 +1076,7 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       Boolean(d.battle?.name) ||
       Boolean(d.date) ||
       Boolean(d.intim?.length) ||
+      Boolean(d.attire?.length) ||
       Boolean(d.acts && Object.keys(d.acts).length) ||
       Boolean(d.rel && Object.keys(d.rel).length),
   )
@@ -1034,6 +1147,17 @@ export function dateDirective(d: PlotDirective | null, charId: string, party: st
         ...(typeof it.lewd === 'number' ? { lewd: clamp(Math.round(it.lewd), 1, 3) } : {}),
       }))
     if (intim.length) out.intim = intim
+  }
+  if (d.attire && d.attire.length) {
+    /* 贴身衣物照放（与 intim 同一道门：人都已经在眼前了），湿润再收一道到 ±10
+       —— sanitize 那道 ±30 是单项上限；一场见面里挪太多，等于一次跳完。 */
+    const attire = d.attire
+      .filter((at) => allowed.has(at.char))
+      .map((at) => ({
+        ...at,
+        ...(typeof at.wet === 'number' ? { wet: clamp(Math.round(at.wet), -10, 10) } : {}),
+      }))
+    if (attire.length) out.attire = attire
   }
   if (d.acts) {
     const acts: Record<string, ActCount> = {}
@@ -1487,7 +1611,14 @@ ${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
   ${actList}。
   它与开发度不是一回事：只是多亲了几回、多要了一回，就只动 acts、不动 dev；
   内射那一栏与性交 / 肛交各记各的（同一次里可以两栏都动，也可以只有交合而没有内射）。
-  **数不清就不给** —— 拿不准的整栏省略，宁可少记一笔，也不要虚报。${harem ? `
+  **数不清就不给** —— 拿不准的整栏省略，宁可少记一笔，也不要虚报。
+· **贴身衣物另记一处**（下面事件指令里的 attire）：内衣与内裤此刻穿成什么样、内裤湿到什么
+  程度。这一处记的是**此刻**，不是账 —— 只有正文里真的脱了、解开了、湿了才给，没动就整条省。
+  两件给的是**此刻那一档**（穿着 / 半褪 / 褪下），不是「脱掉一层」这样的增量：
+  她脱了又穿回去，照此刻那一档给；两件各记各的（只剩一件解开了就只给那一件）。
+  湿的那一路给的是**增量**，可正可负（缓过来了、擦干净了就往下走）。
+  **发情带起来的那一份不必报** —— 她的色情度一涨，终端自己会让内裤跟着湿一分；
+  你把同一件事再报一遍，这一分就记成了两分。写「此刻是什么样」，不写她的反应。${harem ? `
 · ${harem.replace(/^· \*\*/, '**')}` : ''}`
     : ''
 
@@ -1594,6 +1725,12 @@ ${free ? '' : `  "eventDone": true,                          // 这一段该了�
       "state": "改写该部位状态的一句话（可选，不写就沿用原句）",
       "first": true }                         // 仅当**这一回是初次破处**时置 true（此后不要再给）
   ]                                             // slot 可以省：这一回没碰哪儿、心思却更敏了，就只给 lewd` : ''}${intimIds.length ? `,
+  "attire": [                                 // 贴身衣物（仅【私密往来】名单上的人；正文里真的脱了/解开/湿了才给）
+    { "char": "角色id",
+      "bra": "worn|half|off",                 // 内衣此刻穿成什么样（worn 穿着 / half 半褪 / off 褪下；没变就省）
+      "panties": "worn|half|off",             // 内裤同上
+      "wet": 10 }                             // 湿润增量 ±30（正=更湿，负=缓过来了；发情带起来的那份不必报）
+  ]                                           // 这两件给的是**此刻那一档**（不是增量）：只会给真的变了的那一件` : ''}${intimIds.length ? `,
   "acts": {                                   // 次数账的**增量**（仅【私密往来】名单上的人）：做了几回就给几，1~9
     "角色id": { "kiss": 1, "oral": 1, "sex": 1, "creampie": 1 }
   }                                             // 八栏：${ACT_KINDS.join(' / ')}

@@ -59,7 +59,13 @@ export interface SlotsFile {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, flags: {}, met: {}, ends: {}, own: [], intim: {}, records: [] }
+  /* 只在这儿兜一个空壳（真正的空档由 Terminal 的 emptyWorld 建）；
+     私密那一支的几本账一并备齐：intim（私密档案）/ attire（贴身衣物）/
+     acts（次数账）/ rel（关系档位）—— 每个都按「没有就是空表」读。 */
+  return {
+    offset: {}, flags: {}, met: {}, ends: {}, own: [], records: [],
+    intim: {}, attire: {}, acts: {}, rel: {},
+  }
 }
 
 /** 逐角色裁剪会话日志，防配额 */

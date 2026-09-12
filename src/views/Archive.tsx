@@ -28,6 +28,7 @@ import {
   INTIMATE_SLOTS, LEWD_META, PHYSIQUE, SLOT_META, VIRGIN, devStage, firstByName,
 } from '../data/intimate'
 import { ACT_KINDS, ACT_META, actOf, actTotal } from '../data/acts'
+import { ATTIRE_LOG_MAX, ATTIRE_META } from '../data/attire'
 import { relTier as relTierOf } from '../data/rel'
 import { Portrait, useCharImg } from '../components/Portrait'
 
@@ -379,8 +380,11 @@ function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }
 const REL_UNSET = '关系还没走到需要定名的那一步 —— 由剧情给，不由羁绊读数换算'
 
 function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: string; name: string; onBack: () => void }) {
-  const { intimOf, operatorName, actsOf, relOf } = useTerminal()
+  const { intimOf, operatorName, actsOf, relOf, attireOf } = useTerminal()
   const prof = intimOf(charId)
+  /* 贴身衣物同样是「此刻读一次」（见 data/attire.ts）—— 与私密档案同一道门：
+     不是女角色 / 没底档 → null，这一节整节不摆。 */
+  const attire = attireOf(charId)
   /* 次数账与关系档位与私密档案同一页，但走的是另外两本账（见 data/acts.ts / data/rel.ts）：
      intim 合成之后那一页里没有它们 —— 一样是「此刻读一次」，所以都在这里现取。 */
   const acts = actsOf(charId)
@@ -472,6 +476,76 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
             <h4>对性行为的看法</h4>
             <p className={css.intimAct} data-intimate-view>{prof.view}</p>
           </div>
+
+          {/* 贴身衣物（内衣与内裤）：与上面五根条并排摆，但记的东西不一样 ——
+              上面五根是**账**（只增不减），这一栏是**此刻**：她可以又穿回去，
+              湿了也能缓过来。见 data/attire.ts。只对女角色出现（与私密档案同一道门）。 */}
+          {attire ? (
+            <div className={css.dialogSection}>
+              <h4>此刻的衣物</h4>
+              <div className={css.attireList} data-attire={charId}>
+                {attire.pieces.map((p) => (
+                  <div
+                    className={css.attirePiece}
+                    key={p.slot}
+                    data-attire-slot={p.slot}
+                    data-attire-wear={p.wear}
+                  >
+                    <div className={css.attireHead}>
+                      <small>{ATTIRE_META[p.slot].label}</small>
+                      <b data-attire-name>{p.name}</b>
+                      <i className={css.attireWear}>{p.wearWord}</i>
+                      {p.wet !== undefined ? (
+                        <span className={css.attireWet} data-attire-wet-word>{p.wetWord}</span>
+                      ) : null}
+                    </div>
+                    <p className={css.intimState}>
+                      <span className={css.intimStateK}>状态</span>{p.state}
+                    </p>
+                    {p.wet !== undefined ? (
+                      <>
+                        <div className={css.attireWetRow} data-attire-wet={p.wet}>
+                          <div className="meter">
+                            <div
+                              className="meter__fill"
+                              style={{ width: `${p.wet}%`, background: 'linear-gradient(90deg, color-mix(in srgb, var(--steel) 30%, transparent), var(--steel))' }}
+                            />
+                          </div>
+                          <b className="num">{p.wet}</b>
+                        </div>
+                        <p className={css.intimState} data-attire-wetstate>
+                          <span className={css.intimStateK}>湿润</span>{p.wetState}
+                        </p>
+                      </>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="tiny muted" style={{ marginTop: 6 }}>
+                这一栏写的是此刻：她可以又穿回去，湿了也能缓过来。
+              </div>
+            </div>
+          ) : null}
+
+          {/* 这一场的变化：最近落下的几次（新的在上）。留一条流水是为了让「此刻」有来路 ——
+              只有读数没有来路，等于让人自己回忆。 */}
+          {attire ? (
+            <div className={css.dialogSection}>
+              <h4>这一场的变化</h4>
+              {attire.log.length ? (
+                <ul className={css.attireLog} data-attire-log={attire.log.length}>
+                  {attire.log.map((e, i) => (
+                    <li key={`${e.ts}-${i}`} data-attire-log-item>{e.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={css.intimAct} data-attire-log="0">还没有变化。</p>
+              )}
+              <div className="tiny muted" style={{ marginTop: 6 }}>
+                最近 {ATTIRE_LOG_MAX} 次落下的变化，最新的在上 —— 空着就是这一场还没动过。
+              </div>
+            </div>
+          ) : null}
 
           {/* 身量：六栏里唯一有实据的一栏（身高 · 三围）—— 补录到哪几位就只摆哪几位 */}
           {phys ? (

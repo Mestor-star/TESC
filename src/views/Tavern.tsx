@@ -8,6 +8,7 @@ import { OPERATOR_ID, PERSON_IDS, genderOf, speakerVariants } from '../data/cast
 import { hasIntimate } from '../data/intimate'
 import { plotContextFor } from '../lib/crosslink'
 import { INTIMATE_BOND, intimAdvanceLabel } from '../data/intimate'
+import { attireAdvanceLabel } from '../data/attire'
 import { PARTY_MAX } from '../lib/rendezvous'
 import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
@@ -60,7 +61,7 @@ function bondNote(delta: number): string {
 export function Tavern() {
   const {
     operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
-    smsRequest, clearSmsRequest, bumpIntim, meetChar, registerEnd,
+    smsRequest, clearSmsRequest, bumpIntim, bumpAttire, meetChar, registerEnd,
     bumpActs, setRel,
   } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
@@ -694,7 +695,7 @@ ${preset.post}` : '')
         const parsed = parseDirectorReply(reply)
         const shown = replyDisplayText(parsed, acc)
         const fx = applyDirective(dateDirective(parsed.directive, charId, rv.party ?? []), {
-          meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel,
+          meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpAttire, bumpActs, setRel,
         })
         // 这一场自己认领名目与地点：模型给出了更好的就地改写（第一次推进私密时顺带抬档位）
         const patch: Parameters<typeof patchRendezvous>[1] = {}
@@ -709,13 +710,15 @@ ${preset.post}` : '')
         const newTasks = parsed.directive?.task ?? []
         for (const t of newTasks) addTask(t.title, { detail: t.detail, ...(isCharId(charId) ? { from: charId } : {}) })
         const hasFx = fx.bonds.length > 0 || fx.flags.length > 0 || fx.met.length > 0
-          || fx.ends.length > 0 || fx.intim.length > 0 || fx.acts.length > 0 || fx.rel.length > 0
+          || fx.ends.length > 0 || fx.intim.length > 0 || fx.attire.length > 0
+          || fx.acts.length > 0 || fx.rel.length > 0
           || newTasks.length > 0
-        /* 私密档案 / 次数账 / 关系档位：三本账都在档案页那一栏，所以合成一句报出去
+        /* 私密档案 / 贴身衣物 / 次数账 / 关系档位：都在档案页那一栏，所以合成一句报出去
            （逐条列回数太吵，回数与八栏读数在档案背面看得见）。 */
-        if (fx.intim.length || fx.acts.length || fx.rel.length) {
+        if (fx.intim.length || fx.attire.length || fx.acts.length || fx.rel.length) {
           const parts: string[] = []
           if (fx.intim.length) parts.push(fx.intim.map((x) => `${charOf(x.char)?.name ?? x.char} · ${intimAdvanceLabel(x)}`).join(' · '))
+          if (fx.attire.length) parts.push(fx.attire.map((x) => `${charOf(x.char)?.name ?? x.char} · ${attireAdvanceLabel(x)}`).join(' · '))
           if (fx.acts.length) parts.push(fx.acts.map((x) => `${charOf(x.char)?.name ?? x.char}（次数）`).join(' · '))
           if (fx.rel.length) parts.push(fx.rel.map((x) => `${charOf(x.char)?.name ?? x.char} —— 「${relName(x.tier)}」`).join(' · '))
           push('decode', '这一场的推进', `${parts.join(' · ')} —— 角色档案的「私密档案」可见。`, false)
@@ -751,6 +754,10 @@ ${preset.post}` : '')
           const parts = fx.intim.map((x) => intimAdvanceLabel(x)).join('、')
           push('decode', '私密档案 · 有更新', `${c.name} · ${parts} —— 角色档案的「私密档案」一栏可见。`, false)
         }
+        if (fx.attire.length) {
+          const parts = fx.attire.map((x) => attireAdvanceLabel(x)).join('、')
+          push('decode', '贴身衣物 · 有更新', `${c.name} · ${parts} —— 角色档案的「私密档案」一栏可见。`, false)
+        }
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
           settled = true
@@ -771,7 +778,7 @@ ${preset.post}` : '')
     },
     [
       settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread,
-      meetChar, registerEnd, bumpIntim, bumpActs, setRel,
+      meetChar, registerEnd, bumpIntim, bumpAttire, bumpActs, setRel,
     ],
   )
 

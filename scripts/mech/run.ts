@@ -69,6 +69,9 @@
    · 笔法
      33  私密场面怎么写细 —— 一条**有条件**的笔法规矩：只在写正文的两条通道里带，
                         没走到那一档就不生效（世界书文风册第四条 + 预设 ts-intim-depth）
+   · 此刻（不是账）
+     34  贴身衣物     —— 底档 18 位各一套（照性格、不许撞款）· 穿着三档后写覆盖 ·
+                        湿润可上可下 · 发情那一半的耦合 · 流水只记真变了的
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -143,8 +146,13 @@ import {
   devStageIndex, hasIntimate, intimAdvanceLabel, intimateOf, mergeIntim,
 } from '../../src/data/intimate'
 import { ACT_KINDS, ACT_META, actOf, actTotal, isActReceive, mergeActs } from '../../src/data/acts'
+import {
+  ATTIRE, ATTIRE_LOG_MAX, ATTIRE_META, ATTIRE_SLOTS, WEAR_PHRASE, WET_PER_LEWD, WET_STAGES,
+  WET_STAGE_COUNT, attireAdvanceLabel, attireOf, hasAttire, mergeAttire, wearWord, wetStage,
+  wetStageIndex,
+} from '../../src/data/attire'
 import { REL_IDS, REL_TIERS, isRelId, relIndex, relLadderText, relName } from '../../src/data/rel'
-import { applyDirective, directiveHasFx, dateDirective, dateReady, sanitizeDirective } from '../../src/lib/plot'
+import { applyDirective, directiveHasFx, dateDirective, dateReady, sanitizeDirective, smsDirective } from '../../src/lib/plot'
 import {
   EPISODES, countMainlineDone, episodeOf, freeIdAfterVol, freeLabel, isFreeId, nextEpisodeAfter,
 } from '../../src/lib/freetime'
@@ -4644,6 +4652,291 @@ export function run(): MechReport {
       + '（主线 / 轻量两份逐字一致）；模型适配出厂只开 DeepSeek，轻量版改名 -轻量化')
   } catch (e) {
     fail.push('私密场面段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 34) 贴身衣物：底档 · 三档穿着 · 湿润读数 · 流水 ----------
+     用户口径原话：「加一个贴身衣物状态吧，实时变化哦，会因为脱掉而变化，还有内裤会因为
+     发情而湿润什么的」「贴身衣物就内裤和内衣吧」「每个人的贴身衣物不一样哦，这也和性格
+     有关」；两条读数口径是「每人一份底档」「0–100 读数 + 状态词」「此刻的衣物 + 这一场的
+     流水」，另外补一句「内裤湿不可能一直湿润」。
+
+     这一节量的是这一栏与私密档案**不一样**的那几条规矩 —— 因为它记的是**此刻**，不是账：
+       · 穿着档位**后写覆盖**（她可以又穿回去），湿润增量**可正可负**（缓过来了就回落）；
+       对照：开发度与色情度那两样只增不减（§27 已量），这一栏偏不。
+       · 底档只在**没有推进**时读得出来（穿着 / 干爽），谁都不许带着读数登场。
+       · 底档十八套**照性格各写各的、不许撞款**（名字 / 样子 / 湿润四句都得是独一份）。
+     界面那一半（档案第七栏摆不摆得出来）归冒烟；这里量的是底下这几条规矩本身。 */
+  try {
+    const femaleIds = Object.keys(INTIMATE)
+    const ids = Object.keys(ATTIRE)
+    /* 汉字数：量的是「几句」，不是「几个字符」—— 标点与空格不掺进来 */
+    const han = (s: string) => (s.match(/[一-鿿]/g) ?? []).length
+
+    /* —— 名录：与私密档案同一批人（十八位女角色），一个不多一个不少 —— */
+    ok('衣物 · 底档与私密档案同一批人（十八位女角色：多一个少一个都算漏）',
+      ids.length === femaleIds.length && femaleIds.every((id) => !!ATTIRE[id]),
+      `衣物 ${ids.length} 位 / 私密档案 ${femaleIds.length} 位`)
+
+    ok('衣物 · 只对女角色生效（非女角色 / 没底档者整节不出现）',
+      hasAttire(femaleIds[0]!) && !ids.some((id) => !INTIMATE[id])
+      && !hasAttire('gcn') && !hasAttire('kaito') && !hasAttire('__nobody__'),
+      `表里 ${ids.length} 位、全是女角色`)
+
+    /* —— 底档形状：两件齐全、名字与样子都有、`wet` 只有内裤有 —— */
+    const shapeBad: string[] = []
+    for (const id of ids) {
+      const b = ATTIRE[id]!
+      for (const slot of ATTIRE_SLOTS) {
+        const p = b[slot]
+        if (!p || !p.name.trim() || !p.look.trim()) { shapeBad.push(`${id}.${slot}`); continue }
+        const wantWet = slot === 'panties'
+        const hasWet = Array.isArray(p.wet) && p.wet.length === WET_STAGE_COUNT
+        if (wantWet !== hasWet) shapeBad.push(`${id}.${slot}(wet)` )
+        if (p.name.length > 15) shapeBad.push(`${id}.${slot}(名字 ${p.name.length} 字)`)
+      }
+    }
+    ok('衣物 · 两件齐全（内衣 + 内裤）· 名字与样子都在 · 名字不过 15 字',
+      shapeBad.length === 0, shapeBad.length ? shapeBad.join('、') : `${ids.length} 位 × 2 件`)
+
+    /* 档梯是四档，内裤的四句就得是四句 —— 少一句那一档上屏就是空白（不报错） */
+    const wetBad = ids.filter((id) => (ATTIRE[id]!.panties!.wet ?? []).some((s) => !s.trim()))
+    ok(`衣物 · 内裤的湿润状态句按 WET_STAGES 写全 ${WET_STAGE_COUNT} 句（少一句那一档就上屏空白）`,
+      wetBad.length === 0 && WET_STAGES.length === WET_STAGE_COUNT,
+      wetBad.length ? wetBad.join('、') : `${ids.length} 位 × ${WET_STAGE_COUNT} 句`)
+
+    /* —— 篇幅：样子 40–80 字、湿润句 30–60 字（太长读不动，太短等于没写） —— */
+    const lenBad: string[] = []
+    for (const id of ids) {
+      for (const slot of ATTIRE_SLOTS) {
+        const n = han(ATTIRE[id]![slot]!.look)
+        if (n < 40 || n > 80) lenBad.push(`${id}.${slot}(look ${n})`)
+      }
+      ;(ATTIRE[id]!.panties!.wet ?? []).forEach((s, i) => {
+        const n = han(s)
+        if (n < 30 || n > 60) lenBad.push(`${id}.wet[${i}](${n})`)
+      })
+    }
+    ok('衣物 · 样子 40–80 字、湿润四句各 30–60 字（逐条量过，长短都在口径里）',
+      lenBad.length === 0, lenBad.length ? lenBad.join('、') : `${ids.length * 2 + ids.length * 4} 句`)
+
+    /* —— 每人一套：照性格、不许撞款 —— */
+    const names = ids.flatMap((id) => ATTIRE_SLOTS.map((s) => ATTIRE[id]![s]!.name.trim()))
+    const looks = ids.flatMap((id) => ATTIRE_SLOTS.map((s) => ATTIRE[id]![s]!.look.trim()))
+    /* 湿润句按「四句折成一句」比 —— 逐句比会被「干着 / 湿了」这类共用语骗过去 */
+    const wets = ids.map((id) => (ATTIRE[id]!.panties!.wet ?? []).join('|'))
+    ok('衣物 · 三十六件的名字各不相同（不许两个人撞款 —— 每人一份，各自照性格来）',
+      new Set(names).size === names.length, `${names.length} 个名字 / ${new Set(names).size} 个不重`)
+    ok('衣物 · 三十六条样子也各不相同（换了名字照抄一段话，这一条就红）',
+      new Set(looks).size === looks.length, `${looks.length} 条 / ${new Set(looks).size} 条不重`)
+    ok('衣物 · 十八位的内裤四句各写各的（不是同一条内裤换个人名）',
+      new Set(wets).size === wets.length, `${wets.length} 位 / ${new Set(wets).size} 位不重`)
+
+    /* 底档写的是**物件**：料子 / 颜色 / 新旧 / 贴身程度 —— 颜色那一样得说出来，
+       不然档案上读到的只是一件「不知道什么颜色的衣服」。成套与不成套照性格
+       （随性的人本来就不成套，见 file header），所以这里只量「说没说颜色」。 */
+    const COLOR_CHARS = '黑白灰粉樱青靛杏银棕紫红蓝绿米金藕驼咖'.split('')
+    const colorsOf = (s: string) => new Set(COLOR_CHARS.filter((c) => s.includes(c)))
+    const noColor = ids.filter((id) => ATTIRE_SLOTS.some((s) => colorsOf(ATTIRE[id]![s]!.look).size === 0))
+    ok('衣物 · 三十六条样子都说得出颜色（料子 / 颜色 / 新旧 —— 物件该有的那样样得有）',
+      noColor.length === 0, noColor.length ? `${noColor.join('、')} 没提颜色` : `${ids.length * 2} 条都提了`)
+
+    /* —— 禁字：写的是物件，不许写她，也不许写原文 —— */
+    const allText = ids.flatMap((id) => {
+      const b = ATTIRE[id]!
+      return [b.bra!.name, b.bra!.look, b.panties!.name, b.panties!.look, ...(b.panties!.wet ?? [])]
+    })
+    const bad = allText.filter((s) => /阴毛|耻毛|剃毛|除毛|原文|衬得|勾勒出/.test(s))
+    ok('衣物 · 不用禁字（阴毛 / 耻毛 / 剃毛 / 除毛 一律不写）· 不冠「· 原文」· 不写她',
+      bad.length === 0, bad.length ? bad[0]!.slice(0, 24) : `${allText.length} 句都干净`)
+
+    const withName = allText.filter((s) => PERSON_IDS.some((id) => (personOf(id)?.name ?? '').length > 1 && s.includes(personOf(id)!.name)))
+    ok('衣物 · 底档里不出现任何角色名（那一行是给档案看的，不必重新报一遍是谁）',
+      withName.length === 0, withName.length ? withName[0]!.slice(0, 24) : `${allText.length} 句都干净`)
+
+    /* —— 合成：没有推进时读出纯底档 —— */
+    const baseWrong = ids.filter((id) => {
+      const p = attireOf(id, undefined)
+      return !p || p.pieces.length !== 2 || p.wet !== 0
+        || p.pieces.some((x) => x.wear !== 'worn' || x.state !== ATTIRE[id]![x.slot]!.look)
+        || !p.pieces.find((x) => x.slot === 'panties')?.wetState?.trim()
+        || p.log.length !== 0
+    })
+    ok('衣物 · 无推进时读出的是纯底档（两件都穿着 · 湿润 0 干爽 · 流水为空）',
+      baseWrong.length === 0, baseWrong.length ? baseWrong.join('、') : `${ids.length} 位`)
+
+    const luna = 'luna'
+    const off = attireOf(luna, { wear: { bra: 'half', panties: 'off' }, wet: 70 })!
+    ok('衣物 · 三档穿着的档位词与短语合得上（半褪说了它挂在哪儿、褪下说了它不在身上）',
+      wearWord('worn') === '穿着' && wearWord('half') === '半褪' && wearWord('off') === '褪下'
+      && off.pieces[0]!.wearWord === '半褪' && off.pieces[0]!.state.startsWith(WEAR_PHRASE.bra.half)
+      && off.pieces[1]!.state.startsWith(WEAR_PHRASE.panties.off)
+      && off.pieces[0]!.state.includes(ATTIRE[luna]!.bra!.look),
+      `${off.pieces[0]!.wearWord} / ${off.pieces[1]!.wearWord}`)
+
+    ok('衣物 · 湿润读数落在第几档就读第几句（档梯与状态句同一条）',
+      wetStageIndex(0) === 0 && wetStageIndex(39) === 1 && wetStageIndex(70) === 3
+      && off.wet === 70 && off.wetWord === '透湿' && wetStage(70) === '透湿'
+      && off.pieces[1]!.wetState === ATTIRE[luna]!.panties!.wet![3],
+      `70 → ${off.wetWord}`)
+
+    /* —— 并账：三条与私密档案不一样的规矩 —— */
+    /* ① 穿着**后写覆盖**：脱了还能穿回去（对照：开发度只增不减，见 §27） */
+    const dressed = mergeAttire(undefined, { wear: { panties: 'off' } })
+    const again = mergeAttire(dressed, { wear: { panties: 'worn' } })
+    ok('衣物 · 穿着档位后写覆盖：她脱了又穿回去，读作「穿着」（不是「脱过」的一本账）',
+      dressed.wear?.panties === 'off' && again.wear?.panties === 'worn',
+      `${dressed.wear?.panties} → ${again.wear?.panties}`)
+
+    /* ② 湿润**可上可下**：缓过来了、擦干净了就回落（用户口径「内裤湿不可能一直湿润」） */
+    const high = mergeAttire(undefined, { wet: 80 })
+    const dry = mergeAttire(high, { wet: -30 })
+    ok('衣物 · 湿润的增量可正可负（缓过来了就往下走）—— 与开发度只增不减恰好相反',
+      high.wet === 80 && dry.wet === 50, `80 → ${dry.wet}`)
+
+    const floor = mergeAttire(mergeAttire(undefined, { wet: 5 }), { wet: -40 })
+    const ceil = mergeAttire(undefined, { wet: 400 })
+    ok('衣物 · 湿润夹在 0–100（不肯读成负数，也不肯读过头）',
+      floor.wet === 0 && ceil.wet === 100, `${floor.wet} / ${ceil.wet}`)
+
+    /* ③ 发情那一半的耦合：色情度涨了，内裤跟着湿一分 —— 不必让模型把同一件事报两遍 */
+    const arosed = mergeAttire(undefined, {}, WET_PER_LEWD * 3)
+    const tiny = mergeAttire(undefined, {}, WET_PER_LEWD - 1)
+    ok('衣物 · 色情度耦合：涨够了就带一分湿（除得尽的整份才计，报个小数目不凭空生湿）',
+      arosed.wet === 3 && tiny.wet === undefined
+      && (arosed.log ?? []).length === 1 && (tiny.log ?? []).length === 0,
+      `${WET_PER_LEWD * 3} → ${arosed.wet} 分 · ${WET_PER_LEWD - 1} → 没湿（连读数都不落，读出来还是 0）`)
+
+    /* ④ 流水只记**真的变了**的：空转不记账，一次变几样合成一条 */
+    const idle = mergeAttire({ wear: { panties: 'off' }, wet: 40 }, { wear: { panties: 'off' } })
+    ok('衣物 · 空转不记账（两件都没动、湿润也没动 → 流水不长）',
+      (idle.log ?? []).length === 0 && idle.wet === 40, `流水 ${(idle.log ?? []).length} 条 · 湿润还是 ${idle.wet}`)
+
+    /* 一次里两件 + 湿润一起变 → 合**一条**（新的在前） */
+    const both = mergeAttire(undefined, { wear: { bra: 'half', panties: 'off' }, wet: 45 })
+    ok('衣物 · 一次里两件与湿润一起变，合成一条流水（不是三条）',
+      both.log?.length === 1 && both.log[0]!.text.includes('内衣') && both.log[0]!.text.includes('内裤')
+      && both.log[0]!.text.includes('湿润到洇湿'),
+      both.log?.[0]?.text ?? '（空）')
+
+    /* 流水封顶：新的一直挤掉最旧的 */
+    let rolling = mergeAttire(undefined, { wet: 5 })
+    for (let i = 0; i < ATTIRE_LOG_MAX + 4; i++) rolling = mergeAttire(rolling, { wear: { bra: i % 2 ? 'half' : 'off' } })
+    ok(`衣物 · 流水封顶 ${ATTIRE_LOG_MAX} 条（新的在前，最旧的挤掉）`,
+      (rolling.log ?? []).length === ATTIRE_LOG_MAX
+      && ((rolling.log ?? [])[0]?.ts ?? 0) >= ((rolling.log ?? [])[1]?.ts ?? 0),
+      `${(rolling.log ?? []).length} 条`)
+
+    /* —— 指令那一道闸 —— */
+    const maleId = PERSON_IDS.find((id) => !hasIntimate(id)) ?? 'kaito'
+    const gate = sanitizeDirective({
+      attire: [
+        { char: luna, bra: 'half', panties: 'off', wet: 12 },
+        { char: maleId, panties: 'off' },              // 非女角色 → 整条丢
+        { char: luna, bra: '脱着' } as never,           // 编出来的档位、又没别的真内容 → 整条丢
+        { char: luna, bra: '脱着', wet: 3 } as never,   // 档位丢掉、湿润留得住
+        { char: luna, wet: -99 },                      // 负的湿润收得下（夹到 −30）
+        { char: luna },                                // 两件都没给、湿润也没有 → 空话，丢
+      ],
+    })
+    const g = gate.attire ?? []
+    ok('衣物 · 非女角色 / 认不出的档位 / 空指令都落不下来（只有真内容留得住）',
+      g.length === 3 && g[0]!.bra === 'half' && g[0]!.panties === 'off' && g[0]!.wet === 12
+      && g[1]!.bra === undefined && g[1]!.panties === undefined && g[1]!.wet === 3
+      && !g.some((x) => x.char === maleId)
+      && !g.some((x) => !x.bra && !x.panties && x.wet === undefined),
+      JSON.stringify(g))
+
+    ok('衣物 · 湿润增量夹 ±30（一次报满一档也不算数，但**负数收得下**）',
+      g.find((x) => x.wet !== undefined && x.wet < 0)?.wet === -30,
+      `-99 → ${g.find((x) => x.wet !== undefined && x.wet < 0)?.wet}`)
+
+    /* 落地：两件 + 湿润各落各的，且**提示条念得出动了哪样** */
+    const calls: { char: string; p: unknown; arouse: number }[] = []
+    const fx = applyDirective(
+      { attire: [{ char: luna, bra: 'off', wet: 8 }], intim: [{ char: luna, lewd: 6 }] },
+      {
+        meetChar: () => {}, bumpBond: () => {}, registerEnd: () => {}, setFlag: () => {},
+        bumpIntim: () => {}, bumpActs: () => {}, setRel: () => {},
+        bumpAttire: (char, p, arouse) => calls.push({ char, p, arouse }),
+      },
+    )
+    ok('衣物 · 落地时把同一次的色情度增量一并递给并账那一层（发情那一半由它自己算）',
+      calls.length === 1 && calls[0]!.arouse === 6
+      && (calls[0]!.p as { wear?: { bra?: string } }).wear?.bra === 'off'
+      && (calls[0]!.p as { wet?: number }).wet === 8,
+      JSON.stringify(calls[0] ?? null))
+
+    ok('衣物 · 提示条念得出动了哪几样（内衣 / 内裤 / 湿润）',
+      attireAdvanceLabel({ bra: 'half' }) === ATTIRE_META.bra.label
+      && attireAdvanceLabel({ panties: 'off', wet: 5 }) === `${ATTIRE_META.panties.label} · ${'湿润'}`
+      && attireAdvanceLabel({}) === '',
+      attireAdvanceLabel({ bra: 'half', panties: 'off', wet: 5 }))
+
+    /* 没给 attire 那条指令、色情度却真的涨了的人：补一次**只带耦合那一半**的推进 */
+    const calls2: { char: string; p: unknown; arouse: number }[] = []
+    const fx2 = applyDirective(
+      { intim: [{ char: luna, slot: 'vagina', dev: 2, lewd: 7 }] },
+      {
+        meetChar: () => {}, bumpBond: () => {}, registerEnd: () => {}, setFlag: () => {},
+        bumpIntim: () => {}, bumpActs: () => {}, setRel: () => {},
+        bumpAttire: (char, p, arouse) => calls2.push({ char, p, arouse }),
+      },
+    )
+    ok('衣物 · 只报了色情度也会湿（补一次只带耦合那一半的推进，递空并账 + arouse）',
+      calls2.length === 1 && calls2[0]!.arouse === 7
+      && Object.keys(calls2[0]!.p as object).length === 0
+      && fx2.attire.length === 1 && fx2.attire[0]!.wet === Math.floor(7 / WET_PER_LEWD),
+      JSON.stringify(calls2[0]!.p) + `　fx=${JSON.stringify(fx2.attire)}`)
+
+    ok('衣物 · 这一栏也算「有变化」（只动衣物、别的都没动时，「重写此回复」照样给）',
+      directiveHasFx({ attire: [{ char: luna, panties: 'off' }] }) === true
+      && directiveHasFx({}) === false, 'attire-only')
+
+    /* 见面那一路放行（人已经在眼前了）；短信那一路**不放行**（身体的事不发生在信里） */
+    const dOff = dateDirective({ attire: [{ char: luna, wet: 26 }] }, luna, [])
+    const dOther = dateDirective({ attire: [{ char: 'hikari', panties: 'off' }] }, luna, [])
+    ok('衣物 · 短信那一路一个字都不带（身体上的事不发生在信里）',
+      smsDirective({ attire: [{ char: luna, panties: 'off', wet: 20 }] }, luna).attire === undefined
+      && smsDirective({ attire: [{ char: luna, panties: 'off' }] }, luna).panties === undefined,
+      '写信就只写信')
+
+    ok('衣物 · 见面放行、湿润再收一道到 ±10（sanitize 那道 ±30 是单项上限）',
+      dOff.attire?.[0]!.wet === 10 && dOther.attire === undefined,
+      `湿 26 → ${dOff.attire?.[0]?.wet}　名单外的 ${'hikari'} → ${dOther.attire === undefined ? '被挡下' : '漏了'}`)
+
+    /* —— 提示词：主线导演看得到这一栏，短信两侧看不到 —— */
+    /* 名册借 ctx.castNow 钉死成一个人：羁绊那一档是唯一的开关，别的变量都不动 */
+    const evAny = TIMELINE[0]!
+    const intimSys = buildDirectorSystem(evAny, {
+      operatorName: '言万心叶', castNow: [luna], bondNow: () => 100,
+    })
+    const coldSys = buildDirectorSystem(evAny, {
+      operatorName: '言万心叶', castNow: [luna], bondNow: () => 0,
+    })
+    ok('衣物 · 关系走到那一档才开这一栏（说了「此刻穿成什么样」，也说了「没动就别报」）',
+      intimSys.includes('"attire"') && intimSys.includes('"bra": "worn|half|off"')
+      && intimSys.includes('贴身衣物另记一处') && intimSys.includes('发情带起来的那一份不必报')
+      && !coldSys.includes('"attire"') && !coldSys.includes('贴身衣物另记一处'),
+      `羁绊 100 有 / 羁绊 0 没有`)
+
+    ok('衣物 · 见面那一路的指令说明也带着（那儿只有一两条可写，写漏了就读不出来）',
+      dateBondRule(luna, []).includes('"attire"') && dateBondRule(luna, []).includes('"panties"'),
+      'dateBondRule')
+
+    const smsOne = systemPrompt(luna, '言万心叶', 100, '走廊尽头')
+    const smsGroup = groupSystemPrompt([luna], '露娜', '言万心叶', '露娜 100', '走廊尽头')
+    ok('衣物 · 短信两侧看不到这一栏（单聊 / 群聊的提示词里一个字都没有）',
+      !smsOne.includes('attire') && !smsOne.includes('贴身衣物')
+      && !smsGroup.includes('attire') && !smsGroup.includes('贴身衣物'),
+      `单聊 ${smsOne.length} 字 / 群聊 ${smsGroup.length} 字 —— 都不带`)
+
+    info.push('贴身衣物：记的是**此刻**而不是账 —— 穿着三档后写覆盖（脱了能穿回去）、'
+      + '湿润增量可正可负（缓过来了就回落）；唯一一处自动的是耦合：同一次里色情度涨了，'
+      + `湿润跟着涨 ${WET_PER_LEWD} 分之一（「因为发情而湿润」），模型不必报第二遍`)
+    info.push('底档十八套照性格各写各的（名字 / 样子 / 湿润四句三样都不许撞款、两件颜色成套）；'
+      + `界面那一半（私密档案第七栏「此刻的衣物」+「这一场的变化」）归冒烟`)
+  } catch (e) {
+    fail.push('贴身衣物段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

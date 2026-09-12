@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, ActCount, RelId, TimelineEvent } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, AttireProfile, AttireProgress, ActCount, RelId, TimelineEvent } from '../data/types'
 import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { intimateOf, mergeIntim } from '../data/intimate'
+import { attireOf, mergeAttire } from '../data/attire'
 import { mergeActs } from '../data/acts'
 import { clamp } from '../lib/format'
 import { isFreeId } from '../lib/freetime'
@@ -166,6 +167,18 @@ export interface TerminalState {
   /** 落下一次私密推进（约会 / 私密往来）：各部位开发度增量、状态改写、破处对象 */
   bumpIntim: (charId: string, p: IntimateProgress) => void
   /**
+   * **贴身衣物**（内衣与内裤此刻穿成什么样、内裤湿到什么程度）。与 `intimOf`
+   * 并列摆在同一页私密档案里，但它记的是**此刻**而不是账 —— 穿着档位后写覆盖
+   * （她可以又穿回去），湿润的增量可正可负（缓过来了就回落）。
+   *
+   * `arouse` = 同一次里这位涨了多少色情度：湿润那一半的耦合就落在这儿
+   * （「因为发情而湿润」），规矩在 `mergeAttire` 里。
+   * 非女角色 / 无底档 → null（档案页据此整节不摆）。
+   */
+  attireOf: (charId: string) => AttireProfile | null
+  /** 落下一次贴身衣物推进（约会 / 私密往来）：穿着档位与湿润增量 */
+  bumpAttire: (charId: string, p: AttireProgress, arouse: number) => void
+  /**
    * **次数账**（八栏累计值；见 `data/acts.ts`）。与 `intimOf` 并列摆在同一页背面：
    * intim 说的是「这一处此刻是什么样」，它说的是「**一共**多少回」—— 只增不减。
    * 没记过的角色 → 空表（八栏全读作 0）。
@@ -266,7 +279,7 @@ function takePendingView(): ViewId | null {
 function emptyWorld(): WorldState {
   return {
     offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cast: {},
-    intim: {}, acts: {}, rel: {}, records: [],
+    intim: {}, attire: {}, acts: {}, rel: {}, records: [],
   }
 }
 
@@ -323,6 +336,8 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     cast: raw?.cast ?? {},
     // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
     intim: raw?.intim ?? {},
+    // 贴身衣物同为后加 → 旧档空表：两件照底档读作「穿着」、湿润读作 0（干爽）
+    attire: raw?.attire ?? {},
     // 次数账与关系档位同为后加 → 旧档空表：八栏读作 0、档位读作「尚未定下」
     acts: raw?.acts ?? {},
     rel: raw?.rel ?? {},
@@ -852,6 +867,27 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /**
+   * 该角色此刻的贴身衣物（底档 + world.attire 合成）；非女角色 / 无底档 → null。
+   * 与私密档案同一道门槛，同一页上摆。
+   */
+  const attireOfFn = useCallback(
+    (charId: string) => attireOf(charId, world.attire?.[charId]),
+    [world.attire],
+  )
+  /**
+   * 落下一次贴身衣物推进 —— 怎么并进手里那一份，全在 `mergeAttire` 里
+   * （穿着后写覆盖 · 湿润累加且可负 · 色情度耦合 · 空转不记账）。
+   * 与 `bumpIntim` 同一个分工：规则住在 data 里（能被单独验），这儿只管写回世界。
+   */
+  const bumpAttire = useCallback((charId: string, prog: AttireProgress, arouse: number) => {
+    if (!personOf(charId)) return
+    setWorld((prev) => {
+      const next = mergeAttire(prev.attire?.[charId], prog, arouse)
+      return { ...prev, attire: { ...prev.attire, [charId]: next } }
+    })
+  }, [])
+
   /** 该角色手里那一本次数账（没记过 → 空表：八栏全读作 0） */
   const actsOf = useCallback(
     (charId: string): ActCount => world.acts?.[charId] ?? {},
@@ -1216,6 +1252,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setCast,
     intimOf,
     bumpIntim,
+    attireOf: attireOfFn,
+    bumpAttire,
     actsOf,
     bumpActs,
     relOf,

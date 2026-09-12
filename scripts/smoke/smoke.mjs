@@ -2576,6 +2576,8 @@ try {
       world:{offset:{luna:100,hikari:-100,mefisa:100},locked:{},flags:{},met:{luna:true,hikari:true,mefisa:true,'danae-whitmore':true},ends:{},own:[],records:[],
         rel:{luna:'lover',hikari:'friend'},
         acts:{luna:{kiss:3,oral:2,sex:5,anal:1,hand:4,foot:0,breast:2,creampie:3}},
+        attire:{luna:{wear:{panties:'half'},wet:45,
+          log:[{ts:2,text:'内裤褪到膝弯 · 湿润到洇湿'},{ts:1,text:'内衣脱了'}]}},
         intim:{mefisa:{dev:{mouth:90}},
           luna:{dev:{mouth:22,vagina:40},lewd:30,
           lastAct:'在港区的旅馆里做了一整晚，从玄关一路做到床上，中间没停过。',
@@ -2583,7 +2585,7 @@ try {
     localStorage.setItem('zts-plot:v1',JSON.stringify({}));
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
-  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（露娜 口腔+22 / 小穴+40 / 色情度+30 · 美菲莎 口腔+90）· 关系档位（露娜 恋人 · 恋兔光 朋友 · 美菲莎 未定下）· 次数账（露娜那本 20 回）· 达娜厄一并显影（身量未补录的那一位）',
+  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（露娜 口腔+22 / 小穴+40 / 色情度+30 · 美菲莎 口腔+90）· 关系档位（露娜 恋人 · 恋兔光 朋友 · 美菲莎 未定下）· 次数账（露娜那本 20 回）· 贴身衣物（露娜 内裤半褪 · 湿润 45 · 流水两条）· 达娜厄一并显影（身量未补录的那一位）',
     pSeed === true, 'seed=' + pSeed)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
@@ -2611,7 +2613,9 @@ try {
       if(!b)return null;
       const slots=[...b.querySelectorAll('[data-intimate-slot]')].map(x=>x.getAttribute('data-intimate-slot'));
       const lewd=b.querySelector('[data-intimate-lewd]');
-      const bars=[...b.querySelectorAll('.meter__fill')].length;
+      /* 五根条按**读数条自己**数（挂在 [data-intimate-slot] 里的那一根）——
+         这一页后来还添了别的条（贴身衣物那一栏的湿润读数），整页数会把它一起算进来。 */
+      const bars=b.querySelectorAll('[data-intimate-slot] .meter__fill').length;
       const sectOf=(t)=>{const h=[...b.querySelectorAll('h4')].find(x=>x.innerText.trim()===t);
         return h&&h.parentElement?h.parentElement:null};
       const lewdSect=sectOf('色情度'),barsSect=sectOf('开发度（四处）');
@@ -2648,6 +2652,21 @@ try {
         acts:(()=>{const o={};[...b.querySelectorAll('[data-intimate-act]')].forEach(x=>{
           const k=x.getAttribute('data-intimate-act');const n=x.querySelector('[data-act-count]');
           o[k]=n?Number(n.innerText.trim()):null});return o})(),
+        /* 贴身衣物：两件的档位 / 湿润读数与档位词 / 这一场的流水。
+           顺序、读数、句子都按槽位收出来 —— 光看有没有这一节，是量不出「合成对不对」的。 */
+        attire:(()=>{const a=b.querySelector('[data-attire]');if(!a)return null;
+          const pieces=[...a.querySelectorAll('[data-attire-slot]')].map(x=>{
+            const w=x.querySelector('[data-attire-wet]');
+            return {slot:x.getAttribute('data-attire-slot'),wear:x.getAttribute('data-attire-wear'),
+              name:(x.querySelector('[data-attire-name]')||{innerText:''}).innerText.trim(),
+              state:((x.querySelector('p')||{innerText:''}).innerText||'').replace(/\\s+/g,' ').trim(),
+              wearWord:((x.querySelector('i')||{innerText:''}).innerText||'').trim(),
+              wetWord:((x.querySelector('[data-attire-wet-word]')||{innerText:''}).innerText||'').trim(),
+              wet:w?Number(w.getAttribute('data-attire-wet')):null,
+              wetState:((x.querySelector('[data-attire-wetstate]')||{innerText:''}).innerText||'').replace(/\\s+/g,' ').trim()}});
+          return {slots:pieces.map(p=>p.slot),pieces,
+            logCount:(x=>x?Number(x.getAttribute('data-attire-log')):null)(b.querySelector('[data-attire-log]')),
+            logs:[...b.querySelectorAll('[data-attire-log-item]')].map(x=>x.innerText.replace(/\\s+/g,' ').trim())}})(),
         txt}})()`)
   }
   const flipTo = async (id) => {
@@ -2767,6 +2786,36 @@ try {
     !!mef.back && mef.back.actCells === 8 && Number(mef.back.actTotal) === 0
     && Object.values(mef.back.acts).every((n) => n === 0),
     JSON.stringify(mef.back && { acts: mef.back.acts, total: mef.back.actTotal }))
+
+  /* 贴身衣物（两件 · 此刻穿的）：与上面那几栏都不一样 —— 那几栏是**账**（只增不减），
+     这一栏写的是**此刻**：她可以又穿回去，湿了也能缓过来。所以摆两个人对照：
+       · 露娜：播进去「内裤半褪 · 湿润 45」→ 读作 半褪 / 洇湿，流水两条（新的在上）；
+       · 美菲莎：没推进过 → 底档那一档（两件都穿着 · 0 干爽），流水空着照实写「还没有变化」。
+     湿润句是**四档**的、读数落在第几档就摆第几句（规则在 mech 里逐档量过），
+     这里量的是浏览器里那几样真的摆出来了 —— 而且露娜摆的是**半褪**那一档，
+     不是底档「穿着」那一档：说明合成真的读了账，而不是把底档直接贴上去。 */
+  const pa = pBack && pBack.attire
+  const ma = mef.back && mef.back.attire
+  ok('R10 贴身衣物那一栏：两件都在（内衣在前 · 内裤在后），名字与状态句都摆了出来',
+    !!pa && pa.slots.join(',') === 'bra,panties' && pa.pieces.length === 2
+    && pa.pieces.every((p) => p.name.length > 1 && p.state.length > 12),
+    JSON.stringify(pa && { slots: pa.slots, names: pa.pieces.map((p) => p.name) }))
+  ok('R10b 穿着档位照账里那一档读（露娜 内裤半褪 → 状态句说得出它挂在膝弯）；湿润 45 → 洇湿，条上也是 45',
+    !!pa && pa.pieces[1].wear === 'half' && pa.pieces[1].wearWord === '半褪'
+    && /膝弯/.test(pa.pieces[1].state) && pa.pieces[1].wetWord === '洇湿' && pa.pieces[1].wet === 45
+    && pa.pieces[0].wear === 'worn' && pa.pieces[0].wetWord === '' && pa.pieces[0].wet === null,
+    JSON.stringify(pa && pa.pieces.map((p) => ({ slot: p.slot, wear: p.wear, word: p.wearWord, wet: p.wet, wetWord: p.wetWord }))))
+  ok('R10c 这一场的变化照流水摆（新的在上 · 条数对得上）',
+    !!pa && pa.logCount === 2 && pa.logs.length === 2
+    && /洇湿/.test(pa.logs[0]) && /内衣/.test(pa.logs[1]),
+    JSON.stringify(pa && { n: pa.logCount, logs: pa.logs }))
+  ok('R10d 没推进过的那位：两件都穿着 · 湿润 0 干爽 · 流水空着照实写「还没有变化。」（不是「缺数据」）',
+    !!ma && ma.slots.join(',') === 'bra,panties'
+    && ma.pieces.every((p) => p.wear === 'worn' && p.wearWord === '穿着')
+    && ma.pieces[1].wet === 0 && ma.pieces[1].wetWord === '干爽'
+    && ma.pieces[1].wetState.length > 10 && ma.logCount === 0 && ma.logs.length === 0
+    && /还没有变化/.test(mef.back.txt),
+    JSON.stringify(ma && { wet: ma.pieces[1].wet, word: ma.pieces[1].wetWord, log: ma.logCount }))
 
   /* 不相干的说明文字不该出现在这一页上：读的人要看的是她，不是这份档案的规则。
      （底档与推进怎么合成、破处只认第一回 —— 那些话写在源码注释里，不写在卡上。） */
@@ -3040,6 +3089,7 @@ try {
 } catch (e) {
   passAll = false
   console.error('\nSMOKE ERROR: ' + e.message)
+  if (process.env.SMOKE_STACK) console.error('--- stack ---\n' + (e && e.stack ? e.stack : '(no stack)'))
   try {
     const dbg = await ev(`(()=>{try{return document.body?document.body.innerText.slice(0,400):'<no body>'}catch(x){return String(x)}})()`)
     console.error('--- page text head ---\n' + dbg)

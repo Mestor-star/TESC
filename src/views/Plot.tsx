@@ -43,6 +43,7 @@ import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
 import { smsContextFor } from '../lib/crosslink'
 import { intimAdvanceLabel } from '../data/intimate'
+import { attireAdvanceLabel } from '../data/attire'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
@@ -272,7 +273,7 @@ export function Plot() {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
-    records, requestProfile, bumpIntim, castOfEvent, setCast,
+    records, requestProfile, bumpIntim, bumpAttire, castOfEvent, setCast,
     bumpActs, setRel, relOf,
     freeMode, setFreeMode, closeFreeSlot,
   } = useTerminal()
@@ -509,7 +510,7 @@ export function Plot() {
       const freeNow = freeOf(evId)
       const fx = applyDirective(
         d,
-        { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel },
+        { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpAttire, bumpActs, setRel },
         { freezeBond: freeNow },
       )
       const ev = EPISODES.find((e) => e.id === evId)
@@ -540,6 +541,15 @@ export function Plot() {
           .map((x) => `${personOf(x.char)?.name ?? x.char} · ${intimAdvanceLabel(x)}`)
           .join(' · ')
         push('decode', '私密档案 · 有更新', `${parts} —— 角色档案的「私密档案」一栏可见。`, false)
+      }
+      /* 贴身衣物：与私密档案同一页（「此刻的衣物」那一节）。报的只是「谁的哪一件动了」——
+         穿成什么样、湿到几分都在档案页看。这一栏记的是**此刻**，所以同一个人的两件
+         是可以反复上提示的（穿了又脱，就报两次）。 */
+      if (fx.attire.length) {
+        const parts = fx.attire
+          .map((x) => `${personOf(x.char)?.name ?? x.char} · ${attireAdvanceLabel(x)}`)
+          .join(' · ')
+        push('decode', '贴身衣物 · 有更新', `${parts} —— 角色档案的「私密档案」一栏可见。`, false)
       }
       /* 次数账：与私密档案同一本背面，但报的话不一样 —— 它说的是「一共几回」。
          只念动了哪几栏，回数本身在档案页看（念一串数字既吵又记不住）。 */
@@ -599,7 +609,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCast, bumpIntim, bumpActs, setRel, push, freeOf],
+    [meetChar, bumpBond, registerEnd, setFlag, setCast, bumpIntim, bumpAttire, bumpActs, setRel, push, freeOf],
   )
 
   /**
