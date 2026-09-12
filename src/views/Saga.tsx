@@ -3,12 +3,15 @@ import type { CSSProperties } from 'react'
 import { ArrowRight, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
+import { CgSlot } from '../components/CgSlot'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
-import { rosterRowOf, rosterRowsOf } from '../lib/cast'
+import { castOf, rosterRowOf, rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
+import { CG_POOL } from '../data/cgs'
 import { personOf } from '../data/castmeta'
+import { cgIdOf, cgNoteOf, cgPoolFor, selectCg } from '../lib/cg'
 import { clock } from '../lib/format'
 import type { RecordMode } from '../data/types'
 
@@ -26,11 +29,13 @@ function seqOf(eventId: string): number {
 }
 
 export function Saga() {
-  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile } = useTerminal()
+  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile, cgOf } = useTerminal()
 
   const focusIdx = useMemo(() => TIMELINE.findIndex((e) => !epDone[e.id]), [epDone])
   const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
   const focusEv = focusIdx >= 0 ? TIMELINE[focusIdx] : null
+  /** 本段的场景数据（只为取 CG 位；开场白等正文不在此页露出） */
+  const focusScene = focusEv ? SCENES[focusEv.id] : undefined
   /** 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
   const castRows = useMemo(() => (focusEv ? rosterRowsOf(focusEv) : []), [focusEv])
   const openProfile = useCallback((id: string) => {
@@ -56,6 +61,20 @@ export function Saga() {
   const regCount = Object.keys(world.ends).length
 
   const offsetOf = (char: string) => world.offset[char] ?? 0
+
+  /* 此刻该摆的 CG。以**导演点名**为准 —— 它读着当前这一回合在演什么，从候选清单里挑了一张
+     （本段登记的 ∪ 通用池里跟本段出场阵容对得上的那些）；
+     它还没点名（新段刚铺开 / 这段走的离线通读）才退回按世界状态过滤（见 lib/cg.ts）。 */
+  const cgNow = useMemo(
+    () => selectCg(
+      focusScene?.cg,
+      { flags: world.flags, pick: world.pick, bond: bondNow },
+      focusScene?.cgMode ?? 'all',
+      focusEv ? cgOf(focusEv.id) : null,
+      focusEv ? cgPoolFor(CG_POOL, castOf(focusEv)) : [],
+    ),
+    [focusScene, focusEv, world.flags, world.pick, bondNow, cgOf],
+  )
 
   return (
     <div className="vpage">
@@ -125,6 +144,18 @@ export function Saga() {
                   {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
                 </div>
                 <p className={css.curSummary}>{focusEv.summary}</p>
+
+                {/* 场景 CG 位：本段登记了 cg 才摆，且要条件成立；图补进 public/cg/ 即点亮 */}
+                {cgNow.length ? (
+                  <>
+                    <div className={css.secLabel}>场景 CG · {cgNow.length} 位</div>
+                    <div className={css.cgRow}>
+                      {cgNow.map((r) => (
+                        <CgSlot key={cgIdOf(r)} cgId={cgIdOf(r)} caption={cgNoteOf(r)} />
+                      ))}
+                    </div>
+                  </>
+                ) : null}
 
                 {focusEv.entities.some((x) => x !== '——') ? (
                   <div className={css.secLabel}>关联实体 · 收束时自动登记</div>

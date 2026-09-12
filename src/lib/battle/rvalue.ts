@@ -85,6 +85,53 @@ export function regionOfPlace(place: string): (typeof REGIONS)[number] | undefin
   })
 }
 
+/** 抹掉空白与分隔符 —— 与 regionOfPlace 用同一把尺子，两处对同一串字的判断才分得开 */
+const squash = (s: string) => s.replace(/[\s·・，,、]/g, '')
+
+/**
+ * 剧情里用惯的叫法 → 标定表那一格。
+ * 这些名字与标定表**毫无字面重叠**，靠前缀、靠区号都认不出来，只能点名认。
+ * 只收**确凿同址**的：写作「女神神殿 · 第 6 区近郊」的那一处就是「女神神殿遗址 · 第 6 区近郊」；
+ * 「恋兔宿舍」在剧情里本就以「苍之学园 · 恋兔宿舍」的写法出现过，与前半截那把尺子认出来的是同一格。
+ * 拿不准的（如「第13区 · 骨之圣堂」）宁可空着 —— 见下面 mapRegionOf 的口径。
+ */
+const PLACE_ALIASES: Array<[string, string]> = [
+  ['女神神殿', 'ruin'],
+  ['恋兔宿舍', 'gcn'],
+]
+
+/**
+ * 地点名 → 总览那张观测点示意图上的哪一格；没有落点的返回 null。
+ *
+ * **宁可不标，也不指错地方** —— 这张图只管「亮点落在谁身上」，不供读数
+ * （读数一律走 regionOfPlace / rOfPlace 那条严格的口径，认不出来就挂牌「推算」）。
+ * 所以这里可以比读数松，但松得有据：
+ *   ① 严格尺子（regionOfPlace：区号与地名两段都得对上）；
+ *   ② 别名表（剧情叫法与标定表名字对不上，但确是同一处）；
+ *   ③ 按地名前半截认（「苍之学园 · 学生会室」→ 苍之学园那一区），多个候选取前半截最长的。
+ *
+ * 比字面之前先 squash 抹平空白：标定表写「第 6 区」（区号中间带空格），
+ * 剧情里写「第6区」「第6区竞技场」「第6区 · 各地」—— 不抹平的话后者一个都落不到第 6 区的两点上，
+ * 而它们在图上是同一个地方。regionOfPlace 本来就是抹平了比的，这里没理由另用一把尺子。
+ */
+export function mapRegionOf(place: string): string | null {
+  if (!place) return null
+  const strict = regionOfPlace(place)
+  if (strict?.xy) return strict.id
+  const seg = squash(place.split('·')[0] ?? '')
+  if (seg) {
+    const stems = REGIONS.filter((g) => g.xy).map((g) => ({ id: g.id, s: squash(g.name.split('·')[0] ?? '') }))
+    const exact = stems.find((x) => x.s && x.s === seg)
+    if (exact) return exact.id
+    const byStem = stems
+      .filter((x) => x.s && seg.includes(x.s))
+      .sort((a, b) => b.s.length - a.s.length)[0]?.id
+    if (byStem) return byStem
+  }
+  const p = squash(place)
+  return PLACE_ALIASES.find(([k]) => p.includes(squash(k)))?.[1] ?? null
+}
+
 /** 现场的终末清单 */
 export interface SiteTerminals {
   /** 现场终末的最高分级（0 = 现场没有已登记的终末） */

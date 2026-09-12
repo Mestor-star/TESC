@@ -80,6 +80,12 @@
   margin-top: 2px;
 }
 .chipRow { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 场景 CG 位：登记了几张就摆几格，宽了自动换行 */
+.cgRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
 .charGrid { display: flex; flex-direction: column; gap: 8px; }
 .charRow {
   display: flex;

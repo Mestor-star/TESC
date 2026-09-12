@@ -288,7 +288,11 @@ export function parseChatPreset(data: unknown, cfgs: ChannelCfg, fileHint?: stri
   const budgetKey = (['openai_max_tokens', 'oai_max_tokens', 'max_tokens'] as const)
     .find((k) => typeof settings[k] === 'number' || typeof d[k] === 'number')
   const rawBudget = budgetKey ? (typeof settings[budgetKey] === 'number' ? settings[budgetKey] : d[budgetKey]) as number : NaN
-  // 预算：预设写了就两通道都照它的；没写就各通道留自己那一份（同上，不拿主通道的顶替短信通道的）
+  // 预算：**预设写多少就多少**，两通道都照它的原文落地，不替它改数、也不替用户做主张；
+  // 没写就各通道留自己那一份（同上，不拿主通道的顶替短信通道的）。
+  // 所以终端设置里那一格显示的，就是这份预设自己写的那个数。
+  // 我们发的那两份预设自己写着缺省那一档（30000）；第三方预设带你自己的数进来也照收。
+  // 嫌小，终端设置里那一格随时改 —— 但那是用户改的，不是这里背着他改的。
   const budget = Number.isFinite(rawBudget) && rawBudget > 0 ? clampBudget(rawBudget) : null
   const maxTokensMain = budget ?? clampBudget(cfgs.main.maxTokens)
   const maxTokensSms = budget ?? clampBudget(cfgs.sms.maxTokens)

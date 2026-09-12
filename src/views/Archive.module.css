@@ -46,8 +46,8 @@
   box-shadow: var(--glow-red);
   clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
 }
-/* 那一格换成他的胸像时：外形照旧（同一个斜切、同一圈红光），只是字换成人。
-   截取用 charimg.BUST_FOCUS —— 整身稿的头在画面上方，缺省的取景会切掉头顶。 */
+/* 那一格换成他的头像时：外形照旧（同一个斜切、同一圈红光），只是字换成人。
+   用的是 operator-face 方图，方框对方图，取景不用另外对位。 */
 .opFace {
   box-shadow: var(--glow-red);
   clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);

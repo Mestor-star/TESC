@@ -25,7 +25,6 @@ import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
 import { Portrait, useCharImg } from '../components/Portrait'
-import { BUST_FOCUS } from '../lib/charimg'
 
 import css from './Archive.module.css'
 
@@ -646,15 +645,14 @@ export function Archive() {
           红条只在极限确实高于常态时露出——重合处仍读常态；两值皆不可测者记『∞/∞』。未登记极限的轴退回单值。
         </div>
 
-        {/* 操作员横幅。左侧那一格：有立绘就摆他的胸像（裁自整身稿，见 charimg.BUST_FOCUS），
-            没有才回到「姓」的字块 —— 字块是缺图时的占位，不是常态。 */}
+        {/* 操作员横幅。左侧那一格：有图就摆他的头像（operator-face 方图；缺了退回整身稿，
+            见 charimg 的取图顺延），没有才回到「姓」的字块 —— 字块是缺图时的占位，不是常态。 */}
         <div className={css.opBanner}>
           {opFace ? (
             <Portrait
               avatarId="operator"
               name={name}
               fit="cover"
-              focus={BUST_FOCUS}
               width={84}
               height={84}
               eager

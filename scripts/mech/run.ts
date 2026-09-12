@@ -32,14 +32,14 @@ import { TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
-import { rOfPlace } from '../../src/lib/battle/rvalue'
+import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { passiveText, ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
-import { BOND_STAGE, bondWithStage } from '../../src/data/bondstage'
+import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
@@ -1670,6 +1670,43 @@ export function run(): MechReport {
     ok('靶场前提：那个地点的 R 读数不随危险度变（不然下面那两条量的是地点，不是实体）',
       rOfPlace(PLACE, 3).r === rOfPlace(PLACE, 9).r,
       `${PLACE}：Stage3 读 ${rOfPlace(PLACE, 3).r}、Stage9 读 ${rOfPlace(PLACE, 9).r}`)
+
+    /* ⑤b 总览那张观测点示意图的落点：剧情地点 → 图上哪一格。
+       这一层只管亮点落在谁身上（读数另走严格口径），但**落错和漏落一样是错**：
+       漏了，图上什么都不亮，操作员以为这一段不在侦察网里；
+       标错一格，他以为自己站在别处。判据全是剧情里真用过的写法。
+       最容易漏的是**区号中间那个空格** —— 标定表写「第 6 区」，剧情里写「第6区」，
+       比字面不抹平的话，第 6 区那两点上永远亮不起来（实测就是这么漏的）。 */
+    const MAP_CASES: Array<[string, string | null, string]> = [
+      ['苍之学园 · 学生会室', 'gcn', '第12区 本校舍那一片'],
+      ['苍之学园 · 恋兔宿舍', 'gcn', '恋兔宿舍在苍之学园内'],
+      ['恋兔宿舍 · 客厅/恋兔光房间/厨房', 'gcn', '同一个地方换了个写法'],
+      ['第12区 · 旧集市', 'mkt', '标定表原文'],
+      ['第 12 区 · 旧集市', 'mkt', '区号带空格'],
+      ['第12区郊外荒野', 'mkt', '只写区号'],
+      ['第 6 区 · 工房街', 'wsh', '标定表原文'],
+      ['第6区 · 各地', 'wsh', '区号不带空格'],
+      ['第6区竞技场 · 体育馆', 'wsh', '第6区里的设施'],
+      ['第6区远郊荒野 · 拉普达低 R 值地带', 'wsh', '第6区外的荒野'],
+      ['女神神殿 · 第 6 区近郊', 'ruin', '「神殿」与「神殿遗址」是同一处'],
+      ['女神神殿遗址 · 第 6 区近郊', 'ruin', '标定表原文'],
+      ['山道尽头 · 学生宿舍', 'drm', '标定表原文'],
+      ['第13区 · 骨之圣堂', null, '第13区不在侦察网里，宁可不标'],
+      ['篝火之国 · 巴别塔顶', null, '不在弗尔克图斯'],
+      ['东京 · 有乐町/日比谷街头', null, '不在弗尔克图斯'],
+    ]
+    const badMap = MAP_CASES.filter(([p, want]) => mapRegionOf(p) !== want)
+    const missedMap = MAP_CASES.filter(([p, want]) => want !== null && mapRegionOf(p) === null)
+    ok('总览 · 地图落点：剧情里那些写法都落得到格上（区号带不带空格都算同一处）',
+      missedMap.length === 0,
+      missedMap.length
+        ? `落不到：${missedMap.map(([p]) => p).join('、')}`
+        : `${MAP_CASES.filter(([, w]) => w !== null).length} 处逐条对过`)
+    ok('总览 · 地图落点（对照）：不在侦察网里的那几处一个都不硬塞（宁可不标，也不指错地方）',
+      badMap.length === 0,
+      badMap.length
+        ? badMap.map(([p, want]) => `${p} → ${String(mapRegionOf(p))}（应 ${String(want)}）`).join('；')
+        : '第13区 / 篝火之国 / 东京：三处都空着，同图六区一处不误')
     const at = (stage: number, bossId?: string) => enemiesOf({
       id: `mech-${stage}`, no: 'MECH', title: '复核', place: PLACE, stage,
       nature: '反现实 · 死灵操法', recommend: [], status: '压制中', deadline: '即刻',
@@ -2068,15 +2105,24 @@ export function run(): MechReport {
       sms: { ...API_DEFAULTS, model: '短信通道模型', temperature: 1.3, maxTokens: 4321 },
     }
 
-    /* ① 内置预设解析出来的预算：够写一段正文，而不是够回一句 */
+    /* ① 内置预设写多少就是多少：两份 JSON 自己写着缺省那一档（30000），解析出来就该是它。
+       这里认的是**预设原文**，不是某个常量 —— 预设被改小了这条就红。 */
     const parsed = BUILTIN_SOURCE.map((b) => ({ id: b.id, r: parseChatPreset(b.json, cfg()) }))
-    const thin = parsed.filter((p) => !p.r.ok || p.r.scheme.main.maxTokens < 8000)
-    ok('首启：内置预设带得动一段正文（解析出的输出预算 ≥ 8000，且两通道一致）',
+    const thin = parsed.filter((p) => !p.r.ok
+      || p.r.scheme.main.maxTokens !== DEFAULT_BUDGET || p.r.scheme.sms.maxTokens !== DEFAULT_BUDGET)
+    ok(`首启：内置预设自带的输出预算就是缺省那一档（${DEFAULT_BUDGET}，两通道都照预设原文），够写一段正文而非回一句`,
       thin.length === 0,
       thin.length ? thin.map((p) => p.id).join('、')
         : parsed.map((p) => `${p.id} ${p.r.ok ? p.r.scheme.main.maxTokens : '解析失败'}`).join('　'))
 
-    /* 对照：抹掉预算字段就退回**本通道**的现值 —— 上面那条不是「怎么解析都那个数」 */
+    /* 对照：预设写了个别的数就**照它写的**（不替它改成缺省）—— 上面那条不是「怎么解析都是 30000」 */
+    const small = { ...(BUILTIN_SOURCE[0].json as Record<string, unknown>), openai_max_tokens: 2048 }
+    const keptSmall = parseChatPreset(small, splitCfg)
+    ok('首启（对照）：预设自己写着 2048 就落地 2048，两通道一致 —— 预设写多少就多少',
+      keptSmall.ok && keptSmall.scheme.main.maxTokens === 2048 && keptSmall.scheme.sms.maxTokens === 2048,
+      keptSmall.ok ? `主=${keptSmall.scheme.main.maxTokens} 短信=${keptSmall.scheme.sms.maxTokens}` : '解析失败')
+
+    /* 对照：预设**压根没带**预算字段时，两个通道各取自己的现值 —— 同样不是「统一成 30000」 */
     const stripped = { ...(BUILTIN_SOURCE[0].json as Record<string, unknown>) }
     delete stripped.openai_max_tokens
     // 预设里的采样器温度写在哪一层都算数（这份写在顶层 temperature，也在 TEMP_KEYS 里）
@@ -2167,12 +2213,17 @@ export function run(): MechReport {
     }
 
     /* ②b 预算归位：只认我们自己塞进去过的值，用户自己打的数一个都不动 */
+    /* ②b 预算归位：只认我们自己塞进去过的值，用户自己打的数一个都不动。
+       8000 必须在内 —— 那是内置预设 JSON 一直到 9976705 之前写的数，是我们发的缺省。
+       漏掉它，套用过旧预设的机器就永远停在 8000：预设内容换成 30000 了，
+       可通道里存的那一份没人改，界面上看不出异常，用户只觉得「默认的 8000 根本不够」。 */
     const floor = [
-      [0, true, '从没设过'], [NaN, true, '非数字'], [undefined, true, '缺字段'], [1500, true, '旧缺省'],
+      [0, true, '从没设过'], [NaN, true, '非数字'], [undefined, true, '缺字段'],
+      [1500, true, '旧缺省（第一代）'], [8000, true, '旧预设自带的缺省（第二代）'],
       [30000, false, '目标值本身（已经对，不再动）'], [2000, false, '用户自己填的'], [4096, false, '用户按上游上限填的'],
     ] as const
     const badFloor = floor.filter(([n, want]) => needsBudgetFloor(n) !== want)
-    ok('首启：预算归位只认自己塞过的值（0 / 非数字 / 1500），用户自己打的数与目标值 30000 一概不动',
+    ok('首启：预算归位只认自己塞过的值（0 / 非数字 / 1500 / 8000），用户自己打的数与目标值 30000 一概不动',
       badFloor.length === 0,
       badFloor.length ? badFloor.map(([, , why]) => why).join('；')
         : floor.map(([n, want, why]) => `${why}(${String(n)})→${want ? '归位' : '不动'}`).join('　'))
@@ -2658,11 +2709,18 @@ export function run(): MechReport {
       `现造段 ${bareEv.id}：概述在=${bare.includes(bareEv.summary)}　细则节=${bare.includes('【本事件实施细则】')}`
       + `　｜${ev0.id}（有详纲）：细则节=${lit.includes('【本事件实施细则】')}`)
 
-    /* ② 摘到了：五节按序齐全，且台词、知道/不知道两栏都逐字落地 */
+    /* ② 摘到了：五节按序齐全，且台词、知道/不知道两栏都逐字落地。
+       探针里故意放**两句**：一句标了 key、一句没标 —— 只标了的那句该进提示词，
+       没标的那句一个字都不该露。*/
+    const KEYED = '我的名字叫言万心叶，是个随处可见的普通高中生。'
+    const PLAIN = '（这句没标 key，一句都不该进大纲）'
     if (!EVENT_BRIEFS.__probe__) {
       EVENT_BRIEFS.__probe__ = {
         beats: ['第一拍：船甲板上的脚步声。', '第二拍：他抬头。'],
-        lines: [{ who: '言万心叶', text: '我的名字叫言万心叶，是个随处可见的普通高中生。' }],
+        lines: [
+          { who: '言万心叶', text: PLAIN },
+          { who: '言万心叶', text: KEYED, key: true },
+        ],
         knows: [{ char: '言万心叶', knows: ['船要被开去某个角落'], unknown: ['露娜的存在'] }],
         done: ['两人把话说完', '甲板上的脚步声远去'],
         taboo: ['不要提前写出露娜'],
@@ -2670,12 +2728,20 @@ export function run(): MechReport {
     }
     const full = buildDirectorSystem({ ...ev0, id: '__probe__' }, ctx)
     const at = (s: string) => full.indexOf(s)
-    const order = ['一、原文情节线', '二、关键台词', '三、在场的谁知道什么', '四、原文里这一段的落点', '五、禁忌']
+    const order = ['一、原文情节线', '二、绕不开的几句原文', '三、在场的谁知道什么', '四、原文里这一段的落点', '五、禁忌']
       .map((h) => at(h))
     const ascending = order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))
-    ok('详纲：摘到了就把五节按序摆出来（情节线 / 关键台词 / 谁知道什么 / 落点 / 禁忌）',
+    ok('详纲：摘到了就把五节按序摆出来（情节线 / 绕不开的几句 / 谁知道什么 / 落点 / 禁忌）',
       full.includes('【本事件实施细则】') && ascending,
       `各节位置 ${order.join(' → ')}`)
+
+    /* ③ 只有标了 key 的台词进大纲 —— 这是「大纲不是剧本」那一条的**执行**面：
+       逐拍情节线已经够细了，若再把整节对话照搬进来，导演照着复述，人就不是那个人了。
+       两条一起钉：标了的必须在场，没标的一个字都不得露。 */
+    ok('详纲：只有标了 key 的台词进提示词（没标的留在数据里当证据，但不写进大纲）',
+      full.includes(KEYED) && !full.includes(PLAIN),
+      `标了的${full.includes(KEYED) ? '在场' : '**丢了**'}　`
+      + `没标的${full.includes(PLAIN) ? '**漏进来了**' : '没露'}`)
 
     /* ③b 大纲是**参照系、不是剧本** —— 这是全系统最容易被当成「越严越好」而写反的一处：
        把大纲说成「唯一事实来源」「定论」「这几件事必须发生」，模型就会不管言万心叶做了什么，
@@ -2789,21 +2855,32 @@ export function run(): MechReport {
       doneLine.includes('以**此刻实际发生的**为准') && !doneLine.includes('大纲关键收束达成'),
       doneLine.trim().slice(0, 40) + '…')
 
-    /* ③ 台词与「还不知道」必须原样进提示词 —— 这两样一旦被改写，写出来的人就不是原文那个 */
+    /* ③ 台词与「还不知道」必须原样进提示词 —— 这两样一旦被改写，写出来的人就不是原文那个。
+       取的是**标了 key 的那一条**（没标的那条按规矩根本不进大纲，见上面那条检查）。 */
     const probe = EVENT_BRIEFS.__probe__
-    ok('详纲：关键台词与「还不知道」逐字进提示词（改写一句就等于换了个人）',
-      strip(full).includes(strip(probe.lines![0].text))
+    const keyed = probe.lines!.find((l) => l.key === true)!
+    ok('详纲：绕不开的那几句与「还不知道」逐字进提示词（改写一句就等于换了个人）',
+      strip(full).includes(strip(keyed.text))
       && full.includes('还不知道：露娜的存在')
-      && full.includes(`${probe.lines![0].who}：${probe.lines![0].text}`),
-      `台词行 ${full.includes(`${probe.lines![0].who}：${probe.lines![0].text}`)}`)
+      && full.includes(`${keyed.who}：${keyed.text}`),
+      `台词行 ${full.includes(`${keyed.who}：${keyed.text}`)}`)
 
     /* 对照：只有 beats 的事件，后面四节一律不冒出空壳标题（半截标题会读成「这一节没有内容」） */
     EVENT_BRIEFS.__probe2__ = { beats: ['只有一拍'] }
     const lean = buildDirectorSystem({ ...ev0, id: '__probe2__' }, ctx)
     ok('详纲（对照）：只给了情节线时，其余四节的标题一个都不出现（不摆空壳）',
-      lean.includes('一、原文情节线') && !['二、关键台词', '三、在场的谁知道什么', '四、原文里这一段的落点', '五、禁忌']
+      lean.includes('一、原文情节线') && !['二、绕不开的几句原文', '三、在场的谁知道什么', '四、原文里这一段的落点', '五、禁忌']
         .some((h) => lean.includes(h)),
       ['二、三、四、五 节的标题'].map((h) => `${h}${lean.includes(h) ? '有' : '无'}`).join('　'))
+
+    /* 对照：摘了台词但一条都没标 key —— 第二节整节不出现，
+       而不是摆一个空标题（那会读成「这一节没有内容可用」）。 */
+    EVENT_BRIEFS.__probe3__ = { beats: ['只有一拍'], lines: [{ who: '言万心叶', text: PLAIN }] }
+    const unkeyed = buildDirectorSystem({ ...ev0, id: '__probe3__' }, ctx)
+    ok('详纲（对照）：摘了台词却一条没标 key 时，那一节整节不出现（不摆空标题）',
+      !unkeyed.includes('二、绕不开的几句原文') && !unkeyed.includes(PLAIN),
+      `第二节=${unkeyed.includes('二、绕不开的几句原文') ? '有' : '无'}　未标台词=${unkeyed.includes(PLAIN) ? '漏了' : '没露'}`)
+    delete EVENT_BRIEFS.__probe3__
     delete EVENT_BRIEFS.__probe__
     delete EVENT_BRIEFS.__probe2__
 
@@ -2994,29 +3071,35 @@ export function run(): MechReport {
     ok('好感门槛 / 锁定：指向的角色都在档案名录内，数值都在 0~100（敲错的 id 会变成一道永远过不去的门）',
       badRef.length === 0, badRef.length ? `有问题的：${badRef.join('、')}` : `门槛 ${gated.length} 段 · 锁定 ${locked.length} 段`)
 
-    /* ② 门槛必须够得着：封顶值 < 门槛值 → 那一段永远开不了（这条最容易在改数值时踩） */
+    /* ② 门槛必须够得着：读数封顶 100（bondNow 的 clamp），门槛高过 100 就谁也开不了 */
     const unreachable = gated.flatMap((e) =>
       (e.gate ?? [])
-        .filter((g) => {
-          const cap = BOND_STAGE[g.char]?.cap
-          return typeof cap === 'number' && cap < g.value
-        })
-        .map((g) => `${e.id} 要 ${g.char} ${g.value}，却在 ${e.id} 之前封顶 ${BOND_STAGE[g.char]!.cap}`))
-    ok('好感门槛：门槛值不会高过阶段上限（否则那一段谁也开不了 —— 封顶之前攒不够门槛）',
-      unreachable.length === 0, unreachable.length ? unreachable.join('；') : '卷一的契约门槛 70 ≤ 封顶 78，够得着')
+        .filter((g) => g.value > 100)
+        .map((g) => `${e.id} 要 ${g.char} ${g.value}，而读数最高只到 100`))
+    ok('好感门槛：门槛值不会高过读数上限 100（否则那一段谁也开不了）',
+      unreachable.length === 0, unreachable.length ? unreachable.join('；') : '卷一的契约门槛 70 ≤ 100，够得着')
 
-    /* ③ 契约那一段：门槛 70 / 锁 100，且封顶确实卡在门槛之上 */
+    /* ③ 契约那一段：门槛 70 拦入口 / 走完锁 100 —— 这一档是**留着**的，
+       且门槛只在**第一卷**内（v1-9 属卷 1）。 */
     const pact = TIMELINE.find((e) => e.id === 'v1-9')
     ok('好感门槛：卷一使用者契约（v1-9）要好感先到 70，走完锁 100',
       pact?.gate?.some((g) => g.char === 'luna' && g.value === 70) === true
-      && pact?.lock?.some((g) => g.char === 'luna' && g.value === 100) === true,
-      `门槛=${JSON.stringify(pact?.gate ?? null)}　锁定=${JSON.stringify(pact?.lock ?? null)}`)
+      && pact?.lock?.some((g) => g.char === 'luna' && g.value === 100) === true
+      && pact?.vol === 1,
+      `卷=${pact?.vol}　门槛=${JSON.stringify(pact?.gate ?? null)}　锁定=${JSON.stringify(pact?.lock ?? null)}`)
 
-    ok('阶段上限：契约之前封顶 78（攒得到 70 的门槛，但攒不满），契约之后满值',
+    /* ④ 除契约之外不许再有「推进到某一段就给固定读数」的档：阶段上限已撤，
+       bondstage 里只剩一份「关系确认」文案，不再夹带数值。 */
+    const stageKeys = Object.keys(BOND_STAGE)
+    ok('推进不给固定值：阶段上限已撤（bondstage 只剩关系确认，不再有 cap / full）',
       BOND_STAGE.luna?.from === 'v1-9'
-      && bondWithStage('luna', 100, 'v1-8') === 78
-      && bondWithStage('luna', 100, 'v1-9') === 100,
-      `读 v1-8 时给到 ${bondWithStage('luna', 100, 'v1-8')}　读 v1-9 时给到 ${bondWithStage('luna', 100, 'v1-9')}`)
+      && !('cap' in (BOND_STAGE.luna ?? {})) && !('full' in (BOND_STAGE.luna ?? {}))
+      && stageKeys.every((k) => Object.keys(BOND_STAGE[k]!).every((f) => f === 'from' || f === 'confirm')),
+      `登记的：${stageKeys.join('、')}　字段：${stageKeys.map((k) => `${k}(${Object.keys(BOND_STAGE[k]!).join('/')})`).join('　')}`)
+    ok('推进不给固定值：契约那份「关系确认」文案仍随读到 v1-9 才现身',
+      confirmOf('luna', 'v1-8') === null && confirmOf('luna', 'v1-9') !== null
+      && stagePassed('luna', 'v1-9') && !stagePassed('luna', 'v1-8'),
+      `v1-8=${confirmOf('luna', 'v1-8') === null ? '无' : '有'}　v1-9=${confirmOf('luna', 'v1-9') ? '有' : '无'}`)
 
     /* ④ 导演照着写的是「此刻真实的羁绊」，不是这一段原著里的数值 ——
        从前这两者混在一句「羁绊基准」里，主角把话说砸了导演还照原著写亲密。 */
@@ -3041,9 +3124,10 @@ export function run(): MechReport {
       `疏远标记=${sysB.includes('↓比原著疏远')}　亲近标记=${sysD.includes('↑比原著亲近')}`)
 
     /* ⑤ 好感基准里不许再出现「读到这一段就跟到这一段」的原著快照当基线 ——
-       把 offset 清零后，读数应当回到初见值，而不是回到 ev.bond。 */
+       把 offset 清零后，读数应当回到初见值，而不是回到 ev.bond。
+       与 bondNow 同式：clamp(初见值 + 偏移, 0, 100)，再无第二档改写它。 */
     const ev9 = pact!
-    const offsetless = bondWithStage('luna', defaultBondOf('luna'), null)
+    const offsetless = Math.max(0, Math.min(100, defaultBondOf('luna') + 0))
     ok('好感基准：什么都不做就是不涨（偏移清零 → 回到初见值，而不是原著同段的数值）',
       offsetless === defaultBondOf('luna') && offsetless !== ev9.bond.luna,
       `初见值 ${defaultBondOf('luna')} ≠ 原著同段 ${ev9.bond.luna}`)

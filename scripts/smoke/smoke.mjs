@@ -243,9 +243,12 @@ plotReplies.push(
   '【DIR3】骑士的刀锋停在心叶眼前。他护在露娜身前，断锁骨、夺枪、读心成底牌——会长艾莉芙笑着拍板：苍之学园，收下你们了。\n\n—— 事件指令 ——\n```json\n{"digest":"在异端审问室的刀剑下，言万心叶护住露娜并以底牌赢得裁定。两人以「苍之学园体验入学」名义被收留，正式成为终末停滞委员会的一员。","eventDone":true}\n```',
   '【DIR4】世界观与「欢迎会」。艾莉芙说起宇宙与「终末」，小柴拉着两人逛集市，宿舍里飘起晚饭的香气。\n（本回合无指令——用于验证未解析提示与补发按钮）',
   '【DIR5】心叶放下碗筷，屋里的灯把四个人的影子拉得很长。\n\n—— 事件指令 ——\n```json\n{"flag":{"resend_ok":true}}\n```',
-  // DIR6 / DIR7 连着两条「无指令」：用来验「自动补收也拿不到 → 补发按钮兜住」那一路
+  /* DIR6 / DIR7 / DIR7b 连着三条「无指令」：自动补收**问两次**（第二次会把模型自己
+     上一趟的失败回执原样接进对话，是另一条请求），所以「主回执 + 补收两趟」要三条
+     都拿不到，才轮得到手动补发。少放一条，第二条补收回执就会把 DIR8 的 flag 提前吃掉。 */
   '【DIR6】小柴把明天的路线画在餐巾纸上，横穿工房街，再绕到旧钟楼底下。\n（本回合无指令——自动补收这一趟也拿不到）',
-  '【DIR7】钟楼底下什么都没有，只有风从砖缝里过。\n（本回合仍无指令——两条路都没拿到，补发按钮该在）',
+  '【DIR7】钟楼底下什么都没有，只有风从砖缝里过。\n（本回合仍无指令——补收第一趟没拿到）',
+  '【DIR7b】风把餐巾纸的边角吹得直响，路线却始终没画完。\n（本回合仍无指令——补收第二趟也没拿到，补发按钮该在）',
   '【DIR8】心叶把餐巾纸折好收进口袋。\n\n—— 事件指令 ——\n```json\n{"flag":{"manual_ok":true}}\n```',
 )
 let plotReq = 0
@@ -591,14 +594,18 @@ try {
   ok('C5b 收束横幅稳定呈现（上一事件已收束 · 含收束解读 · 无收束栏）', stEnded.bar === true && stEnded.digest === true && stEnded.noBar === true, JSON.stringify(stEnded))
   st = await state()
   ok('C6 v1-4 未误归档', st.rec.length === 3, 'rec=' + st.rec.length)
-  // 再推一回合：连回两个「无指令」（DIR6 / DIR7）—— 主回执与自动补收都没拿到，
-  // 这时才轮到手动补发。同时验通联日志里留了痕（这一种失效界面看不出来，只能靠日志事后查）。
+  // 再推一回合：连回三个「无指令」（DIR6 / DIR7 / DIR7b）—— 主回执与自动补收的两趟
+  // 都没拿到，这时才轮到手动补发。同时验通联日志里留了痕（这一种失效界面看不出来，
+  // 只能靠日志事后查）：本回合应有 3 条（主回执 1 + 补收两趟各 1）。
   await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）我把碗收进水槽，问小柴明天几点出门。')
   await poll(`document.body.innerText.includes('补收仍未拿到事件指令')`, 40000, 'C reask miss')
   await poll(`document.body.innerText.includes('要求补发指令')`, 10000, 'C manual button')
   const misses = await ev(`(()=>{try{const l=JSON.parse(localStorage.getItem('zts-ailog:v1')||'[]');return l.filter(x=>x.channel==='事件指令').length}catch(e){return -1}})()`)
   ok('C6b 自动补收也拿不到时，补发按钮兜住', true, '')
-  ok('C6c 指令解析失败在通联日志里留痕（channel=事件指令）', misses >= 2, 'log=' + misses)
+  /* 4 条 = DIR4 那回合主回执 1 条（补收第一趟就拿到 DIR5，只留 1 条）
+     ＋ 本回合主回执 1 条、补收两趟各 1 条。钉死这个数，等于钉死「补收真问了两次」——
+     哪天真退回只问一次，这里会立刻少一条。 */
+  ok('C6c 指令解析失败在通联日志里留痕（主回执 1 + 补收两趟各 1 ＝ 本回合 3 条）', misses === 4, 'log=' + misses)
   // 手动补发 → DIR8 的 flag 落地
   await goto('要求补发指令')
   await poll(`(${wState}).fl.manual_ok===true`, 40000, 'C flag manual_ok')

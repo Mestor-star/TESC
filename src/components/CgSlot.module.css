@@ -1,0 +1,66 @@
+/* components/CgSlot.module.css — 场景 CG 位（见 CgSlot.tsx） */
+
+.slot {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #0b0e14;
+}
+
+/* 缺图：空框 + 虚线，提示这一格还等着图 */
+.slotEmpty {
+  border-style: dashed;
+  border-color: var(--line-3, var(--line));
+  align-items: center;
+  justify-content: center;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 10px,
+    rgba(255, 255, 255, 0.018) 10px 20px
+  );
+}
+
+.ph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px;
+  text-align: center;
+}
+
+.ph b {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.ph code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-mute);
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+.cap {
+  padding: 6px 9px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--ink-mute);
+  background: var(--bg-2);
+}

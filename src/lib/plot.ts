@@ -40,6 +40,12 @@ export interface PlotDirective {
   ends?: string[]
   /** 分支标记（布尔 / 有限数值 / 字符串） */
   flag?: Record<string, FlagValue>
+  /**
+   * 本回合该摆哪张场景 CG —— 从当前事件 `SagaScene.cg` 登记的那份清单里挑一个 id
+   * （清单连同每张的一行说明写在系统提示的【场景 CG】一节里）。
+   * 只在「这一幕该换图了」时给；局势没变就省略，别每回合都给。
+   */
+  cg?: string
   /** 该段收束是否为分歧路线（与原著相异时置 true） */
   diverged?: boolean
   /** 关键收束达成 → 完结当前事件并写记录（缺省 false） */
@@ -71,12 +77,15 @@ export interface PlotBattle {
 const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
-  'met', 'bond', 'ends', 'flag', 'diverged', 'eventDone', 'digest', 'battle',
+  'met', 'bond', 'ends', 'flag', 'cg', 'diverged', 'eventDone', 'digest', 'battle',
   // 短信/群聊的「托付」用这一条。漏在名单外的话，sanitizeDirective 末尾那道
   // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
   // 任务却永远落不了地，而且一声不吭。
   'task',
 ])
+
+/** 事件指令里 cg id 的长度上限（够长到写得下 `v1-2-refuse`，短到拦得住整段串词） */
+const CG_ID_MAX = 64
 
 /** 把「图鉴 id 或原文实体标注」归一化为图鉴条目 id；无法识别返回 null */
 export function resolveEndKey(key: string): string | null {
@@ -175,6 +184,14 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       }
       out.battle = out2
     }
+  }
+
+  /* 场景 CG 点名。这里**只做形状校验**（非空字符串、长度封顶），不做清单校验 ——
+     净化阶段手里没有「当前事件」这个上下文。是不是本段登记过的 id，留到 selectCg
+     落地那一刻判（认不出来就退回兜底）。两处分工：这儿拦垃圾，那儿拦幻觉。 */
+  if (typeof src.cg === 'string') {
+    const id = src.cg.trim().slice(0, CG_ID_MAX)
+    if (id) out.cg = id
   }
 
   if (src.flag && typeof src.flag === 'object' && !Array.isArray(src.flag)) {
@@ -635,6 +652,8 @@ export interface DirectiveEffects {
   bonds: { char: string; delta: number }[]
   ends: { key: string; id: string }[]
   flags: [string, FlagValue][]
+  /** 导演点名的场景 CG id（调用方按**当前事件**落到 world.cg[evId]） */
+  cg?: string
   diverged: boolean
   eventDone: boolean
   digest?: string
@@ -664,6 +683,9 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
     api.setFlag(k, v)
     fx.flags.push([k, v])
   }
+  // CG 点名不在这儿落盘：applyDirective 手里没有「当前事件 id」，
+  // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的事件 id 写。
+  if (d.cg) fx.cg = d.cg
   fx.diverged = d.diverged === true
   fx.eventDone = d.eventDone === true
   if (d.digest) fx.digest = d.digest
@@ -679,6 +701,7 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       (d.bond && d.bond.length) ||
       (d.ends && d.ends.length) ||
       (d.flag && Object.keys(d.flag).length) ||
+      Boolean(d.cg) ||
       d.diverged === true ||
       d.eventDone === true ||
       Boolean(d.battle?.name),
@@ -729,6 +752,15 @@ export interface DirectorCtx {
   presetPost?: string
   /** 近期作战记录摘要（取自隐藏存档；用来承接已打过的任务，防前后文不搭） */
   battleLog?: string
+  /**
+   * 本事件登记的场景 CG 候选清单，已渲染成 `- id —— 说明` 的文本
+   * （由 lib/cg.ts 的 `cgPaletteBlock` 生成）。
+   *
+   * 给了才注入【场景 CG】一节 —— 那一节同时交代 `cg` 字段怎么用。
+   * 清单由调用方传进来，是因为本模块**不碰 SCENES**：它只做拼装，
+   * 不该把某一段的场景数据背在身上（canon 约束见文件头）。
+   */
+  cgPalette?: string
   /**
    * 本回合操作员在操作栏里写下的原话（言万心叶的行动）。
    *
@@ -904,12 +936,18 @@ function briefSection(ev: TimelineEvent): string {
       + '他写的与这一条线相违时按七比三让位 —— 他的行动与话语七成，这条线里的人物与事实三成）\n'
       + b.beats.map((x, i) => ` ${i + 1}. ${x}`).join('\n'))
   }
-  if (b.lines?.length) {
-    seg.push('二、关键台词（**原文锚点，不是要你照抄的剧本**）\n'
+  /* 只给标了 key 的那几句。没标的留在 brief 数据里当摘录证据，但不进大纲 ——
+     一节对话整段照搬，大纲就从「参照系」变成了「剧本」：导演照着复述原文，
+     同一个角色换个场合说话也变成同一套腔调，人也就不是那个人了。
+     底下这几句是**绕不开的**（伏笔要靠它回收、或一句话把关系与局势定死），
+     所以连说法一起给；其余对话导演照人设自己写。 */
+  const keyLines = b.lines?.filter((l) => l.key === true) ?? []
+  if (keyLines.length) {
+    seg.push('二、绕不开的几句原文（**原文锚点，不是要你照抄的剧本**）\n'
       + '下面这几句是原文里确实说过的，给你两样东西：一是这几个人此刻说话的分寸与用词，二是这一节绕不开的事实。\n'
       + '正文里的对话请**按各自人设另写**：同一个人在不同场合说法不同，照抄会变成复述原文。'
-      + '只有那种「非这一句不可」的宣告、转折、立约，才用原文原句（用也不得改它的意思）。\n'
-      + b.lines.map((l) => ` ${l.who}：${l.text}`).join('\n'))
+      + '这几句是例外 —— 那种「非这一句不可」的宣告、转折、立约，用原文原句（用也不得改它的意思）。\n'
+      + keyLines.map((l) => ` ${l.who}：${l.text}`).join('\n'))
   }
   if (b.knows?.length) {
     const rows = b.knows.map((k) => {
@@ -1053,6 +1091,21 @@ ${varList}
     ? `\n\n${ctx.loreContext}`
     : ''
 
+  /* 场景 CG 点名的规矩 —— 清单由调用方给（本模块不碰 SCENES）。
+     重点在两处：只能从清单里挑（防编 id）、以及「这条是换图不是报幕」（防每回合重复给）。 */
+  const cgSection = ctx.cgPalette
+    ? `
+
+【场景 CG · 本事件登记的图位】
+这一幕该配哪张图，由你按**当前叙述**点名 —— 在下面事件指令里给 "cg": "id"。
+清单（只能从这里面挑；清单外的一律不认）：
+${ctx.cgPalette}
+什么时候给：**画面真的换了**才给 —— 转场、心境翻转、关键的一击落下、话说到那一步。
+什么时候不给：连续几回合都在同一个画面里，就**不要**重复给。那条指令的意思是「换成这张」，
+不是「此刻是这张」；一直重复给，读数上是每回合都在换图，反而看不出哪里是真的转折。
+拿不准、或清单里没有贴得上此刻那一幕的，就整条省略 —— 省略即沿用它此刻挂着的图。`
+    : ''
+
   const notesSection = notesSectionFor(ev)
   const anchor = ctx.nextEvent ? `\n\n${nextAnchorBlock(ctx.nextEvent)}` : ''
   /* 他的话摆在最末：大纲 / 情节线 / 落点 / 后接事件全都读完之后，最后读到的是他这一句话。
@@ -1089,7 +1142,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${reask}${loreSection}${opsSection}${varBlock}${anchor}${presetSection(ctx.presetPost)}${will}
+${reask}${loreSection}${opsSection}${varBlock}${cgSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 
@@ -1104,6 +1157,7 @@ ${speechContract()}
                                                    // 数值是关系本身，不随剧情进度自动涨 —— 不给就不会变
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
   "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
+  "cg":     "本段 CG 清单里的一个 id",         // 这一幕该配哪张图 —— 只从【场景 CG】那份清单里挑；没换图就整条省略
   "diverged": true,                           // 已与原著相异（否则省略）
   "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
   "digest": "第三人称收官记录两三句",
@@ -1125,7 +1179,11 @@ ${speechContract()}
 <option>给操作员的下一个接续选项</option>
 <option>……（可多行，不需要则不写）</option>
 <vars>{"eventDone": true, "digest": "第三人称收官两三句"}</vars>
-其中 <vars> 的字段与上面 JSON 完全一致（battle 亦可写在 <vars> 里）；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。`
+其中 <vars> 的字段与上面 JSON 完全一致（battle 亦可写在 <vars> 里）；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。
+
+【收尾自检 · 落笔前最后看一眼】
+你这一回合回复的**最后一样东西**，必须是上面那块事件指令（\`—— 事件指令 ——\` 标签行 + 随后的 \`\`\`json 围栏，或 <vars>）。不是场景写完就停、不是把话说圆就停 —— 写完之后回头补上它。
+哪怕这一回合什么都没变，也要给出 {} 的空块：**没有它，这一回合的变量、羁绊、图鉴与收束全部作废**，操作员只能喊你重发一次。这一段正文写得再好，少了它也是白写。`
 }
 
 /** 短信场景的基础提示补充（轻量羁绊许可），由 Tavern 拼到其 system 末尾 */

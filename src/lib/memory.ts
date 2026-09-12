@@ -62,7 +62,7 @@ export interface MemRelation {
   id: string
   name: string
   role: string
-  /** 此刻的羁绊读数（含阶段封顶，与档案页同一处） */
+  /** 此刻的羁绊读数（与档案页同一处：初见值 + 行为偏移，再取锁定值） */
   bond: number
   /** 关系阶段名（按对方性别取称谓，见 format.bondName） */
   stage: string

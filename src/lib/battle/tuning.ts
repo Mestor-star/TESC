@@ -286,8 +286,12 @@ export const TUNING = {
   growthHpWeight: 0.8,   // 成长点数对生命的追加权重
   growthPerWin: 0.6,     // 胜利给参战者的成长点数（百分比，写隐藏存档）
   growthPerLoss: 0.2,
-  bondPerWin: 2,         // 胜利给参战者的羁绊
-  bondMvp: 2,            // 给 MVP 的额外羁绊
+  /* 一起出任务（打赢）给参战者的羁绊。定得小是有意的：一仗 +1、出力最重的那位再 +1，
+     攒满 100 得实打实打上几十仗。羁绊的主干仍是「主角做过什么」
+     （对话 / 抉择 / 短信，见 Terminal 的 bumpBond），作战这一份是**同行**的分量，
+     不是刷数值的入口。 */
+  bondPerWin: 1,         // 胜利给参战者的羁绊
+  bondMvp: 1,            // 给 MVP 的额外羁绊
 } as const
 
 /**

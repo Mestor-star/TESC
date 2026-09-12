@@ -33,15 +33,10 @@ const ALIASES: Record<string, string[]> = {
 /** cover 槽位的缺省取景重心：官方立绘多是整身，脸在画面上部 */
 export const FACE_FOCUS = 'center 20%'
 
-/**
- * 拿**整身立绘**当方框用时的取景重心（胸像）。
- * 缺省那一档是按方形头像素材定的（脸约在 20% 处）；同样的数拿去裁一张
- * 675×1200 的整身稿，方框取到的其实是从眼睛往下 —— 头顶被切掉大半个。
- * 整身稿的头在上方约 6%，所以另立一档，只在「手上只有立绘、版位却是方框」
- * 时显式传（见 Archive 的操作员横幅、App 的侧栏身份卡）。
- * 注意：方框会优先找 <id>-face 方图，真补上那张时这一档就该交回缺省。
- */
-export const BUST_FOCUS = '50% 6%'
+/* 曾经有过一档 BUST_FOCUS（'50% 6%'）：给「手上只有整身立绘、版位却是方框」的
+   操作员版位重新对位用的（Archive 横幅、App 侧栏身份卡）。operator-face.webp 补上
+   之后这两处都用方图了，取景不再是问题 —— 于是把它撤掉。若哪天操作员的方图没了、
+   又退回拿 675×1200 整身稿填方框，这两处就得把那一档重新立起来。 */
 
 function urlOf(file: string, ext: string): string {
   return `${assetBase()}charimg/${encodeURIComponent(file)}.${ext}`

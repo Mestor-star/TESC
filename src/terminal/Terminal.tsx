@@ -6,7 +6,6 @@ import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
-import { bondWithStage } from '../data/bondstage'
 import { clamp } from '../lib/format'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
@@ -109,9 +108,9 @@ export interface TerminalState {
   resetRead: (id: string) => void
 
   /**
-   * 好感：起步＝初见（≈20±性格）＋ 主角行为累积偏移。
-   * **不随进度白涨** —— 涨多少只看这一路说过什么、做过什么（可说错话往下掉）。
-   * 事件说了算的两处例外：`world.locked` 锁定值、阶段上限（见 bondNow 注释）。
+   * 好感：起步＝初见（≈20±性格）＋ 主角行为累积偏移（对话 / 抉择 / 短信 / 作战）。
+   * **不随进度白涨** —— 推进到哪一段都不给固定读数，涨多少只看这一路做过什么
+   * （可说错话往下掉）。唯一的例外仍是事件说了算的 `world.locked` 锁定值。
    */
   bondNow: (charId: string) => number
   /** 原著读数：这一段原著里那个人对他说得上的好感 —— 只作对照，不当基准 */
@@ -148,6 +147,9 @@ export interface TerminalState {
   /** 该段已做的抉择（事件 id → 选项 key） */
   pickOf: (id: string) => string | null
   recordPick: (id: string, key: string) => void
+  /** 该段此刻挂着的场景 CG id（导演未点名 → null） */
+  cgOf: (id: string) => string | null
+  setCg: (id: string, cgId: string) => void
 
   /** 已归档「记录」（按阅读序） */
   records: WorldRecord[]
@@ -199,7 +201,7 @@ function takePendingView(): ViewId | null {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [] }
+  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, cg: {}, records: [] }
 }
 
 /** 「记录」按阅读序排序（主键 readingIndexOf，次键完成时间） */
@@ -252,6 +254,8 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     ends: raw?.ends ?? {},
     own: raw?.own ?? [],
     pick: raw?.pick ?? {},
+    // 旧档没有这一栏（场景 CG 点名是后加的）→ 空表；那些段退回 when 兜底，不影响别的
+    cg: raw?.cg ?? {},
     records: [],
   }
   const doneIds = new Set(Object.keys(epDone))
@@ -624,11 +628,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    * 从前是「读到哪一段就跟到那一段的原著数值」，主角做过什么只在这之上加减一个偏移 ——
    * 于是好感成了进度的影子：什么都没做也涨，跳过一集也涨。现在基准只剩初见值
    * （`defaultBondOf`，性格定的起点），涨多少全看这一路说过什么、做过什么
-   * （在线推演抉择 / 导演回执 / 短信往来 → `world.offset`）。什么都不做就是不动。
+   * （在线推演抉择 / 导演回执 / 短信往来 / 一起作战 → `world.offset`）。什么都不做就是不动。
    *
-   * 两处例外，都是「事件说了算」的：
-   *   锁定（`world.locked`，由事件的 `lock` 写入）—— 那件事之后关系回不去了，此后固定在这个值；
-   *   阶段上限（`bondWithStage`）—— 还没到翻篇的那一步，再好也封顶（见 data/bondstage.ts）。
+   * 曾经还有第二档「阶段上限」（不到翻篇那一步封顶、到了直接给满，见 data/bondstage.ts）
+   * —— 也撤了：它同样是「推进到某一段就白给一个固定读数」。如今唯一的例外只剩
+   *   锁定（`world.locked`，由事件的 `lock` 写入）—— 那件事之后关系回不去了，此后固定在这个值。
+   * 现下只有 v1-9（卷一使用者契约）用它锁 100，且那道门本身仍要求露娜的好感先到 70。
    */
   const bondNow = useCallback(
     (charId: string) => {
@@ -636,12 +641,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       if (BOND_FULL[charId]) return 100
       const base = defaultBondOf(charId)
       const off = world.offset[charId] ?? 0
-      const v = bondWithStage(charId, clamp(base + off, 0, 100), cur)
+      const v = clamp(base + off, 0, 100)
       // 锁定值优先于行为偏移，且只增不减：已被锁过的角色再撞上更低的锁定值，取高的那个
       const locked = world.locked?.[charId]
       return typeof locked === 'number' ? Math.max(v, locked) : v
     },
-    [cur, world.offset, world.locked],
+    [world.offset, world.locked],
   )
 
   /**
@@ -739,6 +744,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const pickOf = useCallback((id: string) => world.pick[id] ?? null, [world.pick])
   const recordPick = useCallback((id: string, key: string) => {
     setWorld((prev) => ({ ...prev, pick: { ...prev.pick, [id]: key } }))
+  }, [])
+
+  /** 某段此刻挂着的场景 CG（导演还没点名 → null，由显示端退回 when 兜底） */
+  const cgOf = useCallback((id: string) => world.cg?.[id] ?? null, [world.cg])
+  /**
+   * 导演点名某段该摆哪张 CG。同一段可以被反复改写 —— 剧情往下走一幕就是换一张，
+   * 后一次覆盖前一次（要看的是「此刻挂着哪张」，不是「换过哪些张」）。
+   */
+  const setCg = useCallback((id: string, cgId: string) => {
+    setWorld((prev) => ({ ...prev, cg: { ...prev.cg, [id]: cgId } }))
   }, [])
 
   /** 请求打开某角色档案（自动切到档案页；档案页受门禁保护，未解锁时 navigate 会被拦下） */
@@ -983,6 +998,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     renameVar,
     pickOf,
     recordPick,
+    cgOf,
+    setCg,
     varsOpen,
     setVarsOpen,
     records: world.records,

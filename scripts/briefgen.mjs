@@ -3,7 +3,7 @@
 
    输入：scripts/briefs/*.json
      形如
-       { "v1-1": { beats: [...], lines: [{who,text}], knows: [...], done: [...], taboo: [...], ref } }
+       { "v1-1": { beats: [...], lines: [{who,text,key?}], knows: [...], done: [...], taboo: [...], ref } }
    输出：src/data/briefs/generated.ts
 
    校验（逐字铁律的机器版本）：
@@ -12,6 +12,11 @@
      · beats 不得为空、不得含空白项
      · knows[].char / knows[] 数组非空
      · done / taboo 不强制，但给了就得有字
+     · lines[].key 只能是 true 或不写；标了 true 的那几句才进「详纲」
+
+   key 的分寸：只标**伏笔**与**影响大的话**（立约、宣告、转折、一句把关系或
+   局势定死的那种）。寒暄、打趣、纯说明、情绪饱满但删掉不影响后文的，一律不标。
+   一节对话整段照搬，大纲就从「参照系」变成了「剧本」—— 拿不准就**别标**。
 
    有一条对不上就**整个文件整块拒绝**，不半推半就 —— 大纲是给导演当事实
    用的，掺一条编的就等于整本不可信。
@@ -129,6 +134,8 @@ for (const f of files) {
       continue
     }
     const hay = loose(src)
+    /** 本节标了 key（真进大纲）的台词条数 —— 与 lines.length 分开数，两者不是一回事 */
+    let keyCount = 0
 
     // 一、beats
     if (!Array.isArray(b.beats) || !b.beats.length) {
@@ -170,6 +177,12 @@ for (const f of files) {
           if (!hay.includes(needle)) {
             errors.push(`${f}: ${id}.lines[${i}] **对不上原文**，像是改写过：「${l.text.slice(0, 30)}…」`)
           }
+          // key：标了就一定要是 true —— 写成 false / 字符串都是想标又没说清，
+          // 而这一栏决定「这句进不进大纲」，含糊过去等于悄悄改了导演手上的东西
+          if (l.key !== undefined && l.key !== true) {
+            errors.push(`${f}: ${id}.lines[${i}].key 只能是 true 或不写（要标就写 true，不要写 false/${JSON.stringify(l.key)}）`)
+          }
+          if (l.key === true) keyCount++
         })
       }
     }
@@ -206,12 +219,19 @@ for (const f of files) {
       })
     }
 
+    /* 摘了台词但一句都没标 key —— 那这些台词一条都进不了大纲，等于白摘。
+       这正是最容易悄悄发生的一种失效：JSON 里看着满满当当，导演那边一条没收到。 */
+    if (b.lines?.length && !keyCount) {
+      warnings.push(`${id} 摘了 ${b.lines.length} 条台词，却没有一条标 key —— 等于一条都不进大纲`)
+    }
     if (!b.lines?.length) warnings.push(`${id} 没有关键台词 —— 正文最容易在这上面走样`)
     if (!b.knows?.length) warnings.push(`${id} 没写谁知道什么 —— 最容易「忽然失忆」的一环`)
 
     briefs[id] = {
       beats: b.beats.map((x) => x.trim()),
-      ...(b.lines?.length ? { lines: b.lines.map((l) => ({ who: l.who.trim(), text: l.text })) } : {}),
+      ...(b.lines?.length
+        ? { lines: b.lines.map((l) => ({ who: l.who.trim(), text: l.text, ...(l.key === true ? { key: true } : {}) })) }
+        : {}),
       ...(b.knows?.length
         ? {
             knows: b.knows.map((k) => ({

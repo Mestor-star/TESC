@@ -28,7 +28,6 @@ import { Plot } from './views/Plot'
 import { Settings } from './views/Settings'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Portrait, useCharImg } from './components/Portrait'
-import { BUST_FOCUS } from './lib/charimg'
 import { VariablePanel } from './components/VariablePanel'
 import { SaveDialog } from './components/SaveDialog'
 import { Guide } from './components/Guide'
@@ -193,7 +192,6 @@ function NavRail() {
                 avatarId="operator"
                 name={name}
                 fit="cover"
-                focus={BUST_FOCUS}
                 width={34}
                 height={34}
                 eager

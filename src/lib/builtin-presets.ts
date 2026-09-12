@@ -20,7 +20,7 @@
 import protocolJson from '../../presets/终末停滞-协议预设.json'
 import styleJson from '../../presets/终末停滞-文风参照原著.json'
 import { readProfiles, saveProfile } from './api'
-import { DEFAULT_BUDGET, MAX_BUDGET } from './budget'
+import { DEFAULT_BUDGET, LEGACY_BUDGETS, MAX_BUDGET } from './budget'
 import { ensureSeeded, getActiveLorebookIds } from './lorestore'
 import { activePresetId, readActivePreset, snapshotActivePreset } from './preset'
 import { applySchemePersisted, listSchemes, parseChatPreset, storeSchemes } from './schemes'
@@ -40,21 +40,23 @@ const BUILTIN_V = 3
  * 得让它再走一遍；记到当前这一版之后才真的只做一次。
  */
 export const BUDGET_FLOOR_KEY = 'zts-budget-floor:v1'
-const BUDGET_FLOOR_V = 3
+const BUDGET_FLOOR_V = 4
 
 /**
  * 这个通道上存的输出预算该不该归到**目标值**（30000）—— **纯函数**，好让复核把各种值摆一遍。
  *
- * 只认**我们自己写进去过的**那些值：0 / 非数字（从没设过）、1500（旧缺省）。
+ * 只认**我们自己写进去过的**那些值：0 / 非数字（从没设过），以及 LEGACY_BUDGETS
+ * 里我们发过的历史缺省（1500 那一代、8000 那一代）。
  * 用户自己打的数（比如 4096 或 65536）一律不动 —— 那是他选的，不是我们塞的；
  * 他若嫌小，界面上那一格随时改。
  *
  * 为什么是 30000 而不是上限：这个数管的是**单次生成最多吐多少 token**。
- * 太低（1500）在思考型通道上会被内部思考吃光，正文一个字没写就被长度掐断；
+ * 太低（1500 / 8000）在思考型通道上会被内部思考吃光，正文一个字没写就被长度掐断；
  * 太高又会被一些通道自己的输出上限顶回来、报错。30000 是两边都留了余量的那一档。
  */
 export function needsBudgetFloor(n: unknown): boolean {
-  return typeof n !== 'number' || !Number.isFinite(n) || n === 0 || n === 1500
+  if (typeof n !== 'number' || !Number.isFinite(n) || n === 0) return true
+  return LEGACY_BUDGETS.includes(n)
 }
 
 export type FloorLedger = { v?: number; to?: number; from?: { main?: number; sms?: number } }
@@ -92,7 +94,7 @@ export function shouldSettleDown(n: number, led: FloorLedger): boolean {
 
 /**
  * 把输出预算归到目标值（每台机器只做一次，按版本号记账）：
- * 还停在我们自己写的旧缺省（0 / 1500）上的抬上来，上一代被我们抬到上限的收回来。
+ * 还停在我们自己写的旧缺省（0 / 1500 / 8000）上的抬上来，上一代被我们抬到上限的收回来。
  *
  * 为什么要有这一步：自动启动只认「没有生效目标」的机器（那是它的分寸）。
  * 已经套用过别的预设的机器，预算可能停在旧值上 —— 要么太短（正文被长度掐断），

@@ -5,12 +5,14 @@ import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, Slide
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
 import { OPERATOR_ID, PERSON_IDS, personOf, speakerOf } from '../data/castmeta'
-import { rosterRowsOf } from '../lib/cast'
+import { castOf, rosterRowsOf } from '../lib/cast'
 import { SCENES } from '../data/scenes'
+import { CG_POOL } from '../data/cgs'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
+import { cgPaletteText, cgPoolFor } from '../lib/cg'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
@@ -255,7 +257,7 @@ export function Plot() {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, recordPick, completeEvent,
-    records, requestProfile,
+    records, requestProfile, setCg,
   } = useTerminal()
 
   /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
@@ -430,6 +432,13 @@ export function Plot() {
       if (fx.ends.length) {
         push('info', '图鉴登记', `${fx.ends.length} 条实体已登记进终末图鉴。`, false)
       }
+      /* 场景 CG 点名：导演读着这一回合的叙述，从本段登记的清单里挑了一张。
+         同一段可被反复改写（往下走一幕就是换一张），直接覆盖。
+         认不认这个 id 由显示端（lib/cg.ts 的 selectCg）判 —— 这里只落盘。 */
+      if (fx.cg) {
+        setCg(evId, fx.cg)
+        push('info', '场景 CG', '这一幕换了一张 —— 低语者日志的「当前事件」卡上可见。', false)
+      }
       if (fx.flags.length) {
         const shown = fx.flags
           .map(([k, v]) => `${k} = ${typeof v === 'string' ? v : String(v)}`)
@@ -462,7 +471,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, push],
+    [meetChar, bumpBond, registerEnd, setFlag, setCg, push],
   )
 
   /**
@@ -483,21 +492,37 @@ export function Plot() {
       try {
         const system = buildDirectorSystem(ev, {
           operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+          cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
         })
-        const res = await chatCompletion(cfgMain, [
+        /* 问两次再交回给操作员。只问一次的话，模型答偏一次就得他自己点「要求补发指令」——
+           而补收这条路本来就不上屏、不打扰，多问一次的代价只是一个请求，
+           换回的却是「他不必知道刚才漏过一次」。
+           第二次不是把同一句话再念一遍：把**它自己上一回写的**接在对话里，
+           再点明「那里面没有围栏」—— 照着上文纠错，比再听一遍要求管用。 */
+        const msgs: ChatTurn[] = [
           { role: 'system', content: system },
           ...prior,
           ...(shownText ? [{ role: 'assistant' as const, content: shownText }] : []),
-          { role: 'user', content: DIRECTIVE_REASK },
-        ], { maxTokens: 2048 })
-        const again = parseDirectorReply(res)
-        if (again.found) {
-          needDir.current = false
-          applyReply(again, ev.id)
-          push('success', '已自动补收事件指令', '本回合的变量、羁绊与收束已按补发的指令落地。', false)
-          return true
+        ]
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          msgs.push({
+            role: 'user',
+            content: attempt === 1
+              ? DIRECTIVE_REASK
+              : `${DIRECTIVE_REASK}\n（仍然没有收到。你上一条回复里既没有 \`\`\`json 围栏，也没有 <vars> 标签。这一次请只输出指令块本身，不要写任何叙述。）`,
+          })
+          const res = await chatCompletion(cfgMain, msgs, { maxTokens: 2048 })
+          const again = parseDirectorReply(res)
+          if (again.found) {
+            needDir.current = false
+            applyReply(again, ev.id)
+            push('success', '已自动补收事件指令', '本回合的变量、羁绊与收束已按补发的指令落地。', false)
+            return true
+          }
+          traceDirectiveMiss(res, `${where} · 补收${attempt > 1 ? '（第 2 次）' : ''}`)
+          // 把这一回的失败原样接上，下一轮它读到的是自己刚写的东西
+          msgs.push({ role: 'assistant', content: res })
         }
-        traceDirectiveMiss(res, `${where} · 补收`)
         push('warn', '补收仍未拿到事件指令', '可点「要求补发指令」再试，或继续发消息推进。', false)
         return false
       } catch {
@@ -570,6 +595,8 @@ export function Plot() {
         presetPre: preset.pre || undefined,
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
+        /* 本段登记了 CG 位才注入【场景 CG】一节（清单含每张的一行说明，导演照它点名） */
+        cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
         operatorAction: myTurn || undefined,
         /* 空输入的那一趟：提示词末尾换成「他没有指示」，别让模型停下来等他 */
         idle: opts?.idle === true,
@@ -738,7 +765,10 @@ export function Plot() {
     const ctrl = new AbortController()
     draftAbortRef.current = ctrl
     try {
-      const system = buildDirectorSystem(ev, { operatorName, bondNow, epDone, flags: world.flags, needDirective: false })
+      const system = buildDirectorSystem(ev, {
+        operatorName, bondNow, epDone, flags: world.flags, needDirective: false,
+        cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
+      })
       const messages: ChatTurn[] = [
         { role: 'system', content: system },
         ...toTurns(logs[ev.id]),
@@ -888,6 +918,7 @@ export function Plot() {
     const ev = focusEv
     const system = buildDirectorSystem(ev, {
       operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+      cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
       // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
       operatorAction: lastActOf(logs[ev.id]) || undefined,
     })

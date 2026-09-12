@@ -16,7 +16,7 @@ import { REGIONS } from '../data/regions'
 import { TIMELINE } from '../data/timeline'
 import { clamp, rSeverity } from '../lib/format'
 import { opSituation, furthestDone } from '../lib/operator'
-import { manifestOf, rBadgeOf, rFactor, regionOfPlace } from '../lib/battle/rvalue'
+import { manifestOf, mapRegionOf, rBadgeOf, rFactor } from '../lib/battle/rvalue'
 import { GEAR_OF, ITEM_OF } from '../lib/battle/gear'
 import {
   listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth, readStamina,
@@ -48,22 +48,9 @@ const shortPlace = (name: string) => name.split('·').pop()?.trim() ?? name
 
 /**
  * 地点名 → 图上那一格（没有落点的返回 null，宁可不标也不指错地方）。
- * 先用标定表那把严格尺子（regionOfPlace：区号与地名两段都得对上，
- * 「苍之学园 · 异端审问室」不许顶用本校舍的读数）；
- * 剧情地点比标定表细得多，对不上就退一步按地名前半截认（「苍之学园 · 学生会室」→ 苍之学园那一区），
- * 多个候选取前半截最长的那个 —— 短的（「第12区」）容易把整片都吞掉。
+ * 尺子本身搬去了 lib/battle/rvalue.ts（mapRegionOf）：那里与 regionOfPlace 同一处、
+ * 同一把 squash —— 两处若各写一份，迟早对同一串「第 6 区」给出两个答案。
  */
-function mapRegionOf(place: string): string | null {
-  if (!place) return null
-  const strict = regionOfPlace(place)
-  if (strict?.xy) return strict.id
-  const seg = place.split('·')[0]?.trim() ?? ''
-  if (!seg) return null
-  const stems = REGIONS.filter((g) => g.xy).map((g) => ({ id: g.id, s: g.name.split('·')[0]?.trim() ?? '' }))
-  const exact = stems.find((x) => x.s && x.s === seg)
-  if (exact) return exact.id
-  return stems.filter((x) => x.s && seg.includes(x.s)).sort((a, b) => b.s.length - a.s.length)[0]?.id ?? null
-}
 
 /** epoch ms → 「08-14 21:07」；0（legacy 旧档回填）显示 — */
 function stamp(ts: number): string {
