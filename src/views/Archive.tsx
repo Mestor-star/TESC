@@ -30,7 +30,6 @@ import {
 import { ACT_KINDS, ACT_META, actOf, actTotal } from '../data/acts'
 import { relTier as relTierOf } from '../data/rel'
 import { Portrait, useCharImg } from '../components/Portrait'
-import { CgSlot } from '../components/CgSlot'
 
 import css from './Archive.module.css'
 
@@ -366,9 +365,6 @@ function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }
  * 这五根说的是这一件事。另有三节不是读数：最近的性行为、对性行为的看法、破处 ——
  * 它们各是一句话（破处是一个事实），照实写出来即可。
  *
- * 立绘位走 CgSlot：素材丢 `public/cg/cg-intim-<角色id>.webp|png|jpg` 即点亮，
- * 缺图时摆「待补」虚线框 —— 版位先占住，补图之后版面不跳。
- *
  * 底档在 `data/intimate.ts`（游戏内拟制，非原文考据），推进在 `world.intim`
  * （约会与私密往来落下）—— 这一页只把两者合成之后照搬上屏，自己不算任何数；
  * 栏位上也不写「这一栏是怎么来的」那种说明 —— 读的人要看的是她，不是这份档案的规则。
@@ -422,15 +418,6 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
 
   return (
     <div className={css.intimBack} data-intimate-back>
-      {/* 左栏：私密档案的立绘位。图待补 —— 丢一张同名图进 public/cg/ 即点亮 */}
-      <div className={css.intimBackArt}>
-        <CgSlot
-          cgId={`cg-intim-${charId}`}
-          caption={`${name} · 私密档案立绘（图待补）`}
-          ratio="3 / 4"
-        />
-      </div>
-
       <div className={css.intimBackText}>
         <div className={css.dialogHead}>
           <Portrait avatarId={charId} name={name} hue={hue} sigil="密" size={54} round />

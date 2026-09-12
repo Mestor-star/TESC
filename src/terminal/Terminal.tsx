@@ -147,9 +147,6 @@ export interface TerminalState {
   /** 变量面板开关（NavRail 底部「变量」按钮；Plot 等亦可经 ctx 打开） */
   varsOpen: boolean
   setVarsOpen: (open: boolean) => void
-  /** 该段此刻挂着的场景 CG id（导演未点名 → null） */
-  cgOf: (id: string) => string | null
-  setCg: (id: string, cgId: string) => void
   /**
    * 该段**此刻**在场上的人：导演实时改过就用改过的（`world.cast`），
    * 没改过照事件静态名册（`castOf`）。右栏与提示词都取这一个入口。
@@ -188,7 +185,7 @@ export interface TerminalState {
    * **自由活动**开关（`WorldState.free`）—— 主线走到一半想脱纲一会儿时按下去。
    *
    * 它动的只有一条规矩：**这期间羁绊一律不动**（拦在落地那一层，见 lib/plot.ts 的
-   * `applyDirective` 第三个参数）。开发度 / 次数账 / 关系档位 / CG 照常各记各的。
+   * `applyDirective` 第三个参数）。开发度 / 次数账 / 关系档位照常各记各的。
    * 卷与卷之间那一格（`EPISODES` 里的 `free:<卷>` 段）走的是同一个状态 ——
    * 到了那一格它自己就是开着的，不必操作员再按一次。
    */
@@ -268,7 +265,7 @@ function takePendingView(): ViewId | null {
 
 function emptyWorld(): WorldState {
   return {
-    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cast: {},
+    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cast: {},
     intim: {}, acts: {}, rel: {}, records: [],
   }
 }
@@ -322,8 +319,6 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     met: raw?.met ?? {},
     ends: raw?.ends ?? {},
     own: raw?.own ?? [],
-    // 旧档没有这一栏（场景 CG 点名是后加的）→ 空表；那些段退回 when 兜底，不影响别的
-    cg: raw?.cg ?? {},
     // 旧档没有这一栏（实时在场名册是后加的）→ 空表；那些段照静态名册摆，行为不变
     cast: raw?.cast ?? {},
     // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
@@ -819,16 +814,6 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [world.flags],
   )
 
-  /** 某段此刻挂着的场景 CG（导演还没点名 → null，由显示端退回 when 兜底） */
-  const cgOf = useCallback((id: string) => world.cg?.[id] ?? null, [world.cg])
-  /**
-   * 导演点名某段该摆哪张 CG。同一段可以被反复改写 —— 剧情往下走一幕就是换一张，
-   * 后一次覆盖前一次（要看的是「此刻挂着哪张」，不是「换过哪些张」）。
-   */
-  const setCg = useCallback((id: string, cgId: string) => {
-    setWorld((prev) => ({ ...prev, cg: { ...prev.cg, [id]: cgId } }))
-  }, [])
-
   /**
    * 某段此刻真的在场上的人（导演还没改过名册 → undefined，由显示端照静态名册摆）
    */
@@ -1227,8 +1212,6 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     addVar,
     unsetVar,
     renameVar,
-    cgOf,
-    setCg,
     castOfEvent,
     setCast,
     intimOf,

@@ -22,7 +22,6 @@
    提示词那边多挂一份 HAREM_RULE，指令那边也放开这几位各自的账。
    ============================================================ */
 
-import type { CgRef } from '../data/types'
 import { charOf, profileLinesOf } from '../data/personas'
 import { INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
@@ -209,39 +208,6 @@ export function openDateOf(charId: string): Rendezvous | undefined {
 }
 
 /* ============================================================
-   场景 CG
-   ------------------------------------------------------------
-   约会那一档也走 CG 位那一套（见 lib/cg.ts）：id 登记在这里，
-   导演从清单里点名，图照旧丢 public/cg/<id>.webp|png|jpg。
-   缺图时 CgSlot 摆「待补」占位框 —— 先把版位占住。
-   通用到不挑人的几张（街道 / 店里 / 夜景 / 门口）不带 cast；
-   越私密的那几张只有到那一步才进候选。
-   ============================================================ */
-export const DATE_CG: CgRef[] = [
-  { id: 'cg-date-street', note: '并肩走着的两人 · 黄昏的学园街' },
-  { id: 'cg-date-night', note: '夜里的高处 · 脚下的城市灯海' },
-  { id: 'cg-date-room', note: '房间门口 · 只开着一盏灯' },
-]
-
-/** 已到私密那一档才进候选的那几张（挪进清单里，导演才点得到。图待补） */
-export const DATE_CG_INTIMATE: CgRef[] = [
-  { id: 'cg-date-intim-1', note: '私密的场面 · 第一张（到这一步才进候选）' },
-  { id: 'cg-date-intim-2', note: '私密的场面 · 第二张' },
-]
-
-/** 这一场此刻能点的 CG 清单（私密档位多两张；都由调用方喂给 cgPalette） */
-export function dateCgPalette(rv: Rendezvous): CgRef[] {
-  return rv.kind === 'intimate' ? [...DATE_CG, ...DATE_CG_INTIMATE] : DATE_CG
-}
-
-/** 把一张表的位渲染成 `- id —— 说明`（与 lib/cg.ts 的 cgPaletteBlock 同格式） */
-export function cgListText(refs: CgRef[]): string {
-  return refs
-    .map((r) => (typeof r === 'string' ? `- ${r} —— （无说明）` : `- ${r.id} —— ${r.note ?? '（无说明）'}`))
-    .join('\n')
-}
-
-/* ============================================================
    提示词
    ============================================================ */
 
@@ -258,7 +224,6 @@ export function rendezvousPrompt(
   opName: string,
   bond: number,
   rv: Rendezvous,
-  cgPalette: string,
   /** 正文里与她有关的那一截（lib/crosslink.ts 的 plotContextFor；她不在场的一句不给）。
       见面不是凭空来的：她答应这一场，多半是正文里刚走过的那一段在起作用。 */
   plotContext?: string,
@@ -304,15 +269,12 @@ ${BOTTOM_RULES}${others ? `\n${HAREM_RULE}` : ''}${intimate ? `
 6. **这一场已经走到私密那一档**：两个人是独处的，距离、称呼、触碰都可以比平时更近。
    写就写足 —— 这一档不必回避任何词：身体的反应、说过的话、到了哪一步，都照实写出来，
    不要用省略号跳过。但推进要跟着对方走 —— 他给了那层意思就自然接住，
-   他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}
-
-【这一场的场景 CG（换画面时才点名）】
-${cgPalette || '（本场暂无登记的图位）'}`
+   他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}`
 }
 
 /**
  * 约会线程的收尾指令说明。
- * 与短信那条（smsBondRule）的分工：这一条宽得多 —— 一次 ±5、可点名 CG、
+ * 与短信那条（smsBondRule）的分工：这一条宽得多 —— 一次 ±5、
  * 可推进私密档案与次数账、可给关系档位。
  *
  * `charId` = 这一场的主位（会话名义上的那一位）。同场还带着人时把他们的 id 一并传进来
@@ -331,7 +293,7 @@ export function dateBondRule(charId: string, party: string[] = []): string {
     .join(',\n')
   const actLines = ids.map((id) => `    "${id}": { "kiss": 1 }`).join(',\n')
   return `\n（可选 · 本回合的推进：若这一场让这段关系或气氛有明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "cg": "上面清单里的一个 id",
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 },
   "rel": { "${charId}": "${REL_IDS.join('|')}" },
   "intim": [
 ${intimLines}
@@ -341,7 +303,6 @@ ${actLines}
   } }
 说明：
 · bond.delta 只针对该角色取 ±1~5（正=更亲近）；flag 为可选的分支标记；
-· cg 只从上面那份【场景 CG】清单里挑，且**画面真的换了**才给，一直同画面就别重复给；
 · intim 只在**这一回合确实往前走了、且她确实接受了**时才给，几路各记各的：
     · slot 取 ${slots} 之一（哪一处被开发了），dev 为这一次的增量（1~3，一回合一小步），
       state 可选（覆盖该处原有的状态句；**写详细** —— 那一处此刻是什么样、被碰到会怎样，

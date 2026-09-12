@@ -48,12 +48,6 @@ export interface PlotDirective {
   /** 分支标记（布尔 / 有限数值 / 字符串） */
   flag?: Record<string, FlagValue>
   /**
-   * 本回合该摆哪张场景 CG —— 从当前事件 `SagaScene.cg` 登记的那份清单里挑一个 id
-   * （清单连同每张的一行说明写在系统提示的【场景 CG】一节里）。
-   * 只在「这一幕该换图了」时给；局势没变就省略，别每回合都给。
-   */
-  cg?: string
-  /**
    * **此刻真的在场上的人**（角色 id）：剧情右栏那份在场名册的实时修正。
    * 事件静态名册（`ev.cast`）说的是「这一段大体上有谁」，可这一段里人会走会来 ——
    * 走了的不该继续挂在右栏，中途进场的也不该等到下一段才出现。
@@ -149,7 +143,7 @@ export interface PlotBattle {
 const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
-  'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
+  'met', 'bond', 'ends', 'flag', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
   // 短信/群聊的「托付」用这一条。漏在名单外的话，sanitizeDirective 末尾那道
   // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
   // 任务却永远落不了地，而且一声不吭。
@@ -170,9 +164,6 @@ const ACT_KINDS_MAX = 8
 const ACT_TIMES_MAX = 9
 /** 一回合最多落下几条私密推进（多女同场时逐人分条，所以比从前宽） */
 const INTIM_ITEMS_MAX = 8
-
-/** 事件指令里 cg id 的长度上限（够长到写得下 `v1-2-refuse`，短到拦得住整段串词） */
-const CG_ID_MAX = 64
 
 /** 把「图鉴 id 或原文实体标注」归一化为图鉴条目 id；无法识别返回 null */
 export function resolveEndKey(key: string): string | null {
@@ -385,14 +376,6 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       .map((x) => x.trim())
       .filter((x) => CHAR_IDS.has(x))
     if (cast.length) out.cast = [...new Set(cast)].slice(0, 12)
-  }
-
-  /* 场景 CG 点名。这里**只做形状校验**（非空字符串、长度封顶），不做清单校验 ——
-     净化阶段手里没有「当前事件」这个上下文。是不是本段登记过的 id，留到 selectCg
-     落地那一刻判（认不出来就退回兜底）。两处分工：这儿拦垃圾，那儿拦幻觉。 */
-  if (typeof src.cg === 'string') {
-    const id = src.cg.trim().slice(0, CG_ID_MAX)
-    if (id) out.cg = id
   }
 
   if (src.flag && typeof src.flag === 'object' && !Array.isArray(src.flag)) {
@@ -859,8 +842,6 @@ export interface DirectiveEffects {
   bonds: { char: string; delta: number }[]
   ends: { key: string; id: string }[]
   flags: [string, FlagValue][]
-  /** 导演点名的场景 CG id（调用方按**当前事件**落到 world.cg[evId]） */
-  cg?: string
   /** 导演修正的在场名册（调用方按**当前事件**落到 world.cast[evId]，全量覆盖） */
   cast?: string[]
   diverged: boolean
@@ -919,10 +900,8 @@ export function applyDirective(
     api.setFlag(k, v)
     fx.flags.push([k, v])
   }
-  // CG 点名不在这儿落盘：applyDirective 手里没有「当前事件 id」，
-  // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的事件 id 写。
-  if (d.cg) fx.cg = d.cg
-  // 在场的实时名册同理：手里没有「当前事件 id」，由调用方读 fx.cast 自己写
+  // 在场的实时名册不在这儿落盘：applyDirective 手里没有「当前事件 id」，
+  // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cast，配着自己知道的事件 id 写
   if (d.cast?.length) fx.cast = d.cast
   /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
      破处对象由这一层定 —— `first` 置位即记为「言万心叶」（'you'），
@@ -979,7 +958,6 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       (d.bond && d.bond.length) ||
       (d.ends && d.ends.length) ||
       (d.flag && Object.keys(d.flag).length) ||
-      Boolean(d.cg) ||
       (d.cast && d.cast.length) ||
       d.diverged === true ||
       d.eventDone === true ||
@@ -1022,7 +1000,6 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
  * 放行的比短信宽 ——
  *   · bond：只认**对方**，一次 ±5（一场约会里的分量比一条短信重）；
  *   · met / ends / flag / task：照放（约会也能遇见人、撞见图鉴实体、被托付事）；
- *   · cg：照放（这一场该摆哪张画，由 lib/rendezvous.ts 落地）；
  *   · intim / acts：**只有这一路放行**（私密档案与次数账都只发生在见面的时候），
  *     intim 的开发度增量再收一道到 ±3 一回合（sanitize 那道 8 是单项上限）。
  *   · rel：照放（关系档位由剧情给 —— 见面正是一段关系往前走的地方）。
@@ -1048,7 +1025,6 @@ export function dateDirective(d: PlotDirective | null, charId: string, party: st
   if (d.ends && d.ends.length) out.ends = d.ends
   if (d.flag && Object.keys(d.flag).length) out.flag = d.flag
   if (d.task && d.task.length) out.task = d.task
-  if (d.cg) out.cg = d.cg
   if (d.intim && d.intim.length) {
     const intim = d.intim
       .filter((it) => allowed.has(it.char))
@@ -1135,15 +1111,6 @@ export interface DirectorCtx {
    * 短信说的是「两个人之间说定了什么」（约好的见面就在这一格里）。
    */
   smsLog?: string
-  /**
-   * 本事件登记的场景 CG 候选清单，已渲染成 `- id —— 说明` 的文本
-   * （由 lib/cg.ts 的 `cgPaletteBlock` 生成）。
-   *
-   * 给了才注入【场景 CG】一节 —— 那一节同时交代 `cg` 字段怎么用。
-   * 清单由调用方传进来，是因为本模块**不碰 SCENES**：它只做拼装，
-   * 不该把某一段的场景数据背在身上（canon 约束见文件头）。
-   */
-  cgPalette?: string
   /**
    * 本回合操作员在操作栏里写下的原话（言万心叶的行动）。
    *
@@ -1432,7 +1399,7 @@ function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
   /* 自由活动：卷间那一格（`free:` 段）或操作员自己按下的开关，两者走同一条规矩。
      它换掉的只有两处 —— 大纲那一节、以及羁绊那一条指令；其余（在场名册 / 私密 /
-     关系档位 / CG / 用户变量）照旧，自由时间里那些事一样发生。 */
+     关系档位 / 用户变量）照旧，自由时间里那些事一样发生。 */
   const free = ctx.freeMode === true || isFreeId(ev.id)
   const present = presentOf(ev, ctx)
   const roster = present
@@ -1486,21 +1453,6 @@ ${varList}
 
   const loreSection = ctx.loreContext
     ? `\n\n${ctx.loreContext}`
-    : ''
-
-  /* 场景 CG 点名的规矩 —— 清单由调用方给（本模块不碰 SCENES）。
-     重点在两处：只能从清单里挑（防编 id）、以及「这条是换图不是报幕」（防每回合重复给）。 */
-  const cgSection = ctx.cgPalette
-    ? `
-
-【场景 CG · 本事件登记的图位】
-这一幕该配哪张图，由你按**当前叙述**点名 —— 在下面事件指令里给 "cg": "id"。
-清单（只能从这里面挑；清单外的一律不认）：
-${ctx.cgPalette}
-什么时候给：**画面真的换了**才给 —— 转场、心境翻转、关键的一击落下、话说到那一步。
-什么时候不给：连续几回合都在同一个画面里，就**不要**重复给。那条指令的意思是「换成这张」，
-不是「此刻是这张」；一直重复给，读数上是每回合都在换图，反而看不出哪里是真的转折。
-拿不准、或清单里没有贴得上此刻那一幕的，就整条省略 —— 省略即沿用它此刻挂着的图。`
     : ''
 
   /* 私密往来 —— 只在「本人就在场、且关系已经走到那一步」时开这一节。
@@ -1605,7 +1557,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${smsSection}${varBlock}${cgSection}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
+${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${smsSection}${varBlock}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 
@@ -1621,7 +1573,6 @@ ${free ? '' : `  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊
 `}
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
   "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
-  "cg":     "本段 CG 清单里的一个 id",         // 这一幕该配哪张图 —— 只从【场景 CG】那份清单里挑；没换图就整条省略
   "cast":   ["此刻真在场上的人id"],            // **只在在场的人变了的时候给**（谁先离席、谁刚赶到、换了个房间）：给的是此刻这一场的**全量**名单，不是增减
                                                // 名单照本节【在场角色】那一份的 id 写；人都还在原处就整条省略，别每回合都给
   "diverged": true,                           // 已与原著相异（否则省略）

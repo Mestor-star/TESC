@@ -5,14 +5,12 @@ import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicW
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
 import { OPERATOR_ID, PERSON_IDS, personOf, speakerOf } from '../data/castmeta'
-import { castOf, rosterRowsFor } from '../lib/cast'
+import { rosterRowsFor } from '../lib/cast'
 import { SCENES } from '../data/scenes'
-import { CG_POOL } from '../data/cgs'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { cgPaletteText, cgPoolFor } from '../lib/cg'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
@@ -274,7 +272,7 @@ export function Plot() {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
-    records, requestProfile, setCg, bumpIntim, castOfEvent, setCast,
+    records, requestProfile, bumpIntim, castOfEvent, setCast,
     bumpActs, setRel, relOf,
     freeMode, setFreeMode, closeFreeSlot,
   } = useTerminal()
@@ -529,15 +527,8 @@ export function Plot() {
       if (fx.ends.length) {
         push('info', '图鉴登记', `${fx.ends.length} 条实体已登记进终末图鉴。`, false)
       }
-      /* 场景 CG 点名：导演读着这一回合的叙述，从本段登记的清单里挑了一张。
-         同一段可被反复改写（往下走一幕就是换一张），直接覆盖。
-         认不认这个 id 由显示端（lib/cg.ts 的 selectCg）判 —— 这里只落盘。 */
-      if (fx.cg) {
-        setCg(evId, fx.cg)
-        push('info', '场景 CG', '这一幕换了一张 —— 低语者日志的「当前事件」卡上可见。', false)
-      }
       /* 在场的实时名册：导演只在人真的换了的时候给（谁先离席、谁刚赶到）。
-         与 cg 一样，落盘要配着事件 id —— 右栏与提示词都读 world.cast 那一层。 */
+         落盘要配着事件 id —— 右栏与提示词都读 world.cast 那一层。 */
       if (fx.cast?.length) {
         setCast(evId, fx.cast)
         const names = fx.cast.map((id) => personOf(id)?.name ?? id).join(' · ')
@@ -608,7 +599,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCg, setCast, bumpIntim, bumpActs, setRel, push, freeOf],
+    [meetChar, bumpBond, registerEnd, setFlag, setCast, bumpIntim, bumpActs, setRel, push, freeOf],
   )
 
   /**
@@ -630,7 +621,6 @@ export function Plot() {
         const system = buildDirectorSystem(ev, {
           operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
           freeMode: freeOf(ev.id),
-          cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
         })
         /* 问两次再交回给操作员。只问一次的话，模型答偏一次就得他自己点「要求补发指令」——
            而补收这条路本来就不上屏、不打扰，多问一次的代价只是一个请求，
@@ -682,7 +672,7 @@ export function Plot() {
    *
    * 为什么非要共用：交战的成文回填的是**推演正文**（用户口径：就是一整段正文，
    * 跟在线推演写出来的一样），那它就得带上同一套东西 —— 台词行格式、在场角色、
-   * 此刻的羁绊、场景 CG 位、近期短信、世界书与预设，以及最要紧的底层规矩
+   * 此刻的羁绊、近期短信、世界书与预设，以及最要紧的底层规矩
    * （独占 / 白虎，见 lib/worldrules）。各写一份必然走样，而先走样的恰恰是
    * 写入文本的那几条规矩 —— 所以两处只留这一个入口。
    *
@@ -735,7 +725,7 @@ export function Plot() {
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
         /* 在场名册取**此刻**的那一份（导演实时改过就用改过的）：提示词里的
-           【在场角色 · 性情锚】与关系读数、短信摘录、CG 候选都用同一个名单。 */
+           【在场角色 · 性情锚】与关系读数、短信摘录都用同一个名单。 */
         castNow: castIds,
         /* 各人此刻的关系档位（由剧情给过的那一档）——与羁绊读数并列摆进关系那一行 */
         relOf,
@@ -743,8 +733,6 @@ export function Plot() {
            且在这一趟当场读 —— 短信随时可能在他翻着正文时落进来（主动来信），
            挂成 state 会读到上一轮的那一份。读不动（隐私模式）就整节不出现。 */
         smsLog: smsContextFor(castIds, { rendezvous: true }) || undefined,
-        /* 本段登记了 CG 位才注入【场景 CG】一节（清单含每张的一行说明，导演照它点名） */
-        cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castIds)) || undefined,
         operatorAction: extra.operatorAction || undefined,
         /* 空输入的那一趟：提示词末尾换成「他没有指示」，别让模型停下来等他 */
         idle: extra.idle === true,
@@ -953,7 +941,6 @@ export function Plot() {
     try {
       const system = buildDirectorSystem(ev, {
         operatorName, bondNow, epDone, flags: world.flags, needDirective: false,
-        cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
       })
       const messages: ChatTurn[] = [
         { role: 'system', content: system },
@@ -1100,7 +1087,6 @@ export function Plot() {
     const system = buildDirectorSystem(ev, {
       operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
       freeMode: freeOf(ev.id),
-      cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
       // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
       operatorAction: lastActOf(logs[ev.id]) || undefined,
     })
@@ -1330,7 +1316,7 @@ export function Plot() {
           <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.85, margin: 0, color: 'var(--ink-mute)' }}>
             两卷之间的空档。这一段<b>不按大纲走</b> —— 闲逛、找人说话、接件要办的事、赴一场约、
             两个人的私密往来都行。只有一条：<b>这期间羁绊一律不动</b>（开发度、次数账、关系档位、
-            CG 照常各记各的）。什么时候收，由你说了算 —— 按「进入下一卷」接回主线。
+            照常各记各的）。什么时候收，由你说了算 —— 按「进入下一卷」接回主线。
           </p>
         ) : null}
         {/* 大纲默认不显示（尚未发生的收束摆在侧栏＝剧透），但代码留着：
@@ -1608,7 +1594,7 @@ export function Plot() {
               setFreeMode(on)
               push('info', on ? '自由活动 · 开' : '自由活动 · 关',
                 on
-                  ? '从此刻起不走大纲：想做什么都行。这期间羁绊不动，开发度 / 次数账 / 关系档位 / CG 照常记。'
+                  ? '从此刻起不走大纲：想做什么都行。这期间羁绊不动，开发度 / 次数账 / 关系档位照常记。'
                   : '接回主线 —— 推演重回大纲。',
                 false)
             }}

@@ -23,14 +23,6 @@
   color: var(--ink-faint); font-size: 12.5px; line-height: 1.9;
 }
 
-/* 见面场景里那张图：贴在会话流头部，居中，别撑满整屏高 */
-.threadCg {
-  align-self: center;
-  width: 100%;
-  max-width: 520px;
-  padding: 10px 12px 2px;
-}
-
 /* 情境行上的小标签 */
 .scenarioTag { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-faint); }
 

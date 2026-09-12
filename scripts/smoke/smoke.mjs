@@ -2602,7 +2602,7 @@ try {
         locked:!!d.querySelector('[data-intimate="locked"]'),toggle:!!t,back:!!d.querySelector('[data-intimate-back]'),
         label:t?t.innerText.replace(/\\s+/g,' ').trim():''}})()`)
   }
-  /* 翻到背面之后的量尺：五根条 / 每根读数 / 两句话（最近一回 · 看法）/ 立绘位 / 破处。
+  /* 翻到背面之后的量尺：五根条 / 每根读数 / 两句话（最近一回 · 看法）/ 破处。
      两节各装着什么按**抬头认节**（不靠会哈希的类名）。 */
   const backOf = async () => {
     // 翻面是两拍共 240ms —— 等它走完再量，否则量到的是转到一半的那一帧
@@ -2611,7 +2611,6 @@ try {
       if(!b)return null;
       const slots=[...b.querySelectorAll('[data-intimate-slot]')].map(x=>x.getAttribute('data-intimate-slot'));
       const lewd=b.querySelector('[data-intimate-lewd]');
-      const ph=b.querySelector('figure code');
       const bars=[...b.querySelectorAll('.meter__fill')].length;
       const sectOf=(t)=>{const h=[...b.querySelectorAll('h4')].find(x=>x.innerText.trim()===t);
         return h&&h.parentElement?h.parentElement:null};
@@ -2634,8 +2633,6 @@ try {
         lewdSectThick:lewdSect?!!lewdSect.querySelector('.meter--thick'):false,
         barsSectSlots:barsSect?barsSect.querySelectorAll('[data-intimate-slot]').length:-1,
         states:b.querySelectorAll('[data-intimate-slot] p').length,
-        placeholder:ph?ph.innerText.trim():null,
-        placeholderFig:!!b.querySelector('figure'),
         phys:(x=>x?x.getAttribute('data-intimate-physique'):null)(b.querySelector('[data-intimate-physique]')),
         lastAct:(b.querySelector('[data-intimate-lastact]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
         view:(b.querySelector('[data-intimate-view]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
@@ -2732,10 +2729,9 @@ try {
     !!stLow && !!stMid && !!stHigh && new Set([stLow, stMid, stHigh]).size === 3
     && stLow.length > 10 && stMid.length > 10 && stHigh.length > 10,
     JSON.stringify({ low: stLow && stLow.slice(0, 16), mid: stMid && stMid.slice(0, 16), high: stHigh && stHigh.slice(0, 16) }))
-  ok('R6 立绘位先占住（图待补，写明该补到哪个文件名）· 破处那一栏在',
-    !!pBack && pBack.placeholderFig === true && pBack.placeholder === 'public/cg/cg-intim-luna.webp'
-    && pBack.hasFoot === true && /是/.test(pBack.virgin),
-    JSON.stringify(pBack && { ph: pBack.placeholder, virgin: pBack.virgin }))
+  ok('R6 破处那一栏在（写明是 / 不是，不是空白）',
+    !!pBack && pBack.hasFoot === true && /是/.test(pBack.virgin),
+    JSON.stringify(pBack && { virgin: pBack.virgin }))
   /* 身量：六栏里唯一有实据的一栏 —— 有数据的才摆，摆出来的就是那几个数。 */
   ok('R6c 身量那一栏照实据摆（露娜 166 · 83 / 54 / 84）',
     !!pBack && pBack.phys === '166/83/54/84'
@@ -2875,7 +2871,7 @@ try {
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true, epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true}, cur:'v1-4',
       operatorName:'回退观察员', focusId:'gcn',
-      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],cg:{},
+      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],
         cast:{'v1-5':['luna']},
         records:[{eventId:'v1-3',mode:'online',digest:'第三段收束',ts:1},
                  {eventId:'v1-4',mode:'online',digest:'第四段收束',ts:2}]}}));
@@ -2932,7 +2928,7 @@ try {
       unlocked:true,
       epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true,'v1-5':true,'v1-6':true,'v1-7':true,'v1-8':true,'v1-9':true},
       cur:'v1-9', operatorName:'空档观察员', focusId:'gcn',
-      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],cg:{},cast:{},
+      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],cast:{},
         records:[{eventId:'v1-9',mode:'offline',digest:'第九段收束',ts:9}]}}));
     return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true })

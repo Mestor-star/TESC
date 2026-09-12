@@ -10,14 +10,12 @@ import { plotContextFor } from '../lib/crosslink'
 import { INTIMATE_BOND, intimAdvanceLabel } from '../data/intimate'
 import { PARTY_MAX } from '../lib/rendezvous'
 import { relName } from '../data/rel'
-import { CgSlot } from '../components/CgSlot'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { cgIdOf, cgNoteOf } from '../lib/cg'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import {
@@ -26,7 +24,7 @@ import {
 } from '../lib/plot'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
-  cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous, isDateThread,
+  dateBondRule, dateOpeningPrompt, dropRendezvous, isDateThread,
   listRendezvous, openDateOf, openRendezvous, patchRendezvous, rendezvousPrompt,
   rendezvousVersion, subscribeRendezvous,
 } from '../lib/rendezvous'
@@ -62,7 +60,7 @@ function bondNote(delta: number): string {
 export function Tavern() {
   const {
     operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
-    smsRequest, clearSmsRequest, cgOf, setCg, bumpIntim, meetChar, registerEnd,
+    smsRequest, clearSmsRequest, bumpIntim, meetChar, registerEnd,
     bumpActs, setRel,
   } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
@@ -195,14 +193,6 @@ export function Tavern() {
     ? TAVERN_PERSONAS.find((p) => p.charId === (activeRv ? activeRv.charId : activeId))
     : undefined
   const activeLog = activeId ? logs[activeId] ?? [] : []
-  /** 见面场景此刻摆的那张图：导演点名记在 world.cg[d:uuid] 下（见 fireDate）。
-      没点名就不摆 —— 一进来就顶一张图，把开场那两句挤到屏幕外，不划算。 */
-  const activeCg = activeRv ? cgOf(activeRv.id) : null
-  const activeCgNote = useMemo(() => {
-    if (!activeRv || !activeCg) return undefined
-    const hit = dateCgPalette(activeRv).find((r) => cgIdOf(r) === activeCg)
-    return hit ? cgNoteOf(hit) : undefined
-  }, [activeRv, activeCg])
   /** 群里某条发言的作者名（单聊直接取角色名） */
   const whoOf = useCallback(
     (m: ChatMsg): string => m.meta?.who ?? activeChar?.name ?? '群聊',
@@ -602,7 +592,6 @@ ${preset.post}` : '')
    *
    * 与短信那条的分工：人已经**在眼前**了，所以放得开 ——
    *   · 羁绊一次 ±5（一条短信只有 ±3）；
-   *   · 可点名场景 CG（换画面时点一张，记在这一场名下）；
    *   · **只有这一路能推进私密档案**（intim）—— 身体上的事发生在见面时，不在打字里。
    * 反过来也收着：**不动主线** —— 不判 eventDone、不写记录、不推卷次（见 dateDirective）。
    */
@@ -658,7 +647,7 @@ ${preset.post}` : '')
          刚走过的那一段在起作用。与单聊那条一样当場读 —— 见面可能在她翻着别的模块时开。 */
       const plotCtx = plotContextFor(charId, { records: world.records, epDone })
       const system =
-        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)), plotCtx || undefined, party)
+        rendezvousPrompt(charId, operatorName, bond, rv, plotCtx || undefined, party)
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
@@ -707,8 +696,6 @@ ${preset.post}` : '')
         const fx = applyDirective(dateDirective(parsed.directive, charId, rv.party ?? []), {
           meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpActs, setRel,
         })
-        // 换画面：点名的 CG 记在**这一场**名下（world.cg[d:uuid]），与主线那本账各存各的
-        if (fx.cg) setCg(rv.id, fx.cg)
         // 这一场自己认领名目与地点：模型给出了更好的就地改写（第一次推进私密时顺带抬档位）
         const patch: Parameters<typeof patchRendezvous>[1] = {}
         if (fx.date?.title?.trim()) patch.title = fx.date.title.trim()
@@ -723,7 +710,7 @@ ${preset.post}` : '')
         for (const t of newTasks) addTask(t.title, { detail: t.detail, ...(isCharId(charId) ? { from: charId } : {}) })
         const hasFx = fx.bonds.length > 0 || fx.flags.length > 0 || fx.met.length > 0
           || fx.ends.length > 0 || fx.intim.length > 0 || fx.acts.length > 0 || fx.rel.length > 0
-          || Boolean(fx.cg) || newTasks.length > 0
+          || newTasks.length > 0
         /* 私密档案 / 次数账 / 关系档位：三本账都在档案页那一栏，所以合成一句报出去
            （逐条列回数太吵，回数与八栏读数在档案背面看得见）。 */
         if (fx.intim.length || fx.acts.length || fx.rel.length) {
@@ -759,7 +746,6 @@ ${preset.post}` : '')
         if (fx.met.length) fxParts.push(`遇见 ${fx.met.length} 位`)
         if (fx.ends.length) fxParts.push(`图鉴 ${fx.ends.length} 条`)
         if (newTasks.length) fxParts.push(`托付 ${newTasks.length} 件`)
-        if (fx.cg) fxParts.push('换了画面')
         if (fxParts.length) push('success', '见面的推进', `${c.name} · ${fxParts.join(' · ')}`, false)
         if (fx.intim.length) {
           const parts = fx.intim.map((x) => intimAdvanceLabel(x)).join('、')
@@ -785,7 +771,7 @@ ${preset.post}` : '')
     },
     [
       settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread,
-      meetChar, registerEnd, bumpIntim, setCg, bumpActs, setRel,
+      meetChar, registerEnd, bumpIntim, bumpActs, setRel,
     ],
   )
 
@@ -1274,11 +1260,6 @@ ${preset.post}` : '')
                 <div className={comm.dayLabel}>
                   {activeRv ? `${activeRv.place} · ${activeRv.title}` : '苍之学园 · 今日 · 角色短信'}
                 </div>
-                {activeCg ? (
-                  <div className={css.threadCg}>
-                    <CgSlot cgId={activeCg} caption={activeCgNote} ratio="3 / 2" />
-                  </div>
-                ) : null}
                 {activeLog.length === 0 && !busy ? (
                   <div className={css.threadEmpty} data-sms-empty>
                     {activeRv

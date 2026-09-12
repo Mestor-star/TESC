@@ -817,21 +817,10 @@
 /* ---- 背面：与正面同构（左立绘 / 右档案），只是右边换成五根条 ---- */
 .intimBack {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 2fr;
+  grid-template-columns: 1fr;
   align-items: stretch;
   min-height: min(84vh, 760px);
 }
-.intimBackArt {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 22px 16px;
-  background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--red) 16%, transparent), transparent 72%),
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--red) 4%, transparent) 26px 52px),
-    var(--bg-2);
-}
-.intimBackArt figure { width: 100%; }
 .intimBackText { min-width: 0; }
 
 /* 一根条 = 一行读数 + 底下一行状态句。读数那行与「能力参数」共用 .stat 骨架，
@@ -898,7 +887,7 @@
 .actCell b[data-act-count='0'] { color: var(--ink-faint); }
 
 @media (max-width: 520px) {
-  .intimBack { grid-template-columns: 1fr; min-height: 0; }
+  .intimBack { min-height: 0; }
   .intimStat .stat { grid-template-columns: 40px 1fr 26px max-content; }
   .intimState { margin-left: 40px; }
   .intimFoot { grid-template-columns: 1fr; }
