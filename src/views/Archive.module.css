@@ -769,8 +769,23 @@
 .intimLock p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.85; color: var(--ink-dim); }
 
 /* 正面最末那一栏：解封之后只剩一句提示与一枚「翻到背面」 */
-.intimTease { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.intimTease .btn { cursor: pointer; margin-left: auto; }
+/* 解封之后这一节里只有一颗按钮 —— 不写抬头、也不写背面记着什么 */
+.intimEnter {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 44%, var(--line));
+  background: color-mix(in srgb, var(--red-deep) 12%, transparent);
+  color: var(--ink);
+  font-size: 12.5px; letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.intimEnter:hover {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red-deep) 24%, transparent);
+  color: var(--red);
+}
+.intimEnter svg { color: var(--red); }
 
 /* ---- 翻面：整张卡转过去。两拍，中间换内容（见 Archive.tsx 的 flipTo） ---- */
 .dialog[data-turn='out'] { animation: cardTurnOut 120ms ease-in both; }
@@ -831,6 +846,17 @@
 .intimLewd { display: grid; grid-template-columns: 1fr max-content max-content; align-items: center; gap: 10px; }
 .intimLewd .num { font-family: var(--font-mono); font-size: 15px; color: var(--red); }
 .intimLewd .meter { height: 14px; }
+
+/* 「最近的性行为」/「对这种事情的看法」：一段话，与状态句同一副骨架 ——
+   左边一条细线，正文照实写出来（这两栏是档案，不是读数，所以没有条）。 */
+.intimAct {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-dim);
+}
 
 .intimFoot { display: grid; grid-template-columns: 120px 1fr; gap: 8px; }
 .intimFootCell {

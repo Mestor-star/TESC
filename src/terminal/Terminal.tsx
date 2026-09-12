@@ -6,7 +6,7 @@ import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
-import { INTIMATE_BOND, intimateOf } from '../data/intimate'
+import { intimateOf, mergeIntim } from '../data/intimate'
 import { clamp } from '../lib/format'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
@@ -152,10 +152,11 @@ export interface TerminalState {
   /**
    * 私密档案（只对女角色生效）。`intimOf` 返回**底档 + 已落地的推进**合成之后的一页；
    * 非女角色 / 无底档 → null（档案页据此整节不摆）。
+   *
+   * 这一页**不设门槛** —— 它只住在本机、只给「你」看，随时翻得开。
+   * 羁绊过线之后变的只有一处：她对这件事的看法换一句（见 `intimateOf`）。
    */
   intimOf: (charId: string) => IntimateProfile | null
-  /** 私密档案与私密话题是否已解封（羁绊 ≥ INTIMATE_BOND） */
-  intimOpen: (charId: string) => boolean
   /** 落下一次私密推进（约会 / 私密往来）：各部位开发度增量、状态改写、破处对象 */
   bumpIntim: (charId: string, p: IntimateProgress) => void
 
@@ -760,37 +761,23 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setWorld((prev) => ({ ...prev, cg: { ...prev.cg, [id]: cgId } }))
   }, [])
 
-  /** 该角色此刻的私密档案（底档 + world.intim 合成）；非女角色 / 无底档 → null */
-  const intimOf = useCallback(
-    (charId: string) => intimateOf(charId, world.intim?.[charId]),
-    [world.intim],
-  )
-  /** 羁绊够不够翻开这一页（会长一类恒满值者一并算过） */
-  const intimOpen = useCallback((charId: string) => bondNow(charId) >= INTIMATE_BOND, [bondNow])
   /**
-   * 落下一次私密推进。开发度与色情度都**累加**（不是覆盖）、状态句后写覆盖底档、
-   * 破处对象**只认第一次落下的那个** —— 与 data/intimate.ts 的合成规则一一对应，
-   * 在这里就把「第一次说了算」定住，免得合成时还要倒推先后。
+   * 该角色此刻的私密档案（底档 + world.intim 合成）；非女角色 / 无底档 → null。
+   * 把羁绊一并递进去 —— 它只影响一处：「对这种事情的看法」取哪一层。
+   */
+  const intimOf = useCallback(
+    (charId: string) => intimateOf(charId, world.intim?.[charId], bondNow(charId)),
+    [world.intim, bondNow],
+  )
+  /**
+   * 落下一次私密推进 —— 怎么并进手里那一份，全在 `mergeIntim` 里
+   * （开发度与色情度累加 · 状态句后写覆盖 · **破处只认第一回**）。
+   * 这儿只管一件事：把它写回世界。规则本身放在 data 里，是为了它能被单独验。
    */
   const bumpIntim = useCallback((charId: string, prog: IntimateProgress) => {
     if (!personOf(charId)) return
     setWorld((prev) => {
-      const cur = prev.intim?.[charId] ?? {}
-      const dev = { ...cur.dev }
-      for (const [slot, add] of Object.entries(prog.dev ?? {})) {
-        if (typeof add !== 'number' || !Number.isFinite(add) || !add) continue
-        const key = slot as keyof typeof dev
-        dev[key] = (dev[key] ?? 0) + add
-      }
-      const next: IntimateProgress = { ...cur }
-      if (Object.keys(dev).length) next.dev = dev
-      if (prog.state && Object.keys(prog.state).length) next.state = { ...cur.state, ...prog.state }
-      // 色情度不挂部位，与开发度同理只累加（负数抹平）
-      if (typeof prog.lewd === 'number' && Number.isFinite(prog.lewd) && prog.lewd > 0) {
-        next.lewd = (cur.lewd ?? 0) + prog.lewd
-      }
-      // 破处对象：已经落下过就不再改 —— 问的是第一回
-      if (prog.firstBy?.trim() && !cur.firstBy) next.firstBy = prog.firstBy.trim()
+      const next = mergeIntim(prev.intim?.[charId], prog)
       return { ...prev, intim: { ...prev.intim, [charId]: next } }
     })
   }, [])
@@ -1038,7 +1025,6 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     cgOf,
     setCg,
     intimOf,
-    intimOpen,
     bumpIntim,
     varsOpen,
     setVarsOpen,

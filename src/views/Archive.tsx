@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { X, ArrowUUpLeft } from '@phosphor-icons/react'
+import { X, ArrowUUpLeft, LockKey } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
@@ -25,7 +25,7 @@ import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
 import {
-  INTIMATE_BOND, INTIMATE_SLOTS, LEWD_META, SLOT_META, VIRGIN, devStage, firstByName,
+  INTIMATE_SLOTS, LEWD_META, SLOT_META, VIRGIN, devStage, firstByName,
 } from '../data/intimate'
 import { Portrait, useCharImg } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
@@ -337,43 +337,21 @@ function SkillIcon({ id }: { id: string }) {
  * 这一页不是「展开一段」而是**把整张卡翻过来**（见 Archive 里的 flip 状态）：
  * 背面另起一版，左栏一个立绘位、右栏五根读数条。所以这里只留一个门：
  *   · 只对女角色生效 —— 非女角色 / 无底档者整节不出现（`hasIntimate`）；
- *   · 羁绊到 `INTIMATE_BOND` 才解封 —— 没走到那儿就还是封存的那一句话，
- *     只说还差多少，不预告背面写了什么，也不给翻的按钮。
+ *   · **不封存**：这是本机只给「你」看的那一份，随时翻得开。羁绊到不到
+ *     `INTIMATE_BOND` 管的是她本人肯不肯开口（私密话题与约会），不管这一页；
+ *   · 这一节里**只有一颗写着「私密档案」的按钮**：不写抬头、不写背面记着什么 ——
+ *     那一页是什么样子，翻开自己看。
  */
 function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }) {
-  const { intimOf, intimOpen, bondNow } = useTerminal()
+  const { intimOf } = useTerminal()
   if (!intimOf(charId)) return null
-  const open = intimOpen(charId)
-  const bond = bondNow(charId)
-
-  if (!open) {
-    const need = Math.max(0, INTIMATE_BOND - bond)
-    return (
-      <div className={css.dialogSection} data-intimate="locked">
-        <h4>私密档案</h4>
-        <div className={css.intimLock}>
-          <b>封存中</b>
-          <p>
-            这一页随关系解封 —— 羁绊到 {INTIMATE_BOND} 才翻开。
-            当前 {bond}/{INTIMATE_BOND}，还差 {need}。
-            好感只在对话、行动与短信往来里涨，不会读着剧情自己长上来。
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className={css.dialogSection} data-intimate="open" data-intimate-ready>
-      <h4>私密档案</h4>
-      <div className={css.intimTease} data-intimate-tease>
-        <span className="tiny muted">
-          档案卡的另一面记着别的东西：口腔 / 胸部 / 小穴 / 菊穴 的开发度，与色情度。
-        </span>
-        <button type="button" className="btn btn--ghost" data-intimate-toggle onClick={onFlip}>
-          翻到背面
-        </button>
-      </div>
+      <button type="button" className={css.intimEnter} data-intimate-toggle onClick={onFlip}>
+        <LockKey size={14} weight="bold" />
+        私密档案
+      </button>
     </div>
   )
 }
@@ -381,15 +359,17 @@ function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }
 /**
  * 卡的背面 —— 私密档案本体。
  *
- * 版面与正面同构（左立绘 / 右档案），读数是**五根条**：四处部位开发度 + 色情度，
+ * 版面与正面同构（左立绘 / 右档案）。读数是**五根条**：四处部位开发度 + 色情度，
  * 与「能力参数」用同一套条（`.stat` + `.meter`），只是那五轴说的是战斗力，
- * 这五根说的是这一件事。
+ * 这五根说的是这一件事。另有三节不是读数：最近的性行为、对这种事情的看法、破处 ——
+ * 它们各是一句话（破处是一个事实），照实写出来即可。
  *
  * 立绘位走 CgSlot：素材丢 `public/cg/cg-intim-<角色id>.webp|png|jpg` 即点亮，
  * 缺图时摆「待补」虚线框 —— 版位先占住，补图之后版面不跳。
  *
  * 底档在 `data/intimate.ts`（游戏内拟制，非原文考据），推进在 `world.intim`
- * （约会与私密往来落下）—— 这一页只把两者合成之后照搬上屏，自己不算任何数。
+ * （约会与私密往来落下）—— 这一页只把两者合成之后照搬上屏，自己不算任何数；
+ * 栏位上也不写「这一栏是怎么来的」那种说明 —— 读的人要看的是她，不是这份档案的规则。
  */
 function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: string; name: string; onBack: () => void }) {
   const { intimOf, operatorName } = useTerminal()
@@ -464,10 +444,6 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
               <b className="num">{prof.lewd}</b>
               <i className={css.intimStage}>{devStage(prof.lewd)}</i>
             </div>
-            <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.7 }}>
-              {LEWD_META.hint}。不挂在哪一处上 —— 说的是她这个人此刻的状态，
-              与底下四处开发度各记各的：没被碰到哪儿、心思却更敏了，这一根也会往上走。
-            </div>
           </div>
 
           <div className={css.dialogSection}>
@@ -481,6 +457,17 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
             </div>
           </div>
 
+          {/* 最近一回与看法：都不挂部位，说的是一件事此刻的样子 */}
+          <div className={css.dialogSection}>
+            <h4>最近的性行为</h4>
+            <p className={css.intimAct} data-intimate-lastact>{prof.lastAct}</p>
+          </div>
+
+          <div className={css.dialogSection}>
+            <h4>对这种事情的看法</h4>
+            <p className={css.intimAct} data-intimate-view>{prof.view}</p>
+          </div>
+
           <div className={css.dialogSection}>
             <h4>破处</h4>
             <div className={css.intimFoot}>
@@ -492,10 +479,6 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
                 <small>破处对象</small>
                 <b>{prof.virgin ? VIRGIN : firstByName(prof.firstBy, opName)}</b>
               </div>
-            </div>
-            <div className="tiny muted" style={{ marginTop: 8, lineHeight: 1.7 }}>
-              「破处对象」记的是第一回，之后不再改写。开发度与色情度随约会与私密往来累积，
-              状态句后写覆盖；真正的经过写在你与她的会话里。
             </div>
           </div>
         </div>
@@ -665,7 +648,7 @@ const FLIP_MS = 240
 export function Archive() {
   const {
     operatorName, epDone, cur, bondNow, push, profileRequest, clearProfileRequest, isMet,
-    intimOf, intimOpen,
+    intimOf,
   } = useTerminal()
   const [openId, setOpenId] = useState<string | null>(null)
   const [openRect, setOpenRect] = useState<DOMRect | null>(null)
@@ -691,10 +674,10 @@ export function Archive() {
   const rows = useMemo(buildRows, [])
   const focus = rows.find((r) => r.id === openId) ?? null
   /**
-   * 这一张卡翻不翻得过去：有底档（女角色）且已解封（羁绊到了）。
+   * 这一张卡翻不翻得过去：只要**有底档**（女角色）就翻得开 —— 私密档案不封存。
    * 门槛在翻之前就判 —— 翻到一半被人拦下会剩一张空白的背面。
    */
-  const backOk = side === 'back' && !!focus && intimOf(focus.id) !== null && intimOpen(focus.id)
+  const backOk = side === 'back' && !!focus && intimOf(focus.id) !== null
   const name = operatorName.trim() ? operatorName : '言万心叶'
   const sit = opSituation(epDone)
   /** 主角档案：随已收束的事件换页（原文里他每一段时期都不同） */

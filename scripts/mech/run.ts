@@ -66,6 +66,10 @@ import { MANUAL } from '../../src/data/manual'
 import { CHARACTERS } from '../../src/data/chars'
 import { castOf } from '../../src/lib/cast'
 import { plotContextFor, smsContextFor } from '../../src/lib/crosslink'
+import {
+  INTIMATE, INTIMATE_BOND, INTIMATE_SLOTS, NO_ACT, intimAdvanceLabel, intimateOf, mergeIntim,
+} from '../../src/data/intimate'
+import { sanitizeDirective } from '../../src/lib/plot'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -3593,6 +3597,125 @@ export function run(): MechReport {
     }
   } catch (e) {
     fail.push('互读段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 27) 私密档案：底档 · 并账 · 合成（三档看法） ----------
+     这一页只在浏览器里看得见，冒烟量的是「合成之后摆上屏的是什么」；
+     这里量的是底下那三条规矩本身：底档一律从 0 起、并账时破处只认第一回、
+     合成时「看法」按羁绊分两段。规则在 data/intimate.ts，两边量的是同一份。 */
+  try {
+    const femaleIds = Object.keys(INTIMATE)
+
+    /* 底档哨兵：谁都不该带着开发度登场，处女一栏也一样。
+       （冒烟 R4b 量的是屏幕上那根条，这里量的是底档本身 —— 两个都要守。） */
+    const dirty = femaleIds.filter((id) => {
+      const b = INTIMATE[id]!
+      return b.lewd !== 0 || b.firstBy !== null || b.lastAct !== NO_ACT
+        || INTIMATE_SLOTS.some((s) => b.parts[s].dev !== 0)
+    })
+    ok('私密 · 底档一律从 0 起（四处开发度 / 色情度 / 破处对象 / 最近一回都是空的）',
+      dirty.length === 0, dirty.length ? dirty.join('、') : `${femaleIds.length} 位都干净`)
+
+    // 每一位都合成得出来，且合成之后仍是 0 —— 说明 intimateOf 没在哪儿偷偷垫数
+    const baseWrong = femaleIds.filter((id) => {
+      const p = intimateOf(id, undefined, 0)
+      return !p || p.lewd !== 0 || !p.virgin || p.firstBy !== null || p.lastAct !== NO_ACT
+        || INTIMATE_SLOTS.some((s) => p.parts[s].dev !== 0 || !p.parts[s].state.trim())
+    })
+    ok('私密 · 无推进时合成出来的仍是纯底档（读数 0 · 处女 · 四处状态句都在）',
+      baseWrong.length === 0, baseWrong.length ? baseWrong.join('、') : `${femaleIds.length} 位`)
+    ok('私密 · 非女角色 / 没有底档者整页不出现（返回 null）',
+      intimateOf('gcn') === null && intimateOf('kaito') === null && intimateOf('__nobody__') === null,
+      `Intimate 表里 ${femaleIds.length} 位`)
+
+    /* 「看法」分两段：底档一句、过线一句，两句话必须真的不一样 ——
+       要是谁把 viewHigh 抄成 view，这一栏白写（羁绊高了跟没高一样）。 */
+    const sameView = femaleIds.filter((id) => {
+      const b = INTIMATE[id]!
+      const v = b.view.trim()
+      const h = b.viewHigh.trim()
+      return !v || !h || v === h
+    })
+    ok('私密 · 「看法」两段齐全且各不相同（过线之后确实是另一句话）',
+      sameView.length === 0, sameView.length ? sameView.join('、') : `${femaleIds.length} 位都分得开`)
+
+    const sample = femaleIds.find((id) => id === 'luna') ?? femaleIds[0]!
+    const sb = INTIMATE[sample]!
+    ok('私密 · 「看法」按羁绊分两段：没过线取底档那一句，过线取 viewHigh',
+      intimateOf(sample, undefined, 0)!.view === sb.view
+      && intimateOf(sample, undefined, INTIMATE_BOND - 1)!.view === sb.view
+      && intimateOf(sample, undefined, INTIMATE_BOND)!.view === sb.viewHigh,
+      `${sample} @0 / @${INTIMATE_BOND - 1} / @${INTIMATE_BOND}`)
+    /* 推进里真改写过的压过两段：情节里变了才是最硬的证据 */
+    const rewritten = '这是推进里改写过的看法。'
+    ok('私密 · 推进里改写过的「看法」压过底档与过线两句',
+      intimateOf(sample, { view: rewritten }, 0)!.view === rewritten
+      && intimateOf(sample, { view: rewritten }, INTIMATE_BOND)!.view === rewritten,
+      rewritten)
+
+    // 并账：开发度与色情度累加
+    let acc = mergeIntim(undefined, { dev: { mouth: 5 }, lewd: 3 })
+    acc = mergeIntim(acc, { dev: { mouth: 2, vagina: 4 }, lewd: 2 })
+    ok('私密 · 并账：开发度与色情度都是累加（不是覆盖）',
+      acc.dev?.mouth === 7 && acc.dev?.vagina === 4 && acc.lewd === 5,
+      JSON.stringify({ dev: acc.dev, lewd: acc.lewd }))
+    const neg = mergeIntim(acc, {
+      dev: { mouth: -3, anus: 0, vagina: Number.NaN, breast: Number.POSITIVE_INFINITY },
+      lewd: -1,
+    })
+    ok('私密 · 并账：负数与非法数直接跳过（这一档只增不减）',
+      JSON.stringify(neg.dev) === JSON.stringify(acc.dev) && neg.lewd === 5,
+      `dev ${JSON.stringify(neg.dev)} vs ${JSON.stringify(acc.dev)} · lewd ${neg.lewd}`)
+
+    /* 破处对象只认第一回 —— 之后情节里再怎么落，这一栏也不改 */
+    let first = mergeIntim(undefined, { firstBy: '甲' })
+    first = mergeIntim(first, { firstBy: '乙' })
+    first = mergeIntim(first, { state: { vagina: '改写过' }, firstBy: '丙' })
+    ok('私密 · 破处对象只认第一次落下的那个（之后再有改写也顶不掉）',
+      first.firstBy === '甲' && intimateOf(sample, first)!.firstBy === '甲'
+      && intimateOf(sample, first)!.virgin === false,
+      `firstBy=${first.firstBy}`)
+    ok('私密 · 状态句 / 最近一回 / 看法都是后写覆盖（问的是此刻）',
+      mergeIntim(mergeIntim(undefined, { lastAct: '第一次' }), { lastAct: '第二次' }).lastAct === '第二次',
+      mergeIntim(undefined, { state: { mouth: '甲' } }).state?.mouth + ' → '
+      + (mergeIntim(mergeIntim(undefined, { state: { mouth: '甲' } }), { state: { mouth: '乙' } }).state?.mouth ?? ''))
+
+    /* 指令进得来：一条**只**写最近一回 / 看法、不挂部位的私密推进，
+       不能因为「没有部位」就被当成空话丢掉 —— 这是这一版新加的两项。 */
+    const d = sanitizeDirective({
+      intim: [
+        { char: sample, lastAct: '在港区的旅馆里做了一整晚。', view: '她要的比以前多。' },
+        { char: sample, slot: 'mouth', dev: 999, state: '  重写过的一句  ' },
+        { char: sample },                                    // 空话：丢掉
+        { char: 'gcn', lastAct: '男角色不记这一页' },          // 非女角色：丢掉
+      ],
+    })
+    const items = d.intim ?? []
+    ok('私密 · 不挂部位的「最近一回 / 看法」进得来（不被当成空话丢掉）',
+      items.some((x) => x.lastAct === '在港区的旅馆里做了一整晚。' && x.view === '她要的比以前多。'),
+      JSON.stringify(items.map((x) => Object.keys(x).join('+'))))
+    ok('私密 · 空话与非女角色被挡在门外（只剩两条）',
+      items.length === 2 && !items.some((x) => x.char === 'gcn'),
+      `进来 ${items.length} 条`)
+    ok('私密 · 状态句两头留白剪掉 · 单次增量封顶（8，不是 999）',
+      items.some((x) => x.state === '重写过的一句') && items.every((x) => (x.dev ?? 0) <= 8),
+      JSON.stringify(items.find((x) => x.slot === 'mouth')))
+    // 长句封顶：整段正文塞不进这一栏
+    const longD = sanitizeDirective({ intim: [{ char: sample, view: '看'.repeat(400) }] })
+    ok('私密 · 「看法」封顶 160 字（整段正文塞不进这一栏）',
+      (longD.intim?.[0]?.view?.length ?? -1) === 160, `len=${longD.intim?.[0]?.view?.length}`)
+
+    ok('私密 · 提示条念得出「最近一回 / 看法也动了」',
+      intimAdvanceLabel({ slot: 'mouth', lastAct: 'x', view: 'y' }).includes('最近一回')
+      && intimAdvanceLabel({ lastAct: 'x' }).includes('最近一回')
+      && intimAdvanceLabel({ view: 'y' }).includes('看法')
+      && intimAdvanceLabel({ slot: 'mouth' }).includes('口腔'),
+      intimAdvanceLabel({ slot: 'mouth', lastAct: 'x', view: 'y' }))
+
+    info.push(`私密：底档 ${femaleIds.length} 位（女角色 · 逐位量读数从 0 起）· 并账守「破处只认第一回」`
+      + ` · 合成按 ${INTIMATE_BOND} 分两段看法`)
+  } catch (e) {
+    fail.push('私密段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

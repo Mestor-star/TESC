@@ -66,7 +66,8 @@ export interface PlotDirective {
   /**
    * **私密档案的推进**（约会 / 私密往来时用）：这一场确实推进了某个部位才给。
    * 只认女角色（`hasIntimate`）；开发度按增量累加、状态句后写覆盖、
-   * `first` 只在初次破处那一回置 true（此后不再改写「破处对象」）。
+   * `first` 只在初次破处那一回置 true（此后不再改写「破处对象」）；
+   * `lastAct` / `view` 后写覆盖（这两项说的是「此刻」，与第一回无关）。
    */
   intim?: IntimateDirective[]
 }
@@ -75,9 +76,9 @@ export interface PlotDirective {
 export interface IntimateDirective {
   char: string
   /**
-   * 推进的部位。**只有推的是色情度时可以不给** —— 那一根条不挂在部位上
-   * （见 data/intimate.ts 的 LEWD_META）：她这一回没被碰到哪儿、心思却更敏了，
-   * 就是一条只带 `lewd` 的推进。
+   * 推进的部位。**只有推的是色情度 / 最近一回 / 看法时可以不给** ——
+   * 那几样都不挂在部位上（见 data/intimate.ts 的 LEWD_META）：她这一回没被碰到
+   * 哪儿、心思却更敏了，或者只是两人之间发生了什么、她怎么想，都算这一种。
    */
   slot?: IntimateSlot
   /** 开发度增量（一次一小步；上限见 INTIM_DEV_MAX） */
@@ -91,6 +92,10 @@ export interface IntimateDirective {
   state?: string
   /** 这一次是初次破处（'破处对象' 落成言万叶本人） */
   first?: boolean
+  /** 「最近的性行为」改写（可选；最近这一回到底做了什么，后写覆盖） */
+  lastAct?: string
+  /** 「看法」改写（可选；她对这件事的看法变了才给，后写覆盖） */
+  view?: string
 }
 
 /** 剧情触发的交战规格 —— 由模型在事件指令里输出 */
@@ -209,8 +214,8 @@ export function sanitizeDirective(v: unknown): PlotDirective {
   }
 
   /* 私密推进：只认女角色；部位那一路还要认四个槽位之一。开发度与色情度都按增量收
-     （负数抹平 —— 这一档只增不减），状态句封顶，避免整段正文塞进来。
-     一条里若既没有合法的部位、又没有色情度增量，就是空话，丢掉。 */
+     （负数抹平 —— 这一档只增不减），状态句与另两句封顶，避免整段正文塞进来。
+     一条里若既没有合法的部位、又没有色情度增量、也没有最近一回 / 看法，就是空话，丢掉。 */
   if (Array.isArray(src.intim)) {
     const intim: IntimateDirective[] = []
     for (const item of src.intim) {
@@ -227,7 +232,10 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       /* 部位那一支：dev / state / first 都得挂在槽位上才落得下去 */
       const onSlot = slot !== null && (dev !== null || Boolean(state) || first)
       const gain = lewd !== null ? clamp(Math.round(lewd * 10) / 10, 0, INTIM_DEV_MAX) : 0
-      if (!onSlot && !gain) continue
+      /* 「最近一回」与「看法」不挂部位（说的是她这个人此刻的状态），比状态句给宽一点。 */
+      const lastAct = typeof o.lastAct === 'string' ? o.lastAct.trim().slice(0, 160) : ''
+      const view = typeof o.view === 'string' ? o.view.trim().slice(0, 160) : ''
+      if (!onSlot && !gain && !lastAct && !view) continue
       intim.push({
         char,
         ...(slot ? { slot } : {}),
@@ -235,6 +243,8 @@ export function sanitizeDirective(v: unknown): PlotDirective {
         ...(gain ? { lewd: gain } : {}),
         ...(onSlot && state ? { state } : {}),
         ...(onSlot && first ? { first: true } : {}),
+        ...(lastAct ? { lastAct } : {}),
+        ...(view ? { view } : {}),
       })
       if (intim.length >= 4) break
     }
@@ -780,7 +790,8 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
   if (d.cg) fx.cg = d.cg
   /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
      破处对象由这一层定 —— `first` 置位即记为「言万心叶」（'you'），
-     底下的合成规则只认第一次落下的那个，之后再给也改不动。 */
+     底下的合成规则只认第一次落下的那个，之后再给也改不动；
+     「最近的性行为」与「看法」照旧后写覆盖。 */
   for (const it of d.intim ?? []) {
     const prog: IntimateProgress = {}
     if (it.slot) {
@@ -789,9 +800,18 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
       if (it.first) prog.firstBy = 'you'
     }
     if (typeof it.lewd === 'number' && it.lewd !== 0) prog.lewd = it.lewd
-    if (!prog.dev && !prog.state && !prog.firstBy && !prog.lewd) continue
+    if (it.lastAct) prog.lastAct = it.lastAct
+    if (it.view) prog.view = it.view
+    if (!prog.dev && !prog.state && !prog.firstBy && !prog.lewd && !prog.lastAct && !prog.view) continue
     api.bumpIntim(it.char, prog)
-    fx.intim.push({ char: it.char, ...(it.slot ? { slot: it.slot } : {}), ...(it.lewd ? { lewd: it.lewd } : {}) })
+    fx.intim.push({
+      char: it.char,
+      ...(it.slot ? { slot: it.slot } : {}),
+      ...(it.lewd ? { lewd: it.lewd } : {}),
+      /* 提示条上要念得出「最近一回 / 看法也动了」—— 只传布尔以外的原话，让 intimAdvanceLabel 认得 */
+      ...(it.lastAct ? { lastAct: it.lastAct } : {}),
+      ...(it.view ? { view: it.view } : {}),
+    })
   }
   if (d.date) fx.date = d.date
   fx.diverged = d.diverged === true
@@ -1290,9 +1310,11 @@ ${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
 · 她给到哪一步，由她此刻的关系与性格定 —— 有的只肯说，有的肯赴约，有的已不在意距离。
 · 推进要**跟着言万心叶的行动走**：他给了那层意思、她也接得住，才往前挪一步；
   他没给的就别替她安排。拿不准就停在当下，不必每回合都往前推。
-· 私密场面照常上屏、详略自便；真正推进到哪一步，用下面事件指令里的 intim 落成读数
-  （那几个数进的是档案页「私密档案」的背面，不是正文）：部位那一路给 dev，
-  她整个人的敏度往前挪了就另外给 lewd —— 两件事各记各的。`
+· 私密场面照常上屏、**写就写足**：这一档不必回避任何词，身体怎么反应、她说什么、
+  到什么程度，都照实写出来。真正推进到哪一步，用下面事件指令里的 intim 落成读数
+  （这几个数进的是档案页「私密档案」的背面，不是正文）：
+  部位那一路给 dev；她整个人的敏度往前挪了就另外给 lewd；这一回到底做了什么，
+  给 lastAct 一句话记下来（比照原样改写，不要写「同上」）。两件事各记各的。`
     : ''
 
   const notesSection = notesSectionFor(ev)

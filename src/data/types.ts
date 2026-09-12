@@ -474,31 +474,60 @@ export type IntimateSlot = 'mouth' | 'breast' | 'vagina' | 'anus'
 
 /** 一个部位的私密读数 */
 export interface IntimatePart {
-  /** 状态一句话（临床/档案用词，非原文） */
+  /** 状态一句话（档案用词：这一处此刻是什么样、被碰到会怎样；非原文） */
   state: string
-  /** 开发度 0-100（0 = 未开发） */
+  /** 开发度 0-100（底档恒 0 = 未开发；上限 100） */
   dev: number
 }
 
-/** 一名角色的私密档案（底档 + 已落地的推进合成之后的结果） */
+/**
+ * 一名角色的私密档案（底档 + 已落地的推进合成之后的结果）。
+ *
+ * **合成之后**的这一份里没有 `viewHigh`：羁绊够不够、该取哪一句，在
+ * `data/intimate.ts` 的 `intimateOf` 里就定了 —— 调用方拿到的 `view` 就是要显示的那一句。
+ */
 export interface IntimateProfile {
   parts: Record<IntimateSlot, IntimatePart>
   /**
    * 色情度 0-100 —— 不挂在某个部位上，说的是**她这个人**此刻对这件事的
    * 敏度与淫靡程度：同样是开发度 40，色情度高的人反应完全是另一回事。
-   * 与四处开发度并列成第五根条，取值口径同样由 data/intimate.ts 拟制。
+   * 与四处开发度并列成第五根条，底档恒 0、上限 100。
    */
   lewd: number
   /** 是否仍为处女 */
   virgin: boolean
   /** 破处对象（未破处 → null；'you' = 言万心叶本人） */
   firstBy: string | null
+  /** 最近的性行为：最近这一回做了什么（尚未发生 → `data/intimate.ts` 的 NO_ACT） */
+  lastAct: string
+  /**
+   * 她对这件事的看法（一句话）。
+   *
+   * 取值分三层，后一层盖前一层：
+   *   ① 底档那一句（初见时的她）；
+   *   ② **羁绊过线之后另起的那一句**（底档里的 `viewHigh`）—— 关系走到这一步，
+   *      她自己对这一件事的态度也跟着松了；这是「间接」影响，不是把读数换算成文字；
+   *   ③ 推进里的改写（`IntimateProgress.view`）—— 真的在情节里变了才落这一层。
+   */
+  view: string
+}
+
+/**
+ * 私密档案的**底档**（data/intimate.ts 的 `INTIMATE` 一项）。
+ * 比合成后的那一份多一句：羁绊过线之后要换上的那句「看法」。
+ */
+export interface IntimateBase extends Omit<IntimateProfile, 'view'> {
+  /** 初见时她对这件事的看法 */
+  view: string
+  /** 羁绊过线之后的那一句（关系走到这一步，态度也跟着松了） */
+  viewHigh: string
 }
 
 /**
  * 私密档案的**动态推进** —— 由约会/私密往来落下（WorldState.intim 的一项）。
- * 与底档的合成规则见 data/intimate.ts 的 `intimateOf`：开发度累加、状态后写覆盖、
- * `firstBy` 一旦落下即视为已破处，且**只认第一次**（后来的改写不再顶掉它）。
+ * 与底档的合成规则见 data/intimate.ts 的 `intimateOf`：开发度累加、状态句后写覆盖、
+ * `firstBy` 一旦落下即视为已破处，且**只认第一次**（后来的改写不再顶掉它）；
+ * `lastAct` / `view` 同样是后写覆盖，但它们说的是「此刻」，不认第一回。
  */
 export interface IntimateProgress {
   /** 各部位开发度**增量**（累加到该部底档开发度上） */
@@ -509,6 +538,10 @@ export interface IntimateProgress {
   lewd?: number
   /** 破处对象（落下即非处女；只认第一次落下的那个） */
   firstBy?: string
+  /** 最近的性行为改写（后写覆盖；说的是此刻发生过什么） */
+  lastAct?: string
+  /** 「看法」改写（后写覆盖） */
+  view?: string
 }
 
 /** 持久化世界状态（随存档读写 · 全部为可增删变量） */

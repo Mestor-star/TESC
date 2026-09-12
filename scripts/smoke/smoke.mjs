@@ -2433,70 +2433,126 @@ try {
   await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-rec"]');if(h)h.click();return true})()`)
 
   /* ============ Phase R：私密档案（只对女角色 · 整张卡翻到背面 · 五根条） ============
-     播一份「露娜的羁绊已经过线」的账，看她那张卡：正面最末留一扇门，翻过去才是背面 ——
-     左一个立绘位（图待补），右五根读数条（四处开发度 + 一根单独的色情度），
-     外加「处女 / 破处对象」。另拿羁绊没到的恋兔光做对照：她那一页还封着，门都不给。 */
-  console.log('\n[Phase R] 私密档案：翻面 · 五根条（含单独的色情度）· 未解封不给门')
+     播一份「露娜的羁绊已经过线、且已经有过几回」的账，看她那张卡：
+     正面最末一扇门，翻过去才是背面 —— 左一个立绘位（图待补），右五根读数条
+     （四处开发度 + 一根单独的色情度），外加「最近的性行为 / 对这种事情的看法 / 处女 / 破处对象」。
+
+     这一页**不封存**：它是本机只给「你」看的那一份，羁绊到不到都翻得开
+     （羁绊管的是她本人肯不肯开口 —— 私密话题与约会，那是另一处的事）。
+     羁绊仍在**间接**改着这一页的一栏：同一栏「对这种事情的看法」，过线之后取的是
+     她的 `viewHigh`。于是这里摆三个人对照：
+       · 恋兔光 羁绊 -100、无推进 → 门在（R1），看法取底档那一句；
+       · 美菲莎 羁绊 +100、无推进 → 门在，看法取过线那一句 —— 两句必须不一样（R2）。
+
+     露娜的增量是**已知的**（口腔 +22 · 小穴 +40 · 色情度 +30），于是底下那几条
+     「底档是不是真的从 0 起」也一起量了：量出来 22 / 40 / 30，就说明底档确实是 0，
+     而不是被一个预设的开发度垫着。 */
+  console.log('\n[Phase R] 私密档案：翻面 · 五根条（含单独的色情度）· 不封存但看法分两段')
   const pSeed = await ev(`(()=>{
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'私密观察员',focusId:'gcn',
-      world:{offset:{luna:100,hikari:-100},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],records:[]}}));
+      world:{offset:{luna:100,hikari:-100,mefisa:100},locked:{},flags:{},met:{luna:true,hikari:true,mefisa:true},ends:{},own:[],records:[],
+        intim:{luna:{dev:{mouth:22,vagina:40},lewd:30,
+          lastAct:'在港区的旅馆里做了一整晚，从玄关一路做到床上，中间没停过。',
+          view:'做得越多越清楚自己要什么 —— 她不再只是「可以一起做的活动」，是只要你在就得做。'}}}}));
     localStorage.setItem('zts-plot:v1',JSON.stringify({}));
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
-  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）', pSeed === true, 'seed=' + pSeed)
+  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（口腔+22 / 小穴+40 / 色情度+30）',
+    pSeed === true, 'seed=' + pSeed)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('角色档案')
   await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'P archive 24 cards')
 
-  // 对照：羁绊没到的那位 —— 只说封存，不给翻的门
-  await ev(`(()=>{const c=document.querySelector('[data-archive-card="hikari"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
-  await poll(`!!document.querySelector('[data-archive-dialog]')`, 15000, 'R hikari dialog')
-  const pLocked = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;
-    return {locked:!!d.querySelector('[data-intimate="locked"]'),toggle:!!d.querySelector('[data-intimate-toggle]'),
-      back:!!d.querySelector('[data-intimate-back]'),txt:(d.querySelector('[data-intimate="locked"]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim()}})()`)
-  ok('R1 羁绊没到 → 私密档案只写「封存中」，翻面的门不出现',
-    !!pLocked && pLocked.locked === true && pLocked.toggle === false && pLocked.back === false
-    && /封存/.test(pLocked.txt), JSON.stringify(pLocked))
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
-  await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, 'R hikari dialog close')
+  /* 开一个人的卡 → 量正面那一节 → 翻过去 → 量背面。三个人走的是同一段，
+     写成一处省得三份各走各的样。正面那一节量三样：门在不在（`ready`）、
+     有没有那条早该拆掉的「封存中」（`locked`）、按钮上写的是什么。 */
+  const frontOf = async (id) => {
+    await ev(`(()=>{const c=document.querySelector('[data-archive-card="${id}"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
+    await poll(`!!document.querySelector('[data-archive-dialog]')`, 15000, `R ${id} dialog`)
+    return ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;
+      const t=d.querySelector('[data-intimate-toggle]');
+      return {side:d.getAttribute('data-side'),ready:!!d.querySelector('[data-intimate-ready]'),
+        locked:!!d.querySelector('[data-intimate="locked"]'),toggle:!!t,back:!!d.querySelector('[data-intimate-back]'),
+        label:t?t.innerText.replace(/\\s+/g,' ').trim():''}})()`)
+  }
+  /* 翻到背面之后的量尺：五根条 / 每根读数 / 两句话（最近一回 · 看法）/ 立绘位 / 破处。
+     两节各装着什么按**抬头认节**（不靠会哈希的类名）。 */
+  const backOf = async () => {
+    // 翻面是两拍共 240ms —— 等它走完再量，否则量到的是转到一半的那一帧
+    await sleep(500)
+    return ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');const b=d.querySelector('[data-intimate-back]');
+      if(!b)return null;
+      const slots=[...b.querySelectorAll('[data-intimate-slot]')].map(x=>x.getAttribute('data-intimate-slot'));
+      const lewd=b.querySelector('[data-intimate-lewd]');
+      const ph=b.querySelector('figure code');
+      const bars=[...b.querySelectorAll('.meter__fill')].length;
+      const sectOf=(t)=>{const h=[...b.querySelectorAll('h4')].find(x=>x.innerText.trim()===t);
+        return h&&h.parentElement?h.parentElement:null};
+      const lewdSect=sectOf('色情度'),barsSect=sectOf('开发度（四处）');
+      /* 每根部位条量两样：槽位名 + 那个数字（.num 是条上的读数）——
+         数字对得上「底档 0 + 播进去的增量」，才说明底档真的没有垫高。 */
+      const devs={};[...b.querySelectorAll('[data-intimate-slot]')].forEach(x=>{
+        const k=x.getAttribute('data-intimate-slot');const n=x.querySelector('.num');
+        if(k!=='lewd'&&n)devs[k]=Number(n.innerText.trim())});
+      const txt=b.innerText.replace(/\\s+/g,' ').trim();
+      return {side:d.getAttribute('data-side'),turn:d.getAttribute('data-turn'),slots,bars,devs,lewdVal:lewd?lewd.getAttribute('data-intimate-lewd'):null,
+        lewdText:lewd?lewd.innerText.replace(/\\s+/g,' ').trim():'',
+        lewdHead:!!lewdSect,
+        lewdSectSlots:lewdSect?lewdSect.querySelectorAll('[data-intimate-slot]').length:-1,
+        lewdSectThick:lewdSect?!!lewdSect.querySelector('.meter--thick'):false,
+        barsSectSlots:barsSect?barsSect.querySelectorAll('[data-intimate-slot]').length:-1,
+        states:b.querySelectorAll('[data-intimate-slot] p').length,
+        placeholder:ph?ph.innerText.trim():null,
+        placeholderFig:!!b.querySelector('figure'),
+        lastAct:(b.querySelector('[data-intimate-lastact]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+        view:(b.querySelector('[data-intimate-view]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+        virgin:(b.querySelector('[data-intimate-virgin]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+        hasFoot:!!b.querySelector('[data-intimate-first]'),txt}})()`)
+  }
+  const flipTo = async (id) => {
+    const front = await frontOf(id)
+    await ev(`(()=>{const b=document.querySelector('[data-intimate-toggle]');if(!b)return false;b.click();return true})()`)
+    await poll(`!!document.querySelector('[data-intimate-back]')`, 15000, `R ${id} back face`)
+    return { front, back: await backOf() }
+  }
+  const closeCard = async (id) => {
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
+    await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, `R ${id} dialog close`)
+  }
+
+  /* 羁绊压到底的那位：这一页**照样翻得开**（不封存），看法是底档那一句。
+     顺带守一条：早先那版「封存中」的门禁不该再冒出来。 */
+  const hik = await flipTo('hikari')
+  ok('R1 羁绊没到也翻得开（不封存）：按钮写着「私密档案」、无「封存中」，背面照常摆出底档',
+    !!hik.front && !!hik.back && hik.front.ready === true && hik.front.locked === false
+    && hik.front.toggle === true && hik.front.label === '私密档案'
+    && hik.front.side === 'front' && hik.back.side === 'back'
+    && hik.back.view.length > 0 && hik.back.lastAct.length > 0,
+    JSON.stringify({ front: hik.front, view: hik.back && hik.back.view, lastAct: hik.back && hik.back.lastAct }))
+  // 一张卡一次只开一张：看完先收起来，下一张才点得着（弹层压着牌面）
+  await closeCard('hikari')
+
+  /* 羁绊过线、但还没有过推进的那位：同一栏取的是 `viewHigh`。
+     两句必须不同 —— 这正是「好感度高了之后也会间接影响其对性的看法」那一条。 */
+  const mef = await flipTo('mefisa')
+  ok('R2 羁绊过线 → 同一栏「看法」换成过线那一句（与底档那一句不同）',
+    !!mef.front && !!mef.back && mef.front.toggle === true
+    && mef.back.view.length > 0 && mef.back.view !== hik.back.view,
+    JSON.stringify({ low: hik.back && hik.back.view, high: mef.back && mef.back.view }))
+  await closeCard('mefisa')
 
   // 露娜：正面最末有门，点一下整张卡翻过去
-  await ev(`(()=>{const c=document.querySelector('[data-archive-card="luna"]');if(!c)return false;c.scrollIntoView({block:'center'});c.click();return true})()`)
-  await poll(`!!document.querySelector('[data-archive-dialog]')`, 15000, 'R luna dialog')
-  const pFront = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');if(!d)return null;
-    return {side:d.getAttribute('data-side'),open:!!d.querySelector('[data-intimate="open"]'),
-      toggle:!!d.querySelector('[data-intimate-toggle]'),back:!!d.querySelector('[data-intimate-back]')}})()`)
-  ok('R2 羁绊过线 → 正面最末留一扇「翻到背面」的门（此时仍是正面）',
-    !!pFront && pFront.side === 'front' && pFront.open === true && pFront.toggle === true && pFront.back === false,
+  const pFront = await frontOf('luna')
+  ok('R2b 正面最末留一扇翻过去的门（此时仍是正面）',
+    !!pFront && pFront.side === 'front' && pFront.ready === true && pFront.toggle === true && pFront.back === false,
     JSON.stringify(pFront))
   await ev(`(()=>{const b=document.querySelector('[data-intimate-toggle]');if(!b)return false;b.click();return true})()`)
   await poll(`!!document.querySelector('[data-intimate-back]')`, 15000, 'R back face')
-  // 翻面是两拍共 240ms —— 等它走完再量，否则量到的是转到一半的那一帧
-  await sleep(500)
-  const pBack = await ev(`(()=>{const d=document.querySelector('[data-archive-dialog]');const b=d.querySelector('[data-intimate-back]');
-    if(!b)return null;
-    const slots=[...b.querySelectorAll('[data-intimate-slot]')].map(x=>x.getAttribute('data-intimate-slot'));
-    const lewd=b.querySelector('[data-intimate-lewd]');
-    const ph=b.querySelector('figure code');
-    const bars=[...b.querySelectorAll('.meter__fill')].length;
-    /* 两节各装着什么：一节一声 h4，靠抬头认节，不靠会哈希的类名 */
-    const sectOf=(t)=>{const h=[...b.querySelectorAll('h4')].find(x=>x.innerText.trim()===t);
-      return h&&h.parentElement?h.parentElement:null};
-    const lewdSect=sectOf('色情度'),barsSect=sectOf('开发度（四处）');
-    return {side:d.getAttribute('data-side'),turn:d.getAttribute('data-turn'),slots,bars,lewdVal:lewd?lewd.getAttribute('data-intimate-lewd'):null,
-      lewdText:lewd?lewd.innerText.replace(/\\s+/g,' ').trim():'',
-      lewdHead:!!lewdSect,
-      lewdSectSlots:lewdSect?lewdSect.querySelectorAll('[data-intimate-slot]').length:-1,
-      lewdSectThick:lewdSect?!!lewdSect.querySelector('.meter--thick'):false,
-      barsSectSlots:barsSect?barsSect.querySelectorAll('[data-intimate-slot]').length:-1,
-      states:b.querySelectorAll('[data-intimate-slot] p').length,
-      placeholder:ph?ph.innerText.trim():null,
-      placeholderFig:!!b.querySelector('figure'),
-      virgin:(b.querySelector('[data-intimate-virgin]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
-      hasFoot:!!b.querySelector('[data-intimate-first]')}})()`)
+  /* 露娜的背面：推进改写过的五根条与两句话，都在这一份里量 */
+  const pBack = await backOf()
   ok('R3 翻过去 → 卡的另一面（翻完两拍都归零，不留半道上的那一帧）',
     !!pBack && pBack.side === 'back' && (pBack.turn || '') === '',
     JSON.stringify(pBack && { side: pBack.side, turn: pBack.turn }))
@@ -2505,16 +2561,34 @@ try {
     && ['mouth','breast','vagina','anus','lewd'].every((k) => pBack.slots.includes(k))
     && pBack.bars === 5,
     JSON.stringify(pBack && { slots: pBack.slots, bars: pBack.bars }))
+  /* 读数的起点：底档一律 0，量出来多少就是播进去的增量多少。
+     若哪天有人给底档垫了一个初始开发度，这一条立刻报 —— 那是「谁都不该
+     带着开发度登场」这条规矩的哨兵。 */
+  ok('R4b 读数从 0 起：量到的四个开发度 = 播进去的增量（口腔 22 · 小脑 0 · 小穴 40 · 菊穴 0）',
+    !!pBack && pBack.devs.mouth === 22 && pBack.devs.breast === 0
+    && pBack.devs.vagina === 40 && pBack.devs.anus === 0,
+    JSON.stringify(pBack && pBack.devs))
   ok('R5 色情度自成一节（整幅的一条粗条，独自摆，不混进四处里）；四处部位各有自己的「状态」文字',
-    !!pBack && pBack.lewdVal !== null && Number(pBack.lewdVal) > 0
+    !!pBack && Number(pBack.lewdVal) === 30
     && pBack.lewdHead === true && pBack.lewdSectSlots === 1 && pBack.lewdSectThick === true
     && pBack.barsSectSlots === 4 && pBack.states === 4,
     JSON.stringify(pBack && { lewdVal: pBack.lewdVal, head: pBack.lewdHead, lewdSect: pBack.lewdSectSlots,
       thick: pBack.lewdSectThick, barsSect: pBack.barsSectSlots, states: pBack.states, lewdText: pBack.lewdText }))
+  /* 最近一回与看法：都是「一句话」，播进去的改写要原样顶掉底档那一句。
+     看法那一栏底档本来就写着（每人一句），所以这里只验「改写顶得掉」。 */
+  ok('R5b 新增两栏：「最近的性行为」与「对这种事情的看法」都在，且推进里的改写顶掉了底档那一句',
+    !!pBack && /旅馆/.test(pBack.lastAct) && /不再只是/.test(pBack.view)
+    && !/尚未发生过/.test(pBack.lastAct),
+    JSON.stringify(pBack && { lastAct: pBack.lastAct, view: pBack.view }))
   ok('R6 立绘位先占住（图待补，写明该补到哪个文件名）· 破处那一栏在',
     !!pBack && pBack.placeholderFig === true && pBack.placeholder === 'public/cg/cg-intim-luna.webp'
     && pBack.hasFoot === true && /是/.test(pBack.virgin),
     JSON.stringify(pBack && { ph: pBack.placeholder, virgin: pBack.virgin }))
+  /* 不相干的说明文字不该出现在这一页上：读的人要看的是她，不是这份档案的规则。
+     （底档与推进怎么合成、破处只认第一回 —— 那些话写在源码注释里，不写在卡上。） */
+  ok('R6b 卡上不写「这一栏是怎么来的」：合成规则那几句说明不出现在背面',
+    !!pBack && !/后写覆盖|不再改写|只认第一回|由约会与私密往来/.test(pBack.txt),
+    (pBack && pBack.txt ? pBack.txt.slice(0, 60) : '(空)'))
   const pClicked = await ev(`(()=>{const b=document.querySelector('[data-intimate-back-close]');if(!b)return false;b.click();return true})()`)
   // 两拍各 120ms —— 等它转完再量，别在动画中转着的时候量到半道上的那一帧
   await sleep(700)
