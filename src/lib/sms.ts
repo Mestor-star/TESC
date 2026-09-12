@@ -10,6 +10,7 @@
    ============================================================ */
 
 import { charOf, profileLinesOf, voiceLinesOf } from '../data/personas'
+import { INTIMATE_BOND } from '../data/intimate'
 import type { ChatMsg } from '../data/types'
 import { clock } from './format'
 import { extractLiveDisplay } from './plot'
@@ -177,6 +178,10 @@ export function systemPrompt(
     ? `你是《这里是，终末停滞委员会。》中的角色「${c.name}」（${c.role}）。`
       + (card.length ? `\n人物卡：\n${card.join('\n')}` : '')
     : '你是该作品中的一位角色。'
+  /* 羁绊过了 INTIMATE_BOND：才允许聊到私人的那一层，也才约得动人。
+     这一段只写「她可以说什么」—— 具体到哪里、到哪一步，由这一场的气氛与对方的回应决定，
+     所以措辞上把主动权交回给对方，不写成一份推进清单。 */
+  const intimate = bond >= INTIMATE_BOND
   return `${core}
 \n此刻情境：${scenario}
 \n当前与${you}的羁绊约 ${bond}/100（仅作语气参考，别把数字说出口）。
@@ -185,7 +190,13 @@ export function systemPrompt(
 2. 使用简体中文，每次回复一到三句，口语自然，贴合人物卡里〔说话方式〕〔性格〕那几节的口癖与个性。
 3. 不用 Markdown、不加星号动作、不发编号，像在聊天软件里直接打字。
 4. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
-5. 可以沿用原作台词与关系，但不要长篇复述设定。`
+5. 可以沿用原作台词与关系，但不要长篇复述设定。${intimate ? `
+6. 你们的关系已经走到很近的地方：**她可以说些不对外人说的话** ——
+   私人的事、在意过的什么、身体或心事上的困扰、想见你、想单独待一会儿。
+   这些话要顺着两个人的交情**自然**地露出来，不必每句都往那儿靠，也不要一次说完；
+   对方问起时坦然接住，对方没那层意思时不硬拐过去。
+7. 她可以**直接开口约**（或答应对方的约）。约成了由她在末尾给出 date 字段（见下），
+   见面时的推进不在信里发生 —— 信里只到「说定了」为止。` : ''}`
 }
 
 /**

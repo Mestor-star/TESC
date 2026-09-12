@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress } from '../data/types'
 import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
+import { INTIMATE_BOND, intimateOf } from '../data/intimate'
 import { clamp } from '../lib/format'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
@@ -144,12 +145,19 @@ export interface TerminalState {
   /** 变量面板开关（NavRail 底部「变量」按钮；Plot 等亦可经 ctx 打开） */
   varsOpen: boolean
   setVarsOpen: (open: boolean) => void
-  /** 该段已做的抉择（事件 id → 选项 key） */
-  pickOf: (id: string) => string | null
-  recordPick: (id: string, key: string) => void
   /** 该段此刻挂着的场景 CG id（导演未点名 → null） */
   cgOf: (id: string) => string | null
   setCg: (id: string, cgId: string) => void
+
+  /**
+   * 私密档案（只对女角色生效）。`intimOf` 返回**底档 + 已落地的推进**合成之后的一页；
+   * 非女角色 / 无底档 → null（档案页据此整节不摆）。
+   */
+  intimOf: (charId: string) => IntimateProfile | null
+  /** 私密档案与私密话题是否已解封（羁绊 ≥ INTIMATE_BOND） */
+  intimOpen: (charId: string) => boolean
+  /** 落下一次私密推进（约会 / 私密往来）：各部位开发度增量、状态改写、破处对象 */
+  bumpIntim: (charId: string, p: IntimateProgress) => void
 
   /** 已归档「记录」（按阅读序） */
   records: WorldRecord[]
@@ -201,7 +209,7 @@ function takePendingView(): ViewId | null {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, cg: {}, records: [] }
+  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, intim: {}, records: [] }
 }
 
 /** 「记录」按阅读序排序（主键 readingIndexOf，次键完成时间） */
@@ -253,9 +261,10 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     met: raw?.met ?? {},
     ends: raw?.ends ?? {},
     own: raw?.own ?? [],
-    pick: raw?.pick ?? {},
     // 旧档没有这一栏（场景 CG 点名是后加的）→ 空表；那些段退回 when 兜底，不影响别的
     cg: raw?.cg ?? {},
+    // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
+    intim: raw?.intim ?? {},
     records: [],
   }
   const doneIds = new Set(Object.keys(epDone))
@@ -741,11 +750,6 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [world.flags],
   )
 
-  const pickOf = useCallback((id: string) => world.pick[id] ?? null, [world.pick])
-  const recordPick = useCallback((id: string, key: string) => {
-    setWorld((prev) => ({ ...prev, pick: { ...prev.pick, [id]: key } }))
-  }, [])
-
   /** 某段此刻挂着的场景 CG（导演还没点名 → null，由显示端退回 when 兜底） */
   const cgOf = useCallback((id: string) => world.cg?.[id] ?? null, [world.cg])
   /**
@@ -754,6 +758,37 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    */
   const setCg = useCallback((id: string, cgId: string) => {
     setWorld((prev) => ({ ...prev, cg: { ...prev.cg, [id]: cgId } }))
+  }, [])
+
+  /** 该角色此刻的私密档案（底档 + world.intim 合成）；非女角色 / 无底档 → null */
+  const intimOf = useCallback(
+    (charId: string) => intimateOf(charId, world.intim?.[charId]),
+    [world.intim],
+  )
+  /** 羁绊够不够翻开这一页（会长一类恒满值者一并算过） */
+  const intimOpen = useCallback((charId: string) => bondNow(charId) >= INTIMATE_BOND, [bondNow])
+  /**
+   * 落下一次私密推进。开发度**累加**（不是覆盖）、状态句后写覆盖底档、
+   * 破处对象**只认第一次落下的那个** —— 与 data/intimate.ts 的合成规则一一对应，
+   * 在这里就把「第一次说了算」定住，免得合成时还要倒推先后。
+   */
+  const bumpIntim = useCallback((charId: string, prog: IntimateProgress) => {
+    if (!personOf(charId)) return
+    setWorld((prev) => {
+      const cur = prev.intim?.[charId] ?? {}
+      const dev = { ...cur.dev }
+      for (const [slot, add] of Object.entries(prog.dev ?? {})) {
+        if (typeof add !== 'number' || !Number.isFinite(add) || !add) continue
+        const key = slot as keyof typeof dev
+        dev[key] = (dev[key] ?? 0) + add
+      }
+      const next: IntimateProgress = { ...cur }
+      if (Object.keys(dev).length) next.dev = dev
+      if (prog.state && Object.keys(prog.state).length) next.state = { ...cur.state, ...prog.state }
+      // 破处对象：已经落下过就不再改 —— 问的是第一回
+      if (prog.firstBy?.trim() && !cur.firstBy) next.firstBy = prog.firstBy.trim()
+      return { ...prev, intim: { ...prev.intim, [charId]: next } }
+    })
   }, [])
 
   /** 请求打开某角色档案（自动切到档案页；档案页受门禁保护，未解锁时 navigate 会被拦下） */
@@ -996,10 +1031,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     addVar,
     unsetVar,
     renameVar,
-    pickOf,
-    recordPick,
     cgOf,
     setCg,
+    intimOf,
+    intimOpen,
+    bumpIntim,
     varsOpen,
     setVarsOpen,
     records: world.records,

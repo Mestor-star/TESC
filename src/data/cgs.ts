@@ -21,10 +21,34 @@
 import type { CgRef } from './types'
 
 /**
- * 通用图位。空数组 = 不启用（页面与提示词里整块不出现）。
+ * 通用图位。
  *
- * 加一条的写法：
- *   { id: 'cg-committee-hall', note: '委员会总部大厅 · 长长的圆桌与窗外的苍色天光' },
- *   { id: 'cg-hikari-stand',   note: '恋兔光的定妆半身', cast: ['hikari'] },
+ * 分两段：
+ *   ① **定妆**（带 `cast`）—— 一位一张半身。只在本人出场的段里进候选，
+ *      免得模型在没有她的场面里把她的定妆图摆出来。
+ *   ② **通用场景**（不带 cast）—— 大厅、校门、夜色、废墟这类哪儿都可能用上的空镜。
+ *
+ * 素材照旧放 `public/cg/<id>.webp|png|jpg`。**缺图时摆「CG 待补」占位框**：
+ * 版位先占着，往目录里丢一张同名图即点亮，不必改码（见 lib/cg.ts）。
  */
-export const CG_POOL: CgRef[] = []
+export const CG_POOL: CgRef[] = [
+  /* ---------- ① 定妆（只在本人在场时进候选） ---------- */
+  /* 先只登记最常在场的那几位；其余人等要用了再往这儿加一行即可。 */
+  { id: 'cg-hikari-stand', note: '恋兔光 · 定妆半身（耳机与工装外套，笑得张扬）', cast: ['hikari'] },
+  { id: 'cg-luna-stand', note: '露娜 · 定妆半身（女仆装，垂着眼）', cast: ['luna'] },
+  { id: 'cg-mefisa-stand', note: '梅芙莉莎 · 定妆半身（值班室里的文件堆前）', cast: ['mefisa'] },
+  { id: 'cg-nyau-stand', note: '小柴喵呜 · 定妆半身（抱着羊，仰头看人）', cast: ['nyau'] },
+  { id: 'cg-anatolia-stand', note: '艾莉芙 · 定妆半身（学生会室的窗边，指尖压着文件）', cast: ['alive-anatolia'] },
+  { id: 'cg-maou-stand', note: '黑之魔王 · 定妆半身（漆黑的少女，笑意起于眼底）', cast: ['kuro-no-maou'] },
+
+  /* ---------- ② 通用场景（哪一段都可能用得上） ---------- */
+  { id: 'cg-committee-hall', note: '委员会总部大厅 · 长长的圆桌与窗外的苍色天光' },
+  { id: 'cg-school-gate', note: '苍之学园 · 校门与一路铺开的樱花' },
+  { id: 'cg-classroom', note: '教室 · 斜阳切过课桌，粉笔灰浮在光里' },
+  { id: 'cg-street-daily', note: '日常的街道 · 招牌与行人，天上悬着终末的影子' },
+  { id: 'cg-night-city', note: '夜里的城市 · 脚下的灯海' },
+  { id: 'cg-battle-sky', note: '战斗 · 苍色的天空被撕开一道口子' },
+]
+
+/* 约会那一档的图位另在 lib/rendezvous.ts 登记（DATE_CG / DATE_CG_INTIMATE）——
+   它们只在一场见面里点，不必混进这张通用池。 */

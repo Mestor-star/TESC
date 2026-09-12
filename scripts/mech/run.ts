@@ -3193,7 +3193,7 @@ export function run(): MechReport {
        · 自己另记一份、跟事实对不上（这里没有第二份副本，所以钉死「同一份输入同一份结果」） */
   try {
     const world = (over: Partial<WorldState> = {}): WorldState => ({
-      offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [], ...over,
+      offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], records: [], ...over,
     })
     const mk = (over: Partial<WorldState> = {}, epDone: Record<string, true> = {}, records: WorldRecord[] = []): MemInput =>
       ({ world: world(over), epDone, records, bondNow: (id) => (id === 'luna' ? 46 : 20) })
@@ -3303,35 +3303,25 @@ export function run(): MechReport {
       && rels[0]!.id === 'luna',
       rels.map((r) => `${r.name}${r.bond}`).join(' > '))
 
-    /* ⑦ 伏笔三类各有各的出处：正卡着的一段 / 走了另一条路还没收束的 / 应下没了的托付 */
-    /* 两个**不同的**段各取一条：同一段里既有原著选项又有旁支选项，
-       拿同一段验两边，后一条 pick 会把前一条盖掉（read 到的自然是空的）。
-       另：旁支选项不带 canon 字段（不是 canon:false）—— 判据写 `!== true` 才抓得到。 */
-    const divergeEv = Object.entries(SCENES)
-      .find(([id, sc]) => timelineIds.has(id) && (sc?.choices ?? []).some((c) => c.canon !== true))
-    const canonEv = Object.entries(SCENES)
-      .find(([id, sc]) => id !== divergeEv?.[0] && timelineIds.has(id) && (sc?.choices ?? []).some((c) => c.canon === true))
-    const nonCanonKey = divergeEv?.[1]?.choices?.find((c) => c.canon !== true)?.key ?? ''
-    const canonKey = canonEv?.[1]?.choices?.find((c) => c.canon === true)?.key ?? ''
+    /* ⑦ 伏笔两类各有各的出处：正卡着的一段 / 应下没了的托付。
+       （原先还有一类「分歧」（选了非原著路线还没走到落点的），随抉择点一起撤掉了 ——
+        如今与原著相异只剩归档记录上的 diverged 标记，那个不当伏笔。） */
     const th = threadsOf({
-      world: world({ pick: { [divergeEv![0]]: nonCanonKey, [canonEv![0]]: canonKey } }),
+      world: world(),
       epDone: {}, records: [], bondNow: () => 20,
       tasks: [
         { id: 't1', title: '应下的事', detail: '还没做', done: false, ts: 1 },
         { id: 't2', title: '做完的事', done: true, ts: 2 },
       ],
     })
-    ok('记忆库 · 伏笔：正卡着的一段、走了另一条路的抉择、应下没了的托付 —— 三样各归各类',
+    ok('记忆库 · 伏笔：正卡着的一段 + 应下没了的托付 —— 各归各类',
       th.some((t) => t.kind === '进行中' && t.title === TIMELINE[0]!.title)
-      && th.filter((t) => t.kind === '分歧').length === 1
-      && th.find((t) => t.kind === '分歧')?.title === TIMELINE.find((e) => e.id === divergeEv![0])!.title
       && th.filter((t) => t.kind === '托付').length === 1
       && th.find((t) => t.kind === '托付')?.title === '应下的事',
       th.map((t) => `${t.kind}·${t.title}`).join('　'))
-    ok('记忆库 · 伏笔：选了原著那条路不算分歧；了结的托付不再挂着（那是「事迹」）',
-      !th.some((t) => t.kind === '分歧' && t.title === TIMELINE.find((e) => e.id === canonEv![0])!.title)
-      && !th.some((t) => t.title === '做完的事'),
-      `分歧 ${th.filter((t) => t.kind === '分歧').length} 条 · 原著抉择（${canonEv![0]}）没算进来`)
+    ok('记忆库 · 伏笔：了结的托付不再挂着（那是「事迹」）',
+      !th.some((t) => t.title === '做完的事'),
+      th.map((t) => t.title).join('、'))
 
     /* ⑧ 技能：读到的位置换时期 —— 与引擎同一口径（opPeriodAt）。时期的分界点是
           「读到那一节当节翻篇」，所以拿分界点前后各一次读数对着看，比「读了几段之后应该不一样」结实。

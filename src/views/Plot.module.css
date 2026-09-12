@@ -140,24 +140,6 @@
   50% { opacity: 1; transform: scale(1.1); }
 }
 
-.quickRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border: 1px dashed var(--line-2);
-  background: var(--bg-1);
-}
-.quickRow > span { margin-right: 2px; }
-.quick {
-  white-space: normal;
-  text-align: left;
-  border-color: var(--line-2);
-  color: var(--ink-mute);
-}
-.quick:hover:not(:disabled) { color: var(--ink); border-color: var(--line-3); }
-
 .thread {
   display: flex;
   flex-direction: column;

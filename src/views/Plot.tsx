@@ -42,6 +42,7 @@ import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, 
 import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
+import { SLOT_META } from '../data/intimate'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 
@@ -256,8 +257,8 @@ export function Plot() {
   const {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
-    bumpBond, registerEnd, meetChar, setFlag, recordPick, completeEvent,
-    records, requestProfile, setCg,
+    bumpBond, registerEnd, meetChar, setFlag, completeEvent,
+    records, requestProfile, setCg, bumpIntim,
   } = useTerminal()
 
   /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
@@ -416,7 +417,7 @@ export function Plot() {
     (parsed: PlotReply, evId: string) => {
       const d = parsed.directive
       if (!d || Object.keys(d).length === 0) return
-      const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag })
+      const fx = applyDirective(d, { meetChar, bumpBond, registerEnd, setFlag, bumpIntim })
       const ev = TIMELINE.find((e) => e.id === evId)
       if (fx.met.length) {
         const names = fx.met.map((id) => personOf(id)?.name ?? id).join(' · ')
@@ -438,6 +439,13 @@ export function Plot() {
       if (fx.cg) {
         setCg(evId, fx.cg)
         push('info', '场景 CG', '这一幕换了一张 —— 低语者日志的「当前事件」卡上可见。', false)
+      }
+      /* 私密档案推进：报一句「动的是哪一位的哪一处」，数本身在档案页看 */
+      if (fx.intim.length) {
+        const parts = fx.intim
+          .map((x) => `${personOf(x.char)?.name ?? x.char} · ${SLOT_META[x.slot].label}`)
+          .join(' · ')
+        push('decode', '私密档案 · 有更新', `${parts} —— 角色档案的「私密档案」一栏可见。`, false)
       }
       if (fx.flags.length) {
         const shown = fx.flags
@@ -471,7 +479,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCg, push],
+    [meetChar, bumpBond, registerEnd, setFlag, setCg, bumpIntim, push],
   )
 
   /**
@@ -852,30 +860,6 @@ export function Plot() {
     setConcluded(null)
     appendMsg(focusEv.id, { id: idFor(), from: 'user', text: t, time: clock() })
     await pushTurn(focusEv.id, t)
-  }
-
-  /* —— 既定行动快捷槽（若该事件有 choices） —— */
-  const scene = focusEv ? SCENES[focusEv.id] : undefined
-  const choices = scene?.choices?.filter((ch) => ch && world.pick[focusEv!.id] !== ch.key) ?? []
-  const alreadyPicked = focusEv ? !!scene?.choices?.length && !!world.pick[focusEv.id] : false
-
-  const quickAct = async (key: string) => {
-    if (!focusEv || busy) return
-    setConcluded(null)
-    const ch = SCENES[focusEv.id]?.choices?.find((c) => c.key === key)
-    if (!ch) return
-    // 依原著既定余波确定性落地（等价旧 choose 语义）
-    // 先落本地，再发消息让模型据「已发生事实」续写，避免重复累计
-    recordPick(focusEv.id, ch.key)
-    if (ch.bond) for (const b of ch.bond) bumpBond(b.char, b.delta)
-    if (ch.flag) setFlag(ch.flag[0], ch.flag[1])
-    push('decode', '行动已定 · 终端留存', ch.label, false)
-    const text =
-      `（言万心叶的行动已定，并已由终端自动存档：）${ch.label}。\n`
-      + `（该行动的既定余波：${ch.after}）\n`
-      + '请把上述视为已经发生的事实，从此刻的局势接续叙述；不要重复该行动本身，也不要再次累计随该行动记录过的羁绊或标记。'
-    appendMsg(focusEv.id, { id: idFor(), from: 'user', text, time: clock() })
-    await pushTurn(focusEv.id, text)
   }
 
   /** 「进入下一事件」（收束栏主按钮）：此刻才写记录并推进到下一事件，随后让导演生成自然衔接开场 */
@@ -1481,23 +1465,6 @@ export function Plot() {
                 </div>
               ) : null}
 
-              {scene?.choices && showOnline && ready && !alreadyPicked ? (
-                <div className={css.quickRow}>
-                  <span className="tiny muted" style={{ color: 'var(--ink-faint)', letterSpacing: '0.12em' }}>既定行动</span>
-                  {choices.map((ch) => (
-                    <button
-                      key={ch.key}
-                      className={`btn btn--ghost ${css.quick}`}
-                      style={{ fontSize: 12 }}
-                      disabled={!quickReady}
-                      onClick={() => void quickAct(ch.key)}
-                    >
-                      {ch.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
               <div className={css.thread}>
                 {pastBlocks.map((b) => (
                   <div key={b.ev.id} className={css.pastBlock} data-past={b.ev.id}>
@@ -1521,7 +1488,7 @@ export function Plot() {
                       {ready
                         ? (pastBlocks.length
                           ? '写下的都留在上面了。本段由你起头——输入任意消息开始这一事件。'
-                          : '输入任意消息，导演会依据大纲铺陈局势并由你接续行动；亦可点上方「既定行动」直接走关键抉择。')
+                          : '输入任意消息，导演会依据大纲铺陈局势并由你接续行动。')
                         : '配置主线通道后即可在线推演；当前可切「离线通读」阅读本段原文。'}
                     </span>
                   </div>

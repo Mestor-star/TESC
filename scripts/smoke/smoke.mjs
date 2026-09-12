@@ -1366,14 +1366,17 @@ try {
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true},cur:'v1-1',operatorName:'记忆观察员',focusId:'gcn',
       world:{offset:{luna:14,hikari:-4},locked:{},flags:{},met:{luna:true,hikari:true},
-        ends:{'soul-reservoir':true},own:[],pick:{'v1-3':'bargain'},records:[]}}));
+        ends:{'soul-reservoir':true},own:[],
+        /* v1-1 收束时走了原著没有的那条路 —— 分歧是**落在记录上的**（diverged），
+           所以这一条带着标记入档；伏笔那一栏只留还悬着的东西。 */
+        records:[{eventId:'v1-1',mode:'online',digest:'他把那句话说了回来 —— 原著里不是这一条。',ts:1,diverged:true}]}}));
     localStorage.setItem('zts-sms-tasks:v1',JSON.stringify([
       {id:'k2t1',title:'替她把这句带回去',detail:'她还等着回话',ts:1,done:false},
       {id:'k2t2',title:'已经做完的事',ts:2,done:true}]));
     localStorage.setItem('zts-plot:v1',JSON.stringify({}));
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
-  ok('K2-0 播种：走过 v1-1 · 应下一件托付 · v1-3 走的是非原著那条路', k2Seed === true, 'seed=' + k2Seed)
+  ok('K2-0 播种：走过 v1-1（走的是非原著那条路）· 应下一件托付', k2Seed === true, 'seed=' + k2Seed)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('情景记忆库')
@@ -1434,6 +1437,8 @@ try {
       sectionWidth:Math.round((secs[1]||secs[0]).getBoundingClientRect().width),
       rel:[...document.querySelectorAll('[data-mem-rel]')].map(x=>x.getAttribute('data-mem-rel')),
       threads:[...document.querySelectorAll('[data-mem-thread]')].map(x=>x.getAttribute('data-mem-thread')),
+      /* 大事记里带了「分歧」那一枚标记的行（分歧是落在记录上的，不在伏笔那一栏） */
+      diverged:chron.filter(r=>r.done&&r.txt.includes('分歧')).map(r=>r.id),
       sights:[...document.querySelectorAll('[data-mem-sight]')].map(x=>x.getAttribute('data-mem-sight')),
       minds:document.querySelectorAll('[data-mem-mind]').length,
       sealed:groups.filter(g=>g.sealed).length,sealedTxt:groups.filter(g=>g.sealed&&/封存/.test(g.txt)).length,
@@ -1461,11 +1466,15 @@ try {
     k2m.rel.includes('luna') && k2m.rel.includes('hikari') && !k2m.rel.includes('operator')
     && k2m.rel.length === k2m.rows.人物关系,
     JSON.stringify(k2m.rel))
-  ok('K2-4 伏笔三类各归各类：正卡着一段 / 走了另一条路 / 应下没了的托付（做完的不再挂着）',
+  /* 伏笔这一栏只装**还悬着**的：正卡着的一段 + 应下没了的托付（做完的不再挂着）。
+     走了另一条路的那一段已经收束了，它落在「大事记」那一行的分歧标记上 —— 两处分工，
+     所以这里既卡伏笔只剩那两类，也卡那一枚标记确实挂在对的那一行。 */
+  ok('K2-4 伏笔只装还悬着的（正卡着一段 / 应下没了的托付），分歧标记落在已归档那一行上',
     k2m.threads.filter(x=>x==='进行中').length === 1
-    && k2m.threads.filter(x=>x==='分歧').length === 1
-    && k2m.threads.filter(x=>x==='托付').length === 1,
-    JSON.stringify(k2m.threads))
+    && k2m.threads.filter(x=>x==='托付').length === 1
+    && k2m.threads.filter(x=>x==='分歧').length === 0
+    && k2m.diverged.length === 1 && k2m.diverged[0] === 'v1-1',
+    JSON.stringify({threads:k2m.threads,diverged:k2m.diverged}))
   ok('K2-5 见闻只列登记过的（图鉴那条在、没登记的不冒出来）',
     k2m.sights.length === 1 && k2m.sights[0] === 'soul-reservoir', JSON.stringify(k2m.sights))
   ok('K2-6 心声按卷封存：一卷都没读完 → 正文一条不回放，只报条数',
@@ -1561,7 +1570,7 @@ try {
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true,'v1-2':true},cur:'v1-2',
       operatorName:'作战观察员',focusId:'gcn',
-      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],pick:{},records:[]}
+      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],records:[]}
     }));
     return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true })
@@ -1585,7 +1594,7 @@ try {
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true,'v1-5':true},cur:'v1-5',
       operatorName:'作战观察员',focusId:'gcn',
-      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true,youshihan:true,'alive-anatolia':true,'kuro-no-maou':true,reiya:true,'danae-whitmore':true},ends:{},own:[],pick:{},records:[]}
+      world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true,youshihan:true,'alive-anatolia':true,'kuro-no-maou':true,reiya:true,'danae-whitmore':true},ends:{},own:[],records:[]}
     }));
     return true})()`)
   // 掐掉此前各段留下的接口存根 → 收场成文走模板路径（离线也要能成文）

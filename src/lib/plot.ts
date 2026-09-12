@@ -12,7 +12,8 @@
    按事件逐字注入——那是项目「原文细节通道」，非自动喂正文。
    ============================================================ */
 
-import type { FlagValue, TimelineEvent } from '../data/types'
+import type { FlagValue, IntimateProgress, IntimateSlot, TimelineEvent } from '../data/types'
+import { INTIMATE_BOND, INTIMATE_SLOTS, hasIntimate } from '../data/intimate'
 import { CHARACTERS } from '../data/chars'
 import { eventNotesOf } from '../data/eventnotes'
 import { briefOf } from '../data/briefs'
@@ -56,6 +57,30 @@ export interface PlotDirective {
   battle?: PlotBattle
   /** 角色在对话里派下的托付（短信场景用；进「电话 · 任务列表」，不进世界状态） */
   task?: { title: string; detail?: string }[]
+  /**
+   * 角色的**邀约**（短信场景用）：她在信里把人约出去 —— 落成一场「约会」，
+   * 独立于主线时间线另开一条线程（见 lib/rendezvous.ts）。
+   * 只认短信那一路（`smsDirective` 放行）；主线导演不给这个字段。
+   */
+  date?: { kind?: 'date' | 'intimate'; title?: string; place?: string }
+  /**
+   * **私密档案的推进**（约会 / 私密往来时用）：这一场确实推进了某个部位才给。
+   * 只认女角色（`hasIntimate`）；开发度按增量累加、状态句后写覆盖、
+   * `first` 只在初次破处那一回置 true（此后不再改写「破处对象」）。
+   */
+  intim?: IntimateDirective[]
+}
+
+/** 一条私密推进：某角色的某个部位，这一次走到了哪儿 */
+export interface IntimateDirective {
+  char: string
+  slot: IntimateSlot
+  /** 开发度增量（一次一小步；上限见 INTIM_DEV_MAX） */
+  dev?: number
+  /** 状态句改写（可选；缺省不动底档那一句） */
+  state?: string
+  /** 这一次是初次破处（'破处对象' 落成言万叶本人） */
+  first?: boolean
 }
 
 /** 剧情触发的交战规格 —— 由模型在事件指令里输出 */
@@ -82,7 +107,12 @@ const KNOWN_FIELDS = new Set([
   // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
   // 任务却永远落不了地，而且一声不吭。
   'task',
+  // 私密那一支（约会 / 私密往来）：同样是漏一个就整条安静地丢
+  'date', 'intim',
 ])
+
+/** 一次私密推进的开发度增量上限（一次一小步：一回合跳满等于没有过程） */
+const INTIM_DEV_MAX = 8
 
 /** 事件指令里 cg id 的长度上限（够长到写得下 `v1-2-refuse`，短到拦得住整段串词） */
 const CG_ID_MAX = 64
@@ -153,6 +183,45 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       if (task.length >= 2) break
     }
     if (task.length) out.task = task
+  }
+
+  /* 邀约：只要一个形状（kind / title / place 都是可选短串）。
+     是不是「够格约会」由调用方按羁绊判（这儿手里没有 bondNow）。 */
+  if (src.date && typeof src.date === 'object' && !Array.isArray(src.date)) {
+    const d = src.date as Record<string, unknown>
+    const title = typeof d.title === 'string' ? d.title.trim().slice(0, 40) : ''
+    const place = typeof d.place === 'string' ? d.place.trim().slice(0, 40) : ''
+    out.date = {
+      ...(d.kind === 'intimate' ? { kind: 'intimate' as const } : { kind: 'date' as const }),
+      ...(title ? { title } : {}),
+      ...(place ? { place } : {}),
+    }
+  }
+
+  /* 私密推进：只认女角色与四个部位；开发度按增量收（负数抹平 —— 这一档只增不减），
+     状态句封顶，避免整段正文塞进来。 */
+  if (Array.isArray(src.intim)) {
+    const intim: IntimateDirective[] = []
+    for (const item of src.intim) {
+      if (!item || typeof item !== 'object') continue
+      const o = item as Record<string, unknown>
+      const char = typeof o.char === 'string' ? o.char.trim() : ''
+      const slot = typeof o.slot === 'string' ? (o.slot.trim() as IntimateSlot) : null
+      if (!hasIntimate(char) || !slot || !INTIMATE_SLOTS.includes(slot)) continue
+      const dev = finiteNum(o.dev)
+      const state = typeof o.state === 'string' ? o.state.trim().slice(0, 120) : ''
+      const first = o.first === true
+      if (dev === null && !state && !first) continue
+      intim.push({
+        char,
+        slot,
+        ...(dev !== null ? { dev: clamp(Math.round(dev * 10) / 10, 0, INTIM_DEV_MAX) } : {}),
+        ...(state ? { state } : {}),
+        ...(first ? { first: true } : {}),
+      })
+      if (intim.length >= 4) break
+    }
+    if (intim.length) out.intim = intim
   }
 
   if (Array.isArray(src.ends)) {
@@ -645,6 +714,8 @@ export interface DirectiveApi {
   bumpBond: (charId: string, delta: number) => void
   registerEnd: (id: string) => void
   setFlag: (k: string, v: FlagValue) => void
+  /** 私密档案推进（约会 / 私密往来落下的开发度与状态；见 data/intimate.ts） */
+  bumpIntim: (charId: string, p: IntimateProgress) => void
 }
 
 export interface DirectiveEffects {
@@ -657,11 +728,15 @@ export interface DirectiveEffects {
   diverged: boolean
   eventDone: boolean
   digest?: string
+  /** 角色发出的邀约（调用方落成一场约会线程） */
+  date?: { kind?: 'date' | 'intimate'; title?: string; place?: string }
+  /** 本次实际推进的私密部位（供提示条念一句） */
+  intim: { char: string; slot: IntimateSlot }[]
 }
 
 /** 把净化后的指令落地到世界状态；返回实际产生的影响（供视图 toast/结算） */
 export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEffects {
-  const fx: DirectiveEffects = { met: [], bonds: [], ends: [], flags: [], diverged: false, eventDone: false }
+  const fx: DirectiveEffects = { met: [], bonds: [], ends: [], flags: [], diverged: false, eventDone: false, intim: [] }
 
   for (const id of d.met ?? []) {
     api.meetChar(id)
@@ -686,6 +761,18 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
   // CG 点名不在这儿落盘：applyDirective 手里没有「当前事件 id」，
   // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的事件 id 写。
   if (d.cg) fx.cg = d.cg
+  /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
+     破处对象由这一层定 —— `first` 置位即记为「言万心叶」（'you'），
+     底下的合成规则只认第一次落下的那个，之后再给也改不动。 */
+  for (const it of d.intim ?? []) {
+    const prog: IntimateProgress = {}
+    if (typeof it.dev === 'number' && it.dev !== 0) prog.dev = { [it.slot]: it.dev }
+    if (it.state) prog.state = { [it.slot]: it.state }
+    if (it.first) prog.firstBy = 'you'
+    api.bumpIntim(it.char, prog)
+    fx.intim.push({ char: it.char, slot: it.slot })
+  }
+  if (d.date) fx.date = d.date
   fx.diverged = d.diverged === true
   fx.eventDone = d.eventDone === true
   if (d.digest) fx.digest = d.digest
@@ -704,13 +791,20 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       Boolean(d.cg) ||
       d.diverged === true ||
       d.eventDone === true ||
-      Boolean(d.battle?.name),
+      Boolean(d.battle?.name) ||
+      Boolean(d.date) ||
+      Boolean(d.intim?.length),
   )
 }
 
 /**
  * 短信专用过滤：只放行「当前角色」的小幅羁绊（±3）与分支标记；
  * 不放行 met / ends / eventDone。无可放行内容返回空指令 {}。
+ *
+ * **放行 `date`（邀约）而不放行 `intim`**：一条短信可以把人约出去，
+ * 但**身体上的推进不发生在短信里** —— 那是见了面、在约会线程里落的事
+ * （见 dateDirective 与 lib/rendezvous.ts）。这样「档案上的开发度」永远对得上
+ * 「确实见过的那几面」，不会靠一条文字就跳。
  */
 export function smsDirective(d: PlotDirective | null, charId: string): PlotDirective {
   if (!d) return {}
@@ -724,6 +818,45 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
   if (d.flag && Object.keys(d.flag).length) out.flag = d.flag
   // 托付：短信里被正式交代下来的事，落到「电话 · 任务列表」
   if (d.task && d.task.length) out.task = d.task
+  // 邀约：她在信里把人约出去 —— 落成一场独立的约会线程
+  if (d.date) out.date = d.date
+  return out
+}
+
+/**
+ * 约会专用过滤（约会线程里的一轮）：走到这一步人已经在眼前了，
+ * 放行的比短信宽 ——
+ *   · bond：只认**对方**，一次 ±5（一场约会里的分量比一条短信重）；
+ *   · met / ends / flag / task：照放（约会也能遇见人、撞见图鉴实体、被托付事）；
+ *   · cg：照放（这一场该摆哪张画，由 lib/rendezvous.ts 落地）；
+ *   · intim：**只有这一路放行**（私密档案的推进只发生在见面的时候），
+ *     开发度增量再收一道到 ±3 一回合（sanitize 那道 8 是单项上限）。
+ *   · eventDone / diverged / digest：**不放行** —— 约会是主线之外另开的一条线程，
+ *     不能替主线把那一段判成走完。
+ */
+export function dateDirective(d: PlotDirective | null, charId: string): PlotDirective {
+  if (!d) return {}
+  const out: PlotDirective = {}
+  if (d.bond) {
+    const bond = d.bond
+      .filter((b) => b.char === charId)
+      .map((b) => ({ char: b.char, delta: clamp(Math.round(b.delta), -5, 5) }))
+    if (bond.length) out.bond = bond
+  }
+  if (d.met && d.met.length) out.met = d.met
+  if (d.ends && d.ends.length) out.ends = d.ends
+  if (d.flag && Object.keys(d.flag).length) out.flag = d.flag
+  if (d.task && d.task.length) out.task = d.task
+  if (d.cg) out.cg = d.cg
+  if (d.intim && d.intim.length) {
+    const intim = d.intim
+      .filter((it) => it.char === charId)
+      .map((it) => ({
+        ...it,
+        ...(typeof it.dev === 'number' ? { dev: clamp(Math.round(it.dev), 1, 3) } : {}),
+      }))
+    if (intim.length) out.intim = intim
+  }
   return out
 }
 
@@ -1106,6 +1239,28 @@ ${ctx.cgPalette}
 拿不准、或清单里没有贴得上此刻那一幕的，就整条省略 —— 省略即沿用它此刻挂着的图。`
     : ''
 
+  /* 私密往来 —— 只在「本人就在场、且关系已经走到那一步」时开这一节。
+     名单由 bondNow 现算（不是原著读数）：主角没把这段关系走出来，她就不在这张名单上，
+     导演也就不该替他开这一档。名单为空则整节不出现（行为与从前一致）。 */
+  const intimIds = present.filter(
+    (id) => hasIntimate(id) && (ctx.bondNow?.(id) ?? 0) >= INTIMATE_BOND,
+  )
+  const intimSection = intimIds.length
+    ? `
+
+【私密往来 · 已在场且关系走到这一步的人】
+${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
+这几位的羁绊在 ${INTIMATE_BOND} 以上 —— 到了这一步，私密的话题就开得了口：
+她会说些平时不说的个人事，也可能提出或答应一次单独的见面。
+分寸：
+· **只对上面列的人开这一档**；名单外的人照【此刻的羁绊】那一节的分寸写，不越界。
+· 她给到哪一步，由她此刻的关系与性格定 —— 有的只肯说，有的肯赴约，有的已不在意距离。
+· 推进要**跟着言万心叶的行动走**：他给了那层意思、她也接得住，才往前挪一步；
+  他没给的就别替她安排。拿不准就停在当下，不必每回合都往前推。
+· 私密场面照常上屏、详略自便；真正推进到身体哪一步，用下面事件指令里的 intim 落成读数
+  （那几个数进的是档案页「私密档案」，不是正文）。`
+    : ''
+
   const notesSection = notesSectionFor(ev)
   const anchor = ctx.nextEvent ? `\n\n${nextAnchorBlock(ctx.nextEvent)}` : ''
   /* 他的话摆在最末：大纲 / 情节线 / 落点 / 后接事件全都读完之后，最后读到的是他这一句话。
@@ -1142,7 +1297,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${reask}${loreSection}${opsSection}${varBlock}${cgSection}${anchor}${presetSection(ctx.presetPost)}${will}
+${reask}${loreSection}${opsSection}${varBlock}${cgSection}${intimSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 
@@ -1168,7 +1323,13 @@ ${speechContract()}
     "place": "交战地点",
     "squad": ["在场的参战角色id"],              // 只列此刻确实在场的人；空 = 由已遇见者里挑
     "force": true                              // true = 本段必然开打
-  }
+  }${intimIds.length ? `,
+  "intim": [                                  // 私密档案推进（仅【私密往来】名单上的人；本回合确实推进了哪个部位才给）
+    { "char": "角色id", "slot": "mouth|breast|vagina|anus",
+      "dev": 1,                               // 这一次的开发度增量，1~3（一回合一小步）
+      "state": "改写该部位状态的一句话（可选，不写就沿用原句）",
+      "first": true }                         // 仅当**这一回是初次破处**时置 true（此后不要再给）
+  ]` : ''}
 }
 无任何变化时输出 { }。不要把本说明当作文本念出来。
 
@@ -1186,11 +1347,21 @@ ${speechContract()}
 哪怕这一回合什么都没变，也要给出 {} 的空块：**没有它，这一回合的变量、羁绊、图鉴与收束全部作废**，操作员只能喊你重发一次。这一段正文写得再好，少了它也是白写。`
 }
 
-/** 短信场景的基础提示补充（轻量羁绊许可），由 Tavern 拼到其 system 末尾 */
-export function smsBondRule(charId: string): string {
+/**
+ * 短信场景的基础提示补充（轻量羁绊许可），由 Tavern 拼到其 system 末尾。
+ *
+ * 羁绊过了 INTIMATE_BOND 之后多一段：**可以在信里把人约出去**。
+ * 只放行 `date`（落成一场约会线程，见 lib/rendezvous.ts），
+ * **不放行 intim** —— 身体上的推进不发生在短信里，得见了面才算数。
+ */
+export function smsBondRule(charId: string, bond = 0): string {
+  const open = bond >= INTIMATE_BOND
   return `\n（可选 · 轻量互动：若本回合对话让该角色心绪明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }] }
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }]${open ? `,
+  "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方" }` : ''} }
 其中 bond.delta 只针对该角色取 ±1~3（正=更亲近）；flag 为可选的分支标记；
-task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。
+task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。${open ? `
+date 只在她**真的在信里开口约了**（或答应了对方的约）时才给：title 一句话说清是什么名目，place 写去哪；
+它会另开一场单独的见面，与你原本的相处分开算（身体上的事只在见面时才算数）。` : ''}
 拿不准就不给，直接以对话结束。）`
 }

@@ -68,7 +68,7 @@ export function __clearCgProbes(): void {
 /* ============================================================
    按上下文挑图
    ------------------------------------------------------------
-   判据只看**主角做过什么**（world 里那本账：flags / pick / 好感），
+   判据只看**主角做过什么**（world 里那本账：flags / 好感），
    不看读到第几段 —— 和剧情推进、好感一个口径。所以同一段里，
    他做过的事不同，摆出来的图就不同；什么都没做就是兜底那张。
    ============================================================ */
@@ -76,7 +76,6 @@ export function __clearCgProbes(): void {
 /** 求值用的世界切片。只取这三样，好让调用方不必把整个 WorldState 递进来。 */
 export interface CgContext {
   flags: Record<string, FlagValue>
-  pick: Record<string, string>
   /** 某角色此刻的好感（一般直接传 Terminal 的 bondNow） */
   bond: (char: string) => number
 }
@@ -84,9 +83,6 @@ export interface CgContext {
 /** 一个条件是否成立（各项为「与」；未写的项不参与判定） */
 export function cgWhenHolds(when: CgWhen | undefined, ctx: CgContext): boolean {
   if (!when) return true
-  for (const [id, key] of when.pick ?? []) {
-    if (ctx.pick[id] !== key) return false
-  }
   for (const [flag, want] of when.flag ?? []) {
     if (ctx.flags[flag] !== want) return false
   }

@@ -355,21 +355,9 @@ export interface EventBrief {
   ref?: string
 }
 
-/** 低语者日志「段」的动态补充：开场白 + 抉择点 */
 export type FlagValue = string | number | boolean
 
-/** 单个抉择选项：做出与原著不同（或相同）的行为 → 不同的后续余波 */
-export interface SagaChoice {
-  key: string
-  label: string           // 操作员可执行的行动（按钮文案）
-  canon?: boolean         // 是否「原著实际选择」
-  bond?: { char: CharId; delta: number }[]
-  flag?: [string, FlagValue]
-  after: string           // 该选择的余波描述（第三人称 · 按原文言行改写）
-  hint?: string           // 可选：选择前的一行情境注记
-}
-
-/** 一个时间线段的现场：开场白（按原文第三人称）+ 可选抉择 */
+/** 一个时间线段的现场：开场白（按原文第三人称） */
 export interface SagaScene {
   /**
    * 开场白。**可选**，且只有第一卷第一章（v1-1）写 —— 那一段是逐字原文的排印。
@@ -381,8 +369,6 @@ export interface SagaScene {
   openTag?: string        // 出处/章节标注，如「— 第1卷 序章」
   quote?: string          // 可选：该段最贴切的原文一句（语录）
   quoteWho?: string       // 语录说话人
-  pick?: string           // 抉择提问语（若无 choices 则忽略）
-  choices?: SagaChoice[]
   /**
    * 场景 CG 位。这一栏同时是两样东西：
    *
@@ -436,8 +422,6 @@ export type CgRef = string | {
  * 各项皆可省，全缺省即恒成立。
  */
 export interface CgWhen {
-  /** 抉择分支：这些段各自选中了这些选项（如 `[['v1-9', 'refuse']]`） */
-  pick?: [string, string][]
   /** 世界标记（推进与抉择落下的 flag），按 `FlagValue` 逐项比对 */
   flag?: [string, FlagValue][]
   /** 好感门槛：这些角色的好感都得到这个数 */
@@ -476,6 +460,49 @@ export interface WorldRecord {
   ts: number
 }
 
+/* ============================================================
+   私密档案（只对女角色生效）
+   ------------------------------------------------------------
+   这是一份**游戏内档案**，不是原文考据：原作没有这些读数，字段与取值都由本终端
+   自行拟制（与 TAVERN_PERSONAS 的 greeting 同一性质 —— 撰写样本，非原文台词）。
+   因此不许在任何地方把它当作「原文」引用，也不进人物卡的提示词。
+   底档见 data/intimate.ts；随剧情推进的变动落在 WorldState.intim。
+   ============================================================ */
+
+/** 私密部位（口腔 / 胸部 / 小穴 / 菊穴） */
+export type IntimateSlot = 'mouth' | 'breast' | 'vagina' | 'anus'
+
+/** 一个部位的私密读数 */
+export interface IntimatePart {
+  /** 状态一句话（临床/档案用词，非原文） */
+  state: string
+  /** 开发度 0-100（0 = 未开发） */
+  dev: number
+}
+
+/** 一名角色的私密档案（底档 + 已落地的推进合成之后的结果） */
+export interface IntimateProfile {
+  parts: Record<IntimateSlot, IntimatePart>
+  /** 是否仍为处女 */
+  virgin: boolean
+  /** 破处对象（未破处 → null；'you' = 言万心叶本人） */
+  firstBy: string | null
+}
+
+/**
+ * 私密档案的**动态推进** —— 由约会/私密往来落下（WorldState.intim 的一项）。
+ * 与底档的合成规则见 data/intimate.ts 的 `intimateOf`：开发度累加、状态后写覆盖、
+ * `firstBy` 一旦落下即视为已破处，且**只认第一次**（后来的改写不再顶掉它）。
+ */
+export interface IntimateProgress {
+  /** 各部位开发度**增量**（累加到该部底档开发度上） */
+  dev?: Partial<Record<IntimateSlot, number>>
+  /** 各部位状态改写（后写覆盖底档那句话） */
+  state?: Partial<Record<IntimateSlot, string>>
+  /** 破处对象（落下即非处女；只认第一次落下的那个） */
+  firstBy?: string
+}
+
 /** 持久化世界状态（随存档读写 · 全部为可增删变量） */
 export interface WorldState {
   /**
@@ -502,8 +529,6 @@ export interface WorldState {
   ends: Record<string, true>
   /** 操作员自记实体 */
   own: OwnEndEntry[]
-  /** 各事件段的抉择记录：段 id → 选项 key */
-  pick: Record<string, string>
   /**
    * 各事件段**此刻**摆的场景 CG：段 id → CG id。
    *
@@ -515,6 +540,12 @@ export interface WorldState {
   cg?: Record<string, string>
   /** 已归档的「记录」（事件收束后追加；旧档缺此字段由 hydrate 回填 legacy） */
   records: WorldRecord[]
+  /**
+   * 私密档案的推进（角色 id → 各部位开发度增量 / 状态改写 / 破处对象）。
+   * 由约会与私密往来落下（PlotDirective.intim）；旧档没有这一栏 → 空表，
+   * 底档照常可读，只是没有推进的痕迹。
+   */
+  intim?: Record<string, IntimateProgress>
 }
 
 /** 低语者读到的心声（逐字原文） */

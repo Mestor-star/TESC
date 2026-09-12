@@ -24,6 +24,9 @@ import { AXIS_REF } from '../data/types'
 import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
+import {
+  INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META, VIRGIN, devStage, firstByName,
+} from '../data/intimate'
 import { Portrait, useCharImg } from '../components/Portrait'
 
 import css from './Archive.module.css'
@@ -324,6 +327,109 @@ function placeDialog(
 function SkillIcon({ id }: { id: string }) {
   const Ico = iconOf(id)
   return <Ico size={14} weight="bold" className={css.opAbilIco} data-skill-ico={iconNameOf(id)} />
+}
+
+/* ---------------- 私密档案（只对女角色生效） ---------------- */
+/**
+ * 私密档案面板。
+ *
+ * 底档在 `data/intimate.ts`（游戏内拟制，非原文考据），推进在 `world.intim`
+ * （约会与私密往来落下）—— 这一栏只把两者合成之后照搬上屏，自己不算任何数。
+ *
+ * 两道门：
+ *   ① 只对女角色生效 —— 非女角色 / 无底档者整节不出现（`hasIntimate`）；
+ *   ② 羁绊到 `INTIMATE_BOND` 才翻开 —— 关系没走到那儿，这一页就还是封存的，
+ *      界面只说还差多少，不预告里面写了什么。
+ * 展开是**点出来的**（默认收起）：这一页放在档案最末，点开才铺开。
+ */
+function IntimatePanel({ charId }: { charId: string }) {
+  const { intimOf, intimOpen, bondNow, operatorName } = useTerminal()
+  const [shown, setShown] = useState(false)
+  const prof = intimOf(charId)
+  if (!prof) return null
+  const open = intimOpen(charId)
+  const bond = bondNow(charId)
+
+  if (!open) {
+    const need = Math.max(0, INTIMATE_BOND - bond)
+    return (
+      <div className={css.dialogSection} data-intimate="locked">
+        <h4>私密档案</h4>
+        <div className={css.intimLock}>
+          <b>封存中</b>
+          <p>
+            这一页随关系解封 —— 羁绊到 {INTIMATE_BOND} 才翻开。
+            当前 {bond}/{INTIMATE_BOND}，还差 {need}。
+            好感只在对话、行动与短信往来里涨，不会读着剧情自己长上来。
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={css.dialogSection} data-intimate="open" data-intimate-ready>
+      <h4>私密档案</h4>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        data-intimate-toggle
+        aria-expanded={shown}
+        onClick={() => setShown((v) => !v)}
+      >
+        {shown ? '收起私密档案' : '展开私密档案'}
+      </button>
+
+      {shown ? (
+        <div className={css.intimBody} data-intimate-body>
+          <div className={css.intimParts}>
+            {INTIMATE_SLOTS.map((slot) => {
+              const part = prof.parts[slot]
+              const meta = SLOT_META[slot]
+              return (
+                <div key={slot} className={css.intimRow} data-intimate-slot={slot}>
+                  <span className={css.intimLabel}>
+                    <b>{meta.label}</b>
+                    <i>{meta.hint}</i>
+                  </span>
+                  <span className={css.intimState}>{part.state}</span>
+                  <span className={css.intimDev}>
+                    <span className="meter">
+                      <span
+                        className="meter__fill"
+                        style={{
+                          width: `${part.dev}%`,
+                          background: 'linear-gradient(90deg, color-mix(in srgb, var(--red) 45%, transparent), var(--red))',
+                        }}
+                      />
+                    </span>
+                    <b className="mono">{part.dev}</b>
+                    <i>{devStage(part.dev)}</i>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className={css.intimFoot}>
+            <div className={css.intimFootCell} data-intimate-virgin={prof.virgin ? '1' : '0'}>
+              <small>处女</small>
+              <b>{prof.virgin ? '是' : '否'}</b>
+            </div>
+            <div className={css.intimFootCell} data-intimate-first>
+              <small>破处对象</small>
+              <b>{prof.virgin ? VIRGIN : firstByName(prof.firstBy, operatorName.trim() || '言万心叶')}</b>
+            </div>
+          </div>
+
+          <div className="tiny muted" style={{ lineHeight: 1.7 }}>
+            开发度随约会与私密往来累积，状态句后写覆盖；「破处对象」记的是第一回，之后不再改写。
+            这一页是本终端的游戏内档案，非原文考据；真正的经过写在你与她的会话里。
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 /* ---------------- 战斗数值：档案里也能看见他/她下场的面板 ---------------- */
@@ -1032,6 +1138,9 @@ export function Archive() {
                   )
                 })()}
               </div>
+
+              {/* 私密档案：只对女角色生效，羁绊解封前只说还差多少 */}
+              <IntimatePanel charId={focus.id} />
             </div>
               </div>
             </div>

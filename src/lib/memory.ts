@@ -27,7 +27,6 @@ import { genderOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { charOf } from '../data/personas'
 import { CODEX } from '../data/codex'
 import { MINDS } from '../data/minds'
-import { SCENES } from '../data/scenes'
 import { TIMELINE } from '../data/timeline'
 import { bondName } from './format'
 import { furthestDone } from './operator'
@@ -140,15 +139,14 @@ export function deedsOf(inp: MemInput): MemDeed[] {
 /* ————————————————— 三、伏笔 ————————————————— */
 
 export interface MemThread {
-  kind: '进行中' | '分歧' | '托付'
+  kind: '进行中' | '托付'
   title: string
   detail: string
 }
 
 /**
- * 还悬着的东西。三种，各有各的出处，一个都不是猜的：
+ * 还悬着的东西。两种，各有各的出处，一个都不是猜的：
  *   进行中 —— 时间线上第一段还没归档的（正卡在这一节里）
- *   分歧   —— 已经选了非原著路线、却还没走到落点的那些（走了另一条路，账还没结）
  *   托付   —— 短信里应下、还没了结的事（smstasks）
  * 已经了结的不在这里出现 —— 那属于「事迹」。
  */
@@ -160,13 +158,6 @@ export function threadsOf(inp: MemInput): MemThread[] {
     out.push({ kind: '进行中', title: focus.title, detail: `${focus.group} · ${focus.place}` })
   }
 
-  for (const [id, key] of Object.entries(inp.world.pick)) {
-    if (inp.epDone[id]) continue
-    const ev = evOf(id)
-    const opt = SCENES[id]?.choices?.find((o) => o.key === key)
-    if (!ev || !opt || opt.canon === true) continue
-    out.push({ kind: '分歧', title: ev.title, detail: `选择了「${opt.label}」—— 原著里不是这一条。` })
-  }
 
   for (const t of inp.tasks ?? []) {
     if (t.done) continue

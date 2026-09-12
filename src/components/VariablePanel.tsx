@@ -86,7 +86,6 @@ export function VariablePanel() {
       ['ends', String(Object.keys(world.ends).length)],
       ['own', String(world.own.length)],
       ['records', String(world.records.length)],
-      ['picks', String(Object.keys(world.pick).length)],
       ['epDone', String(Object.keys(epDone).length)],
       ['cur', cur ?? '—'],
       ['unlocked', unlocked ? 'true' : 'false'],

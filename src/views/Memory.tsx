@@ -246,14 +246,14 @@ export function Memory() {
               {threads.length === 0 ? (
                 <div className={css.empty}>
                   <b>眼下没有悬着的事</b>
-                  <span>正卡着的一段、走了另一条路的抉择、短信里应下的托付 —— 有一样，这里就多一条。</span>
+                  <span>正卡着的一段、短信里应下的托付 —— 有一样，这里就多一条。</span>
                 </div>
               ) : (
                 <div className={css.threadList}>
                   {threads.map((t, i) => (
                     <div key={`${t.kind}-${i}`} className={css.thread} data-mem-thread={t.kind}>
                       <span
-                        className={`chip ${t.kind === '进行中' ? 'chip--warn' : t.kind === '分歧' ? 'chip--danger' : ''}`}
+                        className={`chip ${t.kind === '进行中' ? 'chip--warn' : ''}`}
                         style={t.kind === '托付' ? { color: 'var(--violet, var(--steel))' } : undefined}
                       >
                         {t.kind}

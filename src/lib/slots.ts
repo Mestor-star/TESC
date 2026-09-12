@@ -59,7 +59,7 @@ export interface SlotsFile {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, flags: {}, met: {}, ends: {}, own: [], pick: {}, records: [] }
+  return { offset: {}, flags: {}, met: {}, ends: {}, own: [], intim: {}, records: [] }
 }
 
 /** 逐角色裁剪会话日志，防配额 */

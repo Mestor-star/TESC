@@ -20,8 +20,10 @@ import { castOf } from './cast'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { chatCompletion, isReady, loadProfile } from './api'
 import { activePresetInfo, buildPresetContext, readActivePreset } from './preset'
-import { extractLiveDisplay } from './plot'
+import { extractLiveDisplay, parseDirectorReply, replyDisplayText, smsDirective } from './plot'
 import { appendSmsMsg, incomingSms, loadSmsLogs, markUnread, smsTurns, systemPrompt } from './sms'
+import { INTIMATE_BOND } from '../data/intimate'
+import { openDateOf, openRendezvous } from './rendezvous'
 
 export const AUTO_KEY = 'zts-sms-auto:v1'
 
@@ -134,10 +136,11 @@ export function useProactiveSms(): void {
         const scan = (logs[charId] ?? []).slice(-6).map((m) => m.text).join('\n')
         // scope='sms'：主动来信也是一条短信，只取管短信的那一支
         const preset = buildPresetContext(readActivePreset(), scan, 'sms')
+        const bond = c.bondNow(charId)
         const system =
-          systemPrompt(charId, c.operatorName, c.bondNow(charId), meta?.scenario ?? '各自的日常')
+          systemPrompt(charId, c.operatorName, bond, meta?.scenario ?? '各自的日常')
           + (preset.pre ? `\n\n${preset.pre}` : '')
-          + PROACTIVE_RULE
+          + proactiveRule(bond)
           + (preset.post ? `\n\n${preset.post}` : '')
         const messages = [
           { role: 'system' as const, content: system },
@@ -154,11 +157,28 @@ export function useProactiveSms(): void {
           },
         }) ?? '').trim()
         if (!alive || !text) return
+        /* 回执末尾那一块 JSON 照剥：主动来信本来只该是正文，
+           但关系近了之后她可能顺手在信里约一句 —— 那一条要落地成一场见面。
+           （只认邀约：主动来信照旧不改羁绊、不落标记 —— 它没有前因，不该拿它刷关系。） */
+        const parsed = parseDirectorReply(text)
+        const sd = smsDirective(parsed.directive, charId)
         // 过一遍展示清洗：外来标签（dream_* 一类）、代码围栏、行首的「【名】」都不该露给观测者
-        const clean = extractLiveDisplay(text.replace(/^[【\[][^】\]]{1,12}[】\]]\s*/, '')) || text
+        const body = replyDisplayText(parsed, text) || text
+        const clean = extractLiveDisplay(body.replace(/^[【\[][^】\]]{1,12}[】\]]\s*/, '')) || body
+        if (!clean) return
         appendSmsMsg(charId, incomingSms(charId, clean))
         markUnread(charId)
         c.push('decode', '新的角色短信', `${charOf(charId)?.name ?? charId} 发来一条消息，在「角色短信」里。`, false)
+        // 她在信里约了：落成一场待人赴的见面（「约会」一栏里会亮起来）
+        if (sd.date && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+          const rv = openRendezvous(charId, {
+            kind: sd.date.kind === 'intimate' ? 'intimate' : 'date',
+            title: sd.date.title,
+            place: sd.date.place,
+            from: 'them',
+          })
+          c.push('decode', '有人约你', `${charOf(charId)?.name ?? charId} · ${rv.title}（${rv.place}）—— 在「角色短信 · 约会」里应约。`, false)
+        }
       } catch {
         /* 通道不给力就安静跳过，下一轮再说 */
       } finally {
@@ -183,5 +203,24 @@ const PROACTIVE_RULE = `
 规则补一条（这一条由你主动发来）：
 6. 这是没有前因的一条。不要说「在吗」「有事找你」这类空话，也不要解释你为什么突然发消息 ——
    直接从一件具体的小事、一句现场感受或一段没头没尾的抱怨说起，落点自然，就像随手按下的发送键。`
+
+/**
+ * 主动来信的规则。羁绊过了 INTIMATE_BOND 之后再补两条：
+ * 可以露一点私人的那一层，也可以自己开这个口把人约出来。
+ *
+ * 约出去那一条要落在末尾的 date 字段上（形状见 lib/plot.ts 的 smsBondRule）——
+ * 调度器读它开一场见面。**别在信里就把整场写完**：信只到「说定了」。
+ */
+function proactiveRule(bond: number): string {
+  if (bond < INTIMATE_BOND) return PROACTIVE_RULE
+  return PROACTIVE_RULE + `
+7. 你与对方的交情已经很深，这一条可以**说得更私人一点** ——
+   一句没对别人说过的心事、身体或情绪上的不适、想见你的念头都行；但别写成一份告白清单，
+   一句一条，留白比说满更贴近真实的短信。
+8. 你也可以**自己在信里约**对方出来：想见就直说，别绕圈子。
+   若这一条确实把约开出来了，在整条短信的最末尾另起一行放一个纯 JSON 对象：
+   { "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方" } }
+   只有真的开口约了才给（随口说说、只是想念不算）；约会这一条也不要每封都提。`
+}
 
 const PROACTIVE_PROMPT = '（现在请你主动发一条短信过来。只写发出去的那一两句话，不要旁白、不要加引号。）'

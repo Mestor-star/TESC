@@ -45,17 +45,14 @@ export function Saga() {
   const displayOp = operatorName.trim() ? operatorName : '言万心叶'
   const pct = TIMELINE.length ? Math.round((doneCount / TIMELINE.length) * 100) : 0
 
-  // 分歧记录数：diverged 记录 ∪ 旧抉择中的非原著路线
+  /* 分歧记录数：只看归档记录上的 diverged 标记 —— 那一个由导演在收束时判定，
+     与原著相异才置 true。从前还并上「抉择记录里的非原著路线」，
+     抉择点撤掉之后这一路没了，只剩记录。 */
   const divergeCount = useMemo(() => {
     const s = new Set<string>()
     for (const r of records) if (r.diverged) s.add(r.eventId)
-    for (const [id, key] of Object.entries(world.pick)) {
-      const sc = SCENES[id]
-      const opt = sc?.choices?.find((o) => o.key === key)
-      if (opt && opt.canon !== true) s.add(id)
-    }
     return s.size
-  }, [records, world.pick])
+  }, [records])
 
   const metCount = CHAR_ORDER.filter((id) => isMet(id)).length
   const regCount = Object.keys(world.ends).length
@@ -68,12 +65,12 @@ export function Saga() {
   const cgNow = useMemo(
     () => selectCg(
       focusScene?.cg,
-      { flags: world.flags, pick: world.pick, bond: bondNow },
+      { flags: world.flags, bond: bondNow },
       focusScene?.cgMode ?? 'all',
       focusEv ? cgOf(focusEv.id) : null,
       focusEv ? cgPoolFor(CG_POOL, castOf(focusEv)) : [],
     ),
-    [focusScene, focusEv, world.flags, world.pick, bondNow, cgOf],
+    [focusScene, focusEv, world.flags, bondNow, cgOf],
   )
 
   return (
