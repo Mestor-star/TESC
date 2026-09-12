@@ -581,7 +581,21 @@ try {
   st = await state()
   ok('C3 三段全部在线归档', st.rec.length === 3 && st.rec.every((r) => r.mode === 'online'), JSON.stringify(st.rec))
   ok('C4 v1-3 后解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
-  // v1-3 点按后自动衔接 v1-4 → 叙述-only（无指令）→ 未解析提示 + 补发按钮（v1-4 未被归档）
+  /* 进入下一事件**不再**替下一段自动生成。从前这里还会顺手跑一趟「衔接开场」
+     （把上一段的收束摘要连同大纲再喂一遍，让导演直接写出 v1-4 的开场）——
+     那一趟很吃上文，也抢在观测者之前替下一段定了调，与「序章与第 1 话之后
+     一律等操作员发话」那条规矩打架，现已关掉（见 Plot 的 BRIDGE_ON_ADVANCE）。
+     这里钉住的就是这一条：收束只写记录、推进焦点，那一格该是空的，
+     屏幕上也不该冒出「未解析到事件指令」（那是导演回执来了却没带指令才有的提示）。 */
+  await sleep(1200) // 留出一点时间：真有自动那一趟，这会儿该冒头了
+  const cIdle4 = await ev(`(()=>({narr:document.querySelectorAll('[data-narration]').length,
+    notice:document.body.innerText.includes('未解析到事件指令')}))()`)
+  ok('C4b 进入下一事件不再自动生成（收束到此为止：那一格是空的，也没冒未解析提示）',
+    cIdle4.narr === 0 && cIdle4.notice === false, JSON.stringify(cIdle4))
+
+  /* 头一句由操作员来说。这一趟回执是叙述-only（无指令）→ 终端当场自动补收一次
+     （只问指令、不重写正文）→ 拿到 flag，不必玩家先意识到缺了什么、再去点按钮。 */
+  await typeEnter('input[placeholder^="推进事件"]', '（言万心叶）夜里的观星台还没关门，有谁跟我去？')
   await poll(`document.body.innerText.includes('未解析到事件指令')`, 30000, 'C needDir notice')
   // DIR4 叙述-only：终端**当场自动补收**一次（只问指令、不重写正文）→ 拿到 DIR5 的 flag，
   // 不必玩家先意识到缺了什么、再去点按钮。
@@ -589,7 +603,7 @@ try {
   const bodyC = await ev(`document.body.innerText`)
   ok('C5 无指令回包 → 当场自动补收一次，flag 静默落地（不必手点）',
     bodyC.includes('未解析到事件指令') && bodyC.includes('已自动补收事件指令'), '')
-  // DIR4 叙述-only 不触碰 lastEnded → 「上一事件已收束(v1-3)」横幅此刻是稳定态（焦点已落到 v1-4，无收束栏）
+  // 叙述-only 不触碰 lastEnded → 「上一事件已收束(v1-3)」横幅此刻是稳定态（焦点已落到 v1-4，无收束栏）
   const stEnded = await ev(`(()=>{const t=document.body.innerText;return {bar:t.includes('上一事件已收束'), digest:t.includes('苍之学园'), noBar:!document.querySelector('[data-concluded]')}})()`)
   ok('C5b 收束横幅稳定呈现（上一事件已收束 · 含收束解读 · 无收束栏）', stEnded.bar === true && stEnded.digest === true && stEnded.noBar === true, JSON.stringify(stEnded))
   st = await state()
@@ -602,9 +616,9 @@ try {
   await poll(`document.body.innerText.includes('要求补发指令')`, 10000, 'C manual button')
   const misses = await ev(`(()=>{try{const l=JSON.parse(localStorage.getItem('zts-ailog:v1')||'[]');return l.filter(x=>x.channel==='事件指令').length}catch(e){return -1}})()`)
   ok('C6b 自动补收也拿不到时，补发按钮兜住', true, '')
-  /* 4 条 = DIR4 那回合主回执 1 条（补收第一趟就拿到 DIR5，只留 1 条）
-     ＋ 本回合主回执 1 条、补收两趟各 1 条。钉死这个数，等于钉死「补收真问了两次」——
-     哪天真退回只问一次，这里会立刻少一条。 */
+  /* 4 条 = 上一回合（操作员开口那一趟）主回执 1 条（补收第一趟就拿到带指令的那条回执，
+     只留 1 条）＋ 本回合主回执 1 条、补收两趟各 1 条。钉死这个数，等于钉死
+     「补收真问了两次」—— 哪天真退回只问一次，这里会立刻少一条。 */
   ok('C6c 指令解析失败在通联日志里留痕（主回执 1 + 补收两趟各 1 ＝ 本回合 3 条）', misses === 4, 'log=' + misses)
   // 手动补发 → DIR8 的 flag 落地
   await goto('要求补发指令')
@@ -628,10 +642,17 @@ try {
   ok('C9 SMS 叙述上屏', true)
 
   // 交战成文：一场仗打完回填进推演的那段剧情，与导演叙述分栏（走观感不同的那一路）
-  await ev(`(()=>{const k='zts-plot:v1';const o=JSON.parse(localStorage.getItem(k)||'{}');
-    o['v1-1']=(o['v1-1']||[]).concat([{id:'smoke-story',from:'them',time:'--:--',
+  /* 塞进**当前聚焦的那一段**（＝时间线上第一个还没归档的）：
+     往期正文默认折着（折叠 = 不渲染），塞进退下来的那一段就看不见了 ——
+     而交战时成文本来就落在眼下这一段。注意别拿 s.cur 当聚焦段：收束之后
+     指针可能还留在刚推完的那一段上，那正是个已折叠的往期块。 */
+  const cSeedKey = await ev(`(()=>{const k='zts-plot:v1';const o=JSON.parse(localStorage.getItem(k)||'{}');
+    const t=JSON.parse(localStorage.getItem('zts-terminal:v3')||'{}');const ep=t.epDone||{};
+    const ids=['v1-1','v1-2','v1-3','v1-4','v1-5','v1-6'];
+    const cur=ids.find(x=>!ep[x])||t.cur||'v1-1';
+    o[cur]=(o[cur]||[]).concat([{id:'smoke-story',from:'them',time:'--:--',
       text:'【战斗开始】\\n现场的空气先一步沉了下去。',meta:{battle:true}}]);
-    localStorage.setItem(k,JSON.stringify(o));return true})()`)
+    localStorage.setItem(k,JSON.stringify(o));return cur})()`)
   await goto('剧情推进')
   await poll(`!!document.querySelector('[data-narration="battle"]')`, 15000, 'C storylog rendered')
   const cStory = await ev(`(()=>{const n=document.querySelector('[data-narration="battle"]');
@@ -691,6 +712,26 @@ try {
   ok('D1 旧线程仍现：两条旧记录原样读回来（没被丢弃，也不再拿开场白垫底）',
     dOld.n === 2 && !dOld.empty, JSON.stringify(dOld))
   ok('D2 世界进度在重载后延续', (await state()).rec.length === 3, 'rec=' + (await state()).rec.length)
+
+  /* D3 观测者自己发出去的那句**当趟落盘**。
+     从前 send / 接续选项 / 重写末条只改 state，而回信那一路是「读盘 → 追加 → 落盘」——
+     盘上没有刚发出去的这句，回信一上屏（或页面一重载）就被读盘那一趟抹掉。
+     这里直接拿重载验：盘上没有，重载后屏幕上就没有。 */
+  await typeEnter('input[placeholder*="发消息"]', '【D3】这句得留住。')
+  await poll(`document.body.innerText.includes('【D3】这句得留住。')`, 15000, 'D3 bubble on screen')
+  const d3Store = await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-tavern:v1')||'{}');
+    const l=o['luna']||[];const m=l.filter(x=>x.from==='user'&&String(x.text||'').includes('【D3】'));
+    return {n:m.length,total:l.length}})()`)
+  ok('D3a 发出去的那句当趟落盘（不再只活在 state 里）', d3Store.n === 1, JSON.stringify(d3Store))
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('短信')
+  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D3 sms view')
+  await goto('露娜')
+  await poll(`document.body.innerText.includes('【D3】这句得留住。')`, 15000, 'D3 survives reload')
+  const d3After = await ev(`(()=>({n:document.querySelectorAll('[data-sms-msg]').length,
+    mine:[...document.querySelectorAll('[data-sms-msg]')].filter(e=>e.innerText.includes('【D3】')).length}))()`)
+  ok('D3b 重载后自己的话还在（回信/读盘那一趟抹不掉它）', d3After.mine === 1, JSON.stringify(d3After))
 
   /* ============ Phase E：词条库注入 / 标签回执 / 反剧透 / 回溯重写只动日志 / 播种幂等 ============ */
   console.log('\n[Phase E] 词条库引擎：标签回执 / 注入 / 反剧透 / 回溯重写 / 播种幂等')
@@ -2315,8 +2356,33 @@ try {
   ok('N6 收场：战果面板出现，成文含四段式（部署意图/达成手段/动作经过/现场）', !!nRes && nRes.len > 60 && nRes.four === 4, JSON.stringify(nRes))
   ok('N6b 解禁后由「普攻」了结战斗（慢启动门不是摆设）', nRes && nRes.outcome === '胜', JSON.stringify(nRes && nRes.outcome))
 
+  /* N6d 打赢即落档：胜果是既成事实，不押在「归档」那一次点击上。
+     从前这条记录**只**在点「归档并返回任务板」时才写 —— 赢了这一场却直接关掉
+     作战屏（或切走视图）的人，作战记录里一条都留不下，任务简报上那一段主线
+     也永远翻不成「已完成」（它的状态是从战果推的）。这里趁「归档」还没点，
+     先直接翻作战记录库看那一条在不在。 */
+  const nFiled = await ev(`(async()=>{try{
+    const db=await new Promise(res=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result)});
+    const rows=await new Promise(res=>{const q=db.transaction('records').objectStore('records').getAll();
+      q.onsuccess=()=>res(q.result)});
+    const mine=(rows||[]).filter(r=>r.missionId===${JSON.stringify(target)});
+    return {rows:(rows||[]).length,mine:mine.length,out:mine[0]?mine[0].outcome:null,
+      main:mine[0]?mine[0].mainline===true:null}}catch(e){return {err:String(e)}}})()`)
+  ok('N6d 打赢即落档：还没点「归档」，这一场的胜果已经在作战记录里了',
+    !nFiled.err && nFiled.mine === 1 && nFiled.out === '胜', JSON.stringify(nFiled))
+
   await ev(clickTxt('归档并返回任务板'))
   await poll(`!document.querySelector('[data-battle]')`, 12000, 'N battle closed')
+
+  /* N6e 归档是「补账」（羁绊/成长/缴获/成文），不是把同一场再写一条 ——
+     记录的身份是它自己的 id，归档那次写回的仍是同一条。 */
+  const nDup = await ev(`(async()=>{try{
+    const db=await new Promise(res=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result)});
+    const rows=await new Promise(res=>{const q=db.transaction('records').objectStore('records').getAll();
+      q.onsuccess=()=>res(q.result)});
+    return {mine:(rows||[]).filter(r=>r.missionId===${JSON.stringify(target)}).length}}catch(e){return {err:String(e)}}})()`)
+  ok('N6e 归档不会把同一场写成两条（先落的那条被覆盖回去，不是另记一笔）',
+    !nDup.err && nDup.mine === 1, JSON.stringify(nDup))
 
   // 战斗语音：同一手不总说同一句（台词池），且熟人之间接得上（联动台词）。
   // 日志面板只渲染最近若干条，逐帧抓会漏 —— 从**已归档的作战记录**取全部逐手底稿（此时已落库）。

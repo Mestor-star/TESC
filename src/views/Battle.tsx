@@ -37,6 +37,7 @@ import { isReady, loadProfile } from '../lib/api'
 import type { ApiSettings } from '../lib/api'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
+import { putRecord } from '../lib/battle/store'
 import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import type { GearDef } from '../lib/battle/types'
 import { passiveText } from '../lib/battle/roster'
@@ -390,6 +391,26 @@ export function Battle({
       })
     }
   }, [ended, playing, rec, narrating, st])
+
+  /**
+   * 打赢即落档。
+   * ------------------------------------------------------------
+   * 从前这条记录只在结果面板上点「归档」时才写（`onFile` → `onSettled` → `settleWin`）。
+   * 于是「赢了这一场、却没点那一下」（直接关掉作战屏、切走视图、刷新）的人，
+   * 战果跟着屏幕一起没了 —— 作战记录里一条都没有，任务简报上那一段主线
+   * 也永远翻不成「已完成」（它的状态是从战果推的，不是从点击推的）。
+   * 胜果是既成事实，不该押在一次点击上：这里先落一条。
+   *
+   * 落的就是 `rec` 自己（编号 = rec.id，一场只有一个），所以「归档」那一步
+   * 再写一次也只是把同一条覆盖回去；羁绊、成长、缴获、成文那些账仍归归档。
+   * 编队界面里退回的那些不入档 —— 只有这一场真赢了（phase === 'won'）才写。
+   */
+  const filedAuto = useRef(false)
+  useEffect(() => {
+    if (!rec || filedAuto.current || st.phase !== 'won') return
+    filedAuto.current = true
+    void putRecord(rec)
+  }, [rec, st.phase])
 
   const play = useCallback(
     (cmd: Command) => {

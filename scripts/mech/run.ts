@@ -30,7 +30,7 @@ import { TIMELINE } from '../../src/data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
 import { TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
-import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, mainlineMissions } from '../../src/lib/battle/mainline'
+import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { passiveText, ROSTER } from '../../src/lib/battle/roster'
@@ -1672,6 +1672,20 @@ export function run(): MechReport {
     ok('主线牌面：三段链的头一位（巨匠）真的站在场上',
       mainW.enemies[0]?.namedId === 'master-craft' && mainW.nextBoss === 'black-maou',
       `${mainW.enemies[0]?.name ?? '（空）'}　nextBoss=${mainW.nextBoss ?? '（无）'}`)
+
+    /* ④a2 现场触发的那一张也要按「这一段是不是正史里真打过的那一场」记号 ——
+       同一场仗在简报上是主线、落到作战记录里却是个无名遭遇，是两处对不上号；
+       而且归档该走的「详细战斗过程」那一路也跟着丢（engine 按 s.mainline 分流）。 */
+    const foeLess = TIMELINE.find((e) => !(e.entities ?? []).some((x) => x && x !== '——'))?.id
+    const plotMain = battleMissionOf({ name: '复核 · 现场', stage: 5, place: '东京' }, 'v6-3')
+    const plotPlain = foeLess
+      ? battleMissionOf({ name: '复核 · 现场', stage: 5, place: '东京' }, foeLess)
+      : undefined
+    ok('现场触发：这一段的原文列了实体才算主线（没对手的那几段不算）',
+      isMainlineEvent('v6-3') === true && plotMain.mainline === true
+      && (!plotPlain || plotPlain.mainline === undefined),
+      `v6-3 → mainline=${plotMain.mainline ?? '（无）'}`
+      + `　${foeLess ?? '（找不到没实体的事件）'} → ${plotPlain ? (plotPlain.mainline ?? '（无）') : '（跳过）'}`)
 
     /* ④b 牌面是一段**窗口**，不是一张牌 —— 打赢即「已完成」（不等领取），
        领取只把这一条收走。旧写法把「打赢」与「领了没」绑在一起，

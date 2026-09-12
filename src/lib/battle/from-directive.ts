@@ -10,7 +10,7 @@
 import type { PlotBattle } from '../plot'
 import type { Mission } from '../../data/types'
 import { namedBossOf } from './bosses'
-import { headFoeOf } from './mainline'
+import { headFoeOf, isMainlineEvent } from './mainline'
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 
@@ -44,5 +44,9 @@ export function battleMissionOf(b: PlotBattle, evId: string): Mission {
     desc: `${b.name} 出现在现场。交战由观测现场触发——按在场的成员与眼前的敌人开打，打完即回到正文。`
       + (head ? `\n档案上这一段的头一位是 ${head.name}；${head.from}。` : ''),
     reward: ['现场压制', '观测继续'],
+    /* 这一段是正史里真打过的那一场（事件原文列了实体）→ 它就是任务简报上
+       那一段主线。带上这个记号，归档才会走「详细战斗过程」那一路，
+       作战记录里也会挂着「主线」—— 与简报上的那一条对得上号。 */
+    ...(isMainlineEvent(evId) ? { mainline: true } : {}),
   }
 }

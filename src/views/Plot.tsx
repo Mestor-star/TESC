@@ -68,6 +68,18 @@ const SHOW_OUTLINE = false
 const AUTO_OPEN_THRU = 'v1-3'
 const AUTO_OPEN_THRU_IDX = TIMELINE.findIndex((e) => e.id === AUTO_OPEN_THRU)
 
+/**
+ * 「进入下一事件」时，要不要顺手让导演替**下一段**生成一段衔接开场。
+ *
+ * 关着（现行）：收束只做收束的事 —— 写记录、推进到下一段，然后停。下一段要不要
+ * 开篇、从哪儿接，等观测者自己开口。开着的那一趟很吃上文：它把上一段的收束摘要
+ * 连同下一段的大纲再喂一遍，还抢先替下一段定了调；这与上面 AUTO_OPEN_THRU 那条
+ * 规矩（序章与第 1 话之后一律等操作员发话）也是打架的。
+ *
+ * 要恢复：改成 true 即可 —— `advanceFromConcluded` 里那一段仍在原处候着。
+ */
+const BRIDGE_ON_ADVANCE = false
+
 /** 进入一个尚无会话的事件时，喂给导演的「开场请求」（不入历史） */
 const OPEN_PROMPT =
   '（开场）请依据「事件大纲」与在场角色，铺陈这一事件的开端：写清此时此地、在场者的状态与正悬而未决的局面，'
@@ -940,7 +952,7 @@ export function Plot() {
     push('decode', '事件收束 · 已写入记录', `${ev.title}（已写入低语者日志）`, false)
     const evIdx = TIMELINE.findIndex((t) => t.id === ev.id)
     const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id] && t.id !== ev.id) ?? null) : null
-    if (nextEv && showOnline && ready) {
+    if (BRIDGE_ON_ADVANCE && nextEv && showOnline && ready) {
       const lastUser = [...(logs[ev.id] ?? [])].reverse().find((m) => m.from === 'user')?.text
       skipAutoOpen.current = true // 先按住自动开场，避免抢跑
       try {

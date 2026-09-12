@@ -108,6 +108,23 @@ export function headFoeOf(evId: string): string | undefined {
   return id && namedBossOf(id) ? id : undefined
 }
 
+/**
+ * 这一段是不是正史里真打过的那一场。
+ *
+ * 判据与 `mainlineMissions` 立牌面时用的是同一条：**事件原文里列了实体**
+ * （`'——'` 是「没有对手」的记号，不算）。所以这在推演现场触发的那一仗，
+ * 从编号到归档都该按主线算 —— 与任务简报上那一段是同一件事。
+ *
+ * 为什么需要它：推演现场开出来的作战单（lib/battle/from-directive.ts 的
+ * battleMissionOf）早先没写 `mainline`，于是同一场仗在简报上是「主线」，
+ * 落到作战记录里却是个无名的现推遭遇，连归档该走的「详细战斗过程」那一路
+ * 都跟着丢了（见 engine 里按 s.mainline 分流的那处）。
+ */
+export function isMainlineEvent(evId: string): boolean {
+  const e = TIMELINE.find((x) => x.id === evId)
+  return !!e && (e.entities ?? []).some((x) => x && x !== NO_FOE)
+}
+
 /** 那几段「登了实体但不是一场仗」的事件与它们的理由（复核读它） */
 export const NON_FIGHT_EVENTS = NO_FIGHT
 
