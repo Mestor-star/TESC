@@ -361,7 +361,7 @@ function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }
  *
  * 版面与正面同构（左立绘 / 右档案）。读数是**五根条**：四处部位开发度 + 色情度，
  * 与「能力参数」用同一套条（`.stat` + `.meter`），只是那五轴说的是战斗力，
- * 这五根说的是这一件事。另有三节不是读数：最近的性行为、对这种事情的看法、破处 ——
+ * 这五根说的是这一件事。另有三节不是读数：最近的性行为、对性行为的看法、破处 ——
  * 它们各是一句话（破处是一个事实），照实写出来即可。
  *
  * 立绘位走 CgSlot：素材丢 `public/cg/cg-intim-<角色id>.webp|png|jpg` 即点亮，
@@ -460,14 +460,14 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
             </div>
           </div>
 
-          {/* 最近一回与看法：都不挂部位，说的是一件事此刻的样子 */}
+          {/* 最近一回与对性行为的看法：都不挂部位，说的是一件事此刻的样子 */}
           <div className={css.dialogSection}>
             <h4>最近的性行为</h4>
             <p className={css.intimAct} data-intimate-lastact>{prof.lastAct}</p>
           </div>
 
           <div className={css.dialogSection}>
-            <h4>对这种事情的看法</h4>
+            <h4>对性行为的看法</h4>
             <p className={css.intimAct} data-intimate-view>{prof.view}</p>
           </div>
 

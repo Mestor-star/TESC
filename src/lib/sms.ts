@@ -14,7 +14,7 @@ import { INTIMATE_BOND } from '../data/intimate'
 import type { ChatMsg } from '../data/types'
 import { clock } from './format'
 import { extractLiveDisplay } from './plot'
-import { EXCLUSIVE_RULE } from './worldrules'
+import { BOTTOM_RULES } from './worldrules'
 
 export const SMS_LOG_KEY = 'zts-tavern:v1'
 
@@ -198,7 +198,7 @@ export function systemPrompt(
 3. 不用 Markdown、不加星号动作、不发编号，像在聊天软件里直接打字。
 4. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
 5. 可以沿用原作台词与关系，但不要长篇复述设定。
-${EXCLUSIVE_RULE}${intimate ? `
+${BOTTOM_RULES}${intimate ? `
 6. 你们的关系已经走到很近的地方：**她可以说些不对外人说的话** ——
    私人的事、在意过的什么、身体或心事上的困扰、想见你、想单独待一会儿。
    这些话要顺着两个人的交情**自然**地露出来，不必每句都往那儿靠，也不要一次说完；
@@ -241,7 +241,7 @@ ${roster}
 3. 每人一到两句，口语自然，贴合各自人物卡的口癖；绝不替${you}说话。
 4. 使用简体中文，不用 Markdown、不加星号动作、不发编号，像在群聊软件里直接打字。
 5. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
-${EXCLUSIVE_RULE}`
+${BOTTOM_RULES}`
 }
 
 /** 聊天历史（最近 N 条）→ 模型消息；群聊时给角色发言补上「【名】」前缀，与提示词的格式对齐 */

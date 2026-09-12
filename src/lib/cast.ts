@@ -38,15 +38,23 @@ export function rosterRowOf(id: string): CastRow | null {
   return p ? { id: p.id, name: p.name, sigil: p.sigil, hue: p.hue } : null
 }
 
-/**
- * 某事件的在场展示行（按在场顺序；名录外的 id 丢弃）。
- * 剧情右栏与低语者日志的「出场角色」共用此一处，不再各自写死名单。
- */
-export function rosterRowsOf(ev: Pick<TimelineEvent, 'cast' | 'chars'>): CastRow[] {
+/** 一组 id → 展示行（按给到的顺序；名录外的 id 丢弃） */
+export function rosterRowsFor(ids: string[]): CastRow[] {
   const out: CastRow[] = []
-  for (const id of knownCastOf(ev)) {
+  for (const id of ids) {
     const r = rosterRowOf(id)
     if (r) out.push(r)
   }
   return out
+}
+
+/**
+ * 某事件的在场展示行（按在场顺序；名录外的 id 丢弃）。
+ * 剧情右栏与低语者日志的「出场角色」共用此一处，不再各自写死名单。
+ *
+ * 这是**静态**名册（`ev.cast`）。要摆「此刻真的在场上的人」，先过
+ * `world.cast` 那一层实时修正（Terminal 的 `castOfEvent`），再喂给 `rosterRowsFor`。
+ */
+export function rosterRowsOf(ev: Pick<TimelineEvent, 'cast' | 'chars'>): CastRow[] {
+  return rosterRowsFor(knownCastOf(ev))
 }

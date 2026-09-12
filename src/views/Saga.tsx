@@ -7,7 +7,7 @@ import { CgSlot } from '../components/CgSlot'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
-import { castOf, rosterRowOf, rosterRowsOf } from '../lib/cast'
+import { castOf, rosterRowOf, rosterRowsFor } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import { CG_POOL } from '../data/cgs'
 import { personOf } from '../data/castmeta'
@@ -29,15 +29,19 @@ function seqOf(eventId: string): number {
 }
 
 export function Saga() {
-  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile, cgOf } = useTerminal()
+  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile, cgOf, castOfEvent } = useTerminal()
 
   const focusIdx = useMemo(() => TIMELINE.findIndex((e) => !epDone[e.id]), [epDone])
   const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
   const focusEv = focusIdx >= 0 ? TIMELINE[focusIdx] : null
   /** 本段的场景数据（只为取 CG 位；开场白等正文不在此页露出） */
   const focusScene = focusEv ? SCENES[focusEv.id] : undefined
-  /** 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
-  const castRows = useMemo(() => (focusEv ? rosterRowsOf(focusEv) : []), [focusEv])
+  /** 本段现场名册（含 roster 里的外场角色，**取此刻那一份**：导演实时改过就用改过的）；
+      点一行 → 档案页就近展开 */
+  const castRows = useMemo(
+    () => (focusEv ? rosterRowsFor(castOfEvent(focusEv)) : []),
+    [focusEv, castOfEvent],
+  )
   const openProfile = useCallback((id: string) => {
     requestProfile(id)
     navigate('archive')

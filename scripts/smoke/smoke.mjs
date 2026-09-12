@@ -2546,11 +2546,11 @@ try {
   /* ============ Phase R：私密档案（只对女角色 · 整张卡翻到背面 · 五根条） ============
      播一份「露娜的羁绊已经过线、且已经有过几回」的账，看她那张卡：
      正面最末一扇门，翻过去才是背面 —— 左一个立绘位（图待补），右五根读数条
-     （四处开发度 + 一根单独的色情度），外加「最近的性行为 / 对这种事情的看法 / 处女 / 破处对象」。
+     （四处开发度 + 一根单独的色情度），外加「最近的性行为 / 对性行为的看法 / 处女 / 破处对象」。
 
      这一页**不封存**：它是本机只给「你」看的那一份，羁绊到不到都翻得开
      （羁绊管的是她本人肯不肯开口 —— 私密话题与约会，那是另一处的事）。
-     羁绊仍在**间接**改着这一页的一栏：同一栏「对这种事情的看法」，过线之后取的是
+     羁绊仍在**间接**改着这一页的一栏：同一栏「对性行为的看法」，过线之后取的是
      她的 `viewHigh`。于是这里摆三个人对照：
        · 恋兔光 羁绊 -100、无推进 → 门在（R1），看法取底档那一句；
        · 美菲莎 羁绊 +100、无推进 → 门在，看法取过线那一句 —— 两句必须不一样（R2）。
@@ -2698,7 +2698,7 @@ try {
       thick: pBack.lewdSectThick, barsSect: pBack.barsSectSlots, states: pBack.states, lewdText: pBack.lewdText }))
   /* 最近一回与看法：都是「一句话」，播进去的改写要原样顶掉底档那一句。
      看法那一栏底档本来就写着（每人一句），所以这里只验「改写顶得掉」。 */
-  ok('R5b 新增两栏：「最近的性行为」与「对这种事情的看法」都在，且推进里的改写顶掉了底档那一句',
+  ok('R5b 新增两栏：「最近的性行为」与「对性行为的看法」都在，且推进里的改写顶掉了底档那一句',
     !!pBack && /旅馆/.test(pBack.lastAct) && /不再只是/.test(pBack.view)
     && !/尚未发生过/.test(pBack.lastAct),
     JSON.stringify(pBack && { lastAct: pBack.lastAct, view: pBack.view }))
@@ -2812,6 +2812,54 @@ try {
     return {n:cs.length,ids:cs.map(c=>c.getAttribute('data-mainline-mission'))}})()`)
   ok('S4 归档落库：重载之后那一条不再回来（领取是永久的收走，不是这一屏的临时状态）',
     sReload.n === 1 && sReload.ids[0] === 'main-v1-5', JSON.stringify(sReload))
+
+  /* ============ Phase T：在场名册实时化 + 回退到上一段 ============
+     两件用户点名的功能，在浏览器里真的走一遍：
+       · 「在线推演的右边在场人物不够实时」—— 导演给的 world.cast[段] 一生效，
+         右栏就摆那几个人（不再照事件静态名册）；
+       · 「加一个回退到上一个事件的功能」（退干净：连日志那一条一起撤）——
+         撤最近收束的那一段：记录少一条、进度退一格。 */
+  console.log('\n[Phase T] 在场名册实时化 + 回退到上一段')
+  await ev(`(()=>{
+    localStorage.removeItem('zts-plot:v1');
+    localStorage.setItem('zts-terminal:v3',JSON.stringify({
+      unlocked:true, epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true}, cur:'v1-4',
+      operatorName:'回退观察员', focusId:'gcn',
+      world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],cg:{},
+        cast:{'v1-5':['luna']},
+        records:[{eventId:'v1-3',mode:'online',digest:'第三段收束',ts:1},
+                 {eventId:'v1-4',mode:'online',digest:'第四段收束',ts:2}]}}));
+    return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-focus-ev]')`, 20000, 'T plot bar')
+  const tCast = await ev(`(()=>{const bar=document.querySelector('[data-focus-ev]');
+    const rows=[...document.querySelectorAll('[data-plot-cast]')].map(x=>x.getAttribute('data-plot-cast'));
+    return {ev:bar?bar.getAttribute('data-focus-ev'):'',cast:rows}})()`)
+  ok('T1 在场人物右栏照**实时**名册摆（导演给的那一份，不是这一段的事件静态名册）',
+    tCast.ev === 'v1-5' && tCast.cast.length === 1 && tCast.cast[0] === 'luna', JSON.stringify(tCast))
+
+  const tBefore = await ev(`(()=>{const c=document.querySelector('[data-records]');const b=document.querySelector('[data-rollback]');
+    return {chip:c?c.getAttribute('data-records'):'',back:b?b.getAttribute('data-rollback'):''}})()`)
+  ok('T2 回退按钮够得着，指着最近收束的那一段（不必非等收束那一屏）',
+    tBefore.back === 'v1-4' && Number(tBefore.chip) >= 2, JSON.stringify(tBefore))
+
+  // 点两次：第一次只亮确认，第二次才真撤（与设置页「再按一次确认」同一套）
+  await ev(`(()=>{const b=document.querySelector('[data-rollback]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const b=document.querySelector('[data-rollback]');
+    return !!b && b.textContent.includes('再按一次')})()`, 8000, 'T confirm armed')
+  await ev(`(()=>{const b=document.querySelector('[data-rollback]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const bar=document.querySelector('[data-focus-ev]');
+    return !!bar && bar.getAttribute('data-focus-ev')==='v1-4'})()`, 8000, 'T focus moved back')
+  const tAfter = await ev(`(()=>{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));const w=s.world||{};
+    const bar=document.querySelector('[data-focus-ev]');const c=document.querySelector('[data-records]');
+    return {focus:bar?bar.getAttribute('data-focus-ev'):'',chip:c?c.getAttribute('data-records'):'',
+      ep:Object.keys(s.epDone||{}),rec:(w.records||[]).map(r=>r.eventId)}})()`)
+  ok('T3 回退一段：进度退一格 + 低语者日志那一条一起撤（退干净）',
+    tAfter.focus === 'v1-4' && !tAfter.ep.includes('v1-4') && !tAfter.rec.includes('v1-4')
+    && tAfter.rec.includes('v1-3') && Number(tAfter.chip) === Number(tBefore.chip) - 1,
+    JSON.stringify(tAfter))
 
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */

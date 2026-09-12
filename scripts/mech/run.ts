@@ -35,6 +35,8 @@ import { battleMissionOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { passiveText, ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
+import { battleStoryBrief, templateStorylog } from '../../src/lib/battle/storylog'
+import type { BattleRecord } from '../../src/lib/battle/types'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
@@ -43,7 +45,7 @@ import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
-import { EXCLUSIVE_RULE } from '../../src/lib/worldrules'
+import { BOTTOM_RULES, EXCLUSIVE_RULE, SMOOTH_RULE } from '../../src/lib/worldrules'
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
 import { rendezvousPrompt } from '../../src/lib/rendezvous'
 import type { Rendezvous } from '../../src/lib/rendezvous'
@@ -68,13 +70,13 @@ import type { MemInput } from '../../src/lib/memory'
 import { SCENES } from '../../src/data/scenes'
 import { MANUAL } from '../../src/data/manual'
 import { CHARACTERS } from '../../src/data/chars'
-import { castOf } from '../../src/lib/cast'
+import { castName, castOf } from '../../src/lib/cast'
 import { plotContextFor, smsContextFor } from '../../src/lib/crosslink'
 import {
   DEV_STAGE_COUNT, INTIMATE, INTIMATE_BOND, INTIMATE_SLOTS, NO_ACT, PHYSIQUE, devStage,
   devStageIndex, intimAdvanceLabel, intimateOf, mergeIntim,
 } from '../../src/data/intimate'
-import { sanitizeDirective } from '../../src/lib/plot'
+import { directiveHasFx, sanitizeDirective } from '../../src/lib/plot'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
@@ -3658,6 +3660,15 @@ export function run(): MechReport {
     ok('私密 · 「看法」两段齐全且各不相同（过线之后确实是另一句话）',
       sameView.length === 0, sameView.length ? sameView.join('、') : `${femaleIds.length} 位都分得开`)
 
+    /* 底档那一句必须是**起初**的口径：克制、害羞且保守（用户口径：
+       「起初一定是要克制，害羞且保守的」）。这一句是每人初见时的那一页，
+       所以逐位都得起码沾上一条「她不肯 / 她害羞 / 她守着界」的样子 ——
+       谁要把它写成一句「其实她也想要」，这里就红。 */
+    const viewRestraint = /克制|害羞|保守|不肯|不许|不该|按住|按回去|别开脸|推开|缩肩|移开|脸红|安静|反问|规矩|底线|不解释|避开|错开/
+    const looseView = femaleIds.filter((id) => !viewRestraint.test(INTIMATE[id]!.view))
+    ok('私密 · 「对性行为的看法」起初一律是克制 / 害羞 / 保守的口径（18 位逐句量过）',
+      looseView.length === 0, looseView.length ? looseView.join('、') : `${femaleIds.length} 位都写着克制`)
+
     const sample = femaleIds.find((id) => id === 'luna') ?? femaleIds[0]!
     const sb = INTIMATE[sample]!
     ok('私密 · 「看法」按羁绊分两段：没过线取底档那一句，过线取 viewHigh',
@@ -3817,6 +3828,54 @@ export function run(): MechReport {
       noRule.length === 0,
       noRule.length ? `漏了 ${noRule.join('、')}` : channels.map(([n]) => n).join(' / '))
 
+    /* 底层 · 白虎（同一节的孪生条目）：出场的女性一律是白虎，正文里不许出现体毛那一类字眼。
+       它和独占是一条规矩里的两半 —— 也正因为如此，四条通道带的是 BOTTOM_RULES 那一份 */
+    const smoothKeys = ['一律是白虎', '光洁', '不是剃掉', '阴毛']
+    const smoothLack = smoothKeys.filter((k) => !SMOOTH_RULE.includes(k))
+    ok('底层 · 白虎：规矩里点明了「一律是白虎 / 私处光洁 / 本来如此不是打理过的 / 不许写那类字眼」',
+      SMOOTH_RULE.length > 80 && smoothLack.length === 0,
+      smoothLack.length ? `缺 ${smoothLack.join('、')}` : `${SMOOTH_RULE.length} 字`)
+
+    const noSmooth = channels.filter(([, text]) => !text.includes(SMOOTH_RULE)).map(([n]) => n)
+    ok('底层 · 白虎：四条通道各带同一份规矩（带的是 BOTTOM_RULES 那一份，不是只带独占）',
+      noSmooth.length === 0 && BOTTOM_RULES.includes(EXCLUSIVE_RULE) && BOTTOM_RULES.includes(SMOOTH_RULE),
+      noSmooth.length ? `漏了 ${noSmooth.join('、')}` : channels.map(([n]) => n).join(' / '))
+
+    /* 底档那一张表也不许跟它打架：小穴那一处只写「光洁」，不写体毛那一类字眼 */
+    const badBase: string[] = []
+    for (const [id, base] of Object.entries(INTIMATE)) {
+      for (const s of base.parts.vagina.states) {
+        if (/阴毛|耻毛|体毛|剃|除毛/.test(s)) badBase.push(`${id} :: ${s.slice(0, 24)}`)
+      }
+    }
+    ok('底层 · 白虎：私密底档的「小穴」一律写光洁，没有一处提到体毛',
+      badBase.length === 0, badBase.length ? badBase.join(' / ') : `${Object.keys(INTIMATE).length} 位`)
+
+    /* 小穴那一处的另两条：紧与颜色都不随开发度走 —— 梯子只走湿、热与形状。
+       用户口径：「每个人的小穴都很紧致，开发度提升上去也不会变」＋
+       「所有小穴的颜色也不会变化，但会适应主角阴茎的形状」。 */
+    const loosenWord = /松了|松开|软下来|松弛|能容/
+    const shapeWord = /形状|轮廓|样子|定了型|定型/
+    const badTight: string[] = []
+    const badColor: string[] = []
+    const badShape: string[] = []
+    for (const [id, base] of Object.entries(INTIMATE)) {
+      const st = base.parts.vagina.states
+      st.forEach((s, i) => {
+        if (loosenWord.test(s)) badTight.push(`${id}#${i}`)
+        /* 颜色只在第 0 档写一次（那是她的体质）—— 往上的三句一律不再提它 */
+        if (i > 0 && s.includes('颜色')) badColor.push(`${id}#${i}`)
+        /* 第 1 档往后，每一句都要写到「里头照他定型」这件事（说法可各异） */
+        if (i > 0 && !shapeWord.test(s)) badShape.push(`${id}#${i}`)
+      })
+    }
+    ok('底层 · 紧致：小穴四句都不写「松了 / 能容 / 软下来」那一类松开的说法（紧是体质，不随开发度走）',
+      badTight.length === 0, badTight.length ? badTight.join(' / ') : '18 位 × 4 句都干净')
+    ok('底层 · 颜色：小穴的颜色不随开发度走 —— 颜色只在第 0 档写一次，后三句一个「颜色」都不提',
+      badColor.length === 0, badColor.length ? badColor.join(' / ') : '后三句没有一处提到颜色')
+    ok('底层 · 形状：小穴后三句都写到「里头照他的形状定型」（专用穴那一路说法），不是只写湿与热',
+      badShape.length === 0, badShape.length ? badShape.join(' / ') : '18 位 × 3 句都写了形状')
+
     /* 不上屏：界面那几层一个字都不许引用它（改规矩只改提示词，不动呈现） */
     const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     const onScreen: string[] = []
@@ -3831,9 +3890,131 @@ export function run(): MechReport {
     ok('底层 · 独占：只进提示词、不上屏（界面那三层不引用 worldrules）',
       onScreen.length === 0, onScreen.length ? onScreen.join('、') : '界面三层都没引用')
 
-    info.push('底层规矩：女性档案角色独占（只认主角一条线）—— 四条通道各带一份，界面不出现')
+    info.push('底层规矩：女性档案角色独占（只认主角一条线）＋ 一律白虎（私处光洁 · 不写体毛）—— 四条通道各带一份 BOTTOM_RULES，界面不出现')
+    info.push('小穴那一处：紧是体质（不写松）、颜色是体质（只在第 0 档写一次）、开发度走的是湿 / 热与「照他的形状定型」')
   } catch (e) {
     fail.push('底层规矩段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 29) 交战成文 · 回填推演的是一整段**正文** ----------
+     剧情交战打完，除了归档文书（narrate.ts）之外还要往推演里回填一份正文 ——
+     用户口径：**跟在线推演写出来的东西一样**，一整段正文，内容就是刚打完的这一仗：
+     战斗的经过、战斗中各人真正说出口的话（不是技能语音 / 招式名）、以及战后的对话。
+     所以这里钉三件事：
+       · 成文要求里那几条**必须点到**（否则写出来又是一份战报）；
+       · 底稿逐字进去，胜负手数照它；
+       · 无通道时的兜底也得是一段能读的正文，不再分节。
+     通道那一侧另有一条**结构**断言：有导演通道时用它的 system（台词行格式、
+     在场角色、底层规矩随它一起进）—— 各写一份提示词，先走样的一定是那几条规矩。 */
+  try {
+    const rec: BattleRecord = {
+      id: 'mech-storylog', missionId: 'plot-v1-2-1', no: 'OBS-001', title: '灵魂蓄积器',
+      place: '集市外环', stage: 4, outcome: '胜', rounds: 3, ticks: 24, at: 0,
+      squad: ['luna', 'hikari'], mvp: '露娜',
+      digest: '任务：OBS-001「灵魂蓄积器」（集市外环 · 危险度 S4）\nT1 露娜 → 白银之刃：灵魂蓄积器 · 14 伤害\n结算：胜利',
+      turns: [
+        { round: 1, actorId: 'luna', actor: '露娜', skillId: 'silver-blade', skill: '白银之刃', side: 'ally', kind: '技能',
+          line: '……碍事。', target: '灵魂蓄积器', dmg: 14 },
+        { round: 2, actorId: 'hikari', actor: '恋兔', skillId: 'kick', skill: '回旋踢', side: 'ally', kind: '技能',
+          target: '灵魂蓄积器', dmg: 9, note: '命中要害' },
+        { round: 3, actorId: 'foe', actor: '灵魂蓄积器', skillId: 'drain', skill: '抽取', side: 'enemy', kind: '技能',
+          target: '恋兔', miss: true },
+      ],
+      narrative: '', narrativeBy: '模板', loot: ['观测棱镜'], coin: 12, mainline: true, tier: 'elite',
+    }
+
+    const brief = battleStoryBrief(rec)
+    const must = ['怎么打起来的', '人话', '不是招式名', '仗打完之后的现场与各人的反应', '言万心叶与他们之间的对话', '不要小标题']
+    const lack = must.filter((k) => !brief.includes(k))
+    ok('交战成文：要求里点到了「经过 / 战斗里的话是人话不是招式名 / 战后对话 / 不做小标题」',
+      lack.length === 0, lack.length ? `缺 ${lack.join('、')}` : `${brief.length} 字`)
+
+    ok('交战成文：底稿逐字摆进要求里，胜负与手数照它（不得改动）',
+      brief.includes(rec.digest) && brief.includes('结果 胜') && brief.includes(`${rec.rounds} 手`),
+      `${rec.no}「${rec.title}」${rec.outcome} · ${rec.rounds} 手`)
+
+    const tpl = templateStorylog(rec)
+    ok('交战成文（无通道兜底）：兜底也是一段正文，不再分节，且带上已有的台词与战果',
+      !/【[^】]*】/.test(tpl) && tpl.includes(rec.place) && tpl.includes('露娜') && tpl.includes('……碍事。')
+        && tpl.includes(rec.mvp),
+      tpl.split('\n\n').length + ' 段')
+
+    /* 有导演通道时用它的 system —— 不是自己另写一份（写了两处，先走样的是底层规矩） */
+    const src = readFileSync('src/lib/battle/storylog.ts', 'utf8')
+    ok('交战成文：走剧情通道的 system（台词行格式与底层规矩随它一起进，不另写一份）',
+      src.includes('opts.system ?? systemPrompt()') && src.includes('history'),
+      'storylog：system / history 两个入口')
+
+    info.push('交战成文：打完仗回填的是推演正文（经过 · 战斗中的人话 · 战后对话），走剧情通道的提示词，无通道退回模板')
+  } catch (e) {
+    fail.push('交战成文段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 30) 在场名册实时化 + 回退到上一段 ----------
+     两件用户开口要的事，各量它会不会真的动：
+       · 「在线推演的右边在场人物不够实时」—— 导演回执里的 cast 得进得来（白名单净
+         化）、落得进提示词（【在场角色】那一份跟着换），右栏再照它摆；
+       · 「加一个回退到上一个事件的功能」（口径：退干净 · 连日志那一条一起撤）——
+         撤的得是 epDone + 记录 + 那一段锁下的羁绊下限，指针退回它前面。 */
+  try {
+    /* —— 在场名册：指令进得来 —— */
+    const castD = sanitizeDirective({ cast: ['luna', 'luna', 'hikari', '__nobody__', '  luna  '] })
+    ok('在场名册：导演给的 cast 进得来（去重 · 只留名录里认识的人）',
+      JSON.stringify(castD.cast) === JSON.stringify(['luna', 'hikari']),
+      JSON.stringify(castD.cast))
+
+    ok('在场名册：空名单不算数（「此刻一个人都不在」由省略这一项表达，不由空数组表达）',
+      sanitizeDirective({ cast: [] }).cast === undefined
+      && sanitizeDirective({ cast: ['__nobody__'] }).cast === undefined,
+      '空数组 → 不落盘')
+
+    ok('在场名册：它算「本回合有变化」（只有 cast 的回执不会面板报有变化、实际什么都没落地）',
+      directiveHasFx({ cast: ['luna'] }), 'directiveHasFx({cast}) = true')
+
+    /* —— 在场名册：进得了提示词 —— */
+    const evCast = TIMELINE.find((e) => castOf(e).length >= 2)
+    if (!evCast) fail.push('在场名册：找不到现场名册 ≥ 2 人的事件，量不动')
+    else {
+      const ids = castOf(evCast)
+      const withOne = buildDirectorSystem(evCast, { operatorName: '言万心叶', epDone: {}, castNow: [ids[0]!] })
+      const blocks = withOne.split('▸ ').length - 1
+      ok('在场名册：提示词的【在场角色】照实时的名单摆（给了 castNow 就只写这一个人）',
+        withOne.includes('在场角色') && blocks === 1
+        && !withOne.includes(`▸ ${castName(ids[1]!)}`),
+        `${evCast.id} 静态 ${ids.length} 人 → 实时 1 人（${castName(ids[0]!)}）`)
+
+      const withNone = buildDirectorSystem(evCast, { operatorName: '言万心叶', epDone: {} })
+      ok('在场名册：没给 castNow 就照事件静态名册摆（旧行为不变）',
+        withNone.split('▸ ').length - 1 >= 1, `${evCast.id} 静态名册`)
+    }
+
+    /* —— 回退到上一段：撤的是哪四样（源码级 —— 这段逻辑长在 React provider 里，
+         剥不出纯函数；照 §29 那一处的口径，钉住它撤的正是那四样、且不碰会话正文）—— */
+    const termSrc = readFileSync('src/terminal/Terminal.tsx', 'utf8')
+    const at = termSrc.indexOf('const reopenEvent = useCallback(')
+    const body = at >= 0 ? termSrc.slice(at, at + 2600) : ''
+    const gone = [
+      ['删掉 epDone 那一格', /delete next\[id\]/],
+      ['撤掉低语者日志里那一条', /records: prev\.records\.filter\(\(r\) => r\.eventId !== id\)/],
+      ['重算那一段锁下的羁绊下限', /for \(const l of ev\?\.lock \?\? \[\]\)/],
+      ['指针退回它前面', /setCur\(/],
+    ].filter(([, re]) => !(re as RegExp).test(body)).map(([n]) => n)
+    ok('回退一段：撤的正是那四样（进度 · 记录 · 羁绊下限 · 指针）',
+      at >= 0 && gone.length === 0, gone.length ? `缺 ${gone.join('、')}` : '四样都在')
+
+    ok('回退一段：不碰会话正文与既成事实（正文留着重读，见过 / 登记过不动）',
+      !!body && !/localStorage|persistMsg|clearLog|world\.met\b/.test(body),
+      '只有 epDone / records / locked / cur 四处被写')
+
+    ok('回退一段：界面上够得着（右栏常驻按钮 + 全收束那一屏也留一条回头路）',
+      readFileSync('src/views/Plot.tsx', 'utf8').includes('data-rollback={backEv.id}')
+      && (readFileSync('src/views/Plot.tsx', 'utf8').split('doReopen').length - 1) >= 3,
+      '按钮 data-rollback 在，两处 onClick 都走 doReopen')
+
+    info.push('在场名册 + 回退一段：cast 指令进得来（白名单 / 去重 / 空名单不算数）· 提示词的在场角色跟着换 · '
+      + '回退撤 epDone + 记录 + 羁绊下限，指针退回前一段，会话正文保留')
+  } catch (e) {
+    fail.push('在场名册 / 回退段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

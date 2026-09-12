@@ -599,6 +599,15 @@ export interface WorldState {
    * 走过离线通读的段没有这一项 —— 那种段由 `when` 兜底。
    */
   cg?: Record<string, string>
+  /**
+   * 各事件段**此刻**在场的人：段 id → 角色 id 列表。
+   *
+   * 由导演在事件指令里实时修正（`PlotDirective.cast`）—— 事件的静态名册
+   * （`TimelineEvent.cast`，见 lib/cast.ts）说的是「这一段大体上有谁」，
+   * 可这一段里人会走会来：谁先离席、谁刚赶到，右栏得跟着变，不能等到下一段。
+   * **没给过的段没有这一项**，那时右栏照静态名册摆（`rosterRowsOf`）。
+   */
+  cast?: Record<string, string[]>
   /** 已归档的「记录」（事件收束后追加；旧档缺此字段由 hydrate 回填 legacy） */
   records: WorldRecord[]
   /**

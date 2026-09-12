@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, TimelineEvent } from '../data/types'
 import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
@@ -148,6 +148,13 @@ export interface TerminalState {
   /** 该段此刻挂着的场景 CG id（导演未点名 → null） */
   cgOf: (id: string) => string | null
   setCg: (id: string, cgId: string) => void
+  /**
+   * 该段**此刻**在场上的人：导演实时改过就用改过的（`world.cast`），
+   * 没改过照事件静态名册（`castOf`）。右栏与提示词都取这一个入口。
+   */
+  castOfEvent: (ev: Pick<TimelineEvent, 'id' | 'cast' | 'chars'>) => string[]
+  /** 导演实时修正某段的在场名册（全量覆盖；空名单不写） */
+  setCast: (id: string, ids: string[]) => void
 
   /**
    * 私密档案（只对女角色生效）。`intimOf` 返回**底档 + 已落地的推进**合成之后的一页；
@@ -166,6 +173,19 @@ export interface TerminalState {
   meetChar: (charId: string) => void
   /** 收束当前事件：resolveEvent + 追加一条记录，返回是否成功（true=已归档） */
   completeEvent: (id: string, digest: string, mode: RecordMode, diverged?: boolean) => boolean
+  /**
+   * 回退到上一段：把某一段**连同它的记录**一起撤回去，推演指针退回这一段之前。
+   *
+   * 「退干净」—— 用户口径。撤掉的四样：
+   *   · `epDone[id]`（这一段重新变成「未收束」）；
+   *   · `world.records` 里那一条（低语者日志上不再挂着它）；
+   *   · 这一段 `lock` 写下的羁绊下限（按**剩下还收着的段**重算，不是整份清空）；
+   *   · `cur` 退回它前面最近一段（前面没有了就退回 null）。
+   * **不动**的三样：会话正文（`zts-plot`，那一段推过的话还在，能重读、
+   * 也能再推一遍把它收回来）、`met` / `ends` 登记（「见过」「登记过」是不可逆的
+   * 事实，与进度无关）、以及别段的任何东西。返回是否真的撤了。
+   */
+  reopenEvent: (id: string) => boolean
 
   /** 跨视图「打开某角色档案」意图（正文关键词跳转 → 档案页就近展开） */
   profileRequest: { id: string; name: string; ts: number } | null
@@ -210,7 +230,7 @@ function takePendingView(): ViewId | null {
 }
 
 function emptyWorld(): WorldState {
-  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, intim: {}, records: [] }
+  return { offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cast: {}, intim: {}, records: [] }
 }
 
 /** 「记录」按阅读序排序（主键 readingIndexOf，次键完成时间） */
@@ -264,6 +284,8 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     own: raw?.own ?? [],
     // 旧档没有这一栏（场景 CG 点名是后加的）→ 空表；那些段退回 when 兜底，不影响别的
     cg: raw?.cg ?? {},
+    // 旧档没有这一栏（实时在场名册是后加的）→ 空表；那些段照静态名册摆，行为不变
+    cast: raw?.cast ?? {},
     // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
     intim: raw?.intim ?? {},
     records: [],
@@ -762,8 +784,25 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
+   * 某段此刻真的在场上的人（导演还没改过名册 → undefined，由显示端照静态名册摆）
+   */
+  const castOfEvent = useCallback(
+    (ev: Pick<TimelineEvent, 'id' | 'cast' | 'chars'>): string[] => world.cast?.[ev.id] ?? castOf(ev),
+    [world.cast],
+  )
+  /**
+   * 导演实时修正某段的在场名册（`PlotDirective.cast`）。
+   * 给的是**全量**名单、后一次覆盖前一次 —— 右栏要摆的是「此刻这一场里都有谁」，
+   * 不是「来过哪些人」。空名单不写（那由「省略这一项」表达，见 sanitizeDirective）。
+   */
+  const setCast = useCallback((id: string, ids: string[]) => {
+    if (!ids.length) return
+    setWorld((prev) => ({ ...prev, cast: { ...prev.cast, [id]: [...ids] } }))
+  }, [])
+
+  /**
    * 该角色此刻的私密档案（底档 + world.intim 合成）；非女角色 / 无底档 → null。
-   * 把羁绊一并递进去 —— 它只影响一处：「对这种事情的看法」取哪一层。
+   * 把羁绊一并递进去 —— 它只影响一处：「对性行为的看法」取哪一层。
    */
   const intimOf = useCallback(
     (charId: string) => intimateOf(charId, world.intim?.[charId], bondNow(charId)),
@@ -943,6 +982,63 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [resolveEvent, gateMissing],
   )
 
+  /**
+   * 回退到上一段（用户口径：「退干净：连日志那一条一起撤」）。
+   * 撤 `epDone` 那一格、低语者日志里那一条记录、这一段写下的羁绊下限，并把指针
+   * 退回它前面最近一段；会话正文与「见过 / 登记过」的既成事实一律不动。
+   * 契约见 `TerminalState.reopenEvent`。
+   */
+  const reopenEvent = useCallback(
+    (id: string): boolean => {
+      if (!TIMELINE.some((e) => e.id === id) || !epDone[id]) return false
+      const at = readingIndexOf(id)
+
+      setEpDone((prev) => {
+        if (!prev[id]) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+
+      /* 指针退回这一段之前：剩下还收着的段里，阅读序最靠后、且在本段之前的那一段。
+         一段都没有（撤的是第一段）→ 退回 null，回到「还没开始推」的样子。 */
+      setCur((prev) => {
+        let best: string | null = null
+        let bestAt = -1
+        for (const evId of Object.keys(epDone)) {
+          if (evId === id) continue
+          const i = readingIndexOf(evId)
+          if (i >= 0 && i < at && i > bestAt) { best = evId; bestAt = i }
+        }
+        if (bestAt === -1) return null
+        return prev === best ? prev : best
+      })
+
+      setWorld((prev) => {
+        /* 羁绊下限重算：`ev.lock` 是那一段走完才落下的，撤了它，它写下的下限
+           也跟着撤 —— 但只重算剩下的段，别把整份清空（后头还有段锁着更高的值）。 */
+        const locked: Record<string, number> = {}
+        for (const evId of Object.keys(epDone)) {
+          if (evId === id) continue
+          const ev = TIMELINE.find((e) => e.id === evId)
+          for (const l of ev?.lock ?? []) {
+            if (l.value > (locked[l.char] ?? 0)) locked[l.char] = l.value
+          }
+        }
+        return {
+          ...prev,
+          locked,
+          records: prev.records.filter((r) => r.eventId !== id),
+        }
+      })
+
+      const ev = TIMELINE.find((e) => e.id === id)
+      push('info', '回退一段 · 已撤回', `《${ev?.title ?? id}》已从低语者日志撤下，推演退回这一段之前。这一段推过的正文仍留在会话里。`, false)
+      return true
+    },
+    [epDone, push],
+  )
+
   // 完成目标事件 → 自动解锁受门禁保护的视图（含角色档案）
   const unlockReady = !unlocked && unlockEventId !== null && !!epDone[unlockEventId]
 
@@ -1024,6 +1120,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     renameVar,
     cgOf,
     setCg,
+    castOfEvent,
+    setCast,
     intimOf,
     bumpIntim,
     varsOpen,
@@ -1031,6 +1129,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     records: world.records,
     meetChar,
     completeEvent,
+    reopenEvent,
     profileRequest,
     requestProfile,
     clearProfileRequest,

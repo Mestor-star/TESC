@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, Key } from 'react'
-import { ArrowRight, CaretRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
+import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
 import { OPERATOR_ID, PERSON_IDS, personOf, speakerOf } from '../data/castmeta'
-import { castOf, rosterRowsOf } from '../lib/cast'
+import { castOf, rosterRowsFor } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import { CG_POOL } from '../data/cgs'
 import type { ApiSettings, ChatTurn } from '../lib/api'
@@ -29,7 +29,7 @@ import type { BattleRecord, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { Battle } from './Battle'
 import { recentBattleContext } from '../lib/battle/narrate'
-import { narrateStorylog } from '../lib/battle/storylog'
+import { battleStoryBrief, narrateStorylog } from '../lib/battle/storylog'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
@@ -270,8 +270,8 @@ export function Plot() {
   const {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
-    bumpBond, registerEnd, meetChar, setFlag, completeEvent,
-    records, requestProfile, setCg, bumpIntim,
+    bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
+    records, requestProfile, setCg, bumpIntim, castOfEvent, setCast,
   } = useTerminal()
 
   /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
@@ -290,6 +290,8 @@ export function Plot() {
   const [live, setLive] = useState<{ evId: string; text: string } | null>(null)
   const [offState, setOffState] = useState<{ id: string | null; state: 'idle' | 'loading' | 'ok' | 'miss'; text?: string; msg?: string }>({ id: null, state: 'idle' })
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
+  /** 「回退到上一段」的二次确认（与设置页「再按一次确认」同一套口径） */
+  const [confirmBack, setConfirmBack] = useState(false)
   /** 「事件已收束、待手动推进」：收束正文留在原地不消失；点「进入下一事件」才写记录并推进（期间不锁输入，继续回话即留在本事件） */
   const [concluded, setConcluded] = useState<{ evId: string; title: string; digest: string; diverged: boolean } | null>(null)
   /* —— 剧情交战：指令里带 battle 时，按现场角色与敌人开打 —— */
@@ -424,7 +426,12 @@ export function Plot() {
   const autoOpens = !!focusEv && TIMELINE.findIndex((e) => e.id === focusEv.id) <= AUTO_OPEN_THRU_IDX
 
   /* 本段现场名册（含 roster 里的外场角色）；点一行 → 档案页就近展开 */
-  const castRows = useMemo(() => (focusEv ? rosterRowsOf(focusEv) : []), [focusEv])
+  /* 右栏的「在场人物」：**此刻**在场上的人 —— 导演实时改过就拿改过的（world.cast），
+     没改过照事件静态名册（castOfEvent 里回落）。所以人一走一进，右栏当场就变。 */
+  const castRows = useMemo(
+    () => (focusEv ? rosterRowsFor(castOfEvent(focusEv)) : []),
+    [focusEv, castOfEvent],
+  )
   const openProfile = useCallback((id: string) => {
     requestProfile(id)
     navigate('archive')
@@ -505,6 +512,13 @@ export function Plot() {
         setCg(evId, fx.cg)
         push('info', '场景 CG', '这一幕换了一张 —— 低语者日志的「当前事件」卡上可见。', false)
       }
+      /* 在场的实时名册：导演只在人真的换了的时候给（谁先离席、谁刚赶到）。
+         与 cg 一样，落盘要配着事件 id —— 右栏与提示词都读 world.cast 那一层。 */
+      if (fx.cast?.length) {
+        setCast(evId, fx.cast)
+        const names = fx.cast.map((id) => personOf(id)?.name ?? id).join(' · ')
+        push('info', '在场名册', `此刻在场上的是：${names}。`, false)
+      }
       /* 私密档案推进：报一句「动的是哪一位的哪一处」，数本身在档案页看 */
       if (fx.intim.length) {
         const parts = fx.intim
@@ -544,7 +558,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCg, bumpIntim, push],
+    [meetChar, bumpBond, registerEnd, setFlag, setCg, setCast, bumpIntim, push],
   )
 
   /**
@@ -612,19 +626,33 @@ export function Plot() {
    * 对某事件发起一次在线推演请求。
    * userMsg 可选：操作员发言（正常回合）；baseOverride 可选：重写时用截断后的历史当 base。
    */
-  const pushTurn = useCallback(
-    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean; idle?: boolean }) => {
-      const ev = TIMELINE.find((e) => e.id === evId)
-      if (!ev || busy || !ready) return
-      setBusy(true)
-      setErr(null)
+  /**
+   * 本段导演提示词 —— 推演回合与「交战成文」共用这一份。
+   *
+   * 为什么非要共用：交战的成文回填的是**推演正文**（用户口径：就是一整段正文，
+   * 跟在线推演写出来的一样），那它就得带上同一套东西 —— 台词行格式、在场角色、
+   * 此刻的羁绊、场景 CG 位、近期短信、世界书与预设，以及最要紧的底层规矩
+   * （独占 / 白虎，见 lib/worldrules）。各写一份必然走样，而先走样的恰恰是
+   * 写入文本的那几条规矩 —— 所以两处只留这一个入口。
+   *
+   * @param scanText 命中扫描文本（世界书与预设照它命中 —— 「这一趟都读到了什么」）
+   * @param extra    act 只进通联日志；needDirective / operatorAction / idle 与推演同义
+   */
+  const directorPromptFor = useCallback(
+    async (
+      ev: TimelineEvent,
+      scanText: string,
+      extra: { act: string; needDirective: boolean; operatorAction?: string; idle?: boolean },
+    ): Promise<{ system: string; logMeta: AiLogMeta }> => {
       // 后接事件锚（软门禁）：当前事件之后第一个尚未完成的事件；无则 null
       const evIdx = TIMELINE.findIndex((t) => t.id === ev.id)
       const nextEv = evIdx >= 0 ? (TIMELINE.slice(evIdx + 1).find((t) => !epDone[t.id]) ?? null) : null
 
+      /* 在场那一份名单：在这一趟当场读（导演可能刚改了名册）。
+         提示词里凡是「谁在场」都取它 —— 一处口径，别有的地方读实时、有的地方读静态。 */
+      const castIds = castOfEvent(ev)
+
       // 世界书命中注入（仅就绪在线；失败静默，主线不受影响）
-      const scanLog = baseOverride ?? logs[evId]
-      const scanText = `${toTurns(scanLog, 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
       let loreBlock = ''
       try {
         const books = await loadActiveBooks()
@@ -632,7 +660,7 @@ export function Plot() {
           loreBlock = buildLoreContext(books, {
             scanText,
             contextText: `${ev.group} · ${ev.title} · ${ev.place} ${ev.summary}`,
-            gate: allowGateFor({ epDone, ends: world.ends }, evId),
+            gate: allowGateFor({ epDone, ends: world.ends }, ev.id),
           })
         }
       } catch {
@@ -643,39 +671,63 @@ export function Plot() {
       // scope='main' —— 只取管主线叙事的那一支；短信专用条目（篇幅、发言格式）在这里出局
       const preset = buildPresetContext(readActivePreset(), scanText, 'main')
 
-      // 通联日志身份：这一趟是谁在问、预设实际进了哪几条、世界书命中多少
-      const presetInfo = activePresetInfo()
-      const logMeta: AiLogMeta = {
-        channel: '主线剧情',
-        act: opts?.long ? '事件衔接' : '回合推演',
-        preset: { id: presetInfo.id, name: presetInfo.name, hits: preset.hits, prefill: presetInfo.prefill },
-        lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
-      }
-
-      /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
-         这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。
-         空输入那一趟（opts.idle）**不能**退到「上一条」：那会把他上一回合说过的话
-         当成这一回合的意志再摆一遍，等于替他又说了一次。没写就是没写，交给 idleSection。 */
-      const myTurn = userMsg ?? (opts?.idle ? '' : lastActOf(baseOverride ?? logs[evId]))
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
         epDone,
         flags: world.flags,
-        needDirective: needDir.current,
+        needDirective: extra.needDirective,
         loreContext: loreBlock || undefined,
         nextEvent: nextEv,
         presetPre: preset.pre || undefined,
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
+        /* 在场名册取**此刻**的那一份（导演实时改过就用改过的）：提示词里的
+           【在场角色 · 性情锚】与关系读数、短信摘录、CG 候选都用同一个名单。 */
+        castNow: castIds,
         /* 近期短信：只取与**此刻在场者**有关的那几本（无关线程一个字都不给，见 lib/crosslink），
            且在这一趟当场读 —— 短信随时可能在他翻着正文时落进来（主动来信），
            挂成 state 会读到上一轮的那一份。读不动（隐私模式）就整节不出现。 */
-        smsLog: smsContextFor(castOf(ev), { rendezvous: true }) || undefined,
+        smsLog: smsContextFor(castIds, { rendezvous: true }) || undefined,
         /* 本段登记了 CG 位才注入【场景 CG】一节（清单含每张的一行说明，导演照它点名） */
-        cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castOf(ev))) || undefined,
-        operatorAction: myTurn || undefined,
+        cgPalette: cgPaletteText(SCENES[ev.id]?.cg, cgPoolFor(CG_POOL, castIds)) || undefined,
+        operatorAction: extra.operatorAction || undefined,
         /* 空输入的那一趟：提示词末尾换成「他没有指示」，别让模型停下来等他 */
+        idle: extra.idle === true,
+      })
+
+      // 通联日志身份：这一趟是谁在问、预设实际进了哪几条、世界书命中多少
+      const presetInfo = activePresetInfo()
+      return {
+        system,
+        logMeta: {
+          channel: '主线剧情',
+          act: extra.act,
+          preset: { id: presetInfo.id, name: presetInfo.name, hits: preset.hits, prefill: presetInfo.prefill },
+          lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
+        },
+      }
+    },
+    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, castOfEvent],
+  )
+
+  const pushTurn = useCallback(
+    async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean; idle?: boolean }) => {
+      const ev = TIMELINE.find((e) => e.id === evId)
+      if (!ev || busy || !ready) return
+      setBusy(true)
+      setErr(null)
+
+      const scanText = `${toTurns(baseOverride ?? logs[evId], 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
+      /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
+         这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。
+         空输入那一趟（opts.idle）**不能**退到「上一条」：那会把他上一回合说过的话
+         当成这一回合的意志再摆一遍，等于替他又说了一次。没写就是没写，交给 idleSection。 */
+      const myTurn = userMsg ?? (opts?.idle ? '' : lastActOf(baseOverride ?? logs[evId]))
+      const { system, logMeta } = await directorPromptFor(ev, scanText, {
+        act: opts?.long ? '事件衔接' : '回合推演',
+        needDirective: needDir.current,
+        operatorAction: myTurn || undefined,
         idle: opts?.idle === true,
       })
       const base = toTurns(baseOverride ?? logs[evId])
@@ -809,7 +861,7 @@ export function Plot() {
         setBusy(false)
       }
     },
-    [busy, ready, cfgMain, operatorName, bondNow, world.flags, world.ends, epDone, logs, appendMsg, applyReply, reaskDirective, push],
+    [busy, ready, cfgMain, directorPromptFor, logs, appendMsg, applyReply, reaskDirective, push],
   )
 
   /**
@@ -1249,6 +1301,27 @@ export function Plot() {
     </section>
   ) : null
 
+  /* —— 回退到上一段 ——
+     撤的是**最近收束的那一段**（记录流里最后一条，records 按阅读序排好）。
+     退干净：那一段连同它在低语者日志里的那一条一起撤，指针退回它前面。
+     会话正文不动 —— 那一段推过的话还在，能重读，也能再推一遍把它收回来。 */
+  const lastRec = records.length ? records[records.length - 1]! : null
+  const backEv = lastRec ? TIMELINE.find((e) => e.id === lastRec.eventId) : undefined
+  /** 第一次点只亮确认，第二次才真撤（与设置页「再按一次确认」同一套口径） */
+  const doReopen = () => {
+    if (!backEv) return
+    if (!confirmBack) {
+      setConfirmBack(true)
+      push('warn', '回退到上一段', `再按一次确认：把《${backEv.title}》连同它那一条记录一起撤下 —— 推演退回这一段之前。`, false)
+      return
+    }
+    setConfirmBack(false)
+    if (reopenEvent(backEv.id)) {
+      setLastEnded(null)
+      setConcluded(null)
+    }
+  }
+
   /* —— 完结态（全部事件已收束） —— */
   if (!focusEv) {
     return (
@@ -1266,13 +1339,24 @@ export function Plot() {
             <p className="muted" style={{ maxWidth: 520, lineHeight: 1.9, margin: 0, color: 'var(--ink-mute)' }}>
               已收束 {total} 个事件，写入 {records.length} 条记录。你可以回到低语者日志回顾整个记录流，或重置世界进度重新开始。
             </p>
-            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
               <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('saga')}>
                 低语者日志 · 记录流 <ArrowRight size={13} weight="bold" />
               </button>
               <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('dashboard')}>
                 返回终端总览
               </button>
+              {/* 全部收束之后唯一回头的那条路：把最后一段撤回来接着推 */}
+              {backEv ? (
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={doReopen}
+                  title="把最近收束的那一段连同它在低语者日志里的那一条一起撤下"
+                >
+                  <ArrowUUpLeft size={13} weight="bold" /> {confirmBack ? `再按一次确认回退《${backEv.title}》` : `回退到上一段 ·《${backEv.title}》`}
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -1397,10 +1481,20 @@ export function Plot() {
           <span>《{lastEnded.title}》· {MODE_LABEL[lastEnded.mode]} · 已写入低语者日志{lastEnded.diverged ? ' · 分歧路线' : ''}</span>
           <span className="muted tiny" style={{ flex: 1 }}>{lastEnded.digest}</span>
           <button className="linkGo" onClick={() => navigate('saga')}>查看记录 <ArrowRight size={11} /></button>
+          {/* 收束之后觉得不对可以退：撤这一段与它那一条记录，指针退回它前面 */}
+          {backEv ? (
+            <button
+              className="linkGo"
+              onClick={doReopen}
+              title="把这一段连同它在低语者日志里的那一条一起撤下（会话正文保留）"
+            >
+              <ArrowUUpLeft size={11} /> {confirmBack ? `再按一次确认回退《${backEv.title}》` : '回退到上一段'}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      <div className={css.bar}>
+      <div className={css.bar} data-focus-ev={focusEv.id}>
         <div className={css.barMain}>
           <span className="tag">{focusEv.id.toUpperCase()}</span>
           <b>{focusEv.title}</b>
@@ -1410,7 +1504,21 @@ export function Plot() {
         </div>
         <div className={css.barRight}>
           <span className="chip">{doneCount}/{total} 事件</span>
-          <span className="chip">{records.length} 记录</span>
+          <span className="chip" data-records={records.length}>{records.length} 记录</span>
+          {/* 回退到上一段：撤最近收束的那一段**连同它那一条记录**（退干净）。
+              收束之后觉得这一段不对、想重推一遍，就走这里 —— 一直在，不必非等收束那一屏。 */}
+          {backEv ? (
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 12 }}
+              data-rollback={backEv.id}
+              onClick={doReopen}
+              title={`把《${backEv.title}》连同它在低语者日志里的那一条一起撤下（会话正文保留，可重读、可重推）`}
+            >
+              <ArrowUUpLeft size={13} weight="bold" />
+              {confirmBack ? `再按一次确认回退《${backEv.title}》` : '回退到上一段'}
+            </button>
+          ) : null}
           <div className={css.seg} role="tablist" aria-label="推进方式">
             <button
               className={`${css.segBtn} ${showOnline ? css.isOn : ''}`}
@@ -1872,12 +1980,19 @@ export function Plot() {
           onSettled={async (rec: BattleRecord, spLeft, eq, bagLeft) => {
             const line = await settleWin({ rec, spLeft, equip: eq, bag: bagLeft, stamina, bumpBond })
             push('success', '交战归档', line, false)
-            /* 归档文书之外的这一份：把这一场写成剧情正文，回填到本事件的推演里 ——
+            /* 归档文书之外的那一份：把这一场写成**剧情正文**，回填到本事件的推演里 ——
                故事要接着往下读，不能只在作战记录里留一份公文。
-               成文归成文，底稿照旧：只写真发生过的事，对话照抄已经喊过的台词。 */
+               这一份走的是剧情那一路的导演提示词（directorPromptFor）：与推演正文同一副笔墨、
+               同一套底层规矩，内容就是刚打完的这一仗 —— 经过、战斗里各人真说出口的话、
+               以及战后的现场与对话（口径见 lib/battle/storylog.ts）。 */
             const evId = pendingBattle?.evId
-            if (evId) {
-              const story = await narrateStorylog(rec)
+            const ev = evId ? TIMELINE.find((e) => e.id === evId) : undefined
+            if (evId && ev) {
+              push('info', '成文 · 交战回填正文', '正在把这一仗写成正文，接进本事件的推演里 —— 稍候。', false)
+              const brief = battleStoryBrief(rec)
+              const scanText = `${toTurns(logs[evId], 10).map((t) => t.content).join('\n')}\n${brief}`
+              const { system } = await directorPromptFor(ev, scanText, { act: '交战成文', needDirective: false })
+              const story = await narrateStorylog(rec, { system, history: toTurns(logs[evId], 8) })
               setLogs(persistMsg(evId, {
                 id: idFor(), from: 'them', text: story, time: clock(), meta: { battle: true },
               }))

@@ -25,7 +25,7 @@ import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { castOf } from './cast'
 import { bondName, clamp } from './format'
-import { EXCLUSIVE_RULE } from './worldrules'
+import { BOTTOM_RULES } from './worldrules'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 
@@ -48,6 +48,15 @@ export interface PlotDirective {
    * 只在「这一幕该换图了」时给；局势没变就省略，别每回合都给。
    */
   cg?: string
+  /**
+   * **此刻真的在场上的人**（角色 id）：剧情右栏那份在场名册的实时修正。
+   * 事件静态名册（`ev.cast`）说的是「这一段大体上有谁」，可这一段里人会走会来 ——
+   * 走了的不该继续挂在右栏，中途进场的也不该等到下一段才出现。
+   * 所以导演**只在在场的人变了的时候**给这一项（换了个房间、谁先离席、谁刚赶到），
+   * 给的就是「此刻这一场里都有谁」的全量名单；局势没变就省略，别每回合都给。
+   * 缺省（从没给过）时右栏照静态名册摆。
+   */
+  cast?: string[]
   /** 该段收束是否为分歧路线（与原著相异时置 true） */
   diverged?: boolean
   /** 关键收束达成 → 完结当前事件并写记录（缺省 false） */
@@ -95,7 +104,7 @@ export interface IntimateDirective {
   first?: boolean
   /** 「最近的性行为」改写（可选；最近这一回到底做了什么，后写覆盖） */
   lastAct?: string
-  /** 「看法」改写（可选；她对这件事的看法变了才给，后写覆盖） */
+  /** 「对性行为的看法」改写（可选；她对这件事的看法变了才给，后写覆盖） */
   view?: string
 }
 
@@ -118,7 +127,7 @@ export interface PlotBattle {
 const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
-  'met', 'bond', 'ends', 'flag', 'cg', 'diverged', 'eventDone', 'digest', 'battle',
+  'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
   // 短信/群聊的「托付」用这一条。漏在名单外的话，sanitizeDirective 末尾那道
   // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
   // 任务却永远落不了地，而且一声不吭。
@@ -281,6 +290,17 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       }
       out.battle = out2
     }
+  }
+
+  /* 在场的实时名册：只收名录里认识的角色 id（与 met / bond 同一套白名单），
+     去重、封顶 12 人。**空数组不算数** —— 给出空名单等于把右栏清空，
+     而「此刻一个人都不在」这种情况由「省略这一项」表达，不由空数组表达。 */
+  if (Array.isArray(src.cast)) {
+    const cast = src.cast
+      .filter((x): x is string => typeof x === 'string')
+      .map((x) => x.trim())
+      .filter((x) => CHAR_IDS.has(x))
+    if (cast.length) out.cast = [...new Set(cast)].slice(0, 12)
   }
 
   /* 场景 CG 点名。这里**只做形状校验**（非空字符串、长度封顶），不做清单校验 ——
@@ -753,6 +773,8 @@ export interface DirectiveEffects {
   flags: [string, FlagValue][]
   /** 导演点名的场景 CG id（调用方按**当前事件**落到 world.cg[evId]） */
   cg?: string
+  /** 导演修正的在场名册（调用方按**当前事件**落到 world.cast[evId]，全量覆盖） */
+  cast?: string[]
   diverged: boolean
   eventDone: boolean
   digest?: string
@@ -789,6 +811,8 @@ export function applyDirective(d: PlotDirective, api: DirectiveApi): DirectiveEf
   // CG 点名不在这儿落盘：applyDirective 手里没有「当前事件 id」，
   // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的事件 id 写。
   if (d.cg) fx.cg = d.cg
+  // 在场的实时名册同理：手里没有「当前事件 id」，由调用方读 fx.cast 自己写
+  if (d.cast?.length) fx.cast = d.cast
   /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
      破处对象由这一层定 —— `first` 置位即记为「言万心叶」（'you'），
      底下的合成规则只认第一次落下的那个，之后再给也改不动；
@@ -831,6 +855,7 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       (d.ends && d.ends.length) ||
       (d.flag && Object.keys(d.flag).length) ||
       Boolean(d.cg) ||
+      (d.cast && d.cast.length) ||
       d.diverged === true ||
       d.eventDone === true ||
       Boolean(d.battle?.name) ||
@@ -916,6 +941,14 @@ export interface DirectorCtx {
   epDone?: Record<string, true>
   /** 已存在的分支标记（可选，供模型感知已偏离的状态） */
   flags?: Record<string, FlagValue> | null
+  /**
+   * **此刻**在场上的人（`world.cast[ev.id]` 那一层实时修正）。
+   *
+   * 给了就以它为准、不给才退回事件静态名册（`ev.cast`）—— 于是这一段里
+   * 谁先离席、谁刚赶到，下一回合的提示词里也就跟着变了。
+   * 【在场角色 · 性情锚】与前面那份关系读数都读同一个名单，两处不会各说各话。
+   */
+  castNow?: string[]
   /** 是否处于「重试补发指令」：要求本回合必须带指令块 */
   needDirective?: boolean
   /** 世界书命中参考段（由 lorescan 生成；置顶在指令说明之前，仅作延续性背景） */
@@ -978,7 +1011,7 @@ function outlineRules(opName: string): string {
 - 称呼随关系阶段与剧情位置变：角色怎么叫言万心叶，按下方角色行里注明的「对言万心叶的称呼」来（露娜在签订使用者契约之前一直称他「言万同学」，之后才改口「小主人」）；没有注明的，按该角色原文惯用的叫法，不得擅自升级成亲昵、主从或恋人式的称呼。
 - 这一段走到它的落点、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。**落点是「这一段该了结的事已经了结」，不是「大纲里的那几条必须逐条发生」** —— 主角把它推去了别处，就按推出来的结果收；收不上就不要收。
 - 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。
-${EXCLUSIVE_RULE}`
+${BOTTOM_RULES}`
 }
 
 /** 角色显示名（主役取 characters，登场者取 castmeta；都不认得就回 id） */
@@ -1189,13 +1222,15 @@ const TEMPER_SECTIONS = ['性格', '说话方式', '禁忌·雷区']
  * 于是序章的船上也会被塞进恋兔队四个人，而恋兔光本人在场的段落反而漏了她 ——
  * 卡面与提示词两边都跟着错。名册为空时才退回全体主役。
  */
-function presentOf(ev: TimelineEvent): string[] {
-  const ids = castOf(ev)
+function presentOf(ev: TimelineEvent, ctx?: DirectorCtx): string[] {
+  // 导演实时改过的名册优先（谁走了、谁刚来），没改过才照静态名册
+  const live = ctx?.castNow
+  const ids = live && live.length ? live : castOf(ev)
   return ids.length ? ids : (CHARACTERS.map((c) => c.id) as string[])
 }
 
 function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
-  const present = presentOf(ev)
+  const present = presentOf(ev, ctx)
   const done = furthestDone(ctx.epDone ?? {})
   const blocks: string[] = []
 
@@ -1225,7 +1260,7 @@ function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
 
 /** 拼装导演系统提示词（单事件） */
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
-  const present = presentOf(ev)
+  const present = presentOf(ev, ctx)
   const roster = present
     .map((id) => relationLine(id, ev, ctx))
     .filter(Boolean)
@@ -1373,6 +1408,8 @@ ${speechContract()}
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
   "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
   "cg":     "本段 CG 清单里的一个 id",         // 这一幕该配哪张图 —— 只从【场景 CG】那份清单里挑；没换图就整条省略
+  "cast":   ["此刻真在场上的人id"],            // **只在在场的人变了的时候给**（谁先离席、谁刚赶到、换了个房间）：给的是此刻这一场的**全量**名单，不是增减
+                                               // 名单照本节【在场角色】那一份的 id 写；人都还在原处就整条省略，别每回合都给
   "diverged": true,                           // 已与原著相异（否则省略）
   "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
   "digest": "第三人称收官记录两三句",
