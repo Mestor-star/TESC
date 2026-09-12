@@ -26,7 +26,7 @@ import { charOf, profileLinesOf } from '../data/personas'
 import { INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
-import { BOTTOM_RULES, HAREM_RULE } from './worldrules'
+import { PROSE_RULES, HAREM_RULE } from './worldrules'
 
 /** 同场的某一位（手册那一侧现算，本模块不读存档） */
 export interface RendezvousParty {
@@ -265,10 +265,11 @@ export function rendezvousPrompt(
 3. 这是见面，不是短信：可以写动作、神态与距离（牵手、别开脸、凑近一点这类），但**别写整段旁白小说**。
 4. 不用 Markdown、不加星号包动作、不发编号 —— 像紧挨着说话那样把动作与话一起带出来。
 5. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
-${BOTTOM_RULES}${others ? `\n${HAREM_RULE}` : ''}${intimate ? `
+${PROSE_RULES}${others ? `\n${HAREM_RULE}` : ''}${intimate ? `
 6. **这一场已经走到私密那一档**：两个人是独处的，距离、称呼、触碰都可以比平时更近。
-   写就写足 —— 这一档不必回避任何词：身体的反应、说过的话、到了哪一步，都照实写出来，
-   不要用省略号跳过。但推进要跟着对方走 —— 他给了那层意思就自然接住，
+   写就写足 —— 这一档不必回避任何词：顺序、那一处此刻的样子、她说过的每一句、
+   到了哪一步，都照实落笔，不要用省略号跳过（怎么写细见上面底层规矩里那一整条）。
+   但推进要跟着对方走 —— 他给了那层意思就自然接住，
    他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}`
 }
 

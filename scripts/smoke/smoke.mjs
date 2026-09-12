@@ -751,9 +751,9 @@ try {
   ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
   ok('E2b 角色档案世界书已并入全员 25 词条', !!canonChar && canonChar.count === 25, 'count=' + (canonChar && canonChar.count))
   ok('E2c 旧「登场者登记」世界书已迁移移除', (await loreBook('book-canon-sidecast')) === null, '')
-  // E2d 文风库：三条常驻词条（底色 / 句法 / 术语与称呼）
+  // E2d 文风库：四条常驻词条（底色 / 句法 / 术语与称呼 / 私密场面）
   const styBook = await loreBook('book-canon-style')
-  ok('E2d 文风世界书已播种（3 条常驻词条）', !!styBook && styBook.count === 3, 'count=' + (styBook && styBook.count))
+  ok('E2d 文风世界书已播种（4 条常驻词条）', !!styBook && styBook.count === 4, 'count=' + (styBook && styBook.count))
 
   // 进入剧情推进：v1-1 开场自足完整（standby）→ 注入原文后原地待命；
   // 操作员手动回话 → 标签回执（<maintext>+<vars>）驱动 v1-1 收束：正文停留、不自动归档

@@ -18,7 +18,7 @@
    ============================================================ */
 
 import protocolJson from '../../presets/终末停滞-协议预设.json'
-import styleJson from '../../presets/终末停滞-文风参照原著.json'
+import styleJson from '../../presets/终末停滞-文风参照原著-轻量化.json'
 import { readProfiles, saveProfile } from './api'
 import { DEFAULT_BUDGET, LEGACY_BUDGETS, MAX_BUDGET } from './budget'
 import { ensureSeeded, getActiveLorebookIds } from './lorestore'
@@ -32,8 +32,14 @@ export const BUILTIN_KEY = 'zts-builtin-presets:v1'
  * 那时照着 presets/*.json 重读一遍，把内容换上去（不是重播一份新的：id 是固定的，
  * 换的是那一份里的条目）。不这么做的话，改过的 JSON 只有**新装机**看得见，
  * 已经开过机的用户永远停在装机那天的旧稿上 —— 而界面上完全看不出差别。
+ *
+ * 换过的几代（升一位就是一次内容改动）：
+ *   v4 → v5 = 「主线 · 输出」组加「文风（私密场面）」一条（紧挨「反八股」，
+ *            与「文风（交战段落）」同一个位置逻辑；主线 / 轻量两份都加，内容逐字一致）；
+ *            并把「模型适配」里 Gemini / GLM / Claude·GPT 三条**关掉**，只留 DeepSeek
+ *            （这份预设是照着 DeepSeek 调的，别家的适配条目在它身上只会各说各话）。
  */
-const BUILTIN_V = 4
+const BUILTIN_V = 5
 /**
  * 预算归位那一步的账。**记版本号**：目标值改过两代
  * （1500 → 上限 65536 → 30000），老账本记的是一次已经过时的动作，

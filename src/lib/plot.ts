@@ -29,7 +29,7 @@ import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { castOf } from './cast'
 import { bondName, clamp } from './format'
-import { BOTTOM_RULES, haremRule } from './worldrules'
+import { PROSE_RULES, haremRule } from './worldrules'
 import { FREE_BOND_NOTE, FREE_FRAME, isFreeId } from './freetime'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
@@ -1144,7 +1144,7 @@ function outlineRules(opName: string, free = false): string {
 - 这一段走到它的落点、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。**落点是「这一段该了结的事已经了结」，不是「大纲里的那几条必须逐条发生」** —— 主角把它推去了别处，就按推出来的结果收；收不上就不要收。
 - 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。${free ? `
 - **上面这两条（eventDone / digest）在自由时间里不适用** —— 这一格不是原文里的一段，没有「该了结的事」也没有可归档的摘录：什么时候收由操作员按「进入下一卷」说了算。你要做的就是让它一直有事发生，别把这一格写空。` : ''}
-${BOTTOM_RULES}`
+${PROSE_RULES}`
 }
 
 /** 角色显示名（主役取 characters，登场者取 castmeta；都不认得就回 id） */
@@ -1477,8 +1477,9 @@ ${intimIds.map((id) => `  ${nameOfChar(id)}（${id}）`).join('\n')}
 · 她给到哪一步，由她此刻的关系与性格定 —— 有的只肯说，有的肯赴约，有的已不在意距离。
 · 推进要**跟着言万心叶的行动走**：他给了那层意思、她也接得住，才往前挪一步；
   他没给的就别替她安排。拿不准就停在当下，不必每回合都往前推。
-· 私密场面照常上屏、**写就写足**：这一档不必回避任何词，身体怎么反应、她说什么、
-  到什么程度，都照实写出来。真正推进到哪一步，用下面事件指令里的 intim 落成读数
+· 私密场面照常上屏、**写就写足**（怎么写细见上面底层规矩里那一整条）：这一档不必回避
+  任何词 —— 顺序、那一处此刻的样子、她说的每一句、到什么程度，都照实落笔，不用省略号跳过。
+  真正推进到哪一步，用下面事件指令里的 intim 落成读数
   （这几个数进的是档案页「私密档案」的背面，不是正文）：
   部位那一路给 dev；她整个人的敏度往前挪了就另外给 lewd；这一回到底做了什么，
   给 lastAct 一句话记下来（比照原样改写，不要写「同上」）。两件事各记各的。

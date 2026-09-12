@@ -66,6 +66,9 @@
    · 空档
      32  自由时间     —— 两处入口一个状态 · 羁绊拦在落地那一层 ·
                         自由段不算主线进度、也不冠「· 原文」
+   · 笔法
+     33  私密场面怎么写细 —— 一条**有条件**的笔法规矩：只在写正文的两条通道里带，
+                        没走到那一档就不生效（世界书文风册第四条 + 预设 ts-intim-depth）
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -105,7 +108,9 @@ import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
-import { BOTTOM_RULES, EXCLUSIVE_RULE, HAREM_RULE, SMOOTH_RULE, haremRule } from '../../src/lib/worldrules'
+import {
+  BOTTOM_RULES, EXCLUSIVE_RULE, HAREM_RULE, INTIM_DEPTH_RULE, PROSE_RULES, SMOOTH_RULE, haremRule,
+} from '../../src/lib/worldrules'
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
 import { PARTY_MAX, dateBondRule, rendezvousPrompt } from '../../src/lib/rendezvous'
 import type { Rendezvous, RendezvousParty } from '../../src/lib/rendezvous'
@@ -117,6 +122,7 @@ import { API_DEFAULTS } from '../../src/lib/api'
 import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, needsContentRefresh, shouldAutoStart, shouldSettleDown } from '../../src/lib/builtin-presets'
 import type { FloorLedger } from '../../src/lib/builtin-presets'
 import { BUILTIN_GROUPS, BUILTIN_GROUP_IDS, needsGroupRefresh, shouldSeedGroup } from '../../src/lib/smsthreads'
+import { CANON_SEED_VERSION, buildCanonLorebooks } from '../../src/lib/loreseed'
 import { charOf } from '../../src/data/personas'
 import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
@@ -2381,7 +2387,8 @@ export function run(): MechReport {
        否则改 JSON 只有新装机有效，老用户永远停在装机那天的旧稿上，而界面看不出差别。 */
     const refresh: Array<[number, string[], boolean, string]> = [
       [1, [BUILTIN_IDS[0], 'user-made'], true, '旧账本 + 内置那份还在'],
-      [4, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
+      [4, [BUILTIN_IDS[0], 'user-made'], true, 'v4 那一代的老账本（内容改过之后照样换得上）'],
+      [5, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
       [1, ['user-made'], false, '用户把内置那份删了（尊重这个删除）'],
       [0, [], false, '列表是空的（没有可换的）'],
     ]
@@ -4484,6 +4491,159 @@ export function run(): MechReport {
       + '开发度 / 次数账 / 关系档位照常；自由段不算主线进度，也不冠「· 原文」')
   } catch (e) {
     fail.push('自由时间段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 33) 私密场面怎么写细：一条**有条件**的笔法规矩 ----------
+     「写足」这一条与独占、白虎不是一路：那两条是世界的设定，走到哪儿都成立；
+     这一条只管**已经在演的那一段**怎么落笔，没走到那一步的场面它一个字都不生效。
+     所以这一节量四样，缺一样这条规矩就会变成「催 NSFW」：
+       · 规矩本身 —— 顺序 / 那一处 / 口癖 / 实感 / 写足不写长，几个关节都在；
+       · 装在哪儿 —— 在 `PROSE_RULES` 里，**不在** `BOTTOM_RULES` 里；
+       · 挂在谁身上 —— 只有写长篇正文的两条通道带（主线 / 见面），
+         短信那两条（单聊 / 群聊）不带，一般的见面（kind=date）也不带；
+       · 条件句在不在 —— 「不生效」「不是要你去开这一场」这两句被删掉，它就变成
+         一条无条件的催场令。这是最容易在日后改写里丢的东西，所以单钉一条。
+     再往下是两道「缝得上」的闸：世界书文风册第四条、预设里的那一条 —— 加上
+     「出厂只开 DeepSeek 的模型适配」，都在这儿一次钉住。 */
+  try {
+    /* —— 规矩本身：能读的一段话，不是空壳 —— */
+    const depthKeys = ['写足', '顺序', '那一处', '口癖', '体液', '不生效']
+    const depthLack = depthKeys.filter((k) => !INTIM_DEPTH_RULE.includes(k))
+    ok('私密场面 · 规矩里点明了「写足 / 按顺序 / 那一处此刻的样子 / 她的口癖 / 实感 / 没到那一档就不生效」',
+      INTIM_DEPTH_RULE.length > 120 && depthLack.length === 0,
+      depthLack.length ? `缺 ${depthLack.join('、')}` : `${INTIM_DEPTH_RULE.length} 字`)
+
+    /* 条件句：这两句是「不催场」的全部分量所在 —— 少一句，规矩就翻了个面 */
+    ok('私密场面 · 条件句写死在规矩里（「没到这一档的不生效」＋「不是要你去开这一场」）',
+      INTIM_DEPTH_RULE.includes('还没到这一档的场面，这一条不生效')
+      && INTIM_DEPTH_RULE.includes('它不是要你去开这一场'),
+      '两句都在（删掉任一句，这条就从「怎么写」变成「催着写」）')
+
+    /* 「写足」与「写长」分得开：要的是细节往前走，不是句子变长 */
+    ok('私密场面 · 「写足」定义为细节往前走，不是句子变长 / 一句换三种说法',
+      INTIM_DEPTH_RULE.includes('细节要往前走')
+      && INTIM_DEPTH_RULE.includes('同一个动作不重演第二遍')
+      && INTIM_DEPTH_RULE.includes('不要为了写长把一句话换三种说法'),
+      '与「反套话」那几条同一条收束')
+
+    /* 预设那两份的条目先取在手上（下面世界书与预设两段都要用） */
+    type PEntry = {
+      identifier?: string; name?: string; enabled?: boolean; scope?: string
+      role?: string; content?: string; injection_order?: number
+    }
+    const proto3 = BUILTIN_SOURCE[0].json as { prompts?: PEntry[]; name?: string }
+    const lite3 = BUILTIN_SOURCE[1].json as { prompts?: PEntry[]; name?: string }
+    const contentOf = (p: { prompts?: PEntry[] }, id: string) =>
+      p.prompts?.find((x) => x.identifier === id)?.content ?? ''
+
+    /* —— 装在哪儿：在 PROSE_RULES 里，不在 BOTTOM_RULES 里 —— */
+    ok('私密场面 · 装在 PROSE_RULES 里、**不在** BOTTOM_RULES 里'
+      + '（短信那两条紧挨着「一次不超过六十字」站着，一段「可以把篇幅用满」压在那儿是自相矛盾的）',
+      PROSE_RULES.includes(INTIM_DEPTH_RULE)
+      && PROSE_RULES.includes(EXCLUSIVE_RULE) && PROSE_RULES.includes(SMOOTH_RULE)
+      && !BOTTOM_RULES.includes(INTIM_DEPTH_RULE),
+      'BOTTOM_RULES ＝ 独占 + 白虎；PROSE_RULES ＝ 那两份 + 怎么写细')
+
+    /* —— 挂在谁身上：四条通道逐条点一遍，两种情形都要 —— */
+    const who2 = Object.keys(INTIMATE)[0] ?? 'luna'
+    const dateOne: Rendezvous = {
+      id: 'd:probe-depth', charId: who2, kind: 'date', title: '一次见面',
+      place: '学园外', from: 'you', ts: 0, done: false,
+    }
+    const intimOne: Rendezvous = { ...dateOne, kind: 'intimate' }
+    const depthIn = (text: string) => text.includes(INTIM_DEPTH_RULE)
+    const mainSys = buildDirectorSystem(TIMELINE[0]!, { operatorName: '言万心叶' })
+    const dateSys = rendezvousPrompt(who2, '言万心叶', 80, dateOne)
+    const intimSys = rendezvousPrompt(who2, '言万心叶', 80, intimOne)
+    const smsSys = systemPrompt(who2, '言万心叶', 10, '各自的日常')
+    const grpSys = groupSystemPrompt([who2], '小队', '言万心叶', '10/100', '各自的日常')
+    ok('私密场面 · 写长篇正文的两条通道带上了（主线推演 / 见面约会）',
+      depthIn(mainSys) && depthIn(intimSys),
+      `主线 ${depthIn(mainSys)} · 见面 ${depthIn(intimSys)}`)
+    ok('私密场面（对照）· 打字的两条通道不带（单聊 / 群聊）',
+      !depthIn(smsSys) && !depthIn(grpSys),
+      `单聊 ${depthIn(smsSys)} · 群聊 ${depthIn(grpSys)}`)
+    /* 一条对照要写准：`kind=date` 的见面**带着笔法那一整条**（一场戏是先从 date 起步、
+       走到那一档才抬成 intimate 的 —— 起步那一回合若手里没有这条，写出来的就是最该写足
+       却含糊掉的那一段）；但**「已经走到私密那一档」那一节它不带**，那是给进门的场面的许可。 */
+    ok('私密场面（对照）· 还没进门的见面：笔法那一整条在，「已走到那一档」那一节不注入',
+      depthIn(dateSys) && !dateSys.includes('这一场已经走到私密那一档')
+      && intimSys.includes('这一场已经走到私密那一档'),
+      `笔法 date ${depthIn(dateSys)} / intimate ${depthIn(intimSys)}；许可节 date ${dateSys.includes('这一场已经走到私密那一档')}`)
+
+    /* 两条收口：一处指向上面的底层规矩（不重述），一处是规矩本身 */
+    ok('见面通道 · 私密那一节指回底层规矩里那一整条，不另写一份（写两份，先走样的就是它）',
+      intimSys.includes('怎么写细见上面底层规矩里那一整条')
+      && intimSys.includes('这一场已经走到私密那一档'),
+      '规则 6 只在 intimate 时注入，且只指路不复述')
+
+    /* —— 世界书：文风册第四条 —— */
+    const styleBook = buildCanonLorebooks().find((b) => b.id === 'book-canon-style')
+    const styIntim = styleBook?.entries.find((e) => e.id === 'sty-intim')
+    ok('世界书 · 文风册多出第四条常驻（私密场面），四条都常驻（不靠关键词命中）',
+      !!styleBook && styleBook.entries.length === 4
+      && styleBook.entries.every((e) => e.constant)
+      && !!styIntim && styIntim.order === 4,
+      styleBook ? `${styleBook.entries.length} 条：${styleBook.entries.map((e) => e.id).join(' · ')}` : '缺 book-canon-style')
+    ok('世界书 · 那一条也写着「没走到这一档就不生效」（词条库与提示词两处口径一致）',
+      !!styIntim?.content.includes('还没走到这一档的场面，这一条不生效')
+      && styIntim.content.includes('这是笔法，不是设定'),
+      styIntim ? `${styIntim.content.length} 字` : '缺 sty-intim')
+    ok('世界书 · 文风册改了就抬种子版本（不抬，老装机永远停在三条那一版）',
+      CANON_SEED_VERSION >= 12,
+      `CANON_SEED_VERSION = ${CANON_SEED_VERSION}`)
+    /* 条数改了，「几条常驻」这个说法要跟着改 —— 三处口径（书自己的描述、两份预设里
+       那一句指路）都得是四条。种子版本历史里那句「三条常驻」是**当时的记录**，
+       不在此列，所以这里不扫全文，只认该改的那三处。 */
+    const sayFour = [
+      ['世界书 · 文风册自己的描述', styleBook?.description ?? ''],
+      ['预设 · 主线那份的指路', contentOf(proto3, 'ts-style-canon')],
+      ['预设 · 轻量那份的指路', contentOf(lite3, 'ts-style-canon')],
+    ]
+    const staleCount = sayFour.filter(([, s]) => !s.includes('四条常驻词条')).map(([n]) => n)
+    ok('世界书 · 「几条常驻」的说法跟着条数改（书自己的描述 + 两份预设里的指路都是四条）',
+      staleCount.length === 0,
+      staleCount.length ? `还是旧说法：${staleCount.join('、')}` : '三处口径一致：四条常驻词条')
+
+    /* —— 预设：两份都带，内容逐字一致 —— */
+    const pDepth = proto3.prompts?.find((x) => x.identifier === 'ts-intim-depth')
+    const lDepth = lite3.prompts?.find((x) => x.identifier === 'ts-intim-depth')
+    ok('预设 · 主线那份带「文风（私密场面）」一条（scope=main · 紧挨「反八股」之后）',
+      !!pDepth && pDepth.enabled === true && pDepth.scope === 'main'
+      && pDepth.injection_order === 118,
+      pDepth ? `${pDepth.name} · order ${pDepth.injection_order}` : '缺 ts-intim-depth')
+    ok('预设 · 轻量版那份也带同一条，且与主线那份**逐字一致**',
+      !!lDepth && lDepth.content === pDepth?.content,
+      lDepth ? (lDepth.content === pDepth?.content ? '逐字一致' : '★两份内容不一致') : '轻量版缺 ts-intim-depth')
+    ok('预设 · 那一条自己也写着条件句（拿出去在酒馆里跑，也不会变成催场令）',
+      !!pDepth?.content.includes('还没走到这一档的回合，这一条不生效')
+      && !!pDepth.content.includes('它不是要你去开这一场'),
+      '条件句两份都带')
+    ok('预设 · 轻量版的名字里带「-轻量化」（它与主线里那条「文风（参照原著）」不是一回事）',
+      (lite3.name ?? '').includes('轻量化'),
+      lite3.name ?? '缺 name')
+
+    /* 模型适配：出厂只开 DeepSeek 那一条（这份预设本来就是照着它调的） */
+    const fitOf = (id: string) => proto3.prompts?.find((x) => x.identifier === id)?.enabled
+    ok('预设 · 模型适配出厂只开 DeepSeek（Gemini / GLM / Claude·GPT 三条默认关闭）',
+      fitOf('ts-fit-ds') === true
+      && fitOf('ts-fit-gemini') === false
+      && fitOf('ts-fit-glm') === false
+      && fitOf('ts-fit-claude') === false,
+      `ds ${fitOf('ts-fit-ds')} · gemini ${fitOf('ts-fit-gemini')} · glm ${fitOf('ts-fit-glm')} · claude ${fitOf('ts-fit-claude')}`)
+
+    /* 改了内容就要抬版本号 —— 抬了，老装机下一轮启动才换得上稿；不抬，只有新装机看得见 */
+    ok('预设 · 内容版本抬过了（v4 的账本认得这是新稿，老装机下一轮启动换得上）',
+      needsContentRefresh(4, [BUILTIN_IDS[0]]) && needsContentRefresh(4, [BUILTIN_IDS[1]]),
+      'v4 → v5：私密场面那一条 + 只留 DeepSeek 适配 + 轻量版改名')
+
+    info.push('私密场面怎么写细：只在写长篇正文的两条通道（主线 / 见面 intimate）'
+      + '—— PROSE_RULES 里，不在 BOTTOM_RULES；单聊 / 群聊 / 一般的见面一个字都不带；'
+      + '条件句（「没到这一档的不生效」「不是要你去开这一场」）是它的全部分寸')
+    info.push('缝上去的两处：世界书文风册第四条常驻 sty-intim（种子 v12）+ 内置预设 ts-intim-depth'
+      + '（主线 / 轻量两份逐字一致）；模型适配出厂只开 DeepSeek，轻量版改名 -轻量化')
+  } catch (e) {
+    fail.push('私密场面段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }
