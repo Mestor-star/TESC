@@ -42,8 +42,9 @@ import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import { splitSpeech } from '../lib/dialogue'
 import { smsContextFor } from '../lib/crosslink'
-import { intimAdvanceLabel } from '../data/intimate'
+import { INTIMATE_BOND, hasIntimate, intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
+import { IntimateHud } from '../components/IntimateHud'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
@@ -273,7 +274,7 @@ export function Plot() {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
-    records, requestProfile, bumpIntim, bumpAttire, castOfEvent, setCast,
+    records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast,
     bumpActs, setRel, relOf,
     freeMode, setFreeMode, closeFreeSlot,
   } = useTerminal()
@@ -446,6 +447,16 @@ export function Plot() {
   }, [requestProfile, navigate])
 
   /**
+   * 色情状态栏摆谁 —— 与导演那张【私密往来】名单同一条判据：**在场**、女角色、
+   * 且羁绊已经走到那一步（`INTIMATE_BOND`）。名单为空整栏不摆（没到那一步的人
+   * 不该看见这一栏）。与提示词那边各算各的、但口径同一处：`hasIntimate` + `bondNow`。
+   */
+  const hudIds = useMemo(
+    () => (focusEv ? castOfEvent(focusEv).filter((id) => hasIntimate(id) && bondNow(id) >= INTIMATE_BOND) : []),
+    [focusEv, castOfEvent, bondNow],
+  )
+
+  /**
    * 某一段此刻算不算「自由时间」。两处入口合流成这一个判据：
    *   · 卷间那一格 —— 段 id 本身就带 `free:`（见 lib/freetime.ts）；
    *   · 自由活动开关 —— 主线走到一半，操作员自己按下的那一枚。
@@ -513,6 +524,11 @@ export function Plot() {
         { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpAttire, bumpActs, setRel },
         { freezeBond: freeNow },
       )
+      /* 这一回合什么都没往上走（没有私密推进、也没有衣物推进）→ 湿润自己退一档。
+         用户口径「内裤湿不可能一直湿润」：湿是**此刻**，凉下来了就该往下走。
+         退不必谁下命令，所以它落在这儿（指令落地这一层），不进提示词 ——
+         那句提醒摆进提示词，等于每回合都替她点一次火。 */
+      if (!fx.intim.length && !fx.attire.length) dryAttireAll()
       const ev = EPISODES.find((e) => e.id === evId)
       if (fx.met.length) {
         const names = fx.met.map((id) => personOf(id)?.name ?? id).join(' · ')
@@ -609,7 +625,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCast, bumpIntim, bumpAttire, bumpActs, setRel, push, freeOf],
+    [meetChar, bumpBond, registerEnd, setFlag, setCast, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel, push, freeOf],
   )
 
   /**
@@ -1978,6 +1994,9 @@ export function Plot() {
                     </div>
                   ) : null}
                   {draftErr ? <div className={css.draftErr}>{draftErr}</div> : null}
+                  {/* 色情状态栏：在场且关系走到那一步的人，此刻的情欲值 / 最近一回 /
+                      贴身衣物（含内裤湿几分）。实时 —— 读数一动它当场就变。 */}
+                  <IntimateHud ids={hudIds} hint="此刻 · 主线在场 · 随推进实时变化" />
                   <div className={css.composer}>
                     <input
                       className="field"

@@ -2512,7 +2512,7 @@ try {
     return {n:heads.length,allOpen:heads.every(h=>h.getAttribute('aria-expanded')==='true'),
       allVisible:heads.every(h=>vis(bodyOf(h))===true),
       boundary:!!document.querySelector('[data-error-boundary]'),
-      equip:(document.body.innerText.match(/装配[\s\S]{0,40}/)||[''])[0].replace(/\s+/g,' ')}})()`)
+      equip:(document.body.innerText.match(/装配[\s\S]{0,40}/)||[''])[0].replace(/\\s+/g,' ')}})()`)
   /* boundary 那一条是这一趟**顺带逮到的另一个毛病**：装具的持有人不一定是同伴名册里的人 ——
      言万心叶自己上阵也穿装具，而他不在 CHARACTERS。早先那版「装配」只滤了装具、
      没滤持有人，主角一穿装具整页就崩（在这一条断言之前，这一页只能靠没人来看它蒙过去）。 */
@@ -2846,6 +2846,61 @@ try {
     !!dan.back && dan.back.phys === null && !/身量/.test(dan.back.txt),
     JSON.stringify({ phys: dan.back && dan.back.phys }))
   await closeCard('danae-whitmore')
+
+  /* 色情状态栏（components/IntimateHud.tsx）：上屏的那一行「此刻」。
+     同一份账，换到**主线那一页**再看一遍 —— 这一栏与档案页的分工正是：
+     档案翻的是账（看不看都一样），这一栏摆的是此刻（谁在场、她此刻到哪儿）。
+     露娜在（在场名册里有她 · 羁绊满 · 有推进）→ 摆；恋兔光羁绊压到底 → 不摆。
+
+     它和输入框挂在**同一道门**后（Plot 的 ready = 主通道已配）：R 这一段全程离线通读，
+     中途「清除通道」那个用例把 api:main 拿掉了，于是先补一把再量。补的是**没人听的
+     端口** —— 门开得了，请求一个字也落不了地，量到的就还是播进去的那一份账。
+     量完再把那把钥匙收回去（后面几段踩的是「没配通道」那个前提）。 */
+  await seedApi('main', 'http://127.0.0.1:4999', 'silent')
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-event]')`, 20000, 'R11 plot view').catch(() => {})
+  /* 主通道那一份存在 IndexedDB 里，是异步读回来的；页面也是切过去才挂上 ——
+     等这一栏真的上屏再量，否则量到的是「还没就绪」的那一帧，不是「这一栏没摆」。 */
+  await poll(`document.querySelectorAll('[data-intim-hud]').length>0`, 12000, 'R11 hud').catch(() => {})
+  const hud = await ev(`(()=>{const h=document.querySelector('[data-intim-hud]');
+    /* 量不到时这几样一并报出来：落在哪一段、这一栏在不在、连栏头都没渲染 —— 免得
+       把「还没就绪」误读成「不该摆」（R11 之前就是这么栽的一回）。 */
+    const probe={ev:(document.querySelector('[data-event]')||{getAttribute:()=>null}).getAttribute('data-event'),
+      hudNodes:document.querySelectorAll('[data-intim-hud]').length,
+      head:document.body.innerText.includes('色情状态栏')};
+    if(!h)return {hud:false,probe};
+    const row=document.querySelector('[data-intim-hud="luna"]');
+    if(!row)return {hud:true,probe,rows:[...h.querySelectorAll('[data-intim-hud]')].map(x=>x.getAttribute('data-intim-hud'))};
+    const wear=row.querySelector('[data-hud-wear="luna"]');
+    const pants=wear?wear.querySelector('[data-hud-slot="panties"]'):null;
+    const wetRow=pants?pants.querySelector('[data-hud-wet]'):null;
+    return {hud:true,rows:[...h.querySelectorAll('[data-intim-hud]')].map(x=>x.getAttribute('data-intim-hud')),
+      lewd:(row.querySelector('[data-hud-lewd]')||{innerText:''}).innerText.trim(),
+      act:(row.querySelector('[data-hud-act]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+      slots:wear?[...wear.querySelectorAll('[data-hud-slot]')].map(x=>x.getAttribute('data-hud-slot')):[],
+      pantiesWear:pants?pants.getAttribute('data-hud-slot-wear'):null,
+      pantiesTxt:pants?pants.innerText.replace(/\\s+/g,' ').trim():null,
+      wet:wetRow?Number(wetRow.getAttribute('data-hud-wet')):null,
+      wetWord:wetRow?wetRow.getAttribute('data-hud-wet-word'):null}})()`)
+  ok('R11 色情状态栏摆出来了：露娜在名单里（此刻在场 · 满羁绊 · 有推进），读数是账里那一份',
+    !!hud.hud && hud.rows.includes('luna') && hud.lewd === '30'
+    && /旅馆/.test(hud.act || ''),
+    JSON.stringify(hud))
+  ok('R11b 贴身衣物也照账读（内裤半褪 · 湿润 45 洇湿），而不是把底档贴一遍',
+    hud.slots && hud.slots.join(',') === 'bra,panties' && hud.pantiesWear === 'half'
+    && hud.wet === 45 && hud.wetWord === '洇湿'
+    && /内裤/.test(hud.pantiesTxt || '') && /半褪/.test(hud.pantiesTxt || ''),
+    JSON.stringify({ slots: hud.slots, wear: hud.pantiesWear, wet: hud.wet, word: hud.wetWord, txt: hud.pantiesTxt }))
+  ok('R11c 不够格的那位不在这一栏里（羁绊压到底 → 她此刻不摆；名单是筛过的，不是把在场名册抄一遍）',
+    !!hud.rows && !hud.rows.includes('hikari'), JSON.stringify(hud.rows || hud))
+
+  /* 量完把这把钥匙收回去：R 这一段之前「掐掉接口存根」那个用例把 api:main 删了，
+     后面几段走的是**那个**前提（离线那一档的用例正踩在它上面 —— 主通道一配好，
+     它要找的那条路就不出现了）。删了当场不重载也不打紧：紧接着 Phase S 自己会重载。 */
+  await ev(`(async()=>{try{const db=await new Promise(res=>{const r=indexedDB.open('zts-terminal-store');r.onsuccess=()=>res(r.result)});
+    await new Promise(res=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').delete('api:main');t.oncomplete=()=>res(true)});return true}catch(e){return String(e)}})()`)
 
   /* ============ Phase S：剧情作战的牌面是一段**窗口**（打赢即已完成 · 领取只是收走）===
      播一份「正史已经走到第五段、第二段那一仗早打赢了」的账：

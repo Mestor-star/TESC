@@ -7,7 +7,7 @@ import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } fr
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { intimateOf, mergeIntim } from '../data/intimate'
-import { attireOf, mergeAttire } from '../data/attire'
+import { attireOf, dryAttire, mergeAttire } from '../data/attire'
 import { mergeActs } from '../data/acts'
 import { clamp } from '../lib/format'
 import { isFreeId } from '../lib/freetime'
@@ -178,6 +178,12 @@ export interface TerminalState {
   attireOf: (charId: string) => AttireProfile | null
   /** 落下一次贴身衣物推进（约会 / 私密往来）：穿着档位与湿润增量 */
   bumpAttire: (charId: string, p: AttireProgress, arouse: number) => void
+  /**
+   * 湿润自己退一档（`data/attire.ts` 的 `dryAttire`）—— 一回合里什么都没往上走
+   * 的那一次，由落地的调用方喊一声。她凉下来、擦干净、换了一条，读数就该往下走
+   * （用户口径：「内裤湿不可能一直湿润」）。已经干爽的人不动，也不留空转的流水。
+   */
+  dryAttireAll: () => void
   /**
    * **次数账**（八栏累计值；见 `data/acts.ts`）。与 `intimOf` 并列摆在同一页背面：
    * intim 说的是「这一处此刻是什么样」，它说的是「**一共**多少回」—— 只增不减。
@@ -888,6 +894,27 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /**
+   * 湿润自己退一档 —— 一回合里没有私密推进、也没有衣物推进时，由落地那一层喊一声
+   * （见 `dryAttire`）。退到 0 的人不再动：`dryAttire` 回 null，这里连世界都不重写
+   * （没有真的变，就不该产生一次新的 world 引用让整棵树重画）。
+   */
+  const dryAttireAll = useCallback(() => {
+    setWorld((prev) => {
+      const table = prev.attire
+      if (!table) return prev
+      let touched = false
+      const next = { ...table }
+      for (const [id, prog] of Object.entries(table)) {
+        const dried = dryAttire(prog)
+        if (!dried) continue
+        next[id] = dried
+        touched = true
+      }
+      return touched ? { ...prev, attire: next } : prev
+    })
+  }, [])
+
   /** 该角色手里那一本次数账（没记过 → 空表：八栏全读作 0） */
   const actsOf = useCallback(
     (charId: string): ActCount => world.acts?.[charId] ?? {},
@@ -1254,6 +1281,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     bumpIntim,
     attireOf: attireOfFn,
     bumpAttire,
+    dryAttireAll,
     actsOf,
     bumpActs,
     relOf,

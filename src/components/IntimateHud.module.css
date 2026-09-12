@@ -1,0 +1,87 @@
+/* 色情状态栏 —— 摆在输入框上方的一行「此刻」。
+   颜色一律走 tokens（红＝情欲那一根读数，钢/琥珀＝衣物与湿润那两档）。 */
+
+.hud {
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--red);
+  background: color-mix(in srgb, var(--red) 5%, transparent);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.hudHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.hudRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lewdNum {
+  color: var(--red);
+  font-size: 14px;
+}
+
+.lewdWord {
+  color: var(--amber);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+
+.act,
+.wear {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.k {
+  color: var(--ink-faint);
+  flex: none;
+}
+
+.piece {
+  color: var(--ink-dim);
+}
+
+.wet {
+  color: var(--steel);
+}
+
+/* 折叠态：窄屏下把动作那一句压成一行，别让它把输入框顶到屏幕外 */
+@media (max-width: 720px) {
+  .act,
+  .wear {
+    display: block;
+  }
+}

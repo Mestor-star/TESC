@@ -147,9 +147,9 @@ import {
 } from '../../src/data/intimate'
 import { ACT_KINDS, ACT_META, actOf, actTotal, isActReceive, mergeActs } from '../../src/data/acts'
 import {
-  ATTIRE, ATTIRE_LOG_MAX, ATTIRE_META, ATTIRE_SLOTS, WEAR_PHRASE, WET_PER_LEWD, WET_STAGES,
-  WET_STAGE_COUNT, attireAdvanceLabel, attireOf, hasAttire, mergeAttire, wearWord, wetStage,
-  wetStageIndex,
+  ATTIRE, ATTIRE_LOG_MAX, ATTIRE_META, ATTIRE_SLOTS, WEAR_PHRASE, WET_DRY_STEP, WET_PER_LEWD,
+  WET_STAGES, WET_STAGE_COUNT, attireAdvanceLabel, attireOf, dryAttire, hasAttire, mergeAttire,
+  wearWord, wetStage, wetStageIndex,
 } from '../../src/data/attire'
 import { REL_IDS, REL_TIERS, isRelId, relIndex, relLadderText, relName } from '../../src/data/rel'
 import { applyDirective, directiveHasFx, dateDirective, dateReady, sanitizeDirective, smsDirective } from '../../src/lib/plot'
@@ -4937,6 +4937,82 @@ export function run(): MechReport {
       + `界面那一半（私密档案第七栏「此刻的衣物」+「这一场的变化」）归冒烟`)
   } catch (e) {
     fail.push('贴身衣物段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+
+  /* ============================================================
+     §35 湿润自动回落（data/attire.ts 的 dryAttire / WET_DRY_STEP）
+     ------------------------------------------------------------
+     口径：「内裤湿不可能一直湿润」。所以一回合里什么都没往上走时，
+     湿润自己退一档 —— 退不必谁下命令，它是**此刻**不是勋章。
+     这一段只管纯函数那半边（退到哪儿停、退的时候念什么词、退完还记不记账）；
+     谁在什么时候叫它（推进落地那一层，指令什么都没动的时候）归冒烟。
+     ============================================================ */
+  try {
+    /* 湿润那个读数是**第二项**里的 `wet` —— 第三项是「同一次的色情度增量」（耦合的那一半），
+       别把 40 递成 arouse：那会连耦合一起算上，读数就不是你想验的那个了。 */
+    const wetted = mergeAttire(undefined, { wear: { panties: 'half' }, wet: 40 })
+    const dried = dryAttire(wetted)!
+
+    ok('回落 · 一步退一个常数，湿润读数和之前那份对得上',
+      dried.wet === 40 - WET_DRY_STEP && WET_DRY_STEP > 0,
+      `40 → ${dried.wet}（一步 ${WET_DRY_STEP}）`)
+
+    ok('回落 · 只动湿润这一项，穿在身上的那两件一个字都不碰',
+      dried.wear.panties === 'half' && dried.wear.bra === wetted.wear.bra,
+      `内裤仍 ${dried.wear.panties}`)
+
+    /* 档位边界要躲开：洇湿那一档从 40 起，40 退一步正好跌进潮意（会念档位词）。
+       挑一档中间的数（65）验「同一档里只说得出口略退」。 */
+    const sameStage = dryAttire(mergeAttire(undefined, { wet: 65 }))!
+    ok('回落 · 同一档里退只说得出口「略退」（0 涨到 3 那种不能读成「湿润到干爽」）',
+      sameStage.log[0]!.text === '湿润略退'
+      && !sameStage.log[0]!.text.includes('湿润到')
+      && wetStageIndex(65) === wetStageIndex(sameStage.wet),
+      `洇湿 ${65} → 洇湿 ${sameStage.wet}，同档`)
+
+    /* 反过来：同一档里涨也只说得出口「略增」（与退共用那一句的分支） */
+    const sameUp = mergeAttire(mergeAttire(undefined, { wet: 65 }), { wet: 3 })
+    ok('回落 · 同一档里往前挪仍是「略增」（这一条不是被这次改动带出来的）',
+      sameUp.log[0]!.text === '湿润略增', `65 → ${sameUp.wet}`)
+
+    ok('回落 · 退跨了档就念档位词（潮意退到干爽，得说出来退了一档）',
+      dryAttire(mergeAttire(undefined, { wet: 16 }))!.log[0]!.text.includes('湿润到干爽'),
+      `16 → ${dryAttire(mergeAttire(undefined, { wet: 16 }))!.wet}，`
+      + `档位 ${wetStage(16)} → ${wetStage(dryAttire(mergeAttire(undefined, { wet: 16 }))!.wet)}`)
+
+    /* 退到 0 就停：不许退成负数，也不许在 0 上继续记账 */
+    const atZero = dryAttire(mergeAttire(undefined, { wet: 6 }))!
+    ok('回落 · 退到 0 就停住（不许退成负数）',
+      atZero.wet === 0 && dryAttire(atZero) === null && dryAttire(undefined) === null,
+      `6 → ${atZero.wet}，再退一次 → 不再动`)
+
+    ok('回落 · 本来就干爽 / 没记过湿润的，一动不动也不记账',
+      dryAttire(mergeAttire(undefined, { wear: { bra: 'off' } })) === null
+      && dryAttire(mergeAttire(undefined, { wear: { bra: 'off' }, log: [] })) === null,
+      '没湿过就没有可退的')
+
+    /* 一直没人管它 → 收敛到干爽，不会停在半路 */
+    let walk = mergeAttire(undefined, { wet: 100 })
+    let steps = 0
+    for (let d = dryAttire(walk); d && steps < 50; d = dryAttire(walk)) {
+      walk = d
+      steps += 1
+    }
+    ok('回落 · 一直不动就一直退，最后收敛在 0（不是停在半路）',
+      walk.wet === 0 && steps > 1 && steps <= Math.ceil(100 / WET_DRY_STEP),
+      `100 → 0 走了 ${steps} 步`)
+
+    ok('回落 · 退一次只添一行（最近 ATTIRE_LOG_MAX 条，最新的在上，旧的挪到后头）',
+      dried.log.length === 2 && dried.log[1]!.text === '内裤褪到膝弯 · 湿润到洇湿'
+      && dried.log[0]!.text === '湿润到潮意',
+      `log ${dried.log.length} 行：${dried.log.map((l) => l.text).join(' / ')}`)
+
+    info.push('湿润回落：一回合里色情度与衣物都没动 → 湿润自己退一步'
+      + `（WET_DRY_STEP ${WET_DRY_STEP}），退到 0 就停、0 上不再记账。`
+      + '它是**此刻**，所以退不必谁下命令；涨仍然只认指令 ＋ 发情耦合那一半')
+  } catch (e) {
+    fail.push('湿润回落段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

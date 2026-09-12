@@ -13,6 +13,7 @@ import { PARTY_MAX } from '../lib/rendezvous'
 import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
+import { IntimateHud } from '../components/IntimateHud'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
@@ -27,7 +28,7 @@ import type { Rendezvous } from '../lib/rendezvous'
 import {
   dateBondRule, dateOpeningPrompt, dropRendezvous, isDateThread,
   listRendezvous, openDateOf, openRendezvous, patchRendezvous, rendezvousPrompt,
-  rendezvousVersion, subscribeRendezvous,
+  rendezvousVersion, rvAllIds, subscribeRendezvous,
 } from '../lib/rendezvous'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
@@ -61,7 +62,7 @@ function bondNote(delta: number): string {
 export function Tavern() {
   const {
     operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
-    smsRequest, clearSmsRequest, bumpIntim, bumpAttire, meetChar, registerEnd,
+    smsRequest, clearSmsRequest, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd,
     bumpActs, setRel,
   } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
@@ -193,6 +194,16 @@ export function Tavern() {
   const activeMeta = activeId && !activeGroup
     ? TAVERN_PERSONAS.find((p) => p.charId === (activeRv ? activeRv.charId : activeId))
     : undefined
+  /* 色情状态栏的名单：谁**此刻在场**就上谁 —— 见面那一场按名单
+     （Rendezvous.party，见 rvAllIds），单聊就是对面这一位。群里不摆：
+     群聊是「一群人七嘴八舌」，没有哪一位是被面对着的那一个。
+     够不够格看的是关系本身（hasIntimate + 羁绊过线），与主线那一栏同一把尺。 */
+  const hudIds = useMemo(() => {
+    if (activeGroup) return []
+    const pool = activeRv ? rvAllIds(activeRv) : activeId ? [activeId] : []
+    return pool.filter((id) => hasIntimate(id) && bondNow(id) >= INTIMATE_BOND)
+  }, [activeGroup, activeRv, activeId, bondNow])
+
   const activeLog = activeId ? logs[activeId] ?? [] : []
   /** 群里某条发言的作者名（单聊直接取角色名） */
   const whoOf = useCallback(
@@ -697,6 +708,9 @@ ${preset.post}` : '')
         const fx = applyDirective(dateDirective(parsed.directive, charId, rv.party ?? []), {
           meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpAttire, bumpActs, setRel,
         })
+        /* 这一回合什么都没往上走 → 湿润自己退一档（与主线那一路同一条规矩，
+           用户口径「内裤湿不可能一直湿润」）。退不必谁下命令，所以落在落地这一层。 */
+        if (!fx.intim.length && !fx.attire.length) dryAttireAll()
         // 这一场自己认领名目与地点：模型给出了更好的就地改写（第一次推进私密时顺带抬档位）
         const patch: Parameters<typeof patchRendezvous>[1] = {}
         if (fx.date?.title?.trim()) patch.title = fx.date.title.trim()
@@ -778,7 +792,7 @@ ${preset.post}` : '')
     },
     [
       settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread,
-      meetChar, registerEnd, bumpIntim, bumpAttire, bumpActs, setRel,
+      meetChar, registerEnd, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel,
     ],
   )
 
@@ -1345,6 +1359,8 @@ ${preset.post}` : '')
                 ) : null}
                 <div ref={endRef} />
               </div>
+
+              <IntimateHud ids={hudIds} hint="此刻 · 这一场在场的人" />
 
               <div className={comm.composer}>
                 <input
