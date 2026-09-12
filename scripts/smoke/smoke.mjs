@@ -1239,6 +1239,51 @@ try {
   const cxProbe = await ev(`(()=>{const t=document.body.innerText;return {codex:t.includes('CODEX / ENDINGS'), hasName:t.includes('灵魂蓄积器TM'), expanded:t.includes('应对要点')}})()`)
   ok('I4 点词 → 终末图鉴自动滚动并展开对应条目', cxProbe.codex === true && cxProbe.hasName === true && cxProbe.expanded === true, JSON.stringify(cxProbe))
 
+  /* ============ Phase I2：往期正文默认折着（长会话的账不摊在版面上） ============
+     翻过去的事件全摊在版面上，是「推得越久越顿」的一大来源：版面上每多一段正文，
+     每次重排就多切一遍台词、多排一遍版。折起来之后，那几段的正文**根本不渲染**
+     —— 不是藏起来（藏起来照样得算、得排）。这里摆两份往期：
+     默认两段都折着（一条正文都没有、页面上也读不到），点开哪一段才铺哪一段。 */
+  console.log('\n[Phase I2] 往期正文默认折着：折着 = 不渲染，点开哪段铺哪段')
+  await ev(`(()=>{localStorage.setItem('zts-terminal:v3',JSON.stringify({
+    unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'折叠观察员',focusId:'gcn',
+    world:{offset:{},locked:{},flags:{},met:{luna:true},ends:{},own:[],records:[]}}));
+    localStorage.setItem('zts-plot:v1',JSON.stringify({
+      'v1-1':[{id:'fold-a1',from:'them',text:'【折A1】夜风穿过甲板。',time:'20:01'}],
+      'v1-2':[{id:'fold-b1',from:'them',text:'【折B1】她把终端搁在膝上。',time:'20:02'}]}));
+    localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  await boot()
+  await goto('剧情推进')
+  await poll(`document.querySelectorAll('[data-past]').length===2`, 20000, 'I2 past blocks')
+  const foldShut = await ev(`(()=>{const ps=[...document.querySelectorAll('[data-past]')];
+    return {n:ps.length,
+      open:ps.filter(p=>p.getAttribute('data-past-open')==='1').length,
+      heads:ps.map(p=>{const b=p.querySelector('[data-past-fold]');return b?b.innerText.trim():'（无开关）'}),
+      narr:document.querySelectorAll('[data-past] [data-narration]').length,
+      gone:!document.body.innerText.includes('【折A1】')&&!document.body.innerText.includes('【折B1】')}})()`)
+  ok('I2-1 往期两段都摆着，但默认折着：正文一条都不渲染（不是藏起来）',
+    foldShut.n===2 && foldShut.open===0 && foldShut.narr===0 && foldShut.gone===true,
+    JSON.stringify(foldShut))
+  ok('I2-2 折着的那一行也说得清是哪一段（已归档 · 几条 · 展开）',
+    foldShut.heads.length===2 && foldShut.heads.every(h=>h.includes('已归档')&&h.includes('条')&&h.includes('展开')),
+    JSON.stringify(foldShut.heads))
+  await ev(`(()=>{const b=document.querySelector('[data-past="v1-1"] [data-past-fold]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-past="v1-1"] [data-narration]')`, 8000, 'I2 open v1-1')
+  const foldOne = await ev(`(()=>{const a=document.querySelector('[data-past="v1-1"]'),b=document.querySelector('[data-past="v1-2"]');
+    const h=a?a.querySelector('[data-past-fold]'):null;
+    return {aOpen:a?a.getAttribute('data-past-open'):null,aNarr:a?a.querySelectorAll('[data-narration]').length:-1,
+      aText:a?a.innerText.includes('【折A1】'):false,
+      bOpen:b?b.getAttribute('data-past-open'):null,bNarr:b?b.querySelectorAll('[data-narration]').length:-1,
+      bText:!!(b&&b.innerText.includes('【折B1】')),
+      head:h?h.innerText.trim():''}})()`)
+  ok('I2-3 点开哪一段才铺哪一段：这一段的正文出来了、另一段照旧折着',
+    foldOne.aOpen==='1' && foldOne.aNarr>0 && foldOne.aText===true
+    && foldOne.bOpen===null && foldOne.bNarr===0 && foldOne.bText===false,
+    JSON.stringify(foldOne))
+  ok('I2-4 展开后那一行改口（收起）',
+    foldOne.head.includes('收起'), foldOne.head)
+
   /* ============ Phase J：P7 标题菜单 + 8 槽存档读档 ============ */
   console.log('\n[Phase J] P7 标题菜单：无档禁用行动继续 / 存读档 / 覆盖二次确认 / 读取恢复含会话')
   // 全新态：清 storage（含可能残留的 zts-slots:v1）→ 重载 → 长按指纹 → 标题菜单
@@ -2446,19 +2491,24 @@ try {
 
      露娜的增量是**已知的**（口腔 +22 · 小穴 +40 · 色情度 +30），于是底下那几条
      「底档是不是真的从 0 起」也一起量了：量出来 22 / 40 / 30，就说明底档确实是 0，
-     而不是被一个预设的开发度垫着。 */
+     而不是被一个预设的开发度垫着。
+
+     状态句本身是**四档**的（0 未开发 · 1 生涩 · 2 渐熟 · 3 沉溺）：读数走到哪一档，
+     卡上摆的就是那一档的那一句。所以这里摆三个读数不同的「口腔」互相对照 ——
+     恋兔（无推进 · 未开发）／露娜（+22 · 生涩）／美菲莎（+90 · 沉溺），三句话必须不一样。 */
   console.log('\n[Phase R] 私密档案：翻面 · 五根条（含单独的色情度）· 不封存但看法分两段')
   const pSeed = await ev(`(()=>{
     localStorage.setItem('zts-terminal:v3',JSON.stringify({
       unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'私密观察员',focusId:'gcn',
-      world:{offset:{luna:100,hikari:-100,mefisa:100},locked:{},flags:{},met:{luna:true,hikari:true,mefisa:true},ends:{},own:[],records:[],
-        intim:{luna:{dev:{mouth:22,vagina:40},lewd:30,
+      world:{offset:{luna:100,hikari:-100,mefisa:100},locked:{},flags:{},met:{luna:true,hikari:true,mefisa:true,'danae-whitmore':true},ends:{},own:[],records:[],
+        intim:{mefisa:{dev:{mouth:90}},
+          luna:{dev:{mouth:22,vagina:40},lewd:30,
           lastAct:'在港区的旅馆里做了一整晚，从玄关一路做到床上，中间没停过。',
           view:'做得越多越清楚自己要什么 —— 她不再只是「可以一起做的活动」，是只要你在就得做。'}}}}));
     localStorage.setItem('zts-plot:v1',JSON.stringify({}));
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
-  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（口腔+22 / 小穴+40 / 色情度+30）',
+  ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（露娜 口腔+22 / 小穴+40 / 色情度+30 · 美菲莎 口腔+90）· 达娜厄一并显影（身量未补录的那一位）',
     pSeed === true, 'seed=' + pSeed)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
@@ -2493,11 +2543,16 @@ try {
       const lewdSect=sectOf('色情度'),barsSect=sectOf('开发度（四处）');
       /* 每根部位条量两样：槽位名 + 那个数字（.num 是条上的读数）——
          数字对得上「底档 0 + 播进去的增量」，才说明底档真的没有垫高。 */
+      /* 每一处的「状态」正文也按槽位收出来 —— 状态句该跟着读数换（见 R5c） */
+      const statesBySlot={};[...b.querySelectorAll('[data-intimate-slot]')].forEach(x=>{
+        const k=x.getAttribute('data-intimate-slot');const p=x.querySelector('p');
+        if(k!=='lewd'&&p)statesBySlot[k]=p.innerText.replace(/\\s+/g,' ').trim()});
       const devs={};[...b.querySelectorAll('[data-intimate-slot]')].forEach(x=>{
         const k=x.getAttribute('data-intimate-slot');const n=x.querySelector('.num');
         if(k!=='lewd'&&n)devs[k]=Number(n.innerText.trim())});
       const txt=b.innerText.replace(/\\s+/g,' ').trim();
-      return {side:d.getAttribute('data-side'),turn:d.getAttribute('data-turn'),slots,bars,devs,lewdVal:lewd?lewd.getAttribute('data-intimate-lewd'):null,
+      return {side:d.getAttribute('data-side'),turn:d.getAttribute('data-turn'),slots,bars,devs,statesBySlot,
+        lewdVal:lewd?lewd.getAttribute('data-intimate-lewd'):null,
         lewdText:lewd?lewd.innerText.replace(/\\s+/g,' ').trim():'',
         lewdHead:!!lewdSect,
         lewdSectSlots:lewdSect?lewdSect.querySelectorAll('[data-intimate-slot]').length:-1,
@@ -2506,6 +2561,7 @@ try {
         states:b.querySelectorAll('[data-intimate-slot] p').length,
         placeholder:ph?ph.innerText.trim():null,
         placeholderFig:!!b.querySelector('figure'),
+        phys:(x=>x?x.getAttribute('data-intimate-physique'):null)(b.querySelector('[data-intimate-physique]')),
         lastAct:(b.querySelector('[data-intimate-lastact]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
         view:(b.querySelector('[data-intimate-view]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
         virgin:(b.querySelector('[data-intimate-virgin]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
@@ -2580,10 +2636,26 @@ try {
     !!pBack && /旅馆/.test(pBack.lastAct) && /不再只是/.test(pBack.view)
     && !/尚未发生过/.test(pBack.lastAct),
     JSON.stringify(pBack && { lastAct: pBack.lastAct, view: pBack.view }))
+  /* 状态句是**动的**：同为「口腔」，卡上摆的得是那一档的那一句话 ——
+     底档那一句（未开发，抗拒）／被碰过几回那一句（露娜 22 · 生涩）／开发度很高那一句
+     （美菲莎 90 · 沉溺）。规则在 mech 里逐档量过，这里量的是**浏览器里真的换了**。 */
+  const stLow = hik.back.statesBySlot.mouth
+  const stMid = pBack.statesBySlot.mouth
+  const stHigh = mef.back.statesBySlot.mouth
+  ok('R5c 状态句跟着读数走：同一处（口腔）在未开发 / 生涩 / 沉溺三个读数上是三句不同的话',
+    !!stLow && !!stMid && !!stHigh && new Set([stLow, stMid, stHigh]).size === 3
+    && stLow.length > 10 && stMid.length > 10 && stHigh.length > 10,
+    JSON.stringify({ low: stLow && stLow.slice(0, 16), mid: stMid && stMid.slice(0, 16), high: stHigh && stHigh.slice(0, 16) }))
   ok('R6 立绘位先占住（图待补，写明该补到哪个文件名）· 破处那一栏在',
     !!pBack && pBack.placeholderFig === true && pBack.placeholder === 'public/cg/cg-intim-luna.webp'
     && pBack.hasFoot === true && /是/.test(pBack.virgin),
     JSON.stringify(pBack && { ph: pBack.placeholder, virgin: pBack.virgin }))
+  /* 身量：六栏里唯一有实据的一栏 —— 有数据的才摆，摆出来的就是那几个数。 */
+  ok('R6c 身量那一栏照实据摆（露娜 166 · 83 / 54 / 84）',
+    !!pBack && pBack.phys === '166/83/54/84'
+    && /166/.test(pBack.txt) && /83 \/ 54 \/ 84/.test(pBack.txt),
+    JSON.stringify({ phys: pBack && pBack.phys }))
+
   /* 不相干的说明文字不该出现在这一页上：读的人要看的是她，不是这份档案的规则。
      （底档与推进怎么合成、破处只认第一回 —— 那些话写在源码注释里，不写在卡上。） */
   ok('R6b 卡上不写「这一栏是怎么来的」：合成规则那几句说明不出现在背面',
@@ -2606,6 +2678,13 @@ try {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 })
   await poll(`!document.querySelector('[data-archive-dialog]')`, 8000, 'R luna dialog close')
+
+  /* 还没补录到身量的角色：那一栏整个不摆 —— 这一页不写「还缺什么」。 */
+  const dan = await flipTo('danae-whitmore')
+  ok('R8 没补录身量的角色：那一栏整个不摆（缺就不写，不摆一句「待补」）',
+    !!dan.back && dan.back.phys === null && !/身量/.test(dan.back.txt),
+    JSON.stringify({ phys: dan.back && dan.back.phys }))
+  await closeCard('danae-whitmore')
 
   /* ============ Phase S：剧情作战的牌面是一段**窗口**（打赢即已完成 · 领取只是收走）===
      播一份「正史已经走到第五段、第二段那一仗早打赢了」的账：

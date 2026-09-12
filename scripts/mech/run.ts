@@ -43,6 +43,10 @@ import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
+import { EXCLUSIVE_RULE } from '../../src/lib/worldrules'
+import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
+import { rendezvousPrompt } from '../../src/lib/rendezvous'
+import type { Rendezvous } from '../../src/lib/rendezvous'
 import { BEDS } from '../../src/lib/audio/music'
 import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
@@ -67,7 +71,8 @@ import { CHARACTERS } from '../../src/data/chars'
 import { castOf } from '../../src/lib/cast'
 import { plotContextFor, smsContextFor } from '../../src/lib/crosslink'
 import {
-  INTIMATE, INTIMATE_BOND, INTIMATE_SLOTS, NO_ACT, intimAdvanceLabel, intimateOf, mergeIntim,
+  DEV_STAGE_COUNT, INTIMATE, INTIMATE_BOND, INTIMATE_SLOTS, NO_ACT, PHYSIQUE, devStage,
+  devStageIndex, intimAdvanceLabel, intimateOf, mergeIntim,
 } from '../../src/data/intimate'
 import { sanitizeDirective } from '../../src/lib/plot'
 import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
@@ -3646,6 +3651,56 @@ export function run(): MechReport {
       && intimateOf(sample, undefined, INTIMATE_BOND - 1)!.view === sb.view
       && intimateOf(sample, undefined, INTIMATE_BOND)!.view === sb.viewHigh,
       `${sample} @0 / @${INTIMATE_BOND - 1} / @${INTIMATE_BOND}`)
+
+    /* 状态句是一条**四档**的梯子（DEV_STAGES）—— 逐位逐处量三件事：
+       · 句数 = 档数：一句不缺、一句不空（改梯子就要补齐 18 × 4 处）；
+       · 四句互不相同：不是同一句话换几个词（「状态是动的」）；
+       · 第 0 档一律写着「未开发」这件事 —— 谁都不是带着开发度登场的。 */
+    const shortLadder: string[] = []
+    const sameLadder: string[] = []
+    const openZero: string[] = []
+    for (const id of femaleIds) {
+      for (const slot of INTIMATE_SLOTS) {
+        const st = INTIMATE[id]!.parts[slot].states
+        if (st.length !== DEV_STAGE_COUNT || st.some((x) => !x.trim())) {
+          shortLadder.push(`${id}.${slot}(${st.length})`)
+          continue
+        }
+        if (new Set(st.map((x) => x.trim())).size !== st.length) sameLadder.push(`${id}.${slot}`)
+        if (!st[0]!.includes('未')) openZero.push(`${id}.${slot}`)
+      }
+    }
+    ok(`私密 · 四处各写满 ${DEV_STAGE_COUNT} 句状态（一位不漏、一句不空）`,
+      shortLadder.length === 0,
+      shortLadder.length ? shortLadder.join('、') : `${femaleIds.length} 位 × 4 处 × ${DEV_STAGE_COUNT} 句`)
+    ok('私密 · 四句互不相同（同一处上下两档读到的不是同一句话）',
+      sameLadder.length === 0, sameLadder.length ? sameLadder.join('、') : `${femaleIds.length} × 4 组各不重复`)
+    ok('私密 · 第 0 档一律写着「未开发」（起点是抗拒那一段）',
+      openZero.length === 0, openZero.length ? openZero.join('、') : `${femaleIds.length} 位 × 4 处`)
+
+    /* 档梯的边界：0 → 未开发；1/34 → 生涩；35/69 → 渐熟；70/100 → 沉溺 */
+    const lane = [0, 1, 34, 35, 69, 70, 100].map(devStageIndex)
+    ok('私密 · 档梯边界（0 → 未开发 · 1/34 → 生涩 · 35/69 → 渐熟 · 70/100 → 沉溺）',
+      JSON.stringify(lane) === JSON.stringify([0, 1, 1, 2, 2, 3, 3]), `devStageIndex → ${JSON.stringify(lane)}`)
+
+    /* 同一处读数往上走，上屏的那一句就跟着换 —— 这就是「状态是动的」 */
+    const seen = [0, 22, 90].map((dev) => intimateOf(sample, { dev: { mouth: dev } }, 0)!.parts.mouth.state)
+    ok('私密 · 同一处读数一涨，上屏的就换成那一档的那一句（0 / 22 / 90 三句各不同）',
+      new Set(seen).size === 3
+      && seen[0] === sb.parts.mouth.states[0]
+      && seen[1] === sb.parts.mouth.states[1]
+      && seen[2] === sb.parts.mouth.states[3]
+      && devStage(0) === '未开发' && devStage(22) === '生涩' && devStage(90) === '沉溺',
+      `${devStage(0)}「${seen[0]!.slice(0, 10)}…」/ ${devStage(22)}「${seen[1]!.slice(0, 10)}…」/ ${devStage(90)}「${seen[2]!.slice(0, 10)}…」`)
+    const over = '推进里改写过的状态句。'
+    ok('私密 · 推进里改写过的状态句压过档位推算的那一句（情节里真变了才算数）',
+      intimateOf(sample, { dev: { mouth: 90 }, state: { mouth: over } }, 0)!.parts.mouth.state === over, over)
+
+    /* 身量考据（PHYSIQUE）：只录了 8 位，其余暂按人物卡拟制 —— 但录进来的得真有底档 */
+    const stranger = Object.keys(PHYSIQUE).filter((id) => !INTIMATE[id])
+    ok('私密 · 身量考据只挂在真有底档的角色上',
+      stranger.length === 0,
+      `录了 ${Object.keys(PHYSIQUE).length} 位：${Object.keys(PHYSIQUE).join('、')}`)
     /* 推进里真改写过的压过两段：情节里变了才是最硬的证据 */
     const rewritten = '这是推进里改写过的看法。'
     ok('私密 · 推进里改写过的「看法」压过底档与过线两句',
@@ -3716,6 +3771,55 @@ export function run(): MechReport {
       + ` · 合成按 ${INTIMATE_BOND} 分两段看法`)
   } catch (e) {
     fail.push('私密段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 28) 底层规矩 · 独占（只进提示词，不上屏） ----------
+     出场的女性档案角色只认主角这一条线：不爱上别人，也不与人暧昧。这条规矩必须
+     给**每一条会写正文的通道**都带上 —— 漏掉一条，那条通道就会照原著亲疏或剧情惯性
+     替她配一场与旁人的感情戏。所以这里逐条通道点一遍（主线 / 单聊 / 群聊 / 见面），
+     再反过来钉一句：它**不许上屏** —— 界面那几层谁也不许引用 worldrules。 */
+  try {
+    /* 规矩本身得是能读的一段话，不是空壳：几个关节缺了就等于没写 */
+    const keys = ['不会爱上任何其他人', '暧昧', '亲缘', '别把它说出来']
+    const lack = keys.filter((k) => !EXCLUSIVE_RULE.includes(k))
+    ok('底层 · 独占：规矩里点明了「不爱上别人 / 不暧昧 / 亲缘打闹除外 / 不许说出口」',
+      EXCLUSIVE_RULE.length > 80 && lack.length === 0,
+      lack.length ? `缺 ${lack.join('、')}` : `${EXCLUSIVE_RULE.length} 字`)
+
+    /* 四条通道各带一份 —— 少带一条，那条通道就等于没有这条规矩 */
+    const who = Object.keys(INTIMATE)[0] ?? 'luna'
+    const probe: Rendezvous = {
+      id: 'd:probe', charId: who, kind: 'date', title: '一次见面',
+      place: '学园外', from: 'you', ts: 0, done: false,
+    }
+    const channels: [string, string][] = [
+      ['主线推演', buildDirectorSystem(TIMELINE[0]!, { operatorName: '言万心叶' })],
+      ['单独短信', systemPrompt(who, '言万心叶', 10, '各自的日常')],
+      ['群聊', groupSystemPrompt([who], '小队', '言万心叶', '10/100', '各自的日常')],
+      ['见面约会', rendezvousPrompt(who, '言万心叶', 80, probe, '')],
+    ]
+    const noRule = channels.filter(([, text]) => !text.includes(EXCLUSIVE_RULE)).map(([n]) => n)
+    ok('底层 · 独占：主线 / 单聊 / 群聊 / 见面四条通道各带同一份规矩',
+      noRule.length === 0,
+      noRule.length ? `漏了 ${noRule.join('、')}` : channels.map(([n]) => n).join(' / '))
+
+    /* 不上屏：界面那几层一个字都不许引用它（改规矩只改提示词，不动呈现） */
+    const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const onScreen: string[] = []
+    const walkUi = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${ent.name}`
+        if (ent.isDirectory()) walkUi(p)
+        else if (/\.tsx?$/.test(ent.name) && strip(readFileSync(p, 'utf8')).includes('worldrules')) onScreen.push(p)
+      }
+    }
+    for (const d of ['src/views', 'src/components', 'src/terminal']) walkUi(d)
+    ok('底层 · 独占：只进提示词、不上屏（界面那三层不引用 worldrules）',
+      onScreen.length === 0, onScreen.length ? onScreen.join('、') : '界面三层都没引用')
+
+    info.push('底层规矩：女性档案角色独占（只认主角一条线）—— 四条通道各带一份，界面不出现')
+  } catch (e) {
+    fail.push('底层规矩段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

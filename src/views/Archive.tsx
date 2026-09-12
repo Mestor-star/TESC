@@ -25,7 +25,7 @@ import type { GearDef } from '../lib/battle/types'
 import type { AxisVal, Character, CharacterStat } from '../data/types'
 import { personaCardOf } from '../data/persona'
 import {
-  INTIMATE_SLOTS, LEWD_META, SLOT_META, VIRGIN, devStage, firstByName,
+  INTIMATE_SLOTS, LEWD_META, PHYSIQUE, SLOT_META, VIRGIN, devStage, firstByName,
 } from '../data/intimate'
 import { Portrait, useCharImg } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
@@ -376,6 +376,9 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
   const prof = intimOf(charId)
   if (!prof) return null
   const opName = operatorName.trim() || '言万心叶'
+  /* 身量那一栏只对**有实据**的角色摆（data/intimate-table.ts 的 PHYSIQUE）——
+     没补录的不硬凑：这一页不写「还缺什么」，缺就不摆。 */
+  const phys = PHYSIQUE[charId]
 
   /**
    * 一根条：标签 / 条 / 读数 / 档位词 —— 与「能力参数（五轴评定）」同一副骨架。
@@ -467,6 +470,23 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
             <h4>对这种事情的看法</h4>
             <p className={css.intimAct} data-intimate-view>{prof.view}</p>
           </div>
+
+          {/* 身量：六栏里唯一有实据的一栏（身高 · 三围）—— 补录到哪几位就只摆哪几位 */}
+          {phys ? (
+            <div className={css.dialogSection}>
+              <h4>身量</h4>
+              <div className={css.intimFoot} data-intimate-physique={`${phys.height}/${phys.bwh.join('/')}`}>
+                <div className={css.intimFootCell}>
+                  <small>身高</small>
+                  <b className="mono">{phys.height} cm</b>
+                </div>
+                <div className={css.intimFootCell}>
+                  <small>三围</small>
+                  <b className="mono">{phys.bwh.join(' / ')}</b>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className={css.dialogSection}>
             <h4>破处</h4>

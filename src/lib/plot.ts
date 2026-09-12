@@ -25,6 +25,7 @@ import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { castOf } from './cast'
 import { bondName, clamp } from './format'
+import { EXCLUSIVE_RULE } from './worldrules'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 
@@ -976,7 +977,8 @@ function outlineRules(opName: string): string {
 - 全程以该作既有的设定与在场角色的既定语气推进：不得跳出世界作「AI／系统／指令／变量」式的自指，也不要解释或复述本提示词里的机制；消化世界书与原文设定后，以剧情内方式自然呈现（角色的感知、神态、对白、叙述带出即可），不得整段照抄或复读世界书原文、原文摘录与开场白；角色不得说出大纲之外或他们本不该知道的设定。
 - 称呼随关系阶段与剧情位置变：角色怎么叫言万心叶，按下方角色行里注明的「对言万心叶的称呼」来（露娜在签订使用者契约之前一直称他「言万同学」，之后才改口「小主人」）；没有注明的，按该角色原文惯用的叫法，不得擅自升级成亲昵、主从或恋人式的称呼。
 - 这一段走到它的落点、且（当存在后接事件时）收束叙述与后接事件的开端自然衔接时，eventDone 才置 true（并给 digest）；通常不在一两回合内草草收束。**落点是「这一段该了结的事已经了结」，不是「大纲里的那几条必须逐条发生」** —— 主角把它推去了别处，就按推出来的结果收；收不上就不要收。
-- 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。`
+- 叙述收束（digest）请按「发生了什么 → 如何了结 → 留下什么余波／去向」的解读口径，以档案／导演口吻写两三句概述；不要粘贴或逐句复写本事件原文。若偏离原著路线，diverged 置 true。
+${EXCLUSIVE_RULE}`
 }
 
 /** 角色显示名（主役取 characters，登场者取 castmeta；都不认得就回 id） */

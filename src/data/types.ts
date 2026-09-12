@@ -472,12 +472,30 @@ export interface WorldRecord {
 /** 私密部位（口腔 / 胸部 / 小穴 / 菊穴） */
 export type IntimateSlot = 'mouth' | 'breast' | 'vagina' | 'anus'
 
-/** 一个部位的私密读数 */
+/** 一个部位的私密读数（**底档**里的那一份） */
 export interface IntimatePart {
-  /** 状态一句话（档案用词：这一处此刻是什么样、被碰到会怎样；非原文） */
-  state: string
   /** 开发度 0-100（底档恒 0 = 未开发；上限 100） */
   dev: number
+  /**
+   * **四档状态句** —— 与 `data/intimate.ts` 的 `DEV_STAGES` 同一条梯子：
+   * 第 i 句就是第 i 档（那个档位词）说着的那一段。读数走到哪一档，
+   * 上屏的就是哪一句（见 `intimateOf`）。
+   *
+   * **只写这一处此刻的样子**：形态 / 颜色 / 软硬 / 松紧 / 湿润 / 敏感度 /
+   * 开发到哪一档 —— 不写她的动作与反应（「会推开」「会脸红」是反应，不是状态）。
+   *
+   * 第 0 档（未开发）一律是**抗拒**，也写作形态：紧闭、干涩、绷着、未开 ——
+   * 谁都不是带着开发度登场的；往上每一档换一句，越走越开。
+   */
+  states: readonly string[]
+}
+
+/** 合成之后一个部位的读数（上屏用）：此刻那一档的状态句 + 开发度 */
+export interface IntimateReadout {
+  /** 开发度 0-100 */
+  dev: number
+  /** 此刻那一档的状态句（推进里改写过的优先，见 `intimateOf`） */
+  state: string
 }
 
 /**
@@ -487,7 +505,7 @@ export interface IntimatePart {
  * `data/intimate.ts` 的 `intimateOf` 里就定了 —— 调用方拿到的 `view` 就是要显示的那一句。
  */
 export interface IntimateProfile {
-  parts: Record<IntimateSlot, IntimatePart>
+  parts: Record<IntimateSlot, IntimateReadout>
   /**
    * 色情度 0-100 —— 不挂在某个部位上，说的是**她这个人**此刻对这件事的
    * 敏度与淫靡程度：同样是开发度 40，色情度高的人反应完全是另一回事。
@@ -516,7 +534,9 @@ export interface IntimateProfile {
  * 私密档案的**底档**（data/intimate.ts 的 `INTIMATE` 一项）。
  * 比合成后的那一份多一句：羁绊过线之后要换上的那句「看法」。
  */
-export interface IntimateBase extends Omit<IntimateProfile, 'view'> {
+export interface IntimateBase extends Omit<IntimateProfile, 'parts' | 'view'> {
+  /** 底档里每一处存的是**四句**（不是合成后的那一句）—— 见 `IntimatePart` */
+  parts: Record<IntimateSlot, IntimatePart>
   /** 初见时她对这件事的看法 */
   view: string
   /** 羁绊过线之后的那一句（关系走到这一步，态度也跟着松了） */
@@ -532,7 +552,7 @@ export interface IntimateBase extends Omit<IntimateProfile, 'view'> {
 export interface IntimateProgress {
   /** 各部位开发度**增量**（累加到该部底档开发度上） */
   dev?: Partial<Record<IntimateSlot, number>>
-  /** 各部位状态改写（后写覆盖底档那句话） */
+  /** 各部位状态改写（后写覆盖**此刻那一档**的句子） */
   state?: Partial<Record<IntimateSlot, string>>
   /** 色情度**增量**（与 dev 同理累加，只是它不挂在哪个部位上） */
   lewd?: number

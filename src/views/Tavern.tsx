@@ -795,8 +795,11 @@ ${preset.post}` : '')
     if (!activeId || busy || !text) return
     setDraft('')
     const mine: ChatMsg = { id: idFor(activeId), from: 'user', text, time: clock() }
-    const nextLog = [...activeLog, mine]
-    setLogs((prev) => ({ ...prev, [activeId]: nextLog }))
+    /* 发出去的这句**当趟就落盘**。从前这里只改 state，而回信那一路是
+       「读盘 → 追加 → 落盘」——盘上没有刚发出去的这句，于是回信一上屏，
+       观测者自己的话就被读盘那一趟抹掉了。落盘与上屏并成一次 setThread。 */
+    const nextLog = [...(loadSmsLogs()[activeId] ?? []), mine]
+    setThread(activeId, () => nextLog)
     await runTurn(activeId, nextLog)
   }
 
@@ -806,7 +809,8 @@ ${preset.post}` : '')
     const prev = activeLog[i - 1]
     if (!prev || prev.from !== 'user') return
     const trimmed = activeLog.slice(0, i)
-    setLogs((lg) => ({ ...lg, [activeId]: (lg[activeId] ?? []).slice(0, i) }))
+    /* 同上：截断也要落盘 —— 只改 state 的话，下一次读盘会把删掉的那条又带回来 */
+    setThread(activeId, () => trimmed)
     setErr(null)
     await runTurn(activeId, trimmed)
   }
@@ -816,8 +820,8 @@ ${preset.post}` : '')
     const t = (text ?? '').trim()
     if (!activeId || busy || !t) return
     const mine: ChatMsg = { id: idFor(activeId), from: 'user', text: t, time: clock() }
-    const nextLog = [...activeLog, mine]
-    setLogs((prev) => ({ ...prev, [activeId]: nextLog }))
+    const nextLog = [...(loadSmsLogs()[activeId] ?? []), mine]
+    setThread(activeId, () => nextLog)
     await runTurn(activeId, nextLog)
   }
 

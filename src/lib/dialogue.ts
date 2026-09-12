@@ -108,11 +108,26 @@ function stripOuterQuotes(s: string): string {
 }
 
 /**
+ * 切好的段按**原文**存一把。
+ *
+ * 剧情推进那一页每敲一个字、每来一段流式回执都要重排整条历史，而每条正文都要重切一次
+ * （切的过程里 `matchSpeaker` 还要逐行扫一遍发言人名册）。同一段正文切出来的结果是一样的，
+ * 所以按原文认缓存 —— 与历史长短无关，长会话里省下的正是这一头。
+ * 只留最近的一把（到顶整把清掉），免得挂机一整晚把正文都攒在内存里。
+ */
+const SPLIT_CACHE = new Map<string, DialogueSeg[]>()
+const SPLIT_CACHE_MAX = 512
+
+/**
  * 把一条完整正文（可能含多行旁白与台词）拆成「旁白 / 左气泡 / 右气泡」段。
  * narr 连续行会并成一段（用单个换行），台词行各自成段，空行切断旁白段。
+ *
+ * 返回的是**副本**：缓存里那一把谁都不许改（调用方真要排序、截断也动不到它）。
  */
 export function splitSpeech(raw: unknown): DialogueSeg[] {
   const text = typeof raw === 'string' ? raw : ''
+  const hit = SPLIT_CACHE.get(text)
+  if (hit) return hit.slice()
   const out: DialogueSeg[] = []
   let narrBuf: string[] = []
 
@@ -140,7 +155,9 @@ export function splitSpeech(raw: unknown): DialogueSeg[] {
     else out.push({ kind: 'say', id: m.id, text: body })
   }
   flushNarr()
-  return out
+  if (SPLIT_CACHE.size >= SPLIT_CACHE_MAX) SPLIT_CACHE.clear()
+  SPLIT_CACHE.set(text, out)
+  return out.slice()
 }
 
 /** 供气泡头显示说话人登记名（say 段；未收录则返回原 id） */

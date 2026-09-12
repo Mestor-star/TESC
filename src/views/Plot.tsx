@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, Key } from 'react'
-import { ArrowRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
+import { ArrowRight, CaretRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
@@ -336,9 +336,51 @@ export function Plot() {
   const needDir = useRef(false)
   /** 正在自动补收指令：一次回合只补一次，免得模型连着不回时反复发问 */
   const dirRetry = useRef(false)
+
+  /* —— 流式回执按帧上屏 ——
+     每收一个数据包就 setLive 一次的话，每一包都要重排整条历史（几十条正文重切一遍台词、
+     往期事件全过一遍）。一回合几百包、包又越来越密，越写越顿就是这么来的。
+     改法：来多少包都只记在 ref 里，一帧至多上屏一次 —— 上限从「包数」降到 60/秒，
+     而观感完全一样（屏幕本来就是一帧才画一次）。 */
+  const liveRef = useRef<{ evId: string; text: string } | null>(null)
+  const liveRaf = useRef<number | null>(null)
+  const scheduleLive = useCallback((evId: string, text: string) => {
+    liveRef.current = { evId, text }
+    if (liveRaf.current != null) return
+    liveRaf.current = requestAnimationFrame(() => {
+      liveRaf.current = null
+      setLive(liveRef.current)
+    })
+  }, [])
+  /** 收口：撤掉挂着的那一帧再落空 —— 终态由 appendMsg 落成正式消息，不必这一帧补位 */
+  const clearLive = useCallback(() => {
+    if (liveRaf.current != null) cancelAnimationFrame(liveRaf.current)
+    liveRaf.current = null
+    liveRef.current = null
+    setLive(null)
+  }, [])
+  // 卸载时别把挂着的那一帧留在队列里
+  useEffect(() => () => {
+    if (liveRaf.current != null) cancelAnimationFrame(liveRaf.current)
+    liveRaf.current = null
+  }, [])
   const [foldOpen, setFoldOpen] = useState<ReadonlySet<string>>(() => new Set())
   const toggleFold = useCallback((id: string) => {
     setFoldOpen((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }, [])
+
+  /* —— 往期正文：默认折着 ——
+     翻过去的账越攒越长，全摊在版面上既碍事，又白花代价（每条正文都要重切一遍台词、
+     整条历史都要重排一遍 —— 长会话越推越顿，一大半是它）。折起来之后那几段的正文
+     **根本不渲染**：要看哪一段，点开哪一段。当前这一段不折 —— 正在读的就是它。 */
+  const [openPast, setOpenPast] = useState<ReadonlySet<string>>(() => new Set())
+  const togglePast = useCallback((id: string) => {
+    setOpenPast((prev) => {
       const n = new Set(prev)
       if (n.has(id)) n.delete(id)
       else n.add(id)
@@ -390,8 +432,16 @@ export function Plot() {
     if (cfgMain && !isReady(cfgMain)) setMode('offline')
   }, [cfgMain])
 
-  /* —— 会话持久化（不含密钥） —— */
+  /* —— 会话持久化（不含密钥） ——
+     落盘的正路是 persistMsg（每落一条正文即时写一次，后台跑完的回合也靠它），
+     这一条是兜底：撤掉半截正文那一类只改 state、不走 persistMsg 的地方也得落盘。
+     兜底就兜底，**不必**把正路刚写过的那一份再整份序列化一遍 —— 长会话里整份历史
+     是 O(整条账)，每条消息写两遍纯属白拖主线程。所以按**引用**认：这一份要是刚从
+     persistMsg 手里过过（persistedRef），这里就跳过。写还是即时写 —— 不攒、不延后，
+     免得外部写进来的（读档、冒烟预置）被攒着的那一份盖回去。 */
+  const persistedRef = useRef<Record<string, ChatMsg[]> | null>(null)
   useEffect(() => {
+    if (persistedRef.current === logs) return
     try {
       localStorage.setItem(LOG_KEY, JSON.stringify(logs))
     } catch {
@@ -404,7 +454,9 @@ export function Plot() {
   }, [logs, busy, focusEv?.id])
 
   const appendMsg = useCallback((evId: string, m: ChatMsg) => {
-    setLogs(persistMsg(evId, m))
+    const next = persistMsg(evId, m)
+    persistedRef.current = next   // 这一份已经落过盘了，兜底那一条别再写一遍
+    setLogs(next)
   }, [])
 
   /* 记一份在场与否：不在场时跑完的回合，收口要另外报一声（否则观测者以为它中断了） */
@@ -647,11 +699,11 @@ export function Plot() {
                 onDelta: (chunk) => {
                   if (settled || !chunk) return
                   acc += chunk
-                  setLive({ evId, text: acc })
+                  scheduleLive(evId, acc)
                 },
               })
             settled = true
-            setLive(null)
+            clearLive()
 
             // 预填那一截也算正文的一部分 —— 模型只写后半句，拼回去才是完整的一条
             const full = (prefill + (res.text ?? '')).trim()
@@ -724,7 +776,7 @@ export function Plot() {
               settled = true
               // 主动中断：保留已生成的部分叙述上屏，但不落地任何（可能是半截的）指令
               const partial = extractLiveDisplay(acc).trim()
-              setLive(null)
+              clearLive()
               if (partial) {
                 appendMsg(evId, { id: idFor(), from: 'them', text: partial, time: clock() })
                 push('info', '生成已中断', '已保留到当前生成的部分，未落地任何指令。', false)
@@ -732,7 +784,7 @@ export function Plot() {
               return
             }
             settled = true
-            setLive(null)
+            clearLive()
             const msg = e instanceof Error ? e.message : String(e)
             setErr(`推演中断：${msg}`)
             push('danger', '推演中断', msg, false)
@@ -1471,15 +1523,29 @@ export function Plot() {
               ) : null}
 
               <div className={css.thread}>
-                {pastBlocks.map((b) => (
-                  <div key={b.ev.id} className={css.pastBlock} data-past={b.ev.id}>
-                    <div className={css.pastHead}>
-                      <b>{b.ev.title}</b>
-                      <span className="muted tiny">{b.ev.group} · {b.ev.phase}</span>
+                {pastBlocks.map((b) => {
+                  const open = openPast.has(b.ev.id)
+                  return (
+                    <div key={b.ev.id} className={css.pastBlock} data-past={b.ev.id}
+                      data-past-open={open ? '1' : undefined}>
+                      <div className={css.pastHead}>
+                        {/* 一段一个开关：折着的时候只摆一行摘要（标题 · 段落 · 存了几条），
+                            正文一条都不渲染 —— 想看哪一段就展开哪一段。 */}
+                        <button type="button" className={css.pastFold} data-past-fold={b.ev.id}
+                          aria-expanded={open} onClick={() => togglePast(b.ev.id)}>
+                          <CaretRight size={11} weight="bold"
+                            className={open ? `${css.pastCaret} ${css.pastCaretOn}` : css.pastCaret} />
+                          <b>{b.ev.title}</b>
+                          <span className="muted tiny">{b.ev.group} · {b.ev.phase}</span>
+                          <span className={`muted tiny ${css.pastCount}`}>
+                            {open ? '收起' : `已归档 · ${b.msgs.length} 条 · 展开`}
+                          </span>
+                        </button>
+                      </div>
+                      {open ? b.msgs.map((m, i) => histMsg(m, `${b.ev.id}-${i}`)) : null}
                     </div>
-                    {b.msgs.map((m, i) => histMsg(m, `${b.ev.id}-${i}`))}
-                  </div>
-                ))}
+                  )
+                })}
                 {pastBlocks.length ? (
                   <div className={css.pastHead} data-cur-head="1">
                     <b>{focusEv?.title}</b>

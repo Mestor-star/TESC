@@ -181,12 +181,39 @@
 .pastHead b { font-size: 13px; color: var(--ink); }
 .pastHead span { letter-spacing: 0.12em; }
 
+/* 往期那一段的开关：整个行头就是按钮 —— 折着的时候版面上只有这一行。
+   折着 = 那几段的正文压根不渲染（不是藏起来），长会话省下的正是这一头。 */
+.pastFold {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 0 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pastFold:hover b { color: var(--amber); }
+.pastFold:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+.pastCaret {
+  flex: none;
+  align-self: center;
+  color: var(--ink-faint);
+  transition: transform 0.16s ease;
+}
+.pastCaretOn { transform: rotate(90deg); color: var(--amber); }
+.pastCount { margin-left: auto; letter-spacing: 0.08em; }
+
 .narr {
   border-left: 2px solid var(--amber);
   background: var(--bg-2);
   padding: 12px 15px;
   border-radius: 0 6px 6px 0;
 }
+
 .narrMeta, .userMeta {
   display: flex;
   align-items: baseline;

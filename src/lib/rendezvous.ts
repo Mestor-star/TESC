@@ -21,6 +21,7 @@
 import type { CgRef } from '../data/types'
 import { charOf, profileLinesOf } from '../data/personas'
 import { INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
+import { EXCLUSIVE_RULE } from './worldrules'
 
 export const RENDEZVOUS_KEY = 'zts-rendezvous:v1'
 /** 约会线程 id 前缀（与短信单聊、群聊 g: 并列，三者互不冲突） */
@@ -217,7 +218,8 @@ export function rendezvousPrompt(
 2. 使用简体中文，每次回复一到三句，口语自然，贴合人物卡里〔性格〕〔说话方式〕的口癖与个性。
 3. 这是见面，不是短信：可以写动作、神态与距离（牵手、别开脸、凑近一点这类），但**别写整段旁白小说**。
 4. 不用 Markdown、不加星号包动作、不发编号 —— 像紧挨着说话那样把动作与话一起带出来。
-5. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。${intimate ? `
+5. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
+${EXCLUSIVE_RULE}${intimate ? `
 6. **这一场已经走到私密那一档**：两个人是独处的，距离、称呼、触碰都可以比平时更近。
    写就写足 —— 这一档不必回避任何词：身体的反应、说过的话、到了哪一步，都照实写出来，
    不要用省略号跳过。但推进要跟着对方走 —— 他给了那层意思就自然接住，
