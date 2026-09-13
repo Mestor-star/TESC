@@ -38,8 +38,11 @@ export const BUILTIN_KEY = 'zts-builtin-presets:v1'
  *            与「文风（交战段落）」同一个位置逻辑；主线 / 轻量两份都加，内容逐字一致）；
  *            并把「模型适配」里 Gemini / GLM / Claude·GPT 三条**关掉**，只留 DeepSeek
  *            （这份预设是照着 DeepSeek 调的，别家的适配条目在它身上只会各说各话）。
+ *   v5 → v6 = 那一条里加「镜头要推近」（私密部位当下是什么样就写什么样、每次都不一样）——
+ *            只有「写足」没有「推近」，落地大多还是「那里湿得一塌糊涂」一句带过；
+ *            与 lib/worldrules.ts 的 INTIM_DEPTH_RULE、世界书文风册第四条同改，三处逐字对齐。
  */
-const BUILTIN_V = 5
+export const BUILTIN_V = 6
 /**
  * 预算归位那一步的账。**记版本号**：目标值改过两代
  * （1500 → 上限 65536 → 30000），老账本记的是一次已经过时的动作，

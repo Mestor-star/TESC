@@ -68,7 +68,8 @@
                         自由段不算主线进度、也不冠「· 原文」
    · 笔法
      33  私密场面怎么写细 —— 一条**有条件**的笔法规矩：只在写正文的两条通道里带，
-                        没走到那一档就不生效（世界书文风册第四条 + 预设 ts-intim-depth）
+                        没走到那一档就不生效；另带「镜头要推近」（世界书文风册第四条
+                        + 预设 ts-intim-depth）
    · 此刻（不是账）
      34  贴身衣物     —— 底档 18 位各一套（照性格、不许撞款）· 穿着三档后写覆盖 ·
                         湿润可上可下 · 发情那一半的耦合 · 流水只记真变了的
@@ -122,7 +123,7 @@ import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
 import { hz } from '../../src/lib/audio/sfx'
 import { clampBudget, DEFAULT_BUDGET, MAX_BUDGET, MIN_BUDGET } from '../../src/lib/budget'
 import { API_DEFAULTS } from '../../src/lib/api'
-import { BUILTIN_IDS, BUILTIN_SOURCE, ensureActiveSnapshot, needsBudgetFloor, needsContentRefresh, shouldAutoStart, shouldSettleDown } from '../../src/lib/builtin-presets'
+import { BUILTIN_IDS, BUILTIN_SOURCE, BUILTIN_V, ensureActiveSnapshot, needsBudgetFloor, needsContentRefresh, shouldAutoStart, shouldSettleDown } from '../../src/lib/builtin-presets'
 import type { FloorLedger } from '../../src/lib/builtin-presets'
 import { BUILTIN_GROUPS, BUILTIN_GROUP_IDS, needsGroupRefresh, shouldSeedGroup } from '../../src/lib/smsthreads'
 import { CANON_SEED_VERSION, buildCanonLorebooks } from '../../src/lib/loreseed'
@@ -2396,7 +2397,10 @@ export function run(): MechReport {
     const refresh: Array<[number, string[], boolean, string]> = [
       [1, [BUILTIN_IDS[0], 'user-made'], true, '旧账本 + 内置那份还在'],
       [4, [BUILTIN_IDS[0], 'user-made'], true, 'v4 那一代的老账本（内容改过之后照样换得上）'],
-      [5, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
+      /* 「已经是当前版本」这一格**跟着 BUILTIN_V 走** —— 早先这里写死过一个 5，
+         抬到 v5 那次忘了改，它就一直绿着（5 < 5 恰好为假，碰巧是对的）；
+         再抬一版就变成假绿灯。这一格是「不该换」的**对照**，写死了等于没量。 */
+      [BUILTIN_V, [BUILTIN_IDS[0], 'user-made'], false, '账本已是当前版本'],
       [1, ['user-made'], false, '用户把内置那份删了（尊重这个删除）'],
       [0, [], false, '列表是空的（没有可换的）'],
     ]
@@ -4505,7 +4509,7 @@ export function run(): MechReport {
      「写足」这一条与独占、白虎不是一路：那两条是世界的设定，走到哪儿都成立；
      这一条只管**已经在演的那一段**怎么落笔，没走到那一步的场面它一个字都不生效。
      所以这一节量四样，缺一样这条规矩就会变成「催 NSFW」：
-       · 规矩本身 —— 顺序 / 那一处 / 口癖 / 实感 / 写足不写长，几个关节都在；
+       · 规矩本身 —— 顺序 / 那一处 / 口癖 / 实感 / 写足不写长 / **推近景**，几个关节都在；
        · 装在哪儿 —— 在 `PROSE_RULES` 里，**不在** `BOTTOM_RULES` 里；
        · 挂在谁身上 —— 只有写长篇正文的两条通道带（主线 / 见面），
          短信那两条（单聊 / 群聊）不带，一般的见面（kind=date）也不带；
@@ -4533,6 +4537,19 @@ export function run(): MechReport {
       && INTIM_DEPTH_RULE.includes('同一个动作不重演第二遍')
       && INTIM_DEPTH_RULE.includes('不要为了写长把一句话换三种说法'),
       '与「反套话」那几条同一条收束')
+
+    /* 「推近景」（2026-09-13 加）：只说「写具体的那一处」，落地还是「那里湿得一塌糊涂」。
+       这一条要三样都在 —— 点到哪几处、当下写什么、以及**每次都不一样**（少了最后一样，
+       它自己就成了另一种套话：每次都推近、每次都同一段形容）。 */
+    const nearKeys = ['推近', '小穴', '乳头', '阴蒂', '后穴', '湿到哪一档', '被碰到的一瞬间']
+    const nearLack = nearKeys.filter((k) => !INTIM_DEPTH_RULE.includes(k))
+    ok('私密场面 · 「镜头要推近」在规矩里（点名几处 + 当下写什么 + 不许糊过去）',
+      nearLack.length === 0,
+      nearLack.length ? `缺 ${nearLack.join('、')}` : `${nearKeys.length} 个关节都在`)
+    ok('私密场面 · 推近不许退化成另一种套话（每次被弄到的状态都跟上一次不一样）',
+      INTIM_DEPTH_RULE.includes('每次被弄到都跟上一次不一样')
+      && INTIM_DEPTH_RULE.includes('不是另起一段做解剖'),
+      '「不一样」＋「不是解剖报告」两句都在')
 
     /* 预设那两份的条目先取在手上（下面世界书与预设两段都要用） */
     type PEntry = {
@@ -4597,8 +4614,12 @@ export function run(): MechReport {
       !!styIntim?.content.includes('还没走到这一档的场面，这一条不生效')
       && styIntim.content.includes('这是笔法，不是设定'),
       styIntim ? `${styIntim.content.length} 字` : '缺 sty-intim')
+    ok('世界书 · 那条里也带着「镜头要推近」（与底层规矩同一口径，不各写一份）',
+      !!styIntim?.content.includes('镜头要推近')
+      && !!styIntim.content.includes('每次被弄到都跟上一次不一样'),
+      styIntim?.content.includes('镜头要推近') ? '推近那一句在' : '★世界书里漏了推近')
     ok('世界书 · 文风册改了就抬种子版本（不抬，老装机永远停在三条那一版）',
-      CANON_SEED_VERSION >= 12,
+      CANON_SEED_VERSION >= 13,
       `CANON_SEED_VERSION = ${CANON_SEED_VERSION}`)
     /* 条数改了，「几条常驻」这个说法要跟着改 —— 三处口径（书自己的描述、两份预设里
        那一句指路）都得是四条。种子版本历史里那句「三条常驻」是**当时的记录**，
@@ -4627,6 +4648,11 @@ export function run(): MechReport {
       !!pDepth?.content.includes('还没走到这一档的回合，这一条不生效')
       && !!pDepth.content.includes('它不是要你去开这一场'),
       '条件句两份都带')
+    ok('预设 · 那一条也带着「镜头要推近」（三处缝法口径一致：底层规矩 / 世界书 / 预设）',
+      !!pDepth?.content.includes('**镜头要推近**')
+      && !!lDepth?.content.includes('**镜头要推近**')
+      && !!pDepth.content.includes('每次被弄到都跟上一次不一样'),
+      pDepth?.content.includes('**镜头要推近**') ? '两份都带推近' : '★预设里漏了推近')
     ok('预设 · 轻量版的名字里带「-轻量化」（它与主线里那条「文风（参照原著）」不是一回事）',
       (lite3.name ?? '').includes('轻量化'),
       lite3.name ?? '缺 name')
@@ -4643,13 +4669,14 @@ export function run(): MechReport {
     /* 改了内容就要抬版本号 —— 抬了，老装机下一轮启动才换得上稿；不抬，只有新装机看得见 */
     ok('预设 · 内容版本抬过了（v4 的账本认得这是新稿，老装机下一轮启动换得上）',
       needsContentRefresh(4, [BUILTIN_IDS[0]]) && needsContentRefresh(4, [BUILTIN_IDS[1]]),
-      'v4 → v5：私密场面那一条 + 只留 DeepSeek 适配 + 轻量版改名')
+      'v5 → v6：私密场面那一条加「镜头要推近」')
 
     info.push('私密场面怎么写细：只在写长篇正文的两条通道（主线 / 见面 intimate）'
       + '—— PROSE_RULES 里，不在 BOTTOM_RULES；单聊 / 群聊 / 一般的见面一个字都不带；'
-      + '条件句（「没到这一档的不生效」「不是要你去开这一场」）是它的全部分寸')
-    info.push('缝上去的两处：世界书文风册第四条常驻 sty-intim（种子 v12）+ 内置预设 ts-intim-depth'
-      + '（主线 / 轻量两份逐字一致）；模型适配出厂只开 DeepSeek，轻量版改名 -轻量化')
+      + '条件句（「没到这一档的不生效」「不是要你去开这一场」）是它的全部分寸；'
+      + '另带「镜头要推近」（私密部位当下是什么样就写什么样、每次都不一样）')
+    info.push('缝上去的两处：世界书文风册第四条常驻 sty-intim（种子 v13）+ 内置预设 ts-intim-depth'
+      + '（主线 / 轻量两份逐字一致 · 内置稿 v6）；模型适配出厂只开 DeepSeek，轻量版改名 -轻量化')
   } catch (e) {
     fail.push('私密场面段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
