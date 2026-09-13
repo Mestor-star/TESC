@@ -12,10 +12,15 @@
  * 与 charimg.ts 的分工：那边管「谁长什么样」（角色头像/立绘，按 avatarId），
  * 这边管「画出来的那一张图」。两套 id 各走各的目录，互不覆盖。
  *
- * 这里只管**取图**（候选链 + 探针缓存）——「哪一张该上屏」由各调用方自己定：
- *   · 私密档案左栏立绘位 —— 写死的 `cg-intim-<角色id>`（见 views/Archive.tsx）
- *   · 见面约会顶部那张 —— 导演点名，记在 `world.cg[d:uuid]`（见 lib/rendezvous.ts）
- *   · 角色定妆半身池 —— 并进约会那一档的候选（见 data/cgs.ts）
+ * 这里只管**取图**（候选链 + 探针缓存）——「哪一张该上屏」由各调用方自己定。
+ * 上屏三处，**CG 与立绘不是一回事**（主人立的规矩）：
+ *   · **CG**：见面约会顶部那张 —— 导演点名，记在 `world.cg[d:uuid]`
+ *     （候选清单见 lib/rendezvous.ts 的 `dateCgPalette`；见 views/Tavern.tsx）
+ *   · **立绘**：见面右栏的约会常服 —— 写死的 `cg-datewear-<角色id>`
+ *     （id 由 lib/rendezvous.ts 的 `dateWearId` 现算；见 components/DateSide.tsx）
+ *   · **立绘**：私密档案左栏 —— 写死的 `cg-intim-<角色id>`（见 views/Archive.tsx）
+ *
+ * **CG 由上下文自动放置，立绘不进候选**：立绘跟着人走，一人一张、文件名写死。
  */
 
 import { assetBase } from './assetbase'

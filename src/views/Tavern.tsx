@@ -15,6 +15,7 @@ import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
 import { IntimateHud } from '../components/IntimateHud'
+import { DateSide } from '../components/DateSide'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
@@ -1253,165 +1254,176 @@ ${preset.post}` : '')
                 </button>
               </div>
 
-              {/* 多女同场的选人面板：只列**同样够格**的几位（羁绊到 INTIMATE_BOND
-                  的别的档案角色）—— 差一个都开不了口的人，不该出现在这张名单上。 */}
-              {partyOpen && !activeGroup && !activeRv && partyPool.length ? (
-                <div className={css.partyPick} data-sms-party-pick>
-                  <div className="tiny muted">
-                    这一场还带谁去（可多选，最多 {PARTY_MAX} 位）—— 带上的人与 {activeChar.name} 同场，
-                    各记各的账。
-                  </div>
-                  <div className={css.partyPickRow}>
-                    {partyPool.map((p) => {
-                      const on = partyPick.includes(p.id)
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className={`chip ${on ? 'chip--on' : ''}`}
-                          style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
-                          onClick={() => toggleParty(p.id)}
-                          data-sms-party={p.id}
-                          data-sms-party-on={on ? '1' : '0'}
-                        >
-                          {p.name}
-                        </button>
-                      )
-                    })}
-                    <button
-                      className="btn btn--primary"
-                      style={{ fontSize: 11, padding: '6px 10px' }}
-                      onClick={() => void startDate(activeChar.id, partyPick)}
-                      data-sms-party-go
-                    >
-                      就这么去
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className={comm.thread} data-sms-thread>
-                <div className={comm.dayLabel}>
-                  {activeRv ? `${activeRv.place} · ${activeRv.title}` : '苍之学园 · 今日 · 角色短信'}
-                </div>
-                {activeCg ? (
-                  <div className={css.threadCg}>
-                    <CgSlot cgId={activeCg} caption={activeCgNote} ratio="3 / 2" />
-                  </div>
-                ) : null}
-                {activeLog.length === 0 && !busy ? (
-                  <div className={css.threadEmpty} data-sms-empty>
-                    {activeRv
-                      ? '还没人开口。'
-                      : '本线程还没有消息 —— 先说点什么过去，或者等对方先开口。'}
-                  </div>
-                ) : null}
-                {activeLog.map((m, i) => (
-                  <Fragment key={m.id}>
-                    <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`} data-sms-msg={m.from}>
-                      <span className={comm.msgHead}>
-                        {avatarOf(m) ? <Portrait avatarId={avatarOf(m)} size={26} round /> : null}
-                        <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
-                      </span>
-                      <span className={comm.bubble}><Linkified text={m.text} /></span>
-                      <span className={comm.msgTime}>{m.time}</span>
+              {/* 对谈区的下半：会话列 + 见面右栏。这一层**无条件在** ——
+                  单聊 / 群聊下 .chatMain 独占整幅（与从前一模一样），
+                  长不长右栏只看是不是见面那一档。 */}
+              <div className={css.chatBody}>
+                <div className={css.chatMain}>
+                {/* 多女同场的选人面板：只列**同样够格**的几位（羁绊到 INTIMATE_BOND
+                    的别的档案角色）—— 差一个都开不了口的人，不该出现在这张名单上。 */}
+                {partyOpen && !activeGroup && !activeRv && partyPool.length ? (
+                  <div className={css.partyPick} data-sms-party-pick>
+                    <div className="tiny muted">
+                      这一场还带谁去（可多选，最多 {PARTY_MAX} 位）—— 带上的人与 {activeChar.name} 同场，
+                      各记各的账。
                     </div>
+                    <div className={css.partyPickRow}>
+                      {partyPool.map((p) => {
+                        const on = partyPick.includes(p.id)
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`chip ${on ? 'chip--on' : ''}`}
+                            style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
+                            onClick={() => toggleParty(p.id)}
+                            data-sms-party={p.id}
+                            data-sms-party-on={on ? '1' : '0'}
+                          >
+                            {p.name}
+                          </button>
+                        )
+                      })}
+                      <button
+                        className="btn btn--primary"
+                        style={{ fontSize: 11, padding: '6px 10px' }}
+                        onClick={() => void startDate(activeChar.id, partyPick)}
+                        data-sms-party-go
+                      >
+                        就这么去
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
-                    {m.from === 'them' ? (
-                      <div className={css.replyMeta}>
-                        {m.meta?.thinking ? (
-                          <div className={css.thinkFold}>
-                            <button type="button" className={css.thinkHead} onClick={() => toggleFold(m.id)}>
-                              <b>推演</b>
-                              <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
-                                {foldOpen.has(m.id) ? '收起' : `展开 · ${m.meta.thinking.length} 字`}
-                              </span>
-                            </button>
-                            {foldOpen.has(m.id) ? (
-                              <div className={css.thinkBody}>{m.meta.thinking}</div>
-                            ) : null}
-                          </div>
-                        ) : null}
-
-                        {m.meta?.options && m.meta.options.length ? (
-                          <div className={css.optRow}>
-                            {m.meta.options.map((op) => (
-                              <button
-                                key={op}
-                                type="button"
-                                className={`btn btn--ghost ${css.optChip}`}
-                                style={{ fontSize: 12 }}
-                                disabled={busy}
-                                onClick={() => void pickOptionText(op)}
-                              >
-                                {op}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true && !busy ? (
-                          <div className={css.replyActs}>
-                            <button type="button" className="linkGo" onClick={() => void rewriteLast(i)}>重写此回复</button>
-                          </div>
-                        ) : null}
+                <div className={comm.thread} data-sms-thread>
+                  <div className={comm.dayLabel}>
+                    {activeRv ? `${activeRv.place} · ${activeRv.title}` : '苍之学园 · 今日 · 角色短信'}
+                  </div>
+                  {activeCg ? (
+                    <div className={css.threadCg}>
+                      <CgSlot cgId={activeCg} caption={activeCgNote} ratio="3 / 2" />
+                    </div>
+                  ) : null}
+                  {activeLog.length === 0 && !busy ? (
+                    <div className={css.threadEmpty} data-sms-empty>
+                      {activeRv
+                        ? '还没人开口。'
+                        : '本线程还没有消息 —— 先说点什么过去，或者等对方先开口。'}
+                    </div>
+                  ) : null}
+                  {activeLog.map((m, i) => (
+                    <Fragment key={m.id}>
+                      <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`} data-sms-msg={m.from}>
+                        <span className={comm.msgHead}>
+                          {avatarOf(m) ? <Portrait avatarId={avatarOf(m)} size={26} round /> : null}
+                          <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
+                        </span>
+                        <span className={comm.bubble}><Linkified text={m.text} /></span>
+                        <span className={comm.msgTime}>{m.time}</span>
                       </div>
-                    ) : null}
-                  </Fragment>
-                ))}
-                {live && live.charId === activeId && live.text ? (
-                  <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
-                    <span className={comm.msgHead}>
-                      {liveAvatarId ? <Portrait avatarId={liveAvatarId} size={26} round /> : null}
-                      <span className={comm.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
-                    </span>
-                    <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
-                    <span className={comm.msgTime}>生成中…</span>
-                  </div>
-                ) : null}
-                {err ? <div className={css.errLine}>{err}</div> : null}
-                {busy && (!live || live.charId !== activeId || !live.text) ? (
-                  <div className={comm.typing} aria-label="对方正在输入">
-                    <i /><i /><i />
-                  </div>
-                ) : null}
-                <div ref={endRef} />
-              </div>
 
-              <IntimateHud ids={hudIds} hint="此刻 · 这一场在场的人" />
+                      {m.from === 'them' ? (
+                        <div className={css.replyMeta}>
+                          {m.meta?.thinking ? (
+                            <div className={css.thinkFold}>
+                              <button type="button" className={css.thinkHead} onClick={() => toggleFold(m.id)}>
+                                <b>推演</b>
+                                <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+                                  {foldOpen.has(m.id) ? '收起' : `展开 · ${m.meta.thinking.length} 字`}
+                                </span>
+                              </button>
+                              {foldOpen.has(m.id) ? (
+                                <div className={css.thinkBody}>{m.meta.thinking}</div>
+                              ) : null}
+                            </div>
+                          ) : null}
 
-              <div className={comm.composer}>
-                <input
-                  className="field"
-                  placeholder={`${
-                    activeGroup ? `在「${activeGroup.name}」里说…`
-                      : activeRv ? `面对着 ${activeChar.name} 说…`
-                        : `给 ${activeChar.name} 发消息…`
-                  }（Enter 发送）`}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      if (busy) stop()
-                      else void send()
-                    }
-                  }}
-                />
-                {busy ? (
-                  <button className={`btn btn--amber ${comm.composerBtn}`} onClick={stop} aria-label="中断回复">
-                    <Stop size={18} weight="bold" />
-                  </button>
-                ) : (
-                  <button
-                    className={`btn btn--primary ${comm.composerBtn}`}
-                    onClick={() => void send()}
-                    disabled={!draft.trim()}
-                    aria-label="发送"
-                  >
-                    <PaperPlaneTilt size={18} weight="bold" />
-                  </button>
-                )}
+                          {m.meta?.options && m.meta.options.length ? (
+                            <div className={css.optRow}>
+                              {m.meta.options.map((op) => (
+                                <button
+                                  key={op}
+                                  type="button"
+                                  className={`btn btn--ghost ${css.optChip}`}
+                                  style={{ fontSize: 12 }}
+                                  disabled={busy}
+                                  onClick={() => void pickOptionText(op)}
+                                >
+                                  {op}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true && !busy ? (
+                            <div className={css.replyActs}>
+                              <button type="button" className="linkGo" onClick={() => void rewriteLast(i)}>重写此回复</button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </Fragment>
+                  ))}
+                  {live && live.charId === activeId && live.text ? (
+                    <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
+                      <span className={comm.msgHead}>
+                        {liveAvatarId ? <Portrait avatarId={liveAvatarId} size={26} round /> : null}
+                        <span className={comm.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
+                      </span>
+                      <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
+                      <span className={comm.msgTime}>生成中…</span>
+                    </div>
+                  ) : null}
+                  {err ? <div className={css.errLine}>{err}</div> : null}
+                  {busy && (!live || live.charId !== activeId || !live.text) ? (
+                    <div className={comm.typing} aria-label="对方正在输入">
+                      <i /><i /><i />
+                    </div>
+                  ) : null}
+                  <div ref={endRef} />
+                </div>
+
+                <IntimateHud ids={hudIds} hint="此刻 · 这一场在场的人" />
+
+                <div className={comm.composer} data-sms-composer>
+                  <input
+                    className="field"
+                    placeholder={`${
+                      activeGroup ? `在「${activeGroup.name}」里说…`
+                        : activeRv ? `面对着 ${activeChar.name} 说…`
+                          : `给 ${activeChar.name} 发消息…`
+                    }（Enter 发送）`}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (busy) stop()
+                        else void send()
+                      }
+                    }}
+                  />
+                  {busy ? (
+                    <button className={`btn btn--amber ${comm.composerBtn}`} onClick={stop} aria-label="中断回复">
+                      <Stop size={18} weight="bold" />
+                    </button>
+                  ) : (
+                    <button
+                      className={`btn btn--primary ${comm.composerBtn}`}
+                      onClick={() => void send()}
+                      disabled={!draft.trim()}
+                      aria-label="发送"
+                    >
+                      <PaperPlaneTilt size={18} weight="bold" />
+                    </button>
+                  )}
+                </div>
+                </div>
+
+                {/* 见面那一档特殊：右栏摆「这一场 + 在场各位的常服立绘」——
+                    单聊与群聊不长这一栏（见 components/DateSide.tsx）。 */}
+                {activeRv ? <DateSide rv={activeRv} /> : null}
               </div>
             </>
           ) : (

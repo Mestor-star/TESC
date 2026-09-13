@@ -1,23 +1,27 @@
 /* ============================================================
    CG 补图清单导出 —— 跑法
    ------------------------------------------------------------
-   把当前登记的全部插图槽位（定妆池 + 私密立绘 + 见面约会）
+   把当前登记的全部插图槽位（约会常服立绘 + 私密立绘 + 见面约会）
    连同每个槽位「该画什么」的那一句 `note` 导成一份 Markdown，放进 `public/cg/`，
    好对着它收图 / 画图、补完在文件名上打勾。
 
    槽位分两种，摆的地方不一样（见 public/cg/README.md 那张表）：
      · **CG** —— 见面约会那一档，**由上下文自动放置**，导演按这一场进展点名；
-     · **立绘** —— 定妆半身与私密档案立绘，**摆进角色档案**，文件名写死不点名。
+     · **立绘** —— 约会常服与私密档案立绘，**一人一张、文件名写死**，不进导演候选。
 
      node scripts/cglist.mjs          # 写 public/cg/清单.md
      node scripts/cglist.mjs --check  # 只报告还缺哪些，不写文件
 
    **这是生成物**（同 scripts/briefs → src/data/briefs/generated.ts 的关系）：
-   槽位在三处 —— `src/data/cgs.ts`（定妆池）、`src/data/intimate.ts`（私密立绘）、
+   槽位在两处 —— `src/data/intimate.ts`（那份名单**两族立绘共用**：私密立绘
+   `cg-intim-<角色id>`、约会常服 `cg-datewear-<角色id>`）、
    `src/lib/rendezvous.ts`（见面约会，`DATE_CG` + `DATE_CG_INTIMATE`）——
    改完重跑这一条，别手改那份 md。
 
-   ⚠ 那三处就是本文件认得的**全部**槽位来源。当初只认 `data/` 下的那两处，见面约会
+   （曾经还有第三处 `src/data/cgs.ts` 的 `CG_POOL`，那 6 张定妆半身当情境 CG 用；
+   2026-09-13 立绘正名，并进 `cg-datewear-*` 一档，那个表连着文件一起删了。）
+
+   ⚠ 那两处就是本文件认得的**全部**槽位来源。当初只认 `data/` 下的那两处，见面约会
    那五张（`lib/rendezvous.ts`）就整整齐齐漏了 —— 而且**不报错**，清单只是少一截。
    所以日后新开一处槽位表，必须同时加到这里；末尾那道重名检查（同一个 id 被两处登记）
    算是替这件事补的一半防线。
@@ -45,10 +49,9 @@ const server = await createServer({
 })
 
 try {
-  const { CG_POOL } = await server.ssrLoadModule('/src/data/cgs.ts')
   const { INTIMATE } = await server.ssrLoadModule('/src/data/intimate.ts')
   const { personOf } = await server.ssrLoadModule('/src/data/castmeta.ts')
-  const { DATE_CG, DATE_CG_INTIMATE } = await server.ssrLoadModule('/src/lib/rendezvous.ts')
+  const { DATE_CG, DATE_CG_INTIMATE, dateWearId } = await server.ssrLoadModule('/src/lib/rendezvous.ts')
 
   const have = new Set(readdirSync(join('public', 'cg')))
   /** 这个 id 有没有图（按候选链找一个就算有；返回实际命中的文件名） */
@@ -59,8 +62,15 @@ try {
   const norm = (r) => (typeof r === 'string' ? { id: r } : r)
   const cell = (s) => String(s ?? '—').replace(/\|/g, '\\|')
 
-  /* ---- ① 定妆池 / ② 私密立绘 / ③ 见面约会 ---- */
-  const pool = CG_POOL.map(norm)
+  /* ---- ① 约会常服立绘 / ② 私密立绘 / ③ 见面约会 ----
+     ①②两族立绘都挂在同一份名单（INTIMATE，18 位）上：一人一张、id 由 charId 现算，
+     所以不另立登记表 —— 常服那一族的 id 现算那一步与视图共用 `dateWearId`，
+     免得脚本和 components/DateSide.tsx 各写各的字符串。 */
+  const wear = Object.keys(INTIMATE).map((charId) => ({
+    id: dateWearId(charId),
+    charId,
+    name: personOf(charId)?.name ?? charId,
+  }))
   const intim = Object.keys(INTIMATE).map((charId) => ({
     id: `cg-intim-${charId}`,
     charId,
@@ -72,7 +82,7 @@ try {
   const dateIntimIds = new Set(DATE_CG_INTIMATE.map((r) => norm(r).id))
 
   const allIds = [
-    ...pool.map((p) => p.id),
+    ...wear.map((w) => w.id),
     ...intim.map((i) => i.id),
     ...date.map((d) => d.id),
   ]
@@ -82,18 +92,18 @@ try {
   L.push('# 插图补图清单（生成物 · 别手改）')
   L.push('')
   L.push('两种东西：**CG**（见面约会那一档，由上下文自动放置）与**立绘**'
-    + '（定妆半身 · 私密档案立绘，摆进角色档案）。')
+    + '（约会常服 · 私密档案立绘，一人一张、文件名写死，摆进见面页右栏与角色档案）。')
   L.push('')
-  L.push('> 这份清单由 `node scripts/cglist.mjs` 从 `src/data/cgs.ts`、'
-    + '`src/data/intimate.ts`、`src/lib/rendezvous.ts` 导出。'
-    + '**改槽位要改那三处再重跑**，手改这里下一次重跑就没了。')
+  L.push('> 这份清单由 `node scripts/cglist.mjs` 从 `src/data/intimate.ts`、'
+    + '`src/lib/rendezvous.ts` 导出。**改槽位要改那两处再重跑**，'
+    + '手改这里下一次重跑就没了。')
   L.push('')
   L.push('## 怎么补')
   L.push('')
   L.push(`1. 图放进本目录（\`public/cg/\`），文件名 = 下表「文件名」那一列，`
     + `扩展名按 \`${EXTS.join('` → `')}\` 依次试，备一种即可（webp 体积最小）。`)
   L.push('2. **不用改任何代码**：放一张亮一张；没图的槽位只留一行小字，写着该补的文件名（不占版位）。')
-  L.push('3. 版位形状由代码定（**约会图 3:2 `cover`；私密立绘约 1:2 `contain`**），'
+  L.push('3. 版位形状由代码定（**约会 CG 3:2 `cover`；约会常服约 2:3 `contain`；私密立绘约 1:2 `contain`**），'
     + '出图规格不随仓库走 —— 详细说明见同目录 `README.md`。')
   L.push('4. 改了图不生效：`Ctrl+F5`（`public/` 下的文件不带扩展名哈希，浏览器会吃旧缓存）。')
   L.push('')
@@ -101,18 +111,16 @@ try {
     + `（还缺 ${missing.length} 张）** —— ✅ = 目录里已有图，⬜ = 待补。`)
   L.push('')
 
-  L.push('## 一、定妆半身（`CG_POOL` · 只在本人在场时才进候选）')
+  L.push('## 一、约会常服立绘（见面页右栏 · 一人一张）')
   L.push('')
-  L.push('当前唯一的消费方是**见面约会那一档**：与本人在场的那一场里的街景并列进候选。'
-    + '带 `cast` 的位只在本场名册里有她时才可选。')
+  L.push('**这一族不是 CG**：文件名写死（`cg-datewear-<角色id>`），跟着人走，'
+    + '**不进导演候选**、不落 `world.cg` —— 她一出场就该在见面页右栏里（特大）。'
+    + '版位约 2 : 3 竖构图、按 `contain` 摆，**画得方一点也不会被裁**，只是两侧留空。')
   L.push('')
-  L.push('| | 文件名 | 该画什么（`note`） | 只在哪位在场时可选 |')
-  L.push('| --- | --- | --- | --- |')
-  for (const p of pool) {
-    const cast = p.cast?.length
-      ? p.cast.map((id) => personOf(id)?.name ?? id).join(' / ')
-      : '哪一场都能用'
-    L.push(`| ${mark(p.id)} | \`${p.id}\` | ${cell(p.note)} | ${cell(cast)} |`)
+  L.push('| | 角色 | 文件名 |')
+  L.push('| --- | --- | --- |')
+  for (const w of wear) {
+    L.push(`| ${mark(w.id)} | ${cell(w.name)} | \`${w.id}\` |`)
   }
   L.push('')
 
@@ -163,7 +171,7 @@ try {
   } else {
     writeFileSync(OUT, L.join('\n'), 'utf8')
     process.stdout.write(`已写出 ${OUT}\n`)
-    process.stdout.write(`共 ${allIds.length} 张：定妆 ${pool.length}`
+    process.stdout.write(`共 ${allIds.length} 张：约会常服 ${wear.length}`
       + ` · 私密立绘 ${intim.length} · 见面约会 ${date.length}`
       + ` —— 已补 ${allIds.length - missing.length}，还缺 ${missing.length}\n`)
     if (dupes.length) process.stdout.write('  重名：' + dupes.join('、') + '\n')

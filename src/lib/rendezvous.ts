@@ -26,7 +26,6 @@ import { charOf, profileLinesOf } from '../data/personas'
 import { INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
-import { CG_POOL } from '../data/cgs'
 import type { CgRef } from '../data/types'
 import { PROSE_RULES, HAREM_RULE } from './worldrules'
 
@@ -210,14 +209,18 @@ export function openDateOf(charId: string): Rendezvous | undefined {
 }
 
 /* ============================================================
-   CG
+   图：CG 一档，立绘一档
    ------------------------------------------------------------
-   约会这一档也走 CG 那一套（取图 / 探针见 lib/cg.ts）：id 登记在这里，
-   导演从清单里点名（落进 `world.cg[约会id]`），图照旧丢
-   `public/cg/<id>.webp|png|jpg`。缺图时 <CgSlot> 只留一行「待补」提示，不占版位。
+   **两者不是一回事**（主人立的规矩）：
+     · **CG** —— 「这一场画出来的那一张」，**由上下文自动放置**：id 登记在下面的
+       `DATE_CG` / `DATE_CG_INTIMATE`，导演从清单里点名（落进 `world.cg[约会id]`）；
+     · **立绘** —— 「这个人长什么样」，一人一张、文件名写死、**不进导演候选**
+       （`dateWearId` 现算 id，右手边那一栏摆特大 —— 见 components/DateSide.tsx）。
 
-   清单分两段：街景那几张（不挑人）+ **这一场在场者的定妆半身**
-   （`data/cgs.ts` 的 `CG_POOL`，按 `cast` 过一遍才进候选）。
+   取图 / 探针 / 扩展名候选链见 lib/cg.ts，图照旧丢 `public/cg/<id>.webp|png|jpg`。
+   缺图时 <CgSlot> 只留一行「待补」提示，**不占版位**（29 个槽位一张都没补，
+   按比例占空框会满屏虚线 —— 那条规矩见 components/CgSlot.tsx 文件头）。
+
    越私密的那两张只有走到私密那一档才进候选。
    ============================================================ */
 export const DATE_CG: CgRef[] = [
@@ -232,26 +235,28 @@ export const DATE_CG_INTIMATE: CgRef[] = [
   { id: 'cg-date-intim-2', note: '私密的场面 · 第二张' },
 ]
 
-/** 定妆池里**这一场**用得上的那几张：带 `cast` 的位，只有本人在这一场才留下 */
-function standCgFor(cast: string[]): CgRef[] {
-  const who = new Set(cast)
-  return CG_POOL.filter((r) => {
-    const c = typeof r === 'string' ? undefined : r.cast
-    return !c?.length || c.some((id) => who.has(id))
-  })
+/**
+ * 一位角色的**约会常服立绘**的 id —— 右手边那一栏摆的那张（特大）。
+ *
+ * 写法与私密档案立绘（`cg-intim-<角色id>`）同构：**一人一张，id 由 charId 现算**，
+ * 不另立登记表。所以它**不进 `dateCgPalette`** —— 立绘不是导演点名的东西，
+ * 它跟着人走，人一上场就该在那一栏里（见 components/DateSide.tsx）。
+ */
+export function dateWearId(charId: string): string {
+  return `cg-datewear-${charId}`
 }
 
 /**
- * 这一场此刻能点的 CG 清单：街景 + 在场者的定妆（私密档位再添两张）。
+ * 这一场此刻能点的 **CG** 清单：街景那几张（走到私密那一档再添两张）。
  *
  * 两处共用同一份：喂给 `rendezvousPrompt` 的 `cgPalette`，以及视图那一层
  * 「导演点名的 id 认不认」的判断 —— 认不出来（模型编的、或清单改过之后留下的旧值）
  * 就当没点，不摆图。
+ *
+ * **立绘不在这里面** —— 它不进候选、不由导演挑（要那张脸就去 `dateWearId`）。
  */
 export function dateCgPalette(rv: Rendezvous): CgRef[] {
-  const cast = [rv.charId, ...(rv.party ?? [])]
-  const base = [...DATE_CG, ...standCgFor(cast)]
-  return rv.kind === 'intimate' ? [...base, ...DATE_CG_INTIMATE] : base
+  return rv.kind === 'intimate' ? [...DATE_CG, ...DATE_CG_INTIMATE] : [...DATE_CG]
 }
 
 /** 把一张表的位渲染成 `- id —— 说明`（就是喂给导演的候选清单那一节） */
@@ -282,7 +287,7 @@ export function rendezvousPrompt(
    * 这一场能点的 CG 清单，已渲染成 `- id —— 说明` 的文本（`cgListText(dateCgPalette(rv))`）。
    *
    * 给了才注入【这一场的场景 CG】一节 —— 那一节同时交代 `cg` 字段怎么用。
-   * 清单由调用方传进来，是因为本模块只管**登记**（DATE_CG 那几张 + 定妆），
+   * 清单由调用方传进来，是因为本模块只管**登记**（DATE_CG 那几张），
    * 认不认导演点回来的那个 id 是视图那一层的事。
    */
   cgPalette: string,

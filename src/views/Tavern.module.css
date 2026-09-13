@@ -284,3 +284,42 @@
   gap: 6px;
 }
 .partyPickRow > .chip { cursor: pointer; font-family: inherit; font-size: 12px; }
+
+/* ---------------- 对谈区的下半：会话列 + 见面右栏 ----------------
+   `.chatPane` 是 overflow:hidden 的竖排 flex，它唯一能滚的是里面的消息流 ——
+   所以这一层得自己撑住高度：flex:1 拿下会话头之外剩下的高，min-height:0 才允许
+   它被压到比内容矮；少了 min-height:0，卡片会把整块顶穿面板，输入框被推出屏幕。
+
+   **这一层无条件在**（单聊 / 群聊下 .chatMain 独占整幅，与从前一模一样），
+   长不长右栏只看是不是见面那一档 —— 少一层条件渲染，换人时消息流那棵树不重建，
+   滚动位置与已探好的图都留着。 */
+.chatBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* 会话列（消息流 + 色情状态栏 + 输入框）。min-width:0 是这一行的命门：
+   flex 项的主轴最小尺寸默认是内容最小宽，少了它，最宽的那条气泡就定下整列宽，
+   把右栏挤出面板（右缘会看见一条被裁掉的边）。
+   min-height:0 同理，竖着别让内容顶穿。 */
+.chatMain {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 960px) {
+  /* 窄屏：面板已是整幅宽（.wrap 塌成单列），右栏与正文并排摆不下 ——
+     横到正文**上面**去（column-reverse 把它翻到第一行），
+     免得掉到输入框底下、被键盘挡住。 */
+  .chatBody {
+    flex-direction: column-reverse;
+  }
+  .chatMain {
+    min-height: 380px;
+  }
+}

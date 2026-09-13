@@ -3123,6 +3123,143 @@ try {
   ok('U11 收束自由段之后进度照旧只数主线（9/57；下一卷还没读，不许跟着涨）',
     uAfter.chip.startsWith('9/57'), uAfter.chip)
 
+  /* ============ Phase V：见面那一档的右栏（这一场 + 在场各位的常服立绘位） ============
+     约会这条通道今天在冒烟里一个字都没覆盖过 —— 右侧那一栏是这一趟新加的，得有把门的。
+     **全程离线**：先往约会线程的日志里播一条，`enterDate` 就不会去恳求推演通道
+     （那一路会推「未配置」并把界面带去设置页，验的就不是这一栏了）。
+     新开这一档自己播自己的账，不动前面几相摆好的状态，所以摆在尾巴上。 */
+  console.log('\n[Phase V] 见面右栏：这一场 · 在场各位的常服立绘位（写死文件名 · 缺图不占版位）')
+  await ev(`(()=>{
+    localStorage.removeItem('zts-plot:v1');
+    localStorage.setItem('zts-terminal:v3', JSON.stringify({
+      unlocked:true, epDone:{'v1-1':true,'v1-2':true,'v1-3':true}, cur:'v1-3',
+      operatorName:'右栏观察员', focusId:'gcn',
+      world:{offset:{hikari:100,luna:100,nyau:100},locked:{},flags:{},
+        met:{hikari:true,luna:true,nyau:true},ends:{},own:[],records:[],
+        intim:{},attire:{},acts:{},
+        rel:{hikari:'close',luna:'heart'}}}));
+    localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
+      {id:'d:smoke-date-1',charId:'hikari',kind:'date',title:'放学后的天台',
+       place:'苍之学园 · 钟楼天台',time:'周六下午三点',from:'them',
+       party:['luna','nyau'],ts:Date.now(),done:false}]));
+    localStorage.setItem('zts-tavern:v1', JSON.stringify({
+      'd:smoke-date-1':[{id:'sd::1',from:'them',
+        text:'【V】她靠在栏杆上，风把发梢吹到一边。',time:'15:00'}]}));
+    localStorage.setItem('zts-sms-auto:v1', JSON.stringify({last: Date.now(), per: {}}));
+    return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await goto('短信')
+  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'V sms view')
+
+  /* V0 先摸一遍**单聊**：新加的这两层（.chatBody / .chatMain）在单聊下必须与从前
+     一模一样 —— 会话列仍独占整幅、右栏一个字都不许渗出来。 */
+  await ev(clickTxt('露娜'))
+  await poll(`!!document.querySelector('[data-sms-thread]')`, 15000, 'V plain thread')
+  const vPlain = await ev(`(()=>{const q=(s)=>document.querySelector(s);
+    const pane=q('[data-sms-composer]').closest('.panel').getBoundingClientRect();
+    const c=q('[data-sms-composer]').getBoundingClientRect();
+    return {side:!!q('[data-date-side]'),gap:Math.round(pane.right-c.right),
+      paneH:Math.round(pane.height)}})()`)
+  ok('V0 非见面线程不长出右栏（会话列仍旧独占整幅，新 DOM 没渗到单聊上去）',
+    vPlain.side === false && vPlain.gap <= 24, JSON.stringify(vPlain))
+
+  /* 开着这一场（点左栏「约会」区那一条；不按名字点 —— 线程里那句 dayLabel 也带着同样的字） */
+  await ev(`(()=>{const b=document.querySelector('[data-sms-date]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V date side panel')
+
+  const vGeo = await ev(`(()=>{const q=(s)=>document.querySelector(s);
+    const pane=q('[data-sms-composer]').closest('.panel').getBoundingClientRect();
+    const t=q('[data-sms-thread]').getBoundingClientRect();
+    const c=q('[data-sms-composer]').getBoundingClientRect();
+    const a=q('[data-date-side]').getBoundingClientRect();
+    const body=q('[data-date-side-body]');
+    const wears=[...document.querySelectorAll('[data-date-wear]')];
+    return {aL:Math.round(a.left),aB:Math.round(a.bottom),
+      tR:Math.round(t.right),cR:Math.round(c.right),cB:Math.round(c.bottom),
+      paneB:Math.round(pane.bottom),vh:innerHeight,
+      paneH:Math.round(pane.height),
+      asideH:Math.round(a.height), bodyH:Math.round(body.getBoundingClientRect().height),
+      wrapH:Math.round(q('[data-sms-composer]').closest('[class*=wrap]').getBoundingClientRect().height),
+      scrolls: body.scrollHeight > body.clientHeight + 1,
+      ids: wears.map(w=>w.getAttribute('data-date-wear')),
+      ph: wears.map(w=>{const f=w.querySelector('figure');return f?f.innerText.replace(/\\s+/g,' '):''}),
+      figs: wears.map(w=>{const f=w.querySelector('figure');
+        if(!f) return null; const r=f.getBoundingClientRect();
+        return {w:Math.round(r.width),h:Math.round(r.height)}}),
+      cgN: Object.keys((JSON.parse(localStorage.getItem('zts-terminal:v3')).world||{}).cg||{}).length}})()`)
+
+  ok('V1 右栏在消息流与输入框的右边（同一行，不叠不挤）',
+    vGeo.aL >= vGeo.tR - 2 && vGeo.cR <= vGeo.aL + 2, JSON.stringify(vGeo))
+  /* 面板总高有没有被撑起来 —— 这一条才是右栏真正的门槛。
+     `.chatPane` 是竖排 flex，长出来的那一列要是没把 `min-height:0` 一路带下去，
+     内容会把整块顶穿面板（面板比它那份高度还高），输入框当场被推出屏幕。
+     拿**单聊那一趟的面板高度**当基准比：多了右栏，面板总高一点不许变。 */
+  ok('V1b 长了右栏之后面板总高一点没变（右栏不许把面板撑高 —— 撑高了输入框就出屏幕了）',
+    vGeo.paneH <= vGeo.wrapH + 1 && vGeo.paneH <= vPlain.paneH + 1
+    && vGeo.cB <= vGeo.paneB + 1 && vGeo.aB <= vGeo.paneB + 1,
+    JSON.stringify({paneH:vGeo.paneH,wrapH:vGeo.wrapH,plainPaneH:vPlain.paneH,
+      cB:vGeo.cB,aB:vGeo.aB,paneB:vGeo.paneB,vh:vGeo.vh}))
+  /* 人头再多也归栏内自己兜：那一列是滚动容器，不是把面板撑高的那种块。 */
+  ok('V1c 卡片全在栏内（栏自己兜着，不往面板外溢）',
+    vGeo.bodyH <= vGeo.asideH + 1, JSON.stringify({bodyH:vGeo.bodyH,asideH:vGeo.asideH}))
+
+  ok('V2 这一场三位都上栏，主位在前（rvAllIds 的顺序：主位 + 同场）',
+    JSON.stringify(vGeo.ids) === JSON.stringify(
+      ['cg-datewear-hikari','cg-datewear-luna','cg-datewear-nyau']), JSON.stringify(vGeo.ids))
+  ok('V2b 每人一张同等大（三张图位同宽）',
+    vGeo.figs.length === 3 && new Set(vGeo.figs.map(f=>f.w)).size === 1, JSON.stringify(vGeo.figs))
+  ok('V2c 缺图不占版位（塌成一行提示，不留大洞）—— 41 个槽位一张都没补时的既定取舍',
+    vGeo.figs.every(f=>f.h < 40), JSON.stringify(vGeo.figs))
+  ok('V2d 提示里写明的正是该补的文件名（id 约定一路对到文件名）',
+    vGeo.ph.every((t,i)=>t.includes('CG 待补') && t.includes(vGeo.ids[i]+'.webp')),
+    JSON.stringify(vGeo.ph))
+
+  /* 这一条钉的是主人立的那条规矩：立绘 ≠ CG。立绘跟着人走、不等点名 ——
+     所以哪怕 world.cg 里一张都没有，这一栏照样有她的位子。 */
+  ok('V3 常服立绘不等导演点名就上栏（立绘 ≠ CG：world.cg 里一张都没点过）',
+    vGeo.cgN === 0, JSON.stringify({cgN:vGeo.cgN}))
+
+  const vScene = await ev(`(()=>{const s=document.querySelector('[data-date-scene]');
+    const persons=[...document.querySelectorAll('[data-date-person]')].map(p=>{
+      const r=p.querySelector('[data-date-person-rel]');
+      return {id:p.getAttribute('data-date-person'),
+        rel:r?r.getAttribute('data-date-person-rel'):null,
+        txt:p.innerText.replace(/\\s+/g,' ')}});
+    return {txt:s.innerText.replace(/\\s+/g,' '),
+      time:s.querySelector('[data-date-scene-time]').getAttribute('data-date-scene-time'),
+      party:s.querySelector('[data-date-scene-party]').getAttribute('data-date-scene-party'),
+      persons}})()`)
+  ok('V4 这一场：名目 / 地点 / 时间 / 同场还有谁 四栏齐',
+    vScene.txt.includes('放学后的天台') && vScene.txt.includes('苍之学园 · 钟楼天台')
+    && vScene.time === '周六下午三点' && vScene.party === 'luna,nyau', JSON.stringify(vScene))
+  ok('V4b 每人一行：名 / 身份 / 羁绊 / 关系档位；没给过档位的照实写「尚未定下」',
+    vScene.persons.length === 3
+    && vScene.persons[0].rel === 'close' && vScene.persons[1].rel === 'heart'
+    && vScene.persons[2].rel === ''
+    && vScene.persons.every(p=>p.txt.includes('关系 · ')),
+    JSON.stringify(vScene.persons))
+
+  /* V5 旧档：没有时间（`Rendezvous.time?`）、也没有同场（`party?`）——
+     这两栏的缺省不许把版面读出个空洞来。 */
+  await ev(`(()=>{localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
+      {id:'d:smoke-date-2',charId:'luna',kind:'date',title:'一次见面',place:'学园外',
+       from:'you',ts:Date.now(),done:false}]));
+    localStorage.setItem('zts-tavern:v1', JSON.stringify({
+      'd:smoke-date-2':[{id:'sd::2',from:'them',text:'【V5】她把伞往你那边偏了偏。',time:'16:00'}]}));
+    return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await goto('短信')
+  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'V5 sms view')
+  await ev(`(()=>{const b=document.querySelector('[data-sms-date]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V5 date side')
+  const vOld = await ev(`(()=>{const s=document.querySelector('[data-date-scene]');
+    return {txt:s.innerText.replace(/\\s+/g,' '),
+      n:document.querySelectorAll('[data-date-person]').length,
+      wears:document.querySelectorAll('[data-date-wear]').length}})()`)
+  ok('V5 旧档（没时间 · 没同场）：照实写「没说定」「只有你们两个」，一个人一张图位',
+    vOld.txt.includes('没说定') && vOld.txt.includes('只有你们两个')
+    && vOld.n === 1 && vOld.wears === 1, JSON.stringify(vOld))
+
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */
   if (process.env.SHOT) {
