@@ -410,9 +410,12 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
       <div className={css.stat} title={hint}>
         <small>{label}</small>
         <div className="meter">
+          {/* 条色不在这儿定：只把角色的主题色当 `--fill` 递进去，由样式表往绯红里拉一半
+              （.intimBarFill + tokens 里的 --rose 一族）—— 整页是红调私房，
+              条不能还是原来那支冷色。混色留在 CSS，组件里不写死颜色。 */}
           <div
-            className="meter__fill"
-            style={{ width: `${dev}%`, background: `linear-gradient(90deg, ${color}66, ${color})` }}
+            className={`meter__fill ${css.intimBarFill}`}
+            style={{ width: `${dev}%`, '--fill': color } as CSSProperties}
           />
         </div>
         <span className="num">{dev}</span>
@@ -437,7 +440,7 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
         <div className={css.artCap}>
           <span className="vhead__kicker" style={{ fontSize: 9 }}>PRIVATE DOSSIER / 立绘</span>
           <span className="tiny muted">
-            私密档案立绘 · 要暧昧、情色、风趣一些。丢一张 <code>public/cg/cg-intim-{charId}.webp</code> 进来即点亮。
+            私密档案立绘。丢一张 <code>public/cg/cg-intim-{charId}.webp</code> 进来即点亮。
           </span>
         </div>
       </div>
@@ -467,7 +470,7 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
               <div className="meter meter--thick">
                 <div
                   className="meter__fill"
-                  style={{ width: `${prof.lewd}%`, background: 'linear-gradient(90deg, var(--red-deep), var(--red))' }}
+                  style={{ width: `${prof.lewd}%`, background: 'linear-gradient(90deg, var(--rose-deep), var(--rose))' }}
                 />
               </div>
               <b className="num">{prof.lewd}</b>

@@ -390,6 +390,15 @@
   pointer-events: auto;
   animation: riseIn 240ms var(--ease-out) both;
 }
+/* 翻到背面（私密档案）时，卡片外圈也转暖、圆角放软 —— 与页内的红调私房同一套。
+   正面那份档案不受影响（选择器带着 data-side='back'）。
+   box-shadow 是一条整体属性，重写就得把基础阴影原样带上。 */
+.dialog[data-side='back'] {
+  border-radius: 12px;
+  border-color: color-mix(in srgb, var(--rose) 34%, var(--line-2));
+  border-top-color: color-mix(in srgb, var(--c, var(--rose)) 52%, var(--rose));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.66), 0 0 46px -20px var(--rose);
+}
 .dialogHead {
   position: relative;
   display: flex;
@@ -823,17 +832,25 @@
   to { transform: perspective(1600px) rotateY(0deg); opacity: 1; }
 }
 
-/* ---- 背面：与正面同构（左立绘 / 右档案），只是右边换成五根条 ---- */
+/* ---- 背面：与正面同构（左立绘 / 右档案），只是右边换成五根条 ----
+   这一页的画风是**红调私房**：整页走绯红一系的暖调，像屋里只开了一盏灯。
+   只在背面生效（`.intimBack` 是 IntimateBack 的根），正面那份档案一个字不受影响。 */
 .intimBack {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) 2fr;
   align-items: stretch;
   min-height: min(84vh, 760px);
+  /* 底是拿 --bg-1 与 rose-deep 混出来的暗酒红（不硬写色值），顶上再压一层暖光晕 */
+  background:
+    radial-gradient(128% 52% at 50% 0%, var(--rose-soft), transparent 68%),
+    color-mix(in srgb, var(--bg-1) 90%, var(--rose-deep));
 }
 /* 左栏：**与正面 .dossierArt 同一套摆法** —— 铺满整栏、sticky 顶住、底色跟着角色色走
    （`--c` 由 .dialog 按 focus.hue 落下）。翻面时这一栏不该跳位置，所以不另起一套。
-   `.artFade`（右缘渐隐）与 `.artCap`（底部说明带）也是正面那两个，共用。 */
+   `.artFade`（右缘渐隐）与 `.artCap`（底部说明带）也是正面那两个，共用。
+   只是底色把她自己的色相往绯红里拉一半 —— 认得出是谁，又统一在暖调里。 */
 .intimBackArt {
+  --warm: color-mix(in srgb, var(--c, var(--rose)) 55%, var(--rose));
   position: sticky;
   top: 0;
   align-self: start;
@@ -844,13 +861,32 @@
   padding: 0 0 18px;
   overflow: hidden;
   background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--c, var(--red)) 22%, transparent), transparent 72%),
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--c, var(--red)) 4%, transparent) 26px 52px),
-    var(--bg-2);
+    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--warm) 24%, transparent), transparent 72%),
+    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--warm) 5%, transparent) 26px 52px),
+    color-mix(in srgb, var(--bg-2) 84%, var(--rose-deep));
 }
 /* 图位铺满左栏，底下给说明带让位 —— inset 与正面 .dossierArt 那张取同值 */
 .intimBackArt figure { inset: 0 0 92px 0; }
 .intimBackText { min-width: 0; }
+
+/* 抬头与分隔线一并转暖 —— 暖底上压一条冷灰的线会露馅 */
+.intimBack .dialogSection h4 { color: var(--rose); }
+.intimBack .dialogSection h4::after {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--rose) 52%, transparent), transparent);
+}
+/* 状态句 / 正文左缘那条细线同样转暖（原本是冷的 --line-2） */
+.intimBack .intimState,
+.intimBack .intimAct { border-left-color: color-mix(in srgb, var(--rose) 40%, transparent); }
+
+/* 部位读数条：把角色色相往绯红里拉一半 —— 整页是红调私房，条不能还是原来那支冷色。
+   JSX 只递进来 `--fill`（角色主题色），混色在这里做，免得组件里写死颜色。 */
+.intimBarFill {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--fill, var(--rose)) 40%, var(--rose-deep)),
+    color-mix(in srgb, var(--fill, var(--rose)) 55%, var(--rose))
+  );
+}
 
 /* 一根条 = 一行读数 + 底下一行状态句。读数那行与「能力参数」共用 .stat 骨架，
    只是多一列档位词（「初识 / 熟稔 / 沉溺」这类人话）。
