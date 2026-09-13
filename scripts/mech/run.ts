@@ -130,7 +130,11 @@ import { CANON_SEED_VERSION, buildCanonLorebooks } from '../../src/lib/loreseed'
 import { charOf } from '../../src/data/personas'
 import { parseChatPreset } from '../../src/lib/schemes'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
-import { EVENT_BRIEFS } from '../../src/data/briefs'
+/* 详纲表在应用里是**懒加载**的（主包一半是它，见 src/data/briefs/index.ts）。
+   mech 是同步跑的、也没有 chunk 要等，所以直接把 generated 那份交进那个格子 ——
+   交同一个引用，下面 §「详细大纲」往里插的探针才在 `briefOf` 那一头看得见。 */
+import { EVENT_BRIEFS } from '../../src/data/briefs/generated'
+import { seedBriefs } from '../../src/data/briefs'
 import { TEMPER, temperAt } from '../../src/data/temper'
 import { MINDS } from '../../src/data/minds'
 import {
@@ -192,6 +196,11 @@ function profileOf(name: string): string {
 }
 
 export function run(): MechReport {
+  /* 详纲表：应用里是懒加载，这儿直接把 generated 那份交进去（见上面 import 处的说明）。
+     不交的话 `briefOf` 一律返回 undefined，`【本事件实施细则】` 整节不出现 ——
+     §「详细大纲」那一节的每一条都会以「函数坏了」的样子红掉。 */
+  seedBriefs(EVENT_BRIEFS)
+
   const pass: string[] = []
   const fail: string[] = []
   const info: string[] = []

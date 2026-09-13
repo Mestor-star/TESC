@@ -13,8 +13,9 @@
 
 /* 铺满模式：丢掉自己的宽高比例与底色，绝对定位填满**有定位的**父容器。
    留白与背景归父栏管（那里有渐变的底），自己只当一层画布。
-   边框宽度留着（1px），只是平时透明 —— 见下一条：空位时 .slotEmpty 会把那条边
-   改回虚线，所以这一条必须排在 .slotEmpty **前面**，否则虚线会被这里压掉。 */
+   边框宽度留着（1px），只是平时透明。
+   注意这一条**只在有图时挂上**（见 CgSlot.tsx 的 `cls`）——
+   缺图那一支永远不带 `fill`，所以不必再跟 .slotEmpty 抢那一条虚线边。 */
 .slotFill {
   position: absolute;
   inset: 0;
@@ -30,25 +31,23 @@
   background: #0b0e14;
 }
 
-/* 缺图：空框 + 虚线，提示这一格还等着图 */
+/* 缺图：**不占版位**，塌成一条细提示（缘由见 CgSlot.tsx 文件头）。
+   斜纹底与「整块虚线空框」那一套都撤了 —— 29 个槽位一个没补的时候，
+   那一套让每一页都像坏了；留一条淡淡的纸边，够看得见就行。 */
 .slotEmpty {
   border-style: dashed;
   border-color: var(--line-3, var(--line));
   align-items: center;
-  justify-content: center;
-  background: repeating-linear-gradient(
-    135deg,
-    transparent 0 10px,
-    rgba(255, 255, 255, 0.018) 10px 20px
-  );
+  background: transparent;
 }
 
 .ph {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px 8px;
+  padding: 7px 10px;
   text-align: center;
 }
 

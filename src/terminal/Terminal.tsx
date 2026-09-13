@@ -14,6 +14,7 @@ import { isFreeId } from '../lib/freetime'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
 import { ensureSeeded } from '../lib/lorestore'
+import { ensureBriefs } from '../data/briefs'
 import { ensureBudgetFloor, ensureBuiltinPresets } from '../lib/builtin-presets'
 import { ensureBuiltinGroups } from '../lib/smsthreads'
 import { requestRemount } from '../lib/remount'
@@ -139,6 +140,8 @@ export interface TerminalState {
   removeOwnEnd: (id: string) => void
   flagOf: (k: string) => FlagValue | undefined
   setFlag: (k: string, v: FlagValue) => void
+  /** 现下已登记的变量名（供导演新起的名字并到老键上，见 lib/flagname.ts） */
+  flagKeys: () => string[]
   /** 新增命名变量；键名冲突或非法时返回 false（不覆盖既有值） */
   addVar: (k: string, v: FlagValue) => boolean
   /** 删除命名变量；不存在时返回 false */
@@ -541,6 +544,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /* 事件详纲那张表 2.1 MB，是懒加载的（见 data/briefs/index.ts）。
+     在**开屏之后、第一次推进之前**这段空闲里先把它拉回来 —— 等到真拼导演提示词
+     那一刻再去拉，那一回合就白等一个来回。拿不到也不拦：`Plot` 那边会 await 一次，
+     真拉不回来就退回 summary（那条退路本来就在）。 */
+  useEffect(() => { void ensureBriefs().catch(() => {}) }, [])
+
   /* 世界书：挂载时幂等播种 canon 库（惰性、失败静默、不阻塞渲染） */
   useEffect(() => {
     void ensureSeeded().catch(() => {
@@ -787,6 +796,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     (k: string) => world.flags[k],
     [world.flags],
   )
+
+  /* 已登记的变量名。给 `applyDirective` 用：导演新起的名字先跟这一张表比一遍，
+     差一点点就并到老键上（见 lib/flagname.ts）—— 手打的那个键一个字都不动。 */
+  const flagKeys = useCallback(() => Object.keys(world.flags), [world.flags])
 
   const setFlag = useCallback((k: string, v: FlagValue) => {
     setWorld((prev) => ({ ...prev, flags: { ...prev.flags, [k]: v } }))
@@ -1289,6 +1302,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     removeOwnEnd,
     flagOf,
     setFlag,
+    flagKeys,
     addVar,
     unsetVar,
     renameVar,

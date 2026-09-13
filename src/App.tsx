@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type { ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import { ArrowLeft, Brain, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
@@ -15,17 +15,6 @@ import { useProactiveSms } from './lib/smsauto'
 
 import { Boot } from './Boot'
 import { TitleMenu } from './views/Title'
-import { Dashboard } from './views/Dashboard'
-import { Saga } from './views/Saga'
-import { Memory } from './views/Memory'
-import { Lore } from './views/Lore'
-import { Arms } from './views/Arms'
-import { Archive } from './views/Archive'
-import { Missions } from './views/Missions'
-import { Codex } from './views/Codex'
-import { Tavern } from './views/Tavern'
-import { Plot } from './views/Plot'
-import { Settings } from './views/Settings'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Portrait, useCharImg } from './components/Portrait'
 import { VariablePanel } from './components/VariablePanel'
@@ -33,6 +22,40 @@ import { SaveDialog } from './components/SaveDialog'
 import { Guide } from './components/Guide'
 
 import css from './App.module.css'
+
+/* ============================================================
+   重模块懒加载（拆主包）
+   ------------------------------------------------------------
+   十一个视图此前全是静态导入：首屏得先把 `Views/*.tsx` 一万两千行
+   （Plot / Battle / Tavern / Archive 四块最沉）连同它们的数据表一起解析完，
+   才画得出第一帧 —— 单块 4.3 MB 就是这么来的。改成动态导入之后，
+   每个视图自己一个 chunk，**第一次真的走到那一页**才拉那一块。
+
+   `Boot` 与 `TitleMenu` 不懒：它们是第一帧本身，懒了等于让开屏先闪一下空白。
+
+   视图都是**具名导出**（`export function Plot()`），而 `lazy` 只认 `default`。
+   与其回头给十一个视图各补一个 default export（拆包的活儿不该动视图自己的导出），
+   不如在这儿垫一层薄薄的胶水 —— 就是下面这个 `view()`。 */
+const view = <K extends string>(name: K, load: () => Promise<Record<K, ComponentType>>) =>
+  lazy(async () => ({ default: (await load())[name] }))
+
+const Dashboard = view('Dashboard', () => import('./views/Dashboard'))
+const Plot = view('Plot', () => import('./views/Plot'))
+const Saga = view('Saga', () => import('./views/Saga'))
+const Memory = view('Memory', () => import('./views/Memory'))
+const Lore = view('Lore', () => import('./views/Lore'))
+const Arms = view('Arms', () => import('./views/Arms'))
+const Archive = view('Archive', () => import('./views/Archive'))
+const Missions = view('Missions', () => import('./views/Missions'))
+const Codex = view('Codex', () => import('./views/Codex'))
+const Tavern = view('Tavern', () => import('./views/Tavern'))
+const Settings = view('Settings', () => import('./views/Settings'))
+
+/* 等 chunk 的那几十毫秒里摆什么。`data-view-loading` 是给冒烟用的把手：
+   导航那一枚 `goto()` 按完就以它为准等一次，「切过去了没」不必靠 sleep 猜。 */
+function ViewLoading() {
+  return <div className={css.viewLoading} data-view-loading>正在接通模块…</div>
+}
 
 const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
   { id: 'dashboard', en: 'DASHBOARD', cn: '终端总览', icon: <Gauge size={21} weight="bold" /> },
@@ -323,19 +346,24 @@ function AudioPill() {
 
 function Stage() {
   const { view } = useTerminal()
-  switch (view) {
-    case 'dashboard': return <Dashboard />
-    case 'plot': return <Plot />
-    case 'saga': return <Saga />
-    case 'memory': return <Memory />
-    case 'lore': return <Lore />
-    case 'arms': return <Arms />
-    case 'archive': return <Archive />
-    case 'missions': return <Missions />
-    case 'codex': return <Codex />
-    case 'tavern': return <Tavern />
-    case 'settings': return <Settings />
-  }
+  const page = (() => {
+    switch (view) {
+      case 'dashboard': return <Dashboard />
+      case 'plot': return <Plot />
+      case 'saga': return <Saga />
+      case 'memory': return <Memory />
+      case 'lore': return <Lore />
+      case 'arms': return <Arms />
+      case 'archive': return <Archive />
+      case 'missions': return <Missions />
+      case 'codex': return <Codex />
+      case 'tavern': return <Tavern />
+      case 'settings': return <Settings />
+    }
+  })()
+  /* 边界架在**切换过的那个视图**外面，不是整个主区：等 chunk 的时候
+     侧边栏、顶栏、常驻的来信监听都还在，只有正文那一片在等。 */
+  return <Suspense fallback={<ViewLoading />}>{page}</Suspense>
 }
 
 function Shell() {
@@ -392,7 +420,9 @@ function SetupShell() {
           </div>
         </header>
         <main className={css.screen}>
-          <Settings />
+          {/* 设置这一页也在懒加载名单里（Shell 的侧边栏走的是同一个组件）——
+              开屏这一路单独进它，所以这儿也得有一条边界 */}
+          <Suspense fallback={<ViewLoading />}><Settings /></Suspense>
         </main>
       </div>
       <ToastHost />

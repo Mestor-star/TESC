@@ -35,6 +35,7 @@ import { PROSE_RULES, haremRule } from './worldrules'
 import { FREE_BOND_NOTE, FREE_FRAME, isFreeId } from './freetime'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
+import { canonFlagKey, snapFlagKey } from './flagname'
 
 /* ============================================================
    指令 schema
@@ -468,10 +469,13 @@ export function sanitizeDirective(v: unknown): PlotDirective {
     if (id) out.cg = id
   }
 
+  /* 变量名先过一遍机械归正（见 lib/flagname.ts）：`Trust` / `trust ` / `trust-level`
+     不该落成三个键。与已登记键的合并（`snapFlagKey`）不在这儿 —— 净化是纯函数，
+     手里没有那张登记表，那一道留在 `applyDirective` 落盘前。 */
   if (src.flag && typeof src.flag === 'object' && !Array.isArray(src.flag)) {
     const flag: Record<string, FlagValue> = {}
     for (const [k, raw] of Object.entries(src.flag as Record<string, unknown>)) {
-      const key = k.trim()
+      const key = canonFlagKey(k)
       if (!key) continue
       const sv = sanitizeFlagValue(raw)
       if (sv !== null) flag[key] = sv
@@ -919,6 +923,13 @@ export interface DirectiveApi {
   bumpBond: (charId: string, delta: number) => void
   registerEnd: (id: string) => void
   setFlag: (k: string, v: FlagValue) => void
+  /**
+   * 已登记的变量名（**可选**）。给了就按它把导演新起的名字并到老键上 ——
+   * `Trust` / `trust ` / `trust-level` 该落在同一个 `trust` 上，而不是各起一条。
+   * 没给就只有机械归正、不与老键合并（见 lib/flagname.ts）。
+   * 做成可选是为了不逼着每个调用方都接：`freezeBond` 那一路的同一种写法。
+   */
+  flagKeys?: () => string[]
   /** 私密档案推进（约会 / 私密往来落下的开发度与状态；见 data/intimate.ts） */
   bumpIntim: (charId: string, p: IntimateProgress) => void
   /**
@@ -1000,9 +1011,15 @@ export function applyDirective(
       fx.ends.push({ key, id })
     }
   }
+  /* 变量：净化那一道已经机械归正过（见 lib/flagname.ts），这一道是**并到已登记的键**上 ——
+     模型换个大小写 / 连字符不该算「新建」，而「新建」正是变量面板那堆烂账的来源。
+     并完的键写进 fx.flags，提示条念的就是真正落下的那个名字。 */
+  const knownFlagKeys = api.flagKeys ? api.flagKeys() : null
   for (const [k, v] of Object.entries(d.flag ?? {})) {
-    api.setFlag(k, v)
-    fx.flags.push([k, v])
+    const key = knownFlagKeys ? snapFlagKey(k, knownFlagKeys) : canonFlagKey(k)
+    if (!key) continue
+    api.setFlag(key, v)
+    fx.flags.push([key, v])
   }
   // CG 点名不在这儿落盘：applyDirective 手里没有「这一场是哪个约会」，
   // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的约会 id 写。
@@ -1730,7 +1747,9 @@ ${free ? '' : `  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊
                                                    // 数值是关系本身，不随剧情进度自动涨 —— 不给就不会变
 `}
   "ends":   ["实体原文标注或图鉴id"],          // 新遭遇并登记的实体
-  "flag":   { "变量名": 值 },                  // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
+  "flag":   { "some_state": 值 },              // 用户变量：本回合主角行为改变了哪个键就更新/新建哪个（见【用户变量】规则）
+                                               // 键名照那段规则来：英文小写加下划线。**别用中文键** ——
+                                               // 同一个意思换个写法就落成两个键，面板上看着像两件事
   "cast":   ["此刻真在场上的人id"],            // **只在在场的人变了的时候给**（谁先离席、谁刚赶到、换了个房间）：给的是此刻这一场的**全量**名单，不是增减
                                                // 名单照本节【在场角色】那一份的 id 写；人都还在原处就整条省略，别每回合都给
   "diverged": true,                           // 已与原著相异（否则省略）
@@ -1774,7 +1793,7 @@ ${free ? '' : `  "eventDone": true,                          // 这一段该了�
 </maintext>
 <option>给操作员的下一个接续选项</option>
 <option>……（可多行，不需要则不写）</option>
-<vars>${free ? '{"flag": {"某标记": 值}}' : '{"eventDone": true, "digest": "第三人称收官两三句"}'}</vars>
+<vars>${free ? '{"flag": {"some_state": 值}}' : '{"eventDone": true, "digest": "第三人称收官两三句"}'}</vars>
 其中 <vars> 的字段与上面 JSON 完全一致（battle 亦可写在 <vars> 里）；正文只放 <maintext> 里。<thinking>…</thinking> 可放你的推演（不展示给操作员）。${free ? `
 自由时间里**没有 eventDone / digest 这两个字段**：这一格什么时候收由操作员按「进入下一卷」说了算，
 不由你宣告。（他明说了要收，也照样由他按那个按钮。）` : ''}
@@ -1808,7 +1827,7 @@ export function dateReady(d: PlotDirective['date'] | undefined | null): boolean 
  */
 export function smsBondRule(charId: string, bond = 0): string {  const open = bond >= INTIMATE_BOND
   return `\n（可选 · 轻量互动：若本回合对话让该角色心绪明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }]${open ? `,
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "some_state": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }]${open ? `,
   "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方", "time": "什么时候" }` : ''} }
 其中 bond.delta 只针对该角色取 ±1~3（正=更亲近）；flag 为可选的分支标记；
 task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。${open ? `

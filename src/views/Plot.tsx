@@ -32,6 +32,7 @@ import { battleStoryBrief, narrateStorylog } from '../lib/battle/storylog'
 import type { PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
+import { ensureBriefs } from '../data/briefs'
 import type { Scheme } from '../lib/schemes'
 import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
@@ -53,6 +54,18 @@ import { Portrait } from '../components/Portrait'
 import css from './Plot.module.css'
 
 const LOG_KEY = 'zts-plot:v1'
+
+/**
+ * 拼导演提示词之前，先把**事件详纲**那张表拉回来。
+ *
+ * 表是懒加载的（2.1 MB，主包里占一半 —— 见 `data/briefs/index.ts`）：
+ * `Terminal` 挂载时已经预热过，正常情况这一句是白等（Promise 早就 resolve 了）。
+ * 真没赶上（首启就推、或那一块 chunk 拉挂了）也不拦这一回合：
+ * `briefOf` 返回 undefined，细则那一节整节不出现、退回 summary —— 行为零差异。
+ */
+async function withBriefs(): Promise<void> {
+  try { await ensureBriefs() } catch { /* 退路在 briefOf 那边，不必惊动这一回合 */ }
+}
 
 /**
  * 侧栏是否展出本段大纲。
@@ -273,7 +286,7 @@ export function Plot() {
   const {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
-    bumpBond, registerEnd, meetChar, setFlag, completeEvent, reopenEvent,
+    bumpBond, registerEnd, meetChar, setFlag, flagKeys, completeEvent, reopenEvent,
     records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast,
     bumpActs, setRel, relOf,
     freeMode, setFreeMode, closeFreeSlot,
@@ -521,7 +534,7 @@ export function Plot() {
       const freeNow = freeOf(evId)
       const fx = applyDirective(
         d,
-        { meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpAttire, bumpActs, setRel },
+        { meetChar, bumpBond, registerEnd, setFlag, flagKeys, bumpIntim, bumpAttire, bumpActs, setRel },
         { freezeBond: freeNow },
       )
       /* 这一回合什么都没往上走（没有私密推进、也没有衣物推进）→ 湿润自己退一档。
@@ -625,7 +638,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, setCast, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel, push, freeOf],
+    [meetChar, bumpBond, registerEnd, setFlag, flagKeys, setCast, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel, push, freeOf],
   )
 
   /**
@@ -644,6 +657,7 @@ export function Plot() {
       if (dirRetry.current || !cfgMain || !isReady(cfgMain)) return false
       dirRetry.current = true
       try {
+        await withBriefs()
         const system = buildDirectorSystem(ev, {
           operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
           freeMode: freeOf(ev.id),
@@ -739,6 +753,7 @@ export function Plot() {
       // scope='main' —— 只取管主线叙事的那一支；短信专用条目（篇幅、发言格式）在这里出局
       const preset = buildPresetContext(readActivePreset(), scanText, 'main')
 
+      await withBriefs()
       const system = buildDirectorSystem(ev, {
         operatorName,
         bondNow,
@@ -965,6 +980,7 @@ export function Plot() {
     const ctrl = new AbortController()
     draftAbortRef.current = ctrl
     try {
+      await withBriefs()
       const system = buildDirectorSystem(ev, {
         operatorName, bondNow, epDone, flags: world.flags, needDirective: false,
       })
@@ -1110,6 +1126,7 @@ export function Plot() {
     setBusy(true)
     setErr(null)
     const ev = focusEv
+    await withBriefs()
     const system = buildDirectorSystem(ev, {
       operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
       freeMode: freeOf(ev.id),
@@ -1657,8 +1674,15 @@ export function Plot() {
               {confirmBack ? `再按一次确认回退《${backEv.title}》` : '回退到上一段'}
             </button>
           ) : null}
+          {/* 推进方式这一对是 `role=tablist` 的两个页签，所以带上 `role=tab` + `aria-selected` ——
+              视觉上的「选中」本来就是拿 class 画的（css.isOn），屏幕阅读器读不到；
+              `data-plot-mode` 则是给冒烟用的**稳定把手**：离线那一档的用例得先按到这一枚，
+              否则它会去量一个当前根本没渲染的离线正文块（见 smoke 的 Phase U）。 */}
           <div className={css.seg} role="tablist" aria-label="推进方式">
             <button
+              role="tab"
+              aria-selected={showOnline}
+              data-plot-mode="online"
               className={`${css.segBtn} ${showOnline ? css.isOn : ''}`}
               onClick={() => {
                 if (!ready) push('warn', '主线通道未配置', '请先在「终端设置 · 剧情推演通道」中填入接口地址与模型。')
@@ -1668,6 +1692,9 @@ export function Plot() {
               在线推演
             </button>
             <button
+              role="tab"
+              aria-selected={!showOnline}
+              data-plot-mode="offline"
               className={`${css.segBtn} ${!showOnline ? css.isOn : ''}`}
               onClick={() => { stop(); setMode('offline'); setErr(null) }}
             >

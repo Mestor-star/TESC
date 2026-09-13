@@ -214,7 +214,7 @@ export function openDateOf(charId: string): Rendezvous | undefined {
    ------------------------------------------------------------
    约会这一档也走 CG 那一套（取图 / 探针见 lib/cg.ts）：id 登记在这里，
    导演从清单里点名（落进 `world.cg[约会id]`），图照旧丢
-   `public/cg/<id>.webp|png|jpg`。缺图时 <CgSlot> 摆「待补」占位框 —— 先把版位占住。
+   `public/cg/<id>.webp|png|jpg`。缺图时 <CgSlot> 只留一行「待补」提示，不占版位。
 
    清单分两段：街景那几张（不挑人）+ **这一场在场者的定妆半身**
    （`data/cgs.ts` 的 `CG_POOL`，按 `cast` 过一遍才进候选）。
@@ -362,7 +362,7 @@ export function dateBondRule(charId: string, party: string[] = []): string {
     .map((id) => `    { "char": "${id}", "bra": "half", "panties": "off", "wet": 10 }`)
     .join(',\n')
   return `\n（可选 · 本回合的推进：若这一场让这段关系或气氛有明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "cg": "上面清单里的一个 id",
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "some_state": 值 }, "cg": "上面清单里的一个 id",
   "rel": { "${charId}": "${REL_IDS.join('|')}" },
   "intim": [
 ${intimLines}

@@ -330,6 +330,18 @@
   position: relative;
 }
 
+/* 等懒加载那一块 chunk 落地时摆的占位。本地静态服务器，通常一闪而过 ——
+   所以它要**轻**：不占版面、不跳高度、跟别的「正在…」一个长相（见 .thinking 那族）。 */
+.viewLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+
 /* ---------- 内联通知 ---------- */
 .toasts {
   position: fixed;

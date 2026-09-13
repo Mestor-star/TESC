@@ -153,6 +153,10 @@ async function boot() {
 async function goto(viewTxt) {
   const c = await ev(clickTxt(viewTxt))
   if (!c) throw new Error('click failed: ' + viewTxt)
+  /* 视图是**懒加载**的（见 src/App.tsx 的 view()）：切过去那一下正文要等一块 chunk。
+     把手是占位块上的 `data-view-loading` —— 不用 sleep 猜时间。
+     快的时候（那一块早就拉过、浏览器有缓存）它压根没上过屏，这一句照样立刻返回。 */
+  await poll(`!document.querySelector('[data-view-loading]')`, 20000, 'view chunk: ' + viewTxt)
 }
 const wState = `(()=>{try{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));if(!s)return {empty:true};const w=s.world||{};return {ep:Object.keys(s.epDone||{}).length,cur:s.cur,unlocked:s.unlocked,rec:(w.records||[]).map(r=>({id:r.eventId,mode:r.mode,ts:r.ts})),off:w.offset||{},fl:w.flags||{},name:s.operatorName}}catch(e){return {err:String(e)}}})()`
 async function state() { return ev(wState) }
@@ -2957,7 +2961,15 @@ try {
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('任务简报')
-  await poll(`document.querySelectorAll('[data-mainline-mission]').length>=1`, 20000, 'S mainline after reload')
+  /* 等**账读进来**再读牌面，不是「牌面出现了就行」。
+     作战记录（records）是异步读的：刚重载完那一下它是空的，于是 v1-2 还没被认成
+     「已打赢」，窗口在它身上就撞见第一场没赢的、停住 —— 牌面只有一张 main-v1-2。
+     拿 `length>=1` 当条件，等的正是这个**半截态**，读到的当然是错的。
+     （S1/S2 要 `>=2` 条，半截态只有一条，所以它们碰巧等对了 —— S4 只要一条，就中招。）
+     这条等的信号是「账已经读完」：v1-2 要么已经收走（领取落库了），
+     要么已经翻成「提交」（记录读到了胜果）。半截态里它还是「待战」，两个都不成立。 */
+  await poll(`(()=>{const b=document.querySelector('[data-mainline-mission="main-v1-2"] [data-archive]');
+    return !b || b.getAttribute('data-act')==='提交'})()`, 20000, 'S mainline ledger loaded')
   const sReload = await ev(`(()=>{const cs=[...document.querySelectorAll('[data-mainline-mission]')];
     return {n:cs.length,ids:cs.map(c=>c.getAttribute('data-mainline-mission'))}})()`)
   ok('S4 归档落库：重载之后那一条不再回来（领取是永久的收走，不是这一屏的临时状态）',
@@ -3061,7 +3073,14 @@ try {
   ok('U5 进度只数主线（9 段，不是 10 —— 自由段不许让进度条虚涨）',
     uBar.chip.startsWith('9/57'), uBar.chip)
 
-  /* 离线视图：这一格没有原文可读，也不摆「读毕本段」（它是按钮收束，不是读原文归档） */
+  /* 离线视图：这一格没有原文可读，也不摆「读毕本段」（它是按钮收束，不是读原文归档）。
+     **得先真的按到「离线通读」那一枚** —— U6/U7 量的是离线正文块里的写法，而正文块
+     只在下半个页签底下渲染。早先这段没切页签，跑到位时主通道早已配好、界面默认停在
+     「在线推演」，于是 `note` 取不到、`arch` 顺带也是假 —— U7 一直是空过的绿灯。
+     切入切出都走 `data-plot-mode` 这个把手：它量的是「页签选中没有」，不比对的正文块晚一步。 */
+  await ev(`(()=>{const b=document.querySelector('[data-plot-mode="offline"]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const b=document.querySelector('[data-plot-mode="offline"]');
+    return !!b&&b.getAttribute('aria-selected')==='true'})()`, 8000, 'U offline tab')
   const uOff = await ev(`(()=>{const t=document.body.innerText;
     return {note:t.includes('自由时间 · 没有原文可读'),
       arch:t.includes('读毕本段'),
@@ -3070,6 +3089,10 @@ try {
     uOff.note === true, JSON.stringify(uOff))
   ok('U7 自由段不摆「读毕本段 · 写入记录并推进」（那一格没有记录可写）',
     uOff.arch === false && uOff.adv >= 1, JSON.stringify(uOff))
+  // 切回在线：U8~U10 量的是段外那一套，别让离线页签渗过去
+  await ev(`(()=>{const b=document.querySelector('[data-plot-mode="online"]');if(b)b.click();return !!b})()`)
+  await poll(`(()=>{const b=document.querySelector('[data-plot-mode="online"]');
+    return !!b&&b.getAttribute('aria-selected')==='true'})()`, 8000, 'U back online tab')
 
   /* 开关：按一下 → 「自由活动中」 */
   await ev(`(()=>{const b=document.querySelector('[data-free-toggle]');if(b)b.click();return !!b})()`)

@@ -63,7 +63,7 @@ function bondNote(delta: number): string {
 
 export function Tavern() {
   const {
-    operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
+    operatorName, isMet, bondNow, bumpBond, setFlag, flagKeys, navigate, push, epDone, world,
     smsRequest, clearSmsRequest, cgOf, setCg, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd,
     bumpActs, setRel,
   } = useTerminal()
@@ -716,7 +716,7 @@ ${preset.post}` : '')
         const parsed = parseDirectorReply(reply)
         const shown = replyDisplayText(parsed, acc)
         const fx = applyDirective(dateDirective(parsed.directive, charId, rv.party ?? []), {
-          meetChar, bumpBond, registerEnd, setFlag, bumpIntim, bumpAttire, bumpActs, setRel,
+          meetChar, bumpBond, registerEnd, setFlag, flagKeys, bumpIntim, bumpAttire, bumpActs, setRel,
         })
         /* 这一回合什么都没往上走 → 湿润自己退一档（与主线那一路同一条规矩，
            用户口径「内裤湿不可能一直湿润」）。退不必谁下命令，所以落在落地这一层。 */
