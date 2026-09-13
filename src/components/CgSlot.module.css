@@ -11,6 +11,17 @@
   flex-direction: column;
 }
 
+/* 铺满模式：丢掉自己的宽高比例与底色，绝对定位填满**有定位的**父容器。
+   留白与背景归父栏管（那里有渐变的底），自己只当一层画布。
+   边框宽度留着（1px），只是平时透明 —— 见下一条：空位时 .slotEmpty 会把那条边
+   改回虚线，所以这一条必须排在 .slotEmpty **前面**，否则虚线会被这里压掉。 */
+.slotFill {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  border-color: transparent;
+}
+
 .img {
   width: 100%;
   height: 100%;

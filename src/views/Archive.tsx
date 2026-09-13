@@ -367,8 +367,10 @@ function IntimateGate({ charId, onFlip }: { charId: string; onFlip: () => void }
  * 这五根说的是这一件事。另有三节不是读数：最近的性行为、对性行为的看法、破处 ——
  * 它们各是一句话（破处是一个事实），照实写出来即可。
  *
- * 立绘位走 CgSlot：素材丢 `public/cg/cg-intim-<角色id>.webp|png|jpg` 即点亮，
- * 缺图时摆「待补」虚线框 —— 版位先占住，补图之后版面不跳。
+ * 立绘位走 CgSlot 的**铺满**模式（`fill`）：与正面那一栏同一套版式 ——
+ * sticky 顶住、铺满整栏、右缘渐隐、底部一条说明，翻面时那一栏不跳位置。
+ * 素材丢 `public/cg/cg-intim-<角色id>.webp|png|jpg` 即点亮，按 `contain` 摆
+ * （整身要完整看得见）；缺图时摆「待补」虚线框 —— 版位先占住，补图之后版面不跳。
  *
  * 底档在 `data/intimate.ts`（游戏内拟制，非原文考据），推进在 `world.intim`
  * （约会与私密往来落下）—— 这一页只把两者合成之后照搬上屏，自己不算任何数；
@@ -426,13 +428,18 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
 
   return (
     <div className={css.intimBack} data-intimate-back>
-      {/* 左栏：私密档案的立绘位。图待补 —— 丢一张同名图进 public/cg/ 即点亮 */}
+      {/* 左栏：与正面同构 —— 同样是**铺满左栏**的立绘位（sticky 顶住、右缘渐隐进档案底色、
+          底部一条说明带），不是居中的小方框：翻过来时那一栏不该跳位置。
+          只是这一栏的素材走 public/cg/cg-intim-<角色id>.*（CgSlot），不是 charimg 的定妆立绘。 */}
       <div className={css.intimBackArt}>
-        <CgSlot
-          cgId={`cg-intim-${charId}`}
-          caption={`${name} · 私密档案立绘（图待补）`}
-          ratio="3 / 4"
-        />
+        <CgSlot cgId={`cg-intim-${charId}`} fill fit="contain" />
+        <span className={css.artFade} aria-hidden />
+        <div className={css.artCap}>
+          <span className="vhead__kicker" style={{ fontSize: 9 }}>PRIVATE DOSSIER / 立绘</span>
+          <span className="tiny muted">
+            私密档案立绘 · 要暧昧、情色、风趣一些。丢一张 <code>public/cg/cg-intim-{charId}.webp</code> 进来即点亮。
+          </span>
+        </div>
       </div>
 
       <div className={css.intimBackText}>

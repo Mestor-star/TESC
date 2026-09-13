@@ -490,6 +490,15 @@
   }
   .dossierArt[data-dossier-art='img'] .artImg { inset: 0 0 62px 0; }
   .dossierArt[data-dossier-art='sigil'] .artImg { bottom: 62px; }
+  /* 背面照正面一起退成顶部一条 —— 两栏同一断点，翻面时版面不跳 */
+  .intimBack { grid-template-columns: 1fr; min-height: 0; }
+  .intimBackArt {
+    position: relative;
+    min-height: 0;
+    height: 300px;
+    padding-bottom: 12px;
+  }
+  .intimBackArt figure { inset: 0 0 62px 0; }
   .artFade { display: none; }
 }
 
@@ -821,17 +830,26 @@
   align-items: stretch;
   min-height: min(84vh, 760px);
 }
+/* 左栏：**与正面 .dossierArt 同一套摆法** —— 铺满整栏、sticky 顶住、底色跟着角色色走
+   （`--c` 由 .dialog 按 focus.hue 落下）。翻面时这一栏不该跳位置，所以不另起一套。
+   `.artFade`（右缘渐隐）与 `.artCap`（底部说明带）也是正面那两个，共用。 */
 .intimBackArt {
+  position: sticky;
+  top: 0;
+  align-self: start;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 22px 16px;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: min(84vh, 760px);
+  padding: 0 0 18px;
+  overflow: hidden;
   background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--red) 16%, transparent), transparent 72%),
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--red) 4%, transparent) 26px 52px),
+    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--c, var(--red)) 22%, transparent), transparent 72%),
+    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--c, var(--red)) 4%, transparent) 26px 52px),
     var(--bg-2);
 }
-.intimBackArt figure { width: 100%; }
+/* 图位铺满左栏，底下给说明带让位 —— inset 与正面 .dossierArt 那张取同值 */
+.intimBackArt figure { inset: 0 0 92px 0; }
 .intimBackText { min-width: 0; }
 
 /* 一根条 = 一行读数 + 底下一行状态句。读数那行与「能力参数」共用 .stat 骨架，
@@ -939,7 +957,7 @@
 .attireLog li:first-child { color: var(--ink); border-left-color: var(--amber); }
 
 @media (max-width: 520px) {
-  .intimBack { grid-template-columns: 1fr; min-height: 0; }
+  /* 单栏退版在 820 那条就做掉了（与正面同断点），这里只管读数那几行的收窄 */
   .intimStat .stat { grid-template-columns: 40px 1fr 26px max-content; }
   .intimState { margin-left: 40px; }
   .intimFoot { grid-template-columns: 1fr; }
