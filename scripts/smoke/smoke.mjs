@@ -3123,21 +3123,26 @@ try {
   ok('U11 收束自由段之后进度照旧只数主线（9/57；下一卷还没读，不许跟着涨）',
     uAfter.chip.startsWith('9/57'), uAfter.chip)
 
-  /* ============ Phase V：见面那一档的右栏（这一场 + 在场各位的常服立绘位） ============
-     约会这条通道今天在冒烟里一个字都没覆盖过 —— 右侧那一栏是这一趟新加的，得有把门的。
-     **全程离线**：先往约会线程的日志里播一条，`enterDate` 就不会去恳求推演通道
+  /* ============ Phase V：约会专线（见到面的那一档另开一路 · 短信里不长色情状态栏） ============
+     主人 2026-09-13 把这一档的形态重定过一次，冒烟跟着换过一茬：
+       · 色情状态栏**不许**再出现在短信页（从前就是在那儿冒出来的）；
+       · 约会也不再是「短信旁边挂一条侧边栏」，而是「在线推演」里另开的一路 ——
+         平时进不去（名册上没有未散场的一场就没这一枚），有那一场才长得出来；
+         进去了，生成框右边才有那一栏：正常一面是「这一场」，翻过来是色情状态栏。
+     **全程离线**：先往约会线程的日志里播一条，就不会去恳求推演通道
      （那一路会推「未配置」并把界面带去设置页，验的就不是这一栏了）。
      新开这一档自己播自己的账，不动前面几相摆好的状态，所以摆在尾巴上。 */
-  console.log('\n[Phase V] 见面右栏：这一场 · 在场各位的常服立绘位（写死文件名 · 缺图不占版位）')
+  console.log('\n[Phase V] 约会专线：另开的一路 · 右栏两面（这一场 ⇄ 色情状态栏）')
   await ev(`(()=>{
     localStorage.removeItem('zts-plot:v1');
     localStorage.setItem('zts-terminal:v3', JSON.stringify({
       unlocked:true, epDone:{'v1-1':true,'v1-2':true,'v1-3':true}, cur:'v1-3',
-      operatorName:'右栏观察员', focusId:'gcn',
+      operatorName:'约会观察员', focusId:'gcn',
       world:{offset:{hikari:100,luna:100,nyau:100},locked:{},flags:{},
         met:{hikari:true,luna:true,nyau:true},ends:{},own:[],records:[],
         intim:{},attire:{},acts:{},
         rel:{hikari:'close',luna:'heart'}}}));
+    localStorage.removeItem('zts-terminal-store');
     localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
       {id:'d:smoke-date-1',charId:'hikari',kind:'date',title:'放学后的天台',
        place:'苍之学园 · 钟楼天台',time:'周六下午三点',from:'them',
@@ -3149,71 +3154,81 @@ try {
     return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true }); await boot()
   await goto('短信')
-  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'V sms view')
+  await poll(pageHas('角色短信'), 20000, 'V sms view')
 
-  /* V0 先摸一遍**单聊**：新加的这两层（.chatBody / .chatMain）在单聊下必须与从前
-     一模一样 —— 会话列仍独占整幅、右栏一个字都不许渗出来。 */
+  /* V0 短信页整洁：**色情状态栏与见面右栏都不许在这一页上出现** ——
+     主人那一条口径（「这个色情状态栏怎么直接出现在短信界面了」）就钉在这一条上。
+     那几场没走完的见面在这儿只算一条报信（`data-sms-date`），点它是**跳走**，不是展开。 */
   await ev(clickTxt('露娜'))
   await poll(`!!document.querySelector('[data-sms-thread]')`, 15000, 'V plain thread')
-  const vPlain = await ev(`(()=>{const q=(s)=>document.querySelector(s);
-    const pane=q('[data-sms-composer]').closest('.panel').getBoundingClientRect();
-    const c=q('[data-sms-composer]').getBoundingClientRect();
-    return {side:!!q('[data-date-side]'),gap:Math.round(pane.right-c.right),
-      paneH:Math.round(pane.height)}})()`)
-  ok('V0 非见面线程不长出右栏（会话列仍旧独占整幅，新 DOM 没渗到单聊上去）',
-    vPlain.side === false && vPlain.gap <= 24, JSON.stringify(vPlain))
+  const vSms = await ev(`(()=>{return {
+    hud:document.querySelectorAll('[data-intim-hud]').length,
+    side:document.querySelectorAll('[data-date-side]').length,
+    rows:document.querySelectorAll('[data-sms-date]').length,
+    invite:document.querySelectorAll('[data-sms-invite]').length,
+    title:(document.querySelector('[data-sms-date]')||{}).innerText||''}})()`)
+  ok('V0 短信页不长色情状态栏、不长见面右栏（见面是另开一路，不在这儿挂侧边栏）',
+    vSms.hud === 0 && vSms.side === 0, JSON.stringify(vSms))
+  /* 「不能直接点一个约她出去就行」——那一枚按钮整个拿掉了，这一条是它的门神。 */
+  ok('V0b 短信页没有「约 TA」那一枚（开一场只看对话里有没有说定时间地点）',
+    vSms.invite === 0, JSON.stringify({invite:vSms.invite}))
+  ok('V0c 没走完的那一场在这儿照旧报一条信（名目 · 地点 · 时间都在，好认哪一场）',
+    vSms.rows === 1 && vSms.title.includes('放学后的天台')
+    && vSms.title.includes('苍之学园 · 钟楼天台') && vSms.title.includes('周六下午三点'),
+    JSON.stringify(vSms))
 
-  /* 开着这一场（点左栏「约会」区那一条；不按名字点 —— 线程里那句 dayLabel 也带着同样的字） */
+  /* V1 点那一条 = 赴这一场：跳到在线推演，约会专线那一枚亮起来，车道本体上屏 */
   await ev(`(()=>{const b=document.querySelector('[data-sms-date]');if(b)b.click();return !!b})()`)
-  await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V date side panel')
+  await poll(`!!document.querySelector('[data-date-lane]')`, 20000, 'V date lane')
+  const vLane = await ev(`(()=>{const t=document.querySelector('[data-plot-lane="date"]');
+    return {lane:document.querySelector('[data-date-lane]').getAttribute('data-date-lane'),
+      tab:!!t, tabOn:t?t.getAttribute('aria-selected'):null,
+      mainArea:document.querySelectorAll('[data-session-area]').length,
+      mainMode:document.querySelectorAll('[data-plot-mode]').length,
+      body:(document.querySelector('[data-date-lane]')||{}).innerText||''}})()`)
+  ok('V1 短信那一条把人送到在线推演的约会专线（这一路开着的是这一场）',
+    vLane.lane === 'd:smoke-date-1' && vLane.tab === true && vLane.tabOn === 'true',
+    JSON.stringify({lane:vLane.lane,tab:vLane.tab,tabOn:vLane.tabOn}))
+  ok('V1b 主线那一块整个让位（`data-session-area` 与「在线推演 / 离线通读」都不在屏上）',
+    vLane.mainArea === 0 && vLane.mainMode === 0,
+    JSON.stringify({mainArea:vLane.mainArea,mainMode:vLane.mainMode}))
+  ok('V1c 这一场的正文跟着过来了（同一本会话账：d:uuid 底下那一条）',
+    vLane.body.includes('她靠在栏杆上'), vLane.body.slice(0, 120))
 
+  /* V2 右栏正常的一面 = 「这一场」：三位都上栏，缺图不占版位（41 个槽位一张都没补时的既定取舍） */
+  await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V date side panel')
   const vGeo = await ev(`(()=>{const q=(s)=>document.querySelector(s);
-    const pane=q('[data-sms-composer]').closest('.panel').getBoundingClientRect();
-    const t=q('[data-sms-thread]').getBoundingClientRect();
-    const c=q('[data-sms-composer]').getBoundingClientRect();
-    const a=q('[data-date-side]').getBoundingClientRect();
+    const a=q('[data-date-side-pane]').getBoundingClientRect();
+    const t=q('[data-date-thread]').getBoundingClientRect();
+    const c=q('[data-date-composer]').getBoundingClientRect();
     const body=q('[data-date-side-body]');
     const wears=[...document.querySelectorAll('[data-date-wear]')];
-    return {aL:Math.round(a.left),aB:Math.round(a.bottom),
-      tR:Math.round(t.right),cR:Math.round(c.right),cB:Math.round(c.bottom),
-      paneB:Math.round(pane.bottom),vh:innerHeight,
-      paneH:Math.round(pane.height),
-      asideH:Math.round(a.height), bodyH:Math.round(body.getBoundingClientRect().height),
-      wrapH:Math.round(q('[data-sms-composer]').closest('[class*=wrap]').getBoundingClientRect().height),
-      scrolls: body.scrollHeight > body.clientHeight + 1,
-      ids: wears.map(w=>w.getAttribute('data-date-wear')),
-      ph: wears.map(w=>{const f=w.querySelector('figure');return f?f.innerText.replace(/\\s+/g,' '):''}),
-      figs: wears.map(w=>{const f=w.querySelector('figure');
+    return {aL:Math.round(a.left),tR:Math.round(t.right),cR:Math.round(c.right),
+      side:document.querySelectorAll('[data-date-side]').length,
+      hud:document.querySelectorAll('[data-intim-hud]').length,
+      ids:wears.map(w=>w.getAttribute('data-date-wear')),
+      ph:wears.map(w=>{const f=w.querySelector('figure');return f?f.innerText.replace(/\\s+/g,' '):''}),
+      figs:wears.map(w=>{const f=w.querySelector('figure');
         if(!f) return null; const r=f.getBoundingClientRect();
         return {w:Math.round(r.width),h:Math.round(r.height)}}),
+      bodyH:Math.round(body.getBoundingClientRect().height),
+      asideH:Math.round(a.height),
       cgN: Object.keys((JSON.parse(localStorage.getItem('zts-terminal:v3')).world||{}).cg||{}).length}})()`)
-
-  ok('V1 右栏在消息流与输入框的右边（同一行，不叠不挤）',
-    vGeo.aL >= vGeo.tR - 2 && vGeo.cR <= vGeo.aL + 2, JSON.stringify(vGeo))
-  /* 面板总高有没有被撑起来 —— 这一条才是右栏真正的门槛。
-     `.chatPane` 是竖排 flex，长出来的那一列要是没把 `min-height:0` 一路带下去，
-     内容会把整块顶穿面板（面板比它那份高度还高），输入框当场被推出屏幕。
-     拿**单聊那一趟的面板高度**当基准比：多了右栏，面板总高一点不许变。 */
-  ok('V1b 长了右栏之后面板总高一点没变（右栏不许把面板撑高 —— 撑高了输入框就出屏幕了）',
-    vGeo.paneH <= vGeo.wrapH + 1 && vGeo.paneH <= vPlain.paneH + 1
-    && vGeo.cB <= vGeo.paneB + 1 && vGeo.aB <= vGeo.paneB + 1,
-    JSON.stringify({paneH:vGeo.paneH,wrapH:vGeo.wrapH,plainPaneH:vPlain.paneH,
-      cB:vGeo.cB,aB:vGeo.aB,paneB:vGeo.paneB,vh:vGeo.vh}))
-  /* 人头再多也归栏内自己兜：那一列是滚动容器，不是把面板撑高的那种块。 */
-  ok('V1c 卡片全在栏内（栏自己兜着，不往面板外溢）',
-    vGeo.bodyH <= vGeo.asideH + 1, JSON.stringify({bodyH:vGeo.bodyH,asideH:vGeo.asideH}))
-
-  ok('V2 这一场三位都上栏，主位在前（rvAllIds 的顺序：主位 + 同场）',
+  ok('V2 右栏落在消息流右边（同一行，不叠不挤），且此刻摆的是「这一场」那一面',
+    vGeo.aL >= vGeo.tR - 2 && vGeo.cR <= vGeo.aL + 2
+    && vGeo.side === 1 && vGeo.hud === 0, JSON.stringify(vGeo))
+  ok('V2b 这一场三位都上栏，主位在前（rvAllIds 的顺序：主位 + 同场）',
     JSON.stringify(vGeo.ids) === JSON.stringify(
       ['cg-datewear-hikari','cg-datewear-luna','cg-datewear-nyau']), JSON.stringify(vGeo.ids))
-  ok('V2b 每人一张同等大（三张图位同宽）',
+  ok('V2c 每人一张同等大（三张图位同宽）',
     vGeo.figs.length === 3 && new Set(vGeo.figs.map(f=>f.w)).size === 1, JSON.stringify(vGeo.figs))
-  ok('V2c 缺图不占版位（塌成一行提示，不留大洞）—— 41 个槽位一张都没补时的既定取舍',
+  ok('V2d 缺图不占版位（塌成一行提示，不留大洞）—— 41 个槽位一张都没补时的既定取舍',
     vGeo.figs.every(f=>f.h < 40), JSON.stringify(vGeo.figs))
-  ok('V2d 提示里写明的正是该补的文件名（id 约定一路对到文件名）',
+  ok('V2e 提示里写明的正是该补的文件名（id 约定一路对到文件名）',
     vGeo.ph.every((t,i)=>t.includes('CG 待补') && t.includes(vGeo.ids[i]+'.webp')),
     JSON.stringify(vGeo.ph))
-
+  ok('V2f 卡片全在栏内（栏自己兜着，不往面板外溢）',
+    vGeo.bodyH <= vGeo.asideH + 1, JSON.stringify({bodyH:vGeo.bodyH,asideH:vGeo.asideH}))
   /* 这一条钉的是主人立的那条规矩：立绘 ≠ CG。立绘跟着人走、不等点名 ——
      所以哪怕 world.cg 里一张都没有，这一栏照样有她的位子。 */
   ok('V3 常服立绘不等导演点名就上栏（立绘 ≠ CG：world.cg 里一张都没点过）',
@@ -3239,24 +3254,56 @@ try {
     && vScene.persons.every(p=>p.txt.includes('关系 · ')),
     JSON.stringify(vScene.persons))
 
-  /* V5 旧档：没有时间（`Rendezvous.time?`）、也没有同场（`party?`）——
-     这两栏的缺省不许把版面读出个空洞来。 */
+  /* V5 翻转：这一栏的另一面才是色情状态栏 —— 在场三位（这一场的人）都上，
+     正常那一面同时让开（同一时刻两处不一样的人，读起来会打架）。 */
+  await ev(`(()=>{const b=document.querySelector('[data-date-face="hud"]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-intim-hud]')`, 12000, 'V hud face')
+  const vHud = await ev(`(()=>{return {
+    rows:[...document.querySelectorAll('[data-intim-hud]')]
+      .map(x=>x.getAttribute('data-intim-hud')).filter(Boolean),
+    side:document.querySelectorAll('[data-date-side]').length,
+    txt:(document.querySelector('[data-intim-hud]')||{}).innerText||''}})()`)
+  ok('V5 翻过来才是色情状态栏：这一场在场的三位都在，正常那一面同时让开',
+    JSON.stringify(vHud.rows.slice().sort()) === JSON.stringify(['hikari','luna','nyau'])
+    && vHud.side === 0, JSON.stringify({rows:vHud.rows,side:vHud.side}))
+  ok('V5b 这一栏把「此刻」说清楚（读的是这一场的人，不是主线在场）',
+    vHud.txt.includes('这一场'), vHud.txt.slice(0, 80))
+  await ev(`(()=>{const b=document.querySelector('[data-date-face="scene"]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-date-side]')`, 12000, 'V scene face back')
+
+  /* V6 散场之后：这一场不再挂着，「约会专线」那一枚当场收走 ——
+     **平时进不去**这一条不是靠藏，是靠名册上真没有那一场。 */
+  await ev(`(()=>{const b=document.querySelector('[data-date-end]');if(b)b.click();return !!b})()`)
+  await sleep(600)
+  const vEnd = await ev(`(()=>{return {
+    live:JSON.parse(localStorage.getItem('zts-rendezvous:v1')||'[]').filter(r=>!r.done).length,
+    tab:!!document.querySelector('[data-plot-lane="date"]'),
+    lane:!!document.querySelector('[data-date-lane]'),
+    mainArea:document.querySelectorAll('[data-session-area]').length}})()`)
+  ok('V6 散场之后名册上不再挂着这一场，「约会专线」那一枚当场收走（平时进不去）',
+    vEnd.live === 0 && vEnd.tab === false, JSON.stringify(vEnd))
+  ok('V6b 人也被送回主线（不留一条「停在空车道上、还得自己找回去」的路）',
+    vEnd.lane === false && vEnd.mainArea === 1, JSON.stringify(vEnd))
+
+  /* V7 旧档：没有时间（`Rendezvous.time?`）、也没有同场（`party?`）——
+     这两栏的缺省不许把版面读出个空洞来。这一趟从**正文这一路**进来：
+     不点短信那一条，靠「新开一场」自己把这一路打开（主人要的「生成事件指令跳转」）。 */
   await ev(`(()=>{localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
       {id:'d:smoke-date-2',charId:'luna',kind:'date',title:'一次见面',place:'学园外',
        from:'you',ts:Date.now(),done:false}]));
     localStorage.setItem('zts-tavern:v1', JSON.stringify({
-      'd:smoke-date-2':[{id:'sd::2',from:'them',text:'【V5】她把伞往你那边偏了偏。',time:'16:00'}]}));
+      'd:smoke-date-2':[{id:'sd::2',from:'them',text:'【V7】她把伞往你那边偏了偏。',time:'16:00'}]}));
     return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true }); await boot()
-  await goto('短信')
-  await poll(`document.body.innerText.includes('角色短信')`, 20000, 'V5 sms view')
-  await ev(`(()=>{const b=document.querySelector('[data-sms-date]');if(b)b.click();return !!b})()`)
-  await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V5 date side')
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-plot-lane="date"]')`, 20000, 'V7 lane tab')
+  await ev(`(()=>{const b=document.querySelector('[data-plot-lane="date"]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V7 date side')
   const vOld = await ev(`(()=>{const s=document.querySelector('[data-date-scene]');
     return {txt:s.innerText.replace(/\\s+/g,' '),
       n:document.querySelectorAll('[data-date-person]').length,
       wears:document.querySelectorAll('[data-date-wear]').length}})()`)
-  ok('V5 旧档（没时间 · 没同场）：照实写「没说定」「只有你们两个」，一个人一张图位',
+  ok('V7 旧档（没时间 · 没同场）：照实写「没说定」「只有你们两个」，一个人一张图位',
     vOld.txt.includes('没说定') && vOld.txt.includes('只有你们两个')
     && vOld.n === 1 && vOld.wears === 1, JSON.stringify(vOld))
 

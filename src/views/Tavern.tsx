@@ -4,34 +4,25 @@ import { Lock, PaperPlaneTilt, Stop, Eraser, Plus, Check, Trash, UsersThree, Lis
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
-import { OPERATOR_ID, PERSON_IDS, genderOf, speakerVariants } from '../data/castmeta'
-import { hasIntimate } from '../data/intimate'
+import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
+import { INTIMATE_BOND } from '../data/intimate'
 import { plotContextFor } from '../lib/crosslink'
-import { INTIMATE_BOND, intimAdvanceLabel } from '../data/intimate'
-import { attireAdvanceLabel } from '../data/attire'
-import { PARTY_MAX } from '../lib/rendezvous'
-import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
-import { CgSlot } from '../components/CgSlot'
-import { IntimateHud } from '../components/IntimateHud'
-import { DateSide } from '../components/DateSide'
+
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { cgIdOf, cgNoteOf } from '../lib/cg'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import {
-  applyDirective, dateDirective, dateReady, extractLiveDisplay, parseDirectorReply, replyDisplayText,
+  dateReady, extractLiveDisplay, parseDirectorReply, replyDisplayText,
   smsBondRule, smsDirective,
 } from '../lib/plot'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
-  cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous, isDateThread,
-  listRendezvous, openDateOf, openRendezvous, patchRendezvous, rendezvousPrompt,
-  rendezvousVersion, rvAllIds, subscribeRendezvous,
+  listRendezvous, openDateOf, openRendezvous, rendezvousVersion, rvAllIds, subscribeRendezvous,
 } from '../lib/rendezvous'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
@@ -64,9 +55,8 @@ function bondNote(delta: number): string {
 
 export function Tavern() {
   const {
-    operatorName, isMet, bondNow, bumpBond, setFlag, flagKeys, navigate, push, epDone, world,
-    smsRequest, clearSmsRequest, cgOf, setCg, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd,
-    bumpActs, setRel,
+    operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
+    smsRequest, clearSmsRequest, requestDate,
   } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
   const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadSmsLogs)
@@ -128,17 +118,11 @@ export function Tavern() {
   const taskVer = useSyncExternalStore(subscribeTasks, tasksVersion)
   const tasks = useMemo(() => listTasks(), [taskVer])
 
-  /* 约会名册（lib/rendezvous.ts 的本地档）：与短信同一套路数 —— 写即落盘，
-     版本号变了就重读，好让后台主动来信开出来的那一场立刻出现在「约会」一栏。 */
-  const [rvs, setRvs] = useState<Rendezvous[]>(listRendezvous)
+  /* 约会名册（lib/rendezvous.ts 的本地档）：这一页**只读它** —— 那几场未走完的见面
+     在这里报个信、点一下跳到在线推演的约会专线（见 components/DateLane.tsx）。
+     见面本身不在这儿发生，所以这一页没有一条约会线程。 */
   const rvVer = useSyncExternalStore(subscribeRendezvous, rendezvousVersion)
-  useEffect(() => { setRvs(listRendezvous()) }, [rvVer])
-  /* 多女同场的选人面板：开没开、选了谁。只活在这一次操作里，不落盘 ——
-     真正定下来的名单写在那一场（`Rendezvous.party`）上。 */
-  const [partyOpen, setPartyOpen] = useState(false)
-  const [partyPick, setPartyPick] = useState<string[]>([])
-  /** 未走完的那几场（名单与角标只认这些；走完的留在会话里当记录） */
-  const liveRvs = useMemo(() => rvs.filter((r) => !r.done), [rvs])
+  const liveRvs = useMemo(() => listRendezvous().filter((r) => !r.done), [rvVer])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -146,21 +130,17 @@ export function Tavern() {
 
   const metIds = useMemo(() => TAVERN_PERSONAS.map((p) => p.charId).filter((id) => isMet(id)), [isMet])
 
-  /** 选中某个线程（单聊 = 角色 id，群聊 = g:uuid，见面 = d:uuid）。
+  /** 选中某个线程（单聊 = 角色 id，群聊 = g:uuid）。
       新线程是**空的** —— 不再替对方垫一句开场白：
-      谁先开口是玩家自己的事，上来就有一条躺着，「初始没有消息」这个前提就没了。
-      （见面那一档另说：那一场本来就开场了，由 fireDate 让对面先说话。） */
+      谁先开口是玩家自己的事，上来就有一条躺着，「初始没有消息」这个前提就没了。 */
   const enter = useCallback(
     (threadId: string) => {
-      if (!isGroupThread(threadId) && !isDateThread(threadId) && !isMet(threadId)) {
+      if (!isGroupThread(threadId) && !isMet(threadId)) {
         push('warn', '尚未解锁', '需先在剧情中「遇见」该角色，方可发来第一条短信。')
         return
       }
       setActiveId(threadId)
       setErr(null)
-      /* 换人就把选人面板收起来：名单是**对某一位**挑的，跟着人跑会挑错 */
-      setPartyOpen(false)
-      setPartyPick([])
       markRead(threadId)
     },
     [isMet, push],
@@ -189,33 +169,12 @@ export function Tavern() {
   const activeGroup = activeId && isGroupThread(activeId)
     ? groups.find((g) => g.id === activeId)
     : undefined
-  /** 见面那一档（d:uuid）：线程元数据在 lib/rendezvous.ts，人还是那一位 */
-  const activeRv = activeId && isDateThread(activeId)
-    ? rvs.find((r) => r.id === activeId)
-    : undefined
-  const activeChar = activeId && !activeGroup ? charOf(activeRv ? activeRv.charId : activeId) : undefined
+  const activeChar = activeId && !activeGroup ? charOf(activeId) : undefined
   const activeMeta = activeId && !activeGroup
-    ? TAVERN_PERSONAS.find((p) => p.charId === (activeRv ? activeRv.charId : activeId))
+    ? TAVERN_PERSONAS.find((p) => p.charId === activeId)
     : undefined
-  /* 色情状态栏的名单：谁**此刻在场**就上谁 —— 见面那一场按名单
-     （Rendezvous.party，见 rvAllIds），单聊就是对面这一位。群里不摆：
-     群聊是「一群人七嘴八舌」，没有哪一位是被面对着的那一个。
-     够不够格看的是关系本身（hasIntimate + 羁绊过线），与主线那一栏同一把尺。 */
-  const hudIds = useMemo(() => {
-    if (activeGroup) return []
-    const pool = activeRv ? rvAllIds(activeRv) : activeId ? [activeId] : []
-    return pool.filter((id) => hasIntimate(id) && bondNow(id) >= INTIMATE_BOND)
-  }, [activeGroup, activeRv, activeId, bondNow])
 
   const activeLog = activeId ? logs[activeId] ?? [] : []
-  /** 见面场景此刻摆的那张图：导演点名记在 world.cg[d:uuid] 下（见下面 fireDate）。
-      没点名就不摆 —— 一进来就顶一张图，把开场那两句挤到屏幕外，不划算。 */
-  const activeCg = activeRv ? cgOf(activeRv.id) : null
-  const activeCgNote = useMemo(() => {
-    if (!activeRv || !activeCg) return undefined
-    const hit = dateCgPalette(activeRv).find((r) => cgIdOf(r) === activeCg)
-    return hit ? cgNoteOf(hit) : undefined
-  }, [activeRv, activeCg])
   /** 群里某条发言的作者名（单聊直接取角色名） */
   const whoOf = useCallback(
     (m: ChatMsg): string => m.meta?.who ?? activeChar?.name ?? '群聊',
@@ -232,34 +191,12 @@ export function Tavern() {
     (m: ChatMsg): string => {
       if (m.from === 'user') return OPERATOR_ID
       if (m.meta?.who) return idOfName.get(m.meta.who) ?? ''
-      /* 取 activeChar.id 而不是 activeId：见面线程的 id 是 d:uuid，那是素材里没有的东西 */
       return activeChar?.id ?? ''
     },
     [activeChar, idOfName],
   )
-  /** 流式气泡的头像：一对一（含见面）才是此人；群聊是多说话人剧本，落定前不知道谁在说，故留白 */
+  /** 流式气泡的头像：一对一才是此人；群聊是多说话人剧本，落定前不知道谁在说，故留白 */
   const liveAvatarId = activeGroup ? '' : activeChar?.id ?? ''
-
-  /**
-   * 这一场**能带谁**：同样是女角色（有私密档案）、已遇见、且羁绊一样过了
-   * `INTIMATE_BOND` 的别位 —— 差一个都开不了口的人，不该出现在这张名单上。
-   * 自己不带自己（那一位是主位），位子照 `PERSON_IDS` 的固定顺序排。
-   */
-  const partyPool = useMemo(
-    () => (activeChar
-      ? PERSON_IDS
-          .filter((id) => id !== activeChar.id && isMet(id) && hasIntimate(id) && bondNow(id) >= INTIMATE_BOND)
-          .map((id) => ({ id, name: charOf(id)?.name ?? id, hue: charOf(id)?.hue ?? '#8ad' }))
-      : []),
-    [activeChar, isMet, bondNow],
-  )
-  const toggleParty = useCallback((id: string) => {
-    setPartyPick((prev) => (
-      prev.includes(id) ? prev.filter((x) => x !== id)
-        : prev.length >= PARTY_MAX ? prev
-          : [...prev, id]
-    ))
-  }, [])
 
 
   /**
@@ -392,7 +329,6 @@ export function Tavern() {
             time: d.time,
             from: 'them',
           })
-          setRvs(listRendezvous())
         }
         const hasFx = sum !== 0 || flags.length > 0 || invited !== null
         // 整份回执只有指令、没有正文：不出气泡（空气泡比一坨 JSON 更像坏了），提醒一句就走
@@ -420,7 +356,11 @@ export function Tavern() {
           push('info', '短信效果', `${c.name} · 变量更新：${flags.map(([k]) => k).join('、')}`, false)
         }
         if (invited) {
-          push('decode', 'TA 约你出去', `${c.name} · ${invited.title}（${invited.place}）—— 在左侧「约会」一栏应约。`, false)
+          /* 这一条**不把人从短信里拽走**：对面刚说完话，主人正看着那一句，
+             当场跳页等于把回信藏起来。这里只报信 + 递一个跳法，
+             真正「跳过去」的是正文那一路（推演回执里落下同一类指令时，
+             在线推演那边会当场把这一路打开，见 views/Plot.tsx 的 rvVer 那只效果）。 */
+          push('decode', 'TA 约你出去', `${c.name} · ${invited.title}（${invited.place}）—— 在「在线推演 · 约会专线」赴这一场。`, false)
         }
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
@@ -610,268 +550,13 @@ ${preset.post}` : '')
     [settings, busy, groups, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread],
   )
 
-  /**
-   * 见面发一轮（约会线程，id 形如 `d:uuid`）。
-   *
-   * 与短信那条的分工：人已经**在眼前**了，所以放得开 ——
-   *   · 羁绊一次 ±5（一条短信只有 ±3）；
-   *   · **只有这一路能推进私密档案**（intim）—— 身体上的事发生在见面时，不在打字里。
-   * 反过来也收着：**不动主线** —— 不判 eventDone、不写记录、不推卷次（见 dateDirective）。
-   */
-  const fireDate = useCallback(
-    async (rvId: string, log: ChatMsg[]) => {
-      const rv = listRendezvous().find((x) => x.id === rvId)
-      if (!rv || busy) return
-      const charId = rv.charId
-      const c = charOf(charId)
-      const meta = TAVERN_PERSONAS.find((p) => p.charId === charId)
-      if (!c || !meta) return
-      const cfg = settings
-      if (!cfg || !isReady(cfg)) {
-        push('warn', '推演通道未配置', '请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来赴约。')
-        navigate('settings')
-        return
-      }
-      setErr(null)
-      setBusy(true)
-
-      const scanText = smsTurns(log, 10).map((x) => x.content).join('\n')
-      let loreBlock = ''
-      try {
-        const books = await loadActiveBooks()
-        if (books.length) {
-          loreBlock = buildLoreContext(books, {
-            scanText,
-            contextText: `${rv.title} · ${rv.place}`,
-            gate: allowGateForTavern({ epDone, ends: world.ends }),
-          })
-        }
-      } catch {
-        loreBlock = ''
-      }
-
-      const preset = buildPresetContext(readActivePreset(), scanText, 'sms')
-      const presetInfo = activePresetInfo()
-      const logMeta: AiLogMeta = {
-        channel: '角色见面',
-        act: `见面 · ${c.name}`,
-        preset: { id: presetInfo.id, name: presetInfo.name, hits: preset.hits, prefill: presetInfo.prefill },
-        lore: { chars: loreBlock.length, hits: loreHitsOf(loreBlock) },
-      }
-
-      const bond = bondNow(charId)
-      /* 同场的其余几位（1 男多女那一场）：羁绊在这里现读 —— 提示词里要按人给口气。
-         名字取不到（理论上不会，rv.party 落地时已经筛过一遍）就整位跳过。 */
-      const partyIds = rv.party ?? []
-      const party = partyIds
-        .map((id) => ({ id, name: charOf(id)?.name ?? '', bond: bondNow(id) }))
-        .filter((p) => !!p.name)
-      /* 正文里与她有关的那一截（她不在场的段落一句不给）：她答应这一场多半是正文里
-         刚走过的那一段在起作用。与单聊那条一样当場读 —— 见面可能在她翻着别的模块时开。 */
-      const plotCtx = plotContextFor(charId, { records: world.records, epDone })
-      const system =
-        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)), plotCtx || undefined, party)
-        + (preset.pre ? `\n\n${preset.pre}` : '')
-        + (loreBlock ? `\n\n${loreBlock}` : '')
-        + (preset.post ? `\n\n${preset.post}` : '')
-        + dateBondRule(charId, party.map((p) => p.id))
-      const turns = smsTurns(log, 12)
-      /* 空线程 = 这一场刚开场：不给它留白，直接让对面把第一句说出来
-         （谁先开的口由 rv.from 决定，措辞见 lib/rendezvous.ts 的 dateOpeningPrompt） */
-      if (!turns.length) turns.push({ role: 'user', content: dateOpeningPrompt(rv) })
-      const messages: ChatTurn[] = [{ role: 'system', content: system }, ...turns]
-
-      const ctrl = new AbortController()
-      abortRef.current = ctrl
-      let acc = ''
-      let settled = false
-      try {
-        const res: StreamResult = cfg.stream === false
-          ? { text: await chatCompletion(cfg, messages, { signal: ctrl.signal, maxTokens: clampBudget(cfg.maxTokens), meta: logMeta }) }
-          : await chatCompletionStream(cfg, messages, {
-            signal: ctrl.signal,
-            maxTokens: clampBudget(cfg.maxTokens),
-            meta: logMeta,
-            onDelta: (chunk) => {
-              if (settled || !chunk) return
-              acc += chunk
-              setLive({ charId: rv.id, text: acc })
-            },
-          })
-        settled = true
-        setLive(null)
-
-        const reply = (res.text ?? '').trim()
-        if (!reply) {
-          setErr('收发中断：通道未返回任何内容。')
-          push('danger', '见面推演失败', '通道未返回任何内容。', false)
-          return
-        }
-        if (res.finishReason === 'length') {
-          const short = extractLiveDisplay(acc).trim()
-          if (short) setThread(rv.id, (prev) => [...prev, { id: idFor(rv.id), from: 'them', text: short, time: clock() }])
-          push('warn', '回复已达长度上限', '这一回合被截断了，本回合未落地任何推进。', false)
-          return
-        }
-
-        const parsed = parseDirectorReply(reply)
-        const shown = replyDisplayText(parsed, acc)
-        const fx = applyDirective(dateDirective(parsed.directive, charId, rv.party ?? []), {
-          meetChar, bumpBond, registerEnd, setFlag, flagKeys, bumpIntim, bumpAttire, bumpActs, setRel,
-        })
-        /* 这一回合什么都没往上走 → 湿润自己退一档（与主线那一路同一条规矩，
-           用户口径「内裤湿不可能一直湿润」）。退不必谁下命令，所以落在落地这一层。 */
-        if (!fx.intim.length && !fx.attire.length) dryAttireAll()
-        /* 换画面：点名的 CG 记在**这一场**名下（world.cg[d:uuid]），与主线那本账各存各的。
-           认不认这个 id 由渲染那一层对着 dateCgPalette 判（见上面的 activeCgNote）。 */
-        if (fx.cg) setCg(rv.id, fx.cg)
-        // 这一场自己认领名目与地点：模型给出了更好的就地改写（第一次推进私密时顺带抬档位）
-        const patch: Parameters<typeof patchRendezvous>[1] = {}
-        if (fx.date?.title?.trim()) patch.title = fx.date.title.trim()
-        if (fx.date?.place?.trim()) patch.place = fx.date.place.trim()
-        if (fx.date?.kind === 'intimate') patch.kind = 'intimate'
-        if (fx.intim.length) patch.kind = 'intimate'
-        if (Object.keys(patch).length) {
-          patchRendezvous(rv.id, patch)
-          setRvs(listRendezvous())
-        }
-        const newTasks = parsed.directive?.task ?? []
-        for (const t of newTasks) addTask(t.title, { detail: t.detail, ...(isCharId(charId) ? { from: charId } : {}) })
-        const hasFx = fx.bonds.length > 0 || fx.flags.length > 0 || fx.met.length > 0
-          || fx.ends.length > 0 || fx.intim.length > 0 || fx.attire.length > 0
-          || fx.acts.length > 0 || fx.rel.length > 0
-          || newTasks.length > 0
-        /* 私密档案 / 贴身衣物 / 次数账 / 关系档位：都在档案页那一栏，所以合成一句报出去
-           （逐条列回数太吵，回数与八栏读数在档案背面看得见）。 */
-        if (fx.intim.length || fx.attire.length || fx.acts.length || fx.rel.length) {
-          const parts: string[] = []
-          if (fx.intim.length) parts.push(fx.intim.map((x) => `${charOf(x.char)?.name ?? x.char} · ${intimAdvanceLabel(x)}`).join(' · '))
-          if (fx.attire.length) parts.push(fx.attire.map((x) => `${charOf(x.char)?.name ?? x.char} · ${attireAdvanceLabel(x)}`).join(' · '))
-          if (fx.acts.length) parts.push(fx.acts.map((x) => `${charOf(x.char)?.name ?? x.char}（次数）`).join(' · '))
-          if (fx.rel.length) parts.push(fx.rel.map((x) => `${charOf(x.char)?.name ?? x.char} —— 「${relName(x.tier)}」`).join(' · '))
-          push('decode', '这一场的推进', `${parts.join(' · ')} —— 角色档案的「私密档案」可见。`, false)
-        }
-
-        // 整份回执只有指令、没有正文：不出气泡（空气泡比一坨 JSON 更像坏了），提醒一句就走
-        if (!shown) {
-          if (hasFx) push('info', '见面的推进', `${c.name} · 本回合只有指令、没有正文；效果已落地。`, false)
-          return
-        }
-        setThread(rv.id, (prev) => [...prev, {
-          id: idFor(rv.id),
-          from: 'them',
-          text: shown,
-          time: clock(),
-          meta: {
-            source: parsed.source,
-            options: parsed.options.length ? parsed.options : undefined,
-            thinking: parsed.thinking || undefined,
-            hasFx,
-          },
-        }])
-
-        const fxParts: string[] = []
-        const sum = fx.bonds.reduce((n, b) => n + b.delta, 0)
-        if (sum !== 0) fxParts.push(`羁绊 ${sum > 0 ? '+' : ''}${sum}${bondNote(sum) ? ` · ${bondNote(sum)}` : ''}`)
-        if (fx.flags.length) fxParts.push(`变量更新：${fx.flags.map(([k]) => k).join('、')}`)
-        if (fx.met.length) fxParts.push(`遇见 ${fx.met.length} 位`)
-        if (fx.ends.length) fxParts.push(`图鉴 ${fx.ends.length} 条`)
-        if (newTasks.length) fxParts.push(`托付 ${newTasks.length} 件`)
-        if (fxParts.length) push('success', '见面的推进', `${c.name} · ${fxParts.join(' · ')}`, false)
-        if (fx.intim.length) {
-          const parts = fx.intim.map((x) => intimAdvanceLabel(x)).join('、')
-          push('decode', '私密档案 · 有更新', `${c.name} · ${parts} —— 角色档案的「私密档案」一栏可见。`, false)
-        }
-        if (fx.attire.length) {
-          const parts = fx.attire.map((x) => attireAdvanceLabel(x)).join('、')
-          push('decode', '贴身衣物 · 有更新', `${c.name} · ${parts} —— 角色档案的「私密档案」一栏可见。`, false)
-        }
-      } catch (e) {
-        if ((e as Error).name === 'AbortError') {
-          settled = true
-          const partial = extractLiveDisplay(acc).trim()
-          setLive(null)
-          if (partial) setThread(rv.id, (prev) => [...prev, { id: idFor(rv.id), from: 'them', text: partial, time: clock() }])
-          return
-        }
-        settled = true
-        setLive(null)
-        const msg = e instanceof Error ? e.message : String(e)
-        setErr(`收发中断：${msg}`)
-        push('danger', '见面推演失败', msg, false)
-      } finally {
-        setBusy(false)
-        abortRef.current = null
-      }
-    },
-    [
-      settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread,
-      meetChar, registerEnd, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel,
-    ],
-  )
-
-  /** 发一轮：单聊 / 群聊 / 见面各走各的生成路径，界面只认这一个入口 */
+  /** 发一轮：单聊 / 群聊各走各的生成路径，界面只认这一个入口
+      （见面那一档**不在这儿** —— 它在「在线推演 · 约会专线」，见 components/DateLane.tsx） */
   const runTurn = useCallback(
     (threadId: string, log: ChatMsg[]) =>
-      isDateThread(threadId)
-        ? fireDate(threadId, log)
-        : isGroupThread(threadId) ? fireGroup(threadId, log) : fire(threadId, log),
-    [fire, fireGroup, fireDate],
+      isGroupThread(threadId) ? fireGroup(threadId, log) : fire(threadId, log),
+    [fire, fireGroup],
   )
-
-  /**
-   * 赴一场：切到这条线程，**没开场就让它开场**。
-   * 一进来就凭空生出几句对白很怪，所以开场那一下是问一次推演通道 ——
-   * 由对面照着两个人的交情把第一句说出来，此后就照常一来一往。
-   */
-  const enterDate = useCallback(
-    async (rv: Rendezvous) => {
-      setTab('chat')
-      enter(rv.id)
-      if ((loadSmsLogs()[rv.id] ?? []).length === 0) await fireDate(rv.id, [])
-    },
-    [enter, fireDate],
-  )
-
-  /** 操作员主动约：先开一场空见面（名目待定），由对面开口时自己认领 */
-  const startDate = useCallback(
-    async (charId: string, party: string[] = []) => {
-      const c = charOf(charId)
-      if (!c) return
-      if (bondNow(charId) < INTIMATE_BOND) {
-        push('warn', '还约不出来', `${c.name} 与你的羁绊到 ${INTIMATE_BOND} 才愿意单独见面（当前 ${bondNow(charId)}/100）。`)
-        return
-      }
-      const open = openDateOf(charId)
-      if (open) {
-        push('info', '已经约着了', `${c.name} · ${open.title}（${open.place}）—— 先把这一场走完。`, false)
-        await enterDate(open)
-        return
-      }
-      /* 同场的几位在这儿再筛一道（面板上已经只列够格的了，这一道是防别的入口带进来）：
-         同一位不进两次，封顶 PARTY_MAX。 */
-      const crew = party
-        .filter((id) => id !== charId && bondNow(id) >= INTIMATE_BOND && !!charOf(id))
-        .filter((id, i, a) => a.indexOf(id) === i)
-        .slice(0, PARTY_MAX)
-      const rv = openRendezvous(charId, { from: 'you', title: '一次见面', place: '学园外', ...(crew.length ? { party: crew } : {}) })
-      setRvs(listRendezvous())
-      setPartyOpen(false)
-      setPartyPick([])
-      const crewNames = crew.map((id) => charOf(id)?.name ?? id).join('、')
-      push('decode', '约了 TA', `${c.name}${crew.length ? `（同场：${crewNames}）` : ''} —— 名目还没定，看对面怎么接。`, false)
-      await enterDate(rv)
-    },
-    [bondNow, push, enterDate],
-  )
-
-  /** 收场：这一场到此为止（线程留着当记录，名单上不再挂着） */
-  const endDate = useCallback(() => {
-    if (!activeRv) return
-    patchRendezvous(activeRv.id, { done: true })
-    setRvs(listRendezvous())
-    push('info', '这一场走完了', `${charOf(activeRv.charId)?.name ?? activeRv.charId} · ${activeRv.title}`, false)
-  }, [activeRv, push])
 
   const send = async () => {
     const text = draft.trim()
@@ -922,23 +607,16 @@ ${preset.post}` : '')
       storeGroups(next)
       setActiveId(null)
     }
-    // 见面线程清空 = 这一场作罢：名册上的那一条一并撤掉，别留个点不开的空壳
-    if (isDateThread(id)) {
-      dropRendezvous(id)
-      setRvs(listRendezvous())
-      setActiveId(null)
-    }
     persist((all) => {
       const next = { ...all }
       delete next[id]
       return next
     })
     setErr(null)
-    const what = isGroupThread(id) ? '本群已解散' : isDateThread(id) ? '这一场作罢' : '本线程已清空'
-    const sub = isGroupThread(id) ? '群聊记录一并清除。'
-      : isDateThread(id) ? '见面记录与名册上的那一条一并清除。'
-        : '线程回到一条消息都没有的状态。'
-    push('info', what, sub, false)
+    /* 见面那一档不归这一页管了（「这一场作罢」在约会专线那一栏，见 DateLane.tsx）——
+       这一页能清的只有单聊与群聊。 */
+    push('info', isGroupThread(id) ? '本群已解散' : '本线程已清空',
+      isGroupThread(id) ? '群聊记录一并清除。' : '线程回到一条消息都没有的状态。', false)
   }
 
   /** 会话页签上的未读数：后台来信也会让它立刻变 */
@@ -1075,15 +753,17 @@ ${preset.post}` : '')
                   )
                 })}
 
-                {/* 约会：主线之外另开的那条线（见 lib/rendezvous.ts）。
-                    羁绊过 INTIMATE_BOND 才约得动；对面先开口的那几条在这里等人赴。 */}
+                {/* 约会：这一栏**只报信、不赴约** —— 见面另开一路（在线推演 · 约会专线，
+                    见 components/DateLane.tsx）。所以这一枚按下去是**跳到那一路**，
+                    不是在这儿展开一栏侧边栏：短信是说话的地方，不是见面的地方。 */}
                 <div className={css.sectHead}>
-                  <span><HeartStraight size={13} weight="bold" /> 约会</span>
+                  <span><HeartStraight size={13} weight="bold" /> 待赴的约会</span>
                   {liveRvs.length ? <span className="muted tiny">{liveRvs.length} 场未完</span> : null}
                 </div>
                 {liveRvs.length === 0 ? (
                   <span className="muted tiny" style={{ padding: '2px 8px 8px', lineHeight: 1.7, color: 'var(--ink-faint)' }}>
-                    羁绊到 {INTIMATE_BOND} 之后，可以在单聊右上角把对方约出来；对方也可能自己在信里开口。
+                    在单聊里聊到见面、把时间与地点说定（对方先开口也算），那一场就会落到
+                    「在线推演 · 约会专线」那一路上。
                   </span>
                 ) : null}
                 {liveRvs.map((rv) => {
@@ -1092,8 +772,9 @@ ${preset.post}` : '')
                   return (
                     <button
                       key={rv.id}
-                      className={`${comm.contact} ${activeId === rv.id ? comm.isActive : ''}`}
-                      onClick={() => void enterDate(rv)}
+                      className={comm.contact}
+                      onClick={() => requestDate(rv.id)}
+                      title="去「在线推演 · 约会专线」赴这一场"
                       data-sms-date={rv.kind}
                     >
                       {c ? <Portrait avatarId={rv.charId} name={c.name} hue={c.hue} sigil={c.sigil} size={40} round /> : null}
@@ -1196,57 +877,30 @@ ${preset.post}` : '')
                 <div className={comm.chatHeadMeta}>
                   <b>
                     {activeGroup ? activeGroup.name : activeChar.name}{' '}
-                    <span className={css.scenarioTag}>{activeRv ? '· 见面' : '· 在线'}</span>
+                    <span className={css.scenarioTag}>· 在线</span>
                   </b>
                   <small>
                     {activeGroup
                       ? activeGroup.charIds.map((id) => charOf(id)?.name ?? id).join('、')
-                      : activeRv
-                        ? `${activeRv.title} · ${activeRv.place}`
-                          + (activeRv.party?.length
-                            ? ` · 同场：${activeRv.party.map((id) => charOf(id)?.name ?? id).join('、')}`
-                            : '')
-                        : activeMeta.scenario}
+                      : activeMeta.scenario}
                   </small>
                 </div>
                 <span className={comm.channelTag}>
-                  {activeRv ? 'DATE' : activeGroup ? 'GROUP' : 'SMS'} ·{' '}
+                  {activeGroup ? 'GROUP' : 'SMS'} ·{' '}
                   {activeGroup ? activeGroup.charIds.length : activeChar.id.toUpperCase()}
                 </span>
-                {/* 约得动才亮：羁绊没到 INTIMATE_BOND，这一枚不出现（免得点了才知道不行） */}
-                {!activeGroup && !activeRv && bondNow(activeChar.id) >= INTIMATE_BOND ? (
+                {/* 这一页**没有「约 TA」这一枚**，是有意拿掉的（主人 2026-09-13 的口径）：
+                    见面另开一路，且开那一路要看**对话里真把时间地点说定**，
+                    不能点一下就成行。所以短信这一页只管说话，赴约去在线推演的约会专线。 */}
+                {liveRvs.some((r) => rvAllIds(r).includes(activeChar.id)) ? (
                   <button
                     className="btn btn--ghost"
                     style={{ fontSize: 11, padding: '6px 10px' }}
-                    onClick={() => void startDate(activeChar.id)}
-                    title="把 TA 约出来单独见一面"
-                    data-sms-invite
+                    onClick={() => requestDate(liveRvs.find((r) => rvAllIds(r).includes(activeChar.id))!.id)}
+                    title="与 TA 有一场没走完的见面 —— 去在线推演 · 约会专线"
+                    data-sms-datego
                   >
-                    <HeartStraight size={13} weight="bold" /> 约 TA
-                  </button>
-                ) : null}
-                {/* 多女同场：把够格的几位一并带上。只在还没开这一场时露出来 ——
-                    已经开了的那一场要改人，就散场重约（改名单会让提示词的账对不上）。 */}
-                {!activeGroup && !activeRv && bondNow(activeChar.id) >= INTIMATE_BOND && partyPool.length ? (
-                  <button
-                    className="btn btn--ghost"
-                    style={{ fontSize: 11, padding: '6px 10px' }}
-                    onClick={() => setPartyOpen((v) => !v)}
-                    title="把别的几位一起带上 —— 多女同场"
-                    data-sms-party-open
-                  >
-                    <UsersThree size={13} weight="bold" /> 带人一起{partyPick.length ? ` · ${partyPick.length}` : ''}
-                  </button>
-                ) : null}
-                {activeRv && !activeRv.done ? (
-                  <button
-                    className="btn btn--ghost"
-                    style={{ fontSize: 11, padding: '6px 10px' }}
-                    onClick={endDate}
-                    title="这一场到此为止"
-                    data-sms-enddate
-                  >
-                    <Check size={13} weight="bold" /> 散场
+                    <HeartStraight size={13} weight="bold" /> 去赴约
                   </button>
                 ) : null}
                 <button className="btn btn--ghost" style={{ fontSize: 11, padding: '6px 10px' }} onClick={clearThread} title="清空本线程">
@@ -1254,62 +908,16 @@ ${preset.post}` : '')
                 </button>
               </div>
 
-              {/* 对谈区的下半：会话列 + 见面右栏。这一层**无条件在** ——
-                  单聊 / 群聊下 .chatMain 独占整幅（与从前一模一样），
-                  长不长右栏只看是不是见面那一档。 */}
+              {/* 对谈区的下半：会话列（见面不在这儿，见 components/DateLane.tsx） */}
               <div className={css.chatBody}>
                 <div className={css.chatMain}>
-                {/* 多女同场的选人面板：只列**同样够格**的几位（羁绊到 INTIMATE_BOND
-                    的别的档案角色）—— 差一个都开不了口的人，不该出现在这张名单上。 */}
-                {partyOpen && !activeGroup && !activeRv && partyPool.length ? (
-                  <div className={css.partyPick} data-sms-party-pick>
-                    <div className="tiny muted">
-                      这一场还带谁去（可多选，最多 {PARTY_MAX} 位）—— 带上的人与 {activeChar.name} 同场，
-                      各记各的账。
-                    </div>
-                    <div className={css.partyPickRow}>
-                      {partyPool.map((p) => {
-                        const on = partyPick.includes(p.id)
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={`chip ${on ? 'chip--on' : ''}`}
-                            style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
-                            onClick={() => toggleParty(p.id)}
-                            data-sms-party={p.id}
-                            data-sms-party-on={on ? '1' : '0'}
-                          >
-                            {p.name}
-                          </button>
-                        )
-                      })}
-                      <button
-                        className="btn btn--primary"
-                        style={{ fontSize: 11, padding: '6px 10px' }}
-                        onClick={() => void startDate(activeChar.id, partyPick)}
-                        data-sms-party-go
-                      >
-                        就这么去
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
                 <div className={comm.thread} data-sms-thread>
                   <div className={comm.dayLabel}>
-                    {activeRv ? `${activeRv.place} · ${activeRv.title}` : '苍之学园 · 今日 · 角色短信'}
+                    苍之学园 · 今日 · 角色短信
                   </div>
-                  {activeCg ? (
-                    <div className={css.threadCg}>
-                      <CgSlot cgId={activeCg} caption={activeCgNote} ratio="3 / 2" />
-                    </div>
-                  ) : null}
                   {activeLog.length === 0 && !busy ? (
                     <div className={css.threadEmpty} data-sms-empty>
-                      {activeRv
-                        ? '还没人开口。'
-                        : '本线程还没有消息 —— 先说点什么过去，或者等对方先开口。'}
+                      本线程还没有消息 —— 先说点什么过去，或者等对方先开口。
                     </div>
                   ) : null}
                   {activeLog.map((m, i) => (
@@ -1384,15 +992,15 @@ ${preset.post}` : '')
                   <div ref={endRef} />
                 </div>
 
-                <IntimateHud ids={hudIds} hint="此刻 · 这一场在场的人" />
-
+                {/* 这一页**不摆色情状态栏**（主人 2026-09-13 的口径）：短信里只看到
+                    「聊得怎么样」，情欲值 / 最近一回 / 内裤湿几分属于**见了面**那一屏 ——
+                    在「在线推演 · 约会专线」的右栏，翻转过来看（见 components/DateLane.tsx）。 */}
                 <div className={comm.composer} data-sms-composer>
                   <input
                     className="field"
                     placeholder={`${
                       activeGroup ? `在「${activeGroup.name}」里说…`
-                        : activeRv ? `面对着 ${activeChar.name} 说…`
-                          : `给 ${activeChar.name} 发消息…`
+                        : `给 ${activeChar.name} 发消息…`
                     }（Enter 发送）`}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
@@ -1420,10 +1028,6 @@ ${preset.post}` : '')
                   )}
                 </div>
                 </div>
-
-                {/* 见面那一档特殊：右栏摆「这一场 + 在场各位的常服立绘」——
-                    单聊与群聊不长这一栏（见 components/DateSide.tsx）。 */}
-                {activeRv ? <DateSide rv={activeRv} /> : null}
               </div>
             </>
           ) : (

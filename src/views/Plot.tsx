@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, Key } from 'react'
 import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
 
@@ -46,6 +46,8 @@ import { smsContextFor } from '../lib/crosslink'
 import { INTIMATE_BOND, hasIntimate, intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
 import { IntimateHud } from '../components/IntimateHud'
+import { DateLane } from '../components/DateLane'
+import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
@@ -290,7 +292,50 @@ export function Plot() {
     records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast,
     bumpActs, setRel, relOf,
     freeMode, setFreeMode, closeFreeSlot,
+    dateRequest, clearDateRequest,
   } = useTerminal()
+
+  /**
+   * 这一路是主线还是约会专线。
+   *
+   * 主人把这一档的形态定成这样：**约会平时进不去** —— 有未散场的一场，段头才长出
+   * 「约会专线」那一枚；而真把这一路打开的，是短信或正文里聊成一场之后落下的
+   * 事件指令（`dateRequest`，见 terminal/Terminal.tsx）。这一路刚开出来的那一刻
+   * 也当场跳过来（下方那只看 `rvVer` 的效果），主人不必自己去发现多了一枚按钮。
+   */
+  const [lane, setLane] = useState<'main' | 'date'>('main')
+  /** 这一路开着的是哪一场（DateLane 换场时报上来） */
+  const [datePick, setDatePick] = useState<string | null>(null)
+  const rvVer = useSyncExternalStore(subscribeRendezvous, rendezvousVersion)
+  const liveRvs = useMemo(() => listRendezvous().filter((r) => !r.done), [rvVer])
+  /* 挂载时就开着的那几场不算「刚开出来的」—— 主人自己重进终端时不该被拽走 */
+  const seenRvs = useRef<Set<string>>(new Set(listRendezvous().filter((r) => !r.done).map((r) => r.id)))
+  useEffect(() => {
+    const fresh = liveRvs.filter((r) => !seenRvs.current.has(r.id))
+    for (const r of liveRvs) seenRvs.current.add(r.id)
+    if (!fresh.length) return
+    setDatePick(fresh[0].id)
+    setLane('date')
+  }, [liveRvs])
+  /* 最后一场散场 / 作罢之后，这一路就没了去处 —— 当场把主人送回主线，
+     不留一条「停在空车道上、还得自己找回去」的路。（那一枚按钮也是照这一条长的：
+     `liveRvs.length` 一归零，它自己就收走了。） */
+  useEffect(() => {
+    if (lane === 'date' && !liveRvs.length) setLane('main')
+  }, [lane, liveRvs])
+  const dateReqHandled = useRef(0)
+  useEffect(() => {
+    if (!dateRequest) return
+    if (dateReqHandled.current === dateRequest.ts) return
+    dateReqHandled.current = dateRequest.ts
+    const id = dateRequest.id
+    clearDateRequest()
+    const all = listRendezvous()
+    if (id && !all.some((r) => r.id === id && !r.done)) return
+    if (!all.some((r) => !r.done)) return
+    if (id) setDatePick(id)
+    setLane('date')
+  }, [dateRequest, clearDateRequest])
 
   /** 上阵名单 → 羁绊读数表。作战屏只读它，仗打完了才由 settle 回写。 */
   const bondOfSquad = useCallback(
@@ -1678,6 +1723,35 @@ export function Plot() {
               视觉上的「选中」本来就是拿 class 画的（css.isOn），屏幕阅读器读不到；
               `data-plot-mode` 则是给冒烟用的**稳定把手**：离线那一档的用例得先按到这一枚，
               否则它会去量一个当前根本没渲染的离线正文块（见 smoke 的 Phase U）。 */}
+          {/* 主线 / 约会专线。**这一枚平时不出现** —— 名册上没有未散场的一场时，
+              约会那一路无从走起，摆一枚点不动的按钮只会招人问「怎么开不了」。
+              它不是「藏起来」，是**真没有**：散场那一下名册清空，这一枚当场收走，
+              主人在那一路上也会被送回主线（见上面那一只效果）。 */}
+          {liveRvs.length > 0 ? (
+            <div className={css.seg} role="tablist" aria-label="走哪一路">
+              <button
+                role="tab"
+                aria-selected={lane === 'main'}
+                data-plot-lane="main"
+                className={`${css.segBtn} ${lane === 'main' ? css.isOn : ''}`}
+                onClick={() => setLane('main')}
+              >
+                主线
+              </button>
+              <button
+                role="tab"
+                aria-selected={lane === 'date'}
+                data-plot-lane="date"
+                className={`${css.segBtn} ${lane === 'date' ? css.isOn : ''}`}
+                onClick={() => setLane('date')}
+                title="约会专线：另开的一路，账目与正文各记各的"
+              >
+                约会专线{liveRvs.length ? ` · ${liveRvs.length}` : ''}
+              </button>
+            </div>
+          ) : null}
+          {/* 推进方式只在主线那一路摆：约会专线没有「离线通读」可走 */}
+          {lane === 'main' ? (
           <div className={css.seg} role="tablist" aria-label="推进方式">
             <button
               role="tab"
@@ -1701,6 +1775,7 @@ export function Plot() {
               离线通读
             </button>
           </div>
+          ) : null}
         </div>
       </div>
 
@@ -1772,6 +1847,18 @@ export function Plot() {
       )}
 
       <div className={css.layout}>
+        {lane === 'date' ? (
+          /* 约会专线：把主线那张会话板整个换成这一路。
+             `data-session-area` 不挂在这儿 —— 冒烟与主线各处认的是**主线那一块**，
+             这一路单给一个把手（`data-date-lane-area`），两边不打架。 */
+          <section
+            className="panel"
+            data-date-lane-area="1"
+            style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}
+          >
+            <DateLane rvId={datePick} onPick={setDatePick} />
+          </section>
+        ) : (
         <section className="panel" data-session-area="1">
           <div className="panel__head">
             <span className="panel__title">事件会话 <span className="slash" /></span>
@@ -2130,10 +2217,13 @@ export function Plot() {
             </div>
           )}
         </section>
+        )}
 
+        {lane === 'date' ? null : (
         <aside className={css.aside}>
           {eventCard}
         </aside>
+        )}
       </div>
 
       {/* 剧情交战：指令输出 battle 时按现场的角色与敌人开打；打完回到正文 */}

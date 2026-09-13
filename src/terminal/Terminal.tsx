@@ -261,6 +261,15 @@ export interface TerminalState {
   requestSms: (charId: string) => void
   clearSmsRequest: () => void
 
+  /**
+   * 跨视图「赴某一场约会」意图（短信 / 正文聊成一场 → 在线推演 · 约会专线）。
+   * 与 `smsRequest` 同一套路数，只是落点换成了在线推演那一路。
+   * `id` 是约会名册上的那一场（`zts-rendezvous:v1` 里的 d:uuid）；给 null 只跳路不开场。
+   */
+  dateRequest: { id: string | null; ts: number } | null
+  requestDate: (rvId: string | null) => void
+  clearDateRequest: () => void
+
   toasts: Toast[]
   push: (kind: ToastKind, title: string, body?: string, live?: boolean) => void
   dismiss: (id: number) => void
@@ -449,6 +458,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [codexRequest, setCodexRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
   /** 跨视图「打开某角色短信」意图（短信页消费后清除） */
   const [smsRequest, setSmsRequest] = useState<{ id: string; ts: number } | null>(null)
+  /** 跨视图「赴某一场约会」意图（在线推演 · 约会专线消费后清除） */
+  const [dateRequest, setDateRequest] = useState<{ id: string | null; ts: number } | null>(null)
 
   /**
    * 当前观测点 —— 总览的仪表盘、威胁条与顶栏读数都取这一个值。
@@ -1041,6 +1052,20 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
   const clearSmsRequest = useCallback(() => setSmsRequest(null), [])
 
+  /**
+   * 请求赴一场约会（自动切到在线推演；那儿消费后把约会专线这一路打开）。
+   * `rvId` 给 null 就是「只把这一路打开、不定哪一场」—— 由短信 / 正文里
+   * 落下的那一条事件指令决定去哪儿时，不该再让主人自己挑。
+   */
+  const requestDate = useCallback(
+    (rvId: string | null) => {
+      navigate('plot')
+      setDateRequest({ id: rvId, ts: Date.now() })
+    },
+    [navigate],
+  )
+  const clearDateRequest = useCallback(() => setDateRequest(null), [])
+
   /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 20 名在册登场者） */
   const meetChar = useCallback((charId: string) => {
     if (!PERSON_IDS.includes(charId)) return
@@ -1337,6 +1362,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     smsRequest,
     requestSms,
     clearSmsRequest,
+    dateRequest,
+    requestDate,
+    clearDateRequest,
     toasts,
     push,
     dismiss,
