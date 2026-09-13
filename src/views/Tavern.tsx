@@ -13,11 +13,13 @@ import { PARTY_MAX } from '../lib/rendezvous'
 import { relName } from '../data/rel'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
+import { CgSlot } from '../components/CgSlot'
 import { IntimateHud } from '../components/IntimateHud'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
+import { cgIdOf, cgNoteOf } from '../lib/cg'
 import { clock, bondName } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import {
@@ -26,7 +28,7 @@ import {
 } from '../lib/plot'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
-  dateBondRule, dateOpeningPrompt, dropRendezvous, isDateThread,
+  cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous, isDateThread,
   listRendezvous, openDateOf, openRendezvous, patchRendezvous, rendezvousPrompt,
   rendezvousVersion, rvAllIds, subscribeRendezvous,
 } from '../lib/rendezvous'
@@ -62,7 +64,7 @@ function bondNote(delta: number): string {
 export function Tavern() {
   const {
     operatorName, isMet, bondNow, bumpBond, setFlag, navigate, push, epDone, world,
-    smsRequest, clearSmsRequest, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd,
+    smsRequest, clearSmsRequest, cgOf, setCg, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd,
     bumpActs, setRel,
   } = useTerminal()
   const [settings, setSettings] = useState<ApiSettings | null>(null)
@@ -205,6 +207,14 @@ export function Tavern() {
   }, [activeGroup, activeRv, activeId, bondNow])
 
   const activeLog = activeId ? logs[activeId] ?? [] : []
+  /** 见面场景此刻摆的那张图：导演点名记在 world.cg[d:uuid] 下（见下面 fireDate）。
+      没点名就不摆 —— 一进来就顶一张图，把开场那两句挤到屏幕外，不划算。 */
+  const activeCg = activeRv ? cgOf(activeRv.id) : null
+  const activeCgNote = useMemo(() => {
+    if (!activeRv || !activeCg) return undefined
+    const hit = dateCgPalette(activeRv).find((r) => cgIdOf(r) === activeCg)
+    return hit ? cgNoteOf(hit) : undefined
+  }, [activeRv, activeCg])
   /** 群里某条发言的作者名（单聊直接取角色名） */
   const whoOf = useCallback(
     (m: ChatMsg): string => m.meta?.who ?? activeChar?.name ?? '群聊',
@@ -659,7 +669,7 @@ ${preset.post}` : '')
          刚走过的那一段在起作用。与单聊那条一样当場读 —— 见面可能在她翻着别的模块时开。 */
       const plotCtx = plotContextFor(charId, { records: world.records, epDone })
       const system =
-        rendezvousPrompt(charId, operatorName, bond, rv, plotCtx || undefined, party)
+        rendezvousPrompt(charId, operatorName, bond, rv, cgListText(dateCgPalette(rv)), plotCtx || undefined, party)
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
@@ -711,6 +721,9 @@ ${preset.post}` : '')
         /* 这一回合什么都没往上走 → 湿润自己退一档（与主线那一路同一条规矩，
            用户口径「内裤湿不可能一直湿润」）。退不必谁下命令，所以落在落地这一层。 */
         if (!fx.intim.length && !fx.attire.length) dryAttireAll()
+        /* 换画面：点名的 CG 记在**这一场**名下（world.cg[d:uuid]），与主线那本账各存各的。
+           认不认这个 id 由渲染那一层对着 dateCgPalette 判（见上面的 activeCgNote）。 */
+        if (fx.cg) setCg(rv.id, fx.cg)
         // 这一场自己认领名目与地点：模型给出了更好的就地改写（第一次推进私密时顺带抬档位）
         const patch: Parameters<typeof patchRendezvous>[1] = {}
         if (fx.date?.title?.trim()) patch.title = fx.date.title.trim()
@@ -1281,6 +1294,11 @@ ${preset.post}` : '')
                 <div className={comm.dayLabel}>
                   {activeRv ? `${activeRv.place} · ${activeRv.title}` : '苍之学园 · 今日 · 角色短信'}
                 </div>
+                {activeCg ? (
+                  <div className={css.threadCg}>
+                    <CgSlot cgId={activeCg} caption={activeCgNote} ratio="3 / 2" />
+                  </div>
+                ) : null}
                 {activeLog.length === 0 && !busy ? (
                   <div className={css.threadEmpty} data-sms-empty>
                     {activeRv

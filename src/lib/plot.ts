@@ -50,6 +50,14 @@ export interface PlotDirective {
   /** 分支标记（布尔 / 有限数值 / 字符串） */
   flag?: Record<string, FlagValue>
   /**
+   * 这一场该摆哪张 CG —— 从**约会那一档**的候选清单里挑一个 id
+   * （清单连同每张的一行说明由 lib/rendezvous.ts 的 `dateCgPalette` 拼出来，
+   * 摆在那一场的提示词里）。只在「画面真的换了」时给；一直同画面就别重复给。
+   *
+   * **只有约会那一路放行**（`dateDirective`）—— 主线导演不给这个字段。
+   */
+  cg?: string
+  /**
    * **此刻真的在场上的人**（角色 id）：剧情右栏那份在场名册的实时修正。
    * 事件静态名册（`ev.cast`）说的是「这一段大体上有谁」，可这一段里人会走会来 ——
    * 走了的不该继续挂在右栏，中途进场的也不该等到下一段才出现。
@@ -175,7 +183,7 @@ export interface PlotBattle {
 const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
-  'met', 'bond', 'ends', 'flag', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
+  'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
   // 短信/群聊的「托付」用这一条。漏在名单外的话，sanitizeDirective 末尾那道
   // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
   // 任务却永远落不了地，而且一声不吭。
@@ -196,6 +204,9 @@ const ACT_KINDS_MAX = 8
 const ACT_TIMES_MAX = 9
 /** 一回合最多落下几条私密推进（多女同场时逐人分条，所以比从前宽） */
 const INTIM_ITEMS_MAX = 8
+
+/** 约会指令里 cg id 的长度上限（够长到写得下 `cg-date-street`，短到拦得住整段串词） */
+const CG_ID_MAX = 64
 
 /**
  * 湿润读数一次能挪多少（绝对值）。
@@ -447,6 +458,14 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       .map((x) => x.trim())
       .filter((x) => CHAR_IDS.has(x))
     if (cast.length) out.cast = [...new Set(cast)].slice(0, 12)
+  }
+
+  /* 约会那一档的 CG 点名。这里**只做形状校验**（非空字符串、长度封顶），不做清单校验 ——
+     净化阶段手里没有「这一场是哪个约会」这个上下文。是不是候选清单里登记的 id，
+     留到视图那一层判（认不出来就当没点，不摆图）。两处分工：这儿拦垃圾，那儿拦幻觉。 */
+  if (typeof src.cg === 'string') {
+    const id = src.cg.trim().slice(0, CG_ID_MAX)
+    if (id) out.cg = id
   }
 
   if (src.flag && typeof src.flag === 'object' && !Array.isArray(src.flag)) {
@@ -920,6 +939,8 @@ export interface DirectiveEffects {
   bonds: { char: string; delta: number }[]
   ends: { key: string; id: string }[]
   flags: [string, FlagValue][]
+  /** 导演点名的 CG id（约会那一路：调用方按**这一场约会**落到 world.cg[d:uuid]） */
+  cg?: string
   /** 导演修正的在场名册（调用方按**当前事件**落到 world.cast[evId]，全量覆盖） */
   cast?: string[]
   diverged: boolean
@@ -983,8 +1004,10 @@ export function applyDirective(
     api.setFlag(k, v)
     fx.flags.push([k, v])
   }
-  // 在场的实时名册不在这儿落盘：applyDirective 手里没有「当前事件 id」，
-  // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cast，配着自己知道的事件 id 写
+  // CG 点名不在这儿落盘：applyDirective 手里没有「这一场是哪个约会」，
+  // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的约会 id 写。
+  if (d.cg) fx.cg = d.cg
+  // 在场的实时名册同理：手里没有「当前事件 id」，由调用方读 fx.cast 自己写
   if (d.cast?.length) fx.cast = d.cast
   /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
      破处对象由这一层定 —— `first` 置位即记为「言万心叶」（'you'），
@@ -1070,6 +1093,7 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       (d.bond && d.bond.length) ||
       (d.ends && d.ends.length) ||
       (d.flag && Object.keys(d.flag).length) ||
+      Boolean(d.cg) ||
       (d.cast && d.cast.length) ||
       d.diverged === true ||
       d.eventDone === true ||
@@ -1113,6 +1137,7 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
  * 放行的比短信宽 ——
  *   · bond：只认**对方**，一次 ±5（一场约会里的分量比一条短信重）；
  *   · met / ends / flag / task：照放（约会也能遇见人、撞见图鉴实体、被托付事）；
+ *   · cg：照放（这一场该摆哪张画，由调用方落到 world.cg[d:uuid]）；
  *   · intim / acts：**只有这一路放行**（私密档案与次数账都只发生在见面的时候），
  *     intim 的开发度增量再收一道到 ±3 一回合（sanitize 那道 8 是单项上限）。
  *   · rel：照放（关系档位由剧情给 —— 见面正是一段关系往前走的地方）。
@@ -1138,6 +1163,7 @@ export function dateDirective(d: PlotDirective | null, charId: string, party: st
   if (d.ends && d.ends.length) out.ends = d.ends
   if (d.flag && Object.keys(d.flag).length) out.flag = d.flag
   if (d.task && d.task.length) out.task = d.task
+  if (d.cg) out.cg = d.cg
   if (d.intim && d.intim.length) {
     const intim = d.intim
       .filter((it) => allowed.has(it.char))

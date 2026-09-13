@@ -26,6 +26,8 @@ import { charOf, profileLinesOf } from '../data/personas'
 import { INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
+import { CG_POOL } from '../data/cgs'
+import type { CgRef } from '../data/types'
 import { PROSE_RULES, HAREM_RULE } from './worldrules'
 
 /** 同场的某一位（手册那一侧现算，本模块不读存档） */
@@ -208,6 +210,58 @@ export function openDateOf(charId: string): Rendezvous | undefined {
 }
 
 /* ============================================================
+   CG
+   ------------------------------------------------------------
+   约会这一档也走 CG 那一套（取图 / 探针见 lib/cg.ts）：id 登记在这里，
+   导演从清单里点名（落进 `world.cg[约会id]`），图照旧丢
+   `public/cg/<id>.webp|png|jpg`。缺图时 <CgSlot> 摆「待补」占位框 —— 先把版位占住。
+
+   清单分两段：街景那几张（不挑人）+ **这一场在场者的定妆半身**
+   （`data/cgs.ts` 的 `CG_POOL`，按 `cast` 过一遍才进候选）。
+   越私密的那两张只有走到私密那一档才进候选。
+   ============================================================ */
+export const DATE_CG: CgRef[] = [
+  { id: 'cg-date-street', note: '并肩走着的两人 · 黄昏的学园街' },
+  { id: 'cg-date-night', note: '夜里的高处 · 脚下的城市灯海' },
+  { id: 'cg-date-room', note: '房间门口 · 只开着一盏灯' },
+]
+
+/** 已到私密那一档才进候选的那几张（挪进清单里，导演才点得到。图待补） */
+export const DATE_CG_INTIMATE: CgRef[] = [
+  { id: 'cg-date-intim-1', note: '私密的场面 · 第一张（到这一步才进候选）' },
+  { id: 'cg-date-intim-2', note: '私密的场面 · 第二张' },
+]
+
+/** 定妆池里**这一场**用得上的那几张：带 `cast` 的位，只有本人在这一场才留下 */
+function standCgFor(cast: string[]): CgRef[] {
+  const who = new Set(cast)
+  return CG_POOL.filter((r) => {
+    const c = typeof r === 'string' ? undefined : r.cast
+    return !c?.length || c.some((id) => who.has(id))
+  })
+}
+
+/**
+ * 这一场此刻能点的 CG 清单：街景 + 在场者的定妆（私密档位再添两张）。
+ *
+ * 两处共用同一份：喂给 `rendezvousPrompt` 的 `cgPalette`，以及视图那一层
+ * 「导演点名的 id 认不认」的判断 —— 认不出来（模型编的、或清单改过之后留下的旧值）
+ * 就当没点，不摆图。
+ */
+export function dateCgPalette(rv: Rendezvous): CgRef[] {
+  const cast = [rv.charId, ...(rv.party ?? [])]
+  const base = [...DATE_CG, ...standCgFor(cast)]
+  return rv.kind === 'intimate' ? [...base, ...DATE_CG_INTIMATE] : base
+}
+
+/** 把一张表的位渲染成 `- id —— 说明`（就是喂给导演的候选清单那一节） */
+export function cgListText(refs: CgRef[]): string {
+  return refs
+    .map((r) => (typeof r === 'string' ? `- ${r} —— （无说明）` : `- ${r.id} —— ${r.note ?? '（无说明）'}`))
+    .join('\n')
+}
+
+/* ============================================================
    提示词
    ============================================================ */
 
@@ -224,6 +278,14 @@ export function rendezvousPrompt(
   opName: string,
   bond: number,
   rv: Rendezvous,
+  /**
+   * 这一场能点的 CG 清单，已渲染成 `- id —— 说明` 的文本（`cgListText(dateCgPalette(rv))`）。
+   *
+   * 给了才注入【这一场的场景 CG】一节 —— 那一节同时交代 `cg` 字段怎么用。
+   * 清单由调用方传进来，是因为本模块只管**登记**（DATE_CG 那几张 + 定妆），
+   * 认不认导演点回来的那个 id 是视图那一层的事。
+   */
+  cgPalette: string,
   /** 正文里与她有关的那一截（lib/crosslink.ts 的 plotContextFor；她不在场的一句不给）。
       见面不是凭空来的：她答应这一场，多半是正文里刚走过的那一段在起作用。 */
   plotContext?: string,
@@ -270,7 +332,10 @@ ${PROSE_RULES}${others ? `\n${HAREM_RULE}` : ''}${intimate ? `
    写就写足 —— 这一档不必回避任何词：顺序、那一处此刻的样子、她说过的每一句、
    到了哪一步，都照实落笔，不要用省略号跳过（怎么写细见上面底层规矩里那一整条）。
    但推进要跟着对方走 —— 他给了那层意思就自然接住，
-   他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}`
+   他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}
+
+【这一场的场景 CG（换画面时才点名）】
+${cgPalette || '（本场暂无登记的图位）'}`
 }
 
 /**
@@ -297,7 +362,7 @@ export function dateBondRule(charId: string, party: string[] = []): string {
     .map((id) => `    { "char": "${id}", "bra": "half", "panties": "off", "wet": 10 }`)
     .join(',\n')
   return `\n（可选 · 本回合的推进：若这一场让这段关系或气氛有明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 },
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "某标记": 值 }, "cg": "上面清单里的一个 id",
   "rel": { "${charId}": "${REL_IDS.join('|')}" },
   "intim": [
 ${intimLines}
@@ -310,6 +375,7 @@ ${attireLines}
   ] }
 说明：
 · bond.delta 只针对该角色取 ±1~5（正=更亲近）；flag 为可选的分支标记；
+· cg 只从上面那份【这一场的场景 CG】清单里挑，且**画面真的换了**才给，一直同画面就别重复给；
 · intim 只在**这一回合确实往前走了、且她确实接受了**时才给，几路各记各的：
     · slot 取 ${slots} 之一（哪一处被开发了），dev 为这一次的增量（1~3，一回合一小步），
       state 可选（覆盖该处原有的状态句；**写详细** —— 那一处此刻是什么样、被碰到会怎样，

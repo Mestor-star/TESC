@@ -148,6 +148,9 @@ export interface TerminalState {
   /** 变量面板开关（NavRail 底部「变量」按钮；Plot 等亦可经 ctx 打开） */
   varsOpen: boolean
   setVarsOpen: (open: boolean) => void
+  /** 这一场约会此刻挂着的那张 CG（导演没点名 → null，不摆图） */
+  cgOf: (id: string) => string | null
+  setCg: (id: string, cgId: string) => void
   /**
    * 该段**此刻**在场上的人：导演实时改过就用改过的（`world.cast`），
    * 没改过照事件静态名册（`castOf`）。右栏与提示词都取这一个入口。
@@ -284,7 +287,7 @@ function takePendingView(): ViewId | null {
 
 function emptyWorld(): WorldState {
   return {
-    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cast: {},
+    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cast: {},
     intim: {}, attire: {}, acts: {}, rel: {}, records: [],
   }
 }
@@ -338,6 +341,8 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     met: raw?.met ?? {},
     ends: raw?.ends ?? {},
     own: raw?.own ?? [],
+    // 旧档没有这一栏（约会那张图是后加的）→ 空表：没点过名就不摆，行为不变
+    cg: raw?.cg ?? {},
     // 旧档没有这一栏（实时在场名册是后加的）→ 空表；那些段照静态名册摆，行为不变
     cast: raw?.cast ?? {},
     // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
@@ -835,6 +840,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [world.flags],
   )
 
+  /** 某场约会此刻挂着的那张 CG（导演还没点名 → null，那就一张也不摆） */
+  const cgOf = useCallback((id: string) => world.cg?.[id] ?? null, [world.cg])
+  /**
+   * 导演点名某场约会该摆哪张 CG。同一场可以被反复改写 —— 往下走一幕就是换一张，
+   * 后一次覆盖前一次（要看的是「此刻挂着哪张」，不是「换过哪些张」）。
+   * 认不认这个 id 由显示端（views/Tavern.tsx 对着 dateCgPalette 判）——
+   * 这里只落盘。
+   */
+  const setCg = useCallback((id: string, cgId: string) => {
+    setWorld((prev) => ({ ...prev, cg: { ...prev.cg, [id]: cgId } }))
+  }, [])
+
   /**
    * 某段此刻真的在场上的人（导演还没改过名册 → undefined，由显示端照静态名册摆）
    */
@@ -1275,6 +1292,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     addVar,
     unsetVar,
     renameVar,
+    cgOf,
+    setCg,
     castOfEvent,
     setCast,
     intimOf,

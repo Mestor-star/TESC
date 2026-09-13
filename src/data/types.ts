@@ -371,6 +371,23 @@ export interface SagaScene {
   quoteWho?: string       // 语录说话人
 }
 
+/**
+ * 一个 CG 位。
+ * 直接写字符串等价于「只给 id、没有说明」（`{ id }`）—— 那样导演无从判断该不该点它，
+ * 只适合不靠 AI 的写死位（如私密档案立绘）。要让导演挑，就带上一行 `note`。
+ */
+export type CgRef = string | {
+  id: string
+  /** 一句话说明这张画的是哪个瞬间 —— **导演照这句话决定摆不摆它** */
+  note?: string
+  /**
+   * 限定只在这些人出场时才进候选（角色 id）。
+   * 主要给**定妆池**用（`data/cgs.ts`）—— 免得在一个没有她的场面里摆出她的定妆图。
+   * 缺省 = 谁都能用。
+   */
+  cast?: string[]
+}
+
 /** 操作员自记的终末图鉴条目（persisted） */
 export interface OwnEndEntry {
   id: string
@@ -684,6 +701,16 @@ export interface WorldState {
   ends: Record<string, true>
   /** 操作员自记实体 */
   own: OwnEndEntry[]
+  /**
+   * 各**约会**此刻摆的那张图：约会 id（`d:uuid`）→ CG id。
+   *
+   * 由约会那一路的导演点名（`PlotDirective.cg`）—— 它读着这一回合的叙述，
+   * 从 `dateCgPalette` 拼出来的候选清单里挑一张，这一场往下走一幕就换一张，
+   * 后一次覆盖前一次。**没点名就不摆** —— 一进线程就顶一张图，把开场那两句
+   * 挤到屏幕外，不划算。只认清单里有的 id：编出来的、或清单改过之后留下的旧值，
+   * 一律不摆。主线不写这一栏 —— 那一路一个字都不给 `cg`。
+   */
+  cg?: Record<string, string>
   /**
    * 各事件段**此刻**在场的人：段 id → 角色 id 列表。
    *

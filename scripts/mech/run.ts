@@ -3901,7 +3901,7 @@ export function run(): MechReport {
       ['主线推演', buildDirectorSystem(TIMELINE[0]!, { operatorName: '言万心叶' })],
       ['单独短信', systemPrompt(who, '言万心叶', 10, '各自的日常')],
       ['群聊', groupSystemPrompt([who], '小队', '言万心叶', '10/100', '各自的日常')],
-      ['见面约会', rendezvousPrompt(who, '言万心叶', 80, probe)],
+      ['见面约会', rendezvousPrompt(who, '言万心叶', 80, probe, '')],
     ]
     const noRule = channels.filter(([, text]) => !text.includes(EXCLUSIVE_RULE)).map(([n]) => n)
     ok('底层 · 独占：主线 / 单聊 / 群聊 / 见面四条通道各带同一份规矩',
@@ -4254,9 +4254,9 @@ export function run(): MechReport {
       id: 'd:mech-one', charId: 'luna', kind: 'date', title: '放学后的天台',
       place: '天台', from: 'you', ts: 0, done: false,
     }
-    const onePrompt = rendezvousPrompt('luna', '言万心叶', 80, rvOne)
+    const onePrompt = rendezvousPrompt('luna', '言万心叶', 80, rvOne, '')
     const pair: RendezvousParty[] = [{ id: 'hikari', name: '光', bond: 75 }]
-    const twoPrompt = rendezvousPrompt('luna', '言万心叶', 80, { ...rvOne, party: ['hikari'] }, undefined, pair)
+    const twoPrompt = rendezvousPrompt('luna', '言万心叶', 80, { ...rvOne, party: ['hikari'] }, '', undefined, pair)
 
     ok('多女同场 · 一个人那一场不挂这一条（一对一的提示词里一个字都不提「不止一个人」）',
       !onePrompt.includes(HAREM_RULE) && !onePrompt.includes('不止你们'),
@@ -4561,8 +4561,8 @@ export function run(): MechReport {
     const intimOne: Rendezvous = { ...dateOne, kind: 'intimate' }
     const depthIn = (text: string) => text.includes(INTIM_DEPTH_RULE)
     const mainSys = buildDirectorSystem(TIMELINE[0]!, { operatorName: '言万心叶' })
-    const dateSys = rendezvousPrompt(who2, '言万心叶', 80, dateOne)
-    const intimSys = rendezvousPrompt(who2, '言万心叶', 80, intimOne)
+    const dateSys = rendezvousPrompt(who2, '言万心叶', 80, dateOne, '')
+    const intimSys = rendezvousPrompt(who2, '言万心叶', 80, intimOne, '')
     const smsSys = systemPrompt(who2, '言万心叶', 10, '各自的日常')
     const grpSys = groupSystemPrompt([who2], '小队', '言万心叶', '10/100', '各自的日常')
     ok('私密场面 · 写长篇正文的两条通道带上了（主线推演 / 见面约会）',
