@@ -60,10 +60,16 @@
 ### 见面约会（`DATE_CG` / `DATE_CG_INTIMATE`）
 
 - 前三张（街道 / 夜里的高处 / 房间门口）哪一场都进候选；
-- 后两张**只有这一场走到私密那一档**才进候选 —— 所以它们可以画得比前面三张更直给；
+- 私密那几张**只有这一场走到私密那一档**才进候选 —— 所以它们可以画得比前面三张更直给；
+- 再往下还有一种**认人**的（`CgRef.cast`）：除了档位，**还要名单上那一位在场**
+  （主位与同场的都算，见 `rvAllIds`）。只属于某一个人的那张 —— 例
+  `cg-date-intim-luna-oral`（`cast: ['luna']`）—— **缺了人就不进候选**，
+  也就不会在没有她的场面里顶出来。
 - 导演从合并后的清单里点名，落进 `world.cg[约会id]`（见 `src/lib/rendezvous.ts` 的
-  `dateCgPalette` 与 `src/views/Tavern.tsx`）。**点名前一张都不摆** ——
+  `dateCgPalette` 与 `src/components/DateLane.tsx`）。**点名前一张都不摆** ——
   一进线程就顶一张图，把开场那两句挤到屏幕外，不划算。
+- **认不认这个 id 由 `dateCgPalette` 说了算**：档位不到、该在场的人不在，或者压根是
+  模型编出来的 id，一律当没点 —— 那张图也不摆（上游 `world.cg` 里存着什么不算数）。
 
 ### 私密档案立绘（档案卡背面）
 
@@ -91,7 +97,7 @@
 
 | 槽位 | 实际版位 | 在哪 |
 | --- | --- | --- |
-| 见面约会那张 | 宽 520 px 封顶、**3 : 2**、`cover` 裁 | `views/Tavern.tsx` 的 `ratio="3 / 2"` + `.threadCg` |
+| 见面约会那张 | 宽 520 px 封顶、**3 : 2**、`cover` 裁 | `components/DateLane.tsx` 的 `ratio="3 / 2"` + `.threadCg` |
 | 约会常服立绘 | 见面页右栏、约 **2 : 3**、`contain` 摆 | `components/DateSide.tsx` 的 `ratio="2 / 3" fit="contain"` + 右栏宽度 |
 | 私密档案立绘 | 左栏、约 **1 : 2**、`contain` 摆 | `views/Archive.tsx` 的 `fill fit="contain"` + `.intimBackArt` |
 

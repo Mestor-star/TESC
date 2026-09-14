@@ -80,6 +80,15 @@ try {
      两张表都要：「到私密那一档才进候选」的那两张也是真槽位，只是候选面窄。 */
   const date = [...DATE_CG, ...DATE_CG_INTIMATE].map(norm)
   const dateIntimIds = new Set(DATE_CG_INTIMATE.map((r) => norm(r).id))
+  /* 「什么时候进候选」那一列 —— 与 lib/rendezvous.ts 的 `dateCgPalette` 同一把尺，
+     两道窄法都写出来：档位（私密那几张）与认人（带 `cast` 的那张要人在场）。
+     这一列是给人看的，多写的半个字不花谁的钱；漏了才要命 —— 会照着旧规矩收图。 */
+  const scopeOf = (d) => {
+    const s = dateIntimIds.has(d.id) ? '`kind: intimate` 才进候选' : '每一场见面都能点'
+    const cast = d.cast ?? []
+    if (!cast.length) return s
+    return `${s} · 还要 ${cast.map((c) => personOf(c)?.name ?? c).join('、')} 在场`
+  }
 
   const allIds = [
     ...wear.map((w) => w.id),
@@ -139,14 +148,15 @@ try {
   L.push('## 三、见面约会的图位（`src/lib/rendezvous.ts`）')
   L.push('')
   L.push('版位 **3 : 2 横构图**（宽 520 px 封顶，按 `cover` 裁，主体别贴边）。')
-  L.push('前三张哪一场都进候选；后两张**只有这一场走到私密那一档**才进候选 —— '
+  L.push('前三张哪一场都进候选；私密那几张**只有这一场走到私密那一档**才进候选 —— '
     + '所以它们可以画得比前面三张更直给。')
+  L.push('再往下还有人**认人**的：带 `cast` 的那一张除了档位，**还要名单上那一位在场**'
+    + '（主位与同场的都算）—— 只属于某一个人的画，缺了人就不摆。')
   L.push('')
   L.push('| | 文件名 | 该画什么（`note`） | 什么时候进候选 |')
   L.push('| --- | --- | --- | --- |')
   for (const d of date) {
-    const scope = dateIntimIds.has(d.id) ? '`kind: intimate` 才进候选' : '每一场见面都能点'
-    L.push(`| ${mark(d.id)} | \`${d.id}\` | ${cell(d.note)} | ${scope} |`)
+    L.push(`| ${mark(d.id)} | \`${d.id}\` | ${cell(d.note)} | ${scopeOf(d)} |`)
   }
   L.push('')
 

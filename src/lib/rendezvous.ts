@@ -221,7 +221,8 @@ export function openDateOf(charId: string): Rendezvous | undefined {
    缺图时 <CgSlot> 只留一行「待补」提示，**不占版位**（29 个槽位一张都没补，
    按比例占空框会满屏虚线 —— 那条规矩见 components/CgSlot.tsx 文件头）。
 
-   越私密的那两张只有走到私密那一档才进候选。
+   越私密的那几张只有走到私密那一档才进候选；**再往下还有一种窄法** ——
+   `cast` 钉住某一个人（只属于她的那张，缺了人就不进候选，见 `dateCgPalette`）。
    ============================================================ */
 export const DATE_CG: CgRef[] = [
   { id: 'cg-date-street', note: '并肩走着的两人 · 黄昏的学园街' },
@@ -233,6 +234,14 @@ export const DATE_CG: CgRef[] = [
 export const DATE_CG_INTIMATE: CgRef[] = [
   { id: 'cg-date-intim-1', note: '私密的场面 · 第一张（到这一步才进候选）' },
   { id: 'cg-date-intim-2', note: '私密的场面 · 第二张' },
+  /* 这一档里**只有它认人**（`cast`）。上面那两张是谁走到私密那一档都能点，
+     可这张画的是露娜一个人 —— 没她在场时摆出来就成了「凭空多一个人」。
+     所以除了「到私密那一档」，还多一道：**她本人得在场**（主位或同场都算）。 */
+  {
+    id: 'cg-date-intim-luna-oral',
+    note: '露娜仰躺着含弄你的那一刻 · 一只手攥着底下、一只手在自己腿间',
+    cast: ['luna'],
+  },
 ]
 
 /**
@@ -247,16 +256,27 @@ export function dateWearId(charId: string): string {
 }
 
 /**
- * 这一场此刻能点的 **CG** 清单：街景那几张（走到私密那一档再添两张）。
+ * 这一场此刻能点的 **CG** 清单：街景那几张（走到私密那一档再添几张）。
  *
  * 两处共用同一份：喂给 `rendezvousPrompt` 的 `cgPalette`，以及视图那一层
  * 「导演点名的 id 认不认」的判断 —— 认不出来（模型编的、或清单改过之后留下的旧值）
  * 就当没点，不摆图。
  *
+ * **两道窄法**（都收在这一处，调用方不用各判各的）：
+ *   · 档位 —— 私密那几张要 `kind: 'intimate'` 才进来；
+ *   · 认人 —— 带 `cast` 的那几张还要**名单上这几位真的在场**才算数
+ *     （`cast` 里有一个在人堆里就进候选。主位与同场的都算 —— 见 `rvAllIds`）。
+ *     这一条是替「只属于某一个人的那张」把关：缺了人还摆，等于凭空多一个人。
+ *
  * **立绘不在这里面** —— 它不进候选、不由导演挑（要那张脸就去 `dateWearId`）。
  */
 export function dateCgPalette(rv: Rendezvous): CgRef[] {
-  return rv.kind === 'intimate' ? [...DATE_CG, ...DATE_CG_INTIMATE] : [...DATE_CG]
+  const here = new Set(rvAllIds(rv))
+  const base = rv.kind === 'intimate' ? [...DATE_CG, ...DATE_CG_INTIMATE] : [...DATE_CG]
+  return base.filter((r) => {
+    const cast = typeof r === 'string' ? undefined : r.cast
+    return !cast?.length || cast.some((id) => here.has(id))
+  })
 }
 
 /** 把一张表的位渲染成 `- id —— 说明`（就是喂给导演的候选清单那一节） */

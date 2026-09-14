@@ -127,12 +127,16 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
     writeSmsLogs({ ...all, [id]: up(all[id] ?? []) })
   }, [])
 
-  const activeCg = rv ? cgOf(rv.id) : null
-  const activeCgNote = useMemo(() => {
-    if (!rv || !activeCg) return undefined
-    const hit = dateCgPalette(rv).find((r) => cgIdOf(r) === activeCg)
-    return hit ? cgNoteOf(hit) : undefined
-  }, [rv, activeCg])
+  /* 导演点名的那张：**认不认它由 dateCgPalette 说了算**。
+     `world.cg` 里存着什么就直接摆什么是不够的 —— 档位不到、该在场的人不在，
+     或者压根是模型编出来的 id，都得在这儿拦下（不然一张只属于某人的画，
+     会在没有她的场面里照样顶在会话流头上）。图注也从这一份里取。 */
+  const activeCg = useMemo(() => {
+    if (!rv) return null
+    const named = cgOf(rv.id)
+    if (!named) return null
+    return dateCgPalette(rv).find((r) => cgIdOf(r) === named) ?? null
+  }, [rv, cgOf])
 
   /* 色情状态栏的名单：这一场在场的每一位（主位在前，同场跟上）。
      够不够格看的是关系本身（hasIntimate + 羁绊过线），与主线那一栏同一把尺。 */
@@ -542,7 +546,7 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
             </div>
             {activeCg ? (
               <div className={css.threadCg}>
-                <CgSlot cgId={activeCg} caption={activeCgNote} ratio="3 / 2" />
+                <CgSlot cgId={cgIdOf(activeCg)} caption={cgNoteOf(activeCg)} ratio="3 / 2" />
               </div>
             ) : null}
             {activeLog.length === 0 && !busy ? (

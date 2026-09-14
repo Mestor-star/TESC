@@ -3195,7 +3195,7 @@ try {
   ok('V1c 这一场的正文跟着过来了（同一本会话账：d:uuid 底下那一条）',
     vLane.body.includes('她靠在栏杆上'), vLane.body.slice(0, 120))
 
-  /* V2 右栏正常的一面 = 「这一场」：三位都上栏，缺图不占版位（41 个槽位一张都没补时的既定取舍） */
+  /* V2 右栏正常的一面 = 「这一场」：三位都上栏，缺图不占版位（常服立绘这一族一张都没补时的既定取舍） */
   await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V date side panel')
   const vGeo = await ev(`(()=>{const q=(s)=>document.querySelector(s);
     const a=q('[data-date-side-pane]').getBoundingClientRect();
@@ -3222,7 +3222,7 @@ try {
       ['cg-datewear-hikari','cg-datewear-luna','cg-datewear-nyau']), JSON.stringify(vGeo.ids))
   ok('V2c 每人一张同等大（三张图位同宽）',
     vGeo.figs.length === 3 && new Set(vGeo.figs.map(f=>f.w)).size === 1, JSON.stringify(vGeo.figs))
-  ok('V2d 缺图不占版位（塌成一行提示，不留大洞）—— 41 个槽位一张都没补时的既定取舍',
+  ok('V2d 缺图不占版位（塌成一行提示，不留大洞）—— 常服立绘一张都没补时的既定取舍',
     vGeo.figs.every(f=>f.h < 40), JSON.stringify(vGeo.figs))
   ok('V2e 提示里写明的正是该补的文件名（id 约定一路对到文件名）',
     vGeo.ph.every((t,i)=>t.includes('CG 待补') && t.includes(vGeo.ids[i]+'.webp')),

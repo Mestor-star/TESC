@@ -384,6 +384,9 @@ export type CgRef = string | {
    * 限定只在这些人出场时才进候选（角色 id）—— 免得在一个没有她的场面里摆出只属于她的那张。
    * 缺省 = 谁都能用。
    *
+   * 落地在 `lib/rendezvous.ts` 的 `dateCgPalette`：**主位与同场的都算在场**
+   * （见 `rvAllIds`）—— 多女同场里她在，这一张就点得到。
+   *
    * **立绘不走这条路**：一人一张的东西（`cg-intim-*` / `cg-datewear-*`）id 由 charId 现算、
    * 摆位写死在上屏那两栏里，压根不登记进候选清单，也就用不着 `cast` 来筛。
    */

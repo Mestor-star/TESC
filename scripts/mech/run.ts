@@ -73,6 +73,9 @@
    · 此刻（不是账）
      34  贴身衣物     —— 底档 18 位各一套（照性格、不许撞款）· 穿着三档后写覆盖 ·
                         湿润可上可下 · 发情那一半的耦合 · 流水只记真变了的
+     35  湿润回落     —— 没人管它时湿润自己退一步，退到 0 就停（此刻，不是勋章）
+   · 图
+     36  约会 CG 认人 —— 只属于某人的那张画：她不在场就不进候选（档位之上再加一道）
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -116,7 +119,10 @@ import {
   BOTTOM_RULES, EXCLUSIVE_RULE, HAREM_RULE, INTIM_DEPTH_RULE, PROSE_RULES, SMOOTH_RULE, haremRule,
 } from '../../src/lib/worldrules'
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
-import { PARTY_MAX, dateBondRule, rendezvousPrompt } from '../../src/lib/rendezvous'
+import { cgIdOf } from '../../src/lib/cg'
+import {
+  DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBondRule, dateCgPalette, rendezvousPrompt,
+} from '../../src/lib/rendezvous'
 import type { Rendezvous, RendezvousParty } from '../../src/lib/rendezvous'
 import { BEDS } from '../../src/lib/audio/music'
 import { bedForState, VIEW_BED } from '../../src/lib/audio/index'
@@ -5049,6 +5055,59 @@ export function run(): MechReport {
       + '它是**此刻**，所以退不必谁下命令；涨仍然只认指令 ＋ 发情耦合那一半')
   } catch (e) {
     fail.push('湿润回落段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+
+  /* ============================================================
+     §36 约会 CG 认人（lib/rendezvous.ts 的 `dateCgPalette` 的 `cast` 那一半）
+     ------------------------------------------------------------
+     口径：只属于某一个人的那张画（例：露娜口交那张 `cg-date-intim-luna-oral`），
+     **她不在场就不进候选** —— 不然一场蕾雅的私密场面里会顶出一个露娜来。
+     「在场」= 主位或同场（`rvAllIds`）—— 多女同场里她算在。
+
+     两道窄法都点一遍：档位（私密那几张要 `kind: 'intimate'`）与认人（`cast`）。
+     每条「进候选」都配一条对照 —— 只证「她在的时候有」，
+     会漏掉「她不在的时候也有」这种浑水（对照是这一支的老规矩）。
+
+     界面那一半（会话流头顶那张图认不认这个 id）归冒烟。
+     ============================================================ */
+  try {
+    const base: Rendezvous = {
+      id: 'd:mech-cg', charId: 'luna', kind: 'intimate', title: '一次见面',
+      place: '她房间', from: 'you', ts: 0, done: false,
+    }
+    const other: Rendezvous = { ...base, charId: 'hikari' }
+    const ids = (rv: Rendezvous) => dateCgPalette(rv).map(cgIdOf)
+    const LUNA = 'cg-date-intim-luna-oral'
+    const ALL = DATE_CG.length + DATE_CG_INTIMATE.length
+
+    ok('约会 CG · 露娜在场、又到了私密那一档 → 那张进候选',
+      ids(base).includes(LUNA), ids(base).join(' / '))
+
+    ok('约会 CG（对照）· 同一档同一场、换了人 → 那张不进候选（只少它一张，别的照在）',
+      !ids(other).includes(LUNA) && ids(other).length === ALL - 1,
+      `${other.charId}：${ids(other).length} / ${ALL} 张`)
+
+    /* 认人是**加在档位之上**的一道，不是替掉它：同一个人、档位没到 → 照样不进 */
+    ok('约会 CG（对照）· 露娜在场、但只是普通见面（kind: date）→ 那张也不进候选',
+      !ids({ ...base, kind: 'date' }).includes(LUNA),
+      `kind: date → ${ids({ ...base, kind: 'date' }).join(' / ')}`)
+
+    /* 同场也算在场：主位是别人、同场带着露娜 —— 她人在，那张就点得到 */
+    ok('约会 CG · 主位是别人、同场带着露娜 → 照进候选（在场 = 主位或同场）',
+      ids({ ...other, party: ['luna'] }).includes(LUNA),
+      `主位 ${other.charId} · 同场 luna → ${ids({ ...other, party: ['luna'] }).length} 张`)
+
+    /* 同一条的反面：同场那人**不是**她 → 还是不进（别把「带了人」当成放行条） */
+    ok('约会 CG（对照）· 同场带的是别人（光）→ 那张仍不进候选',
+      !ids({ ...other, party: ['hikari'] }).includes(LUNA),
+      `主位 ${other.charId} · 同场 hikari`)
+
+    info.push('约会 CG 认人：`CgRef.cast` 由 `dateCgPalette` 落地 —— 带 cast 的那张，'
+      + '除了档位（私密那几张要 kind: intimate），还要求 `cast` 里有人在场上'
+      + '（主位或同场都算）。收在这一处，喂提示词的清单与视图认不认那个 id 共用同一份')
+  } catch (e) {
+    fail.push('约会 CG 认人段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }
