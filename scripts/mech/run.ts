@@ -76,6 +76,9 @@
      35  湿润回落     —— 没人管它时湿润自己退一步，退到 0 就停（此刻，不是勋章）
    · 图
      36  约会 CG 认人 —— 只属于某人的那张画：她不在场就不进候选（档位之上再加一道）
+   · 节拍
+     37  主动来信     —— 每 20 分钟滚一格、每格 45% 的骰；中没中都用掉（不补掷），
+                        首次进游戏只对钟 —— 所以是「每格 45%」不是「每格至少一条」
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -120,6 +123,8 @@ import {
 } from '../../src/lib/worldrules'
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
 import { cgIdOf } from '../../src/lib/cg'
+import { HIT_CHANCE, ROLL_EVERY_MS, rollStep } from '../../src/lib/smsauto'
+import type { AutoState } from '../../src/lib/smsauto'
 import {
   DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBondRule, dateCgPalette, rendezvousPrompt,
 } from '../../src/lib/rendezvous'
@@ -5108,6 +5113,63 @@ export function run(): MechReport {
       + '（主位或同场都算）。收在这一处，喂提示词的清单与视图认不认那个 id 共用同一份')
   } catch (e) {
     fail.push('约会 CG 认人段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+
+  /* ============================================================
+     §37 主动来信的节拍（lib/smsauto.ts 的 `rollStep`）
+     ------------------------------------------------------------
+     口径：**每 20 分钟滚一格，格子上再过一道 45% 的骰**。
+     主人嫌它太勤，所以这里要卡住的正是「频率」这件事 —— 它由两个数说话：
+     一格有多长（`ROLL_EVERY_MS`）与一格命中多少（`HIT_CHANCE`），
+     而**中没中，这一格都用掉**（`rollStep` 只读盘上那一笔，自己不改它）。
+
+     最容易写歪的两处，各配一条对照：
+     ① 「到点必发」（漏了那道 45%）—— 由 HIT_CHANCE 卡；
+     ② 「没中就补掷」（实际退化成每 45 秒一次骰）—— 由「同一格连问两次，答案不变、
+        且函数不碰 state」卡：用掉那一格是调用方落盘那一笔，不是这个函数自己会变。
+
+     「刚开局不白掷」（`seed`）单点一条 —— 否则首次进游戏二十秒后就被骰一次，
+     新档的第一条来得比稳态还快。
+     ============================================================ */
+  try {
+    const T0 = 1_700_000_000_000
+    const at = (roll: number): AutoState => ({ roll, per: {} })
+
+    ok('主动来信 · 整整一格过去了 → 该掷（roll）',
+      rollStep(at(T0), T0 + ROLL_EVERY_MS) === 'roll',
+      `${ROLL_EVERY_MS / 60000} 分钟 → ${rollStep(at(T0), T0 + ROLL_EVERY_MS)}`)
+
+    /* 对照：差一毫秒都还在等 —— 上一行只证「到了会掷」，不证「没到不掷」 */
+    ok('主动来信（对照）· 差一毫秒 → 仍在等（wait）',
+      rollStep(at(T0), T0 + ROLL_EVERY_MS - 1) === 'wait',
+      `差 1ms → ${rollStep(at(T0), T0 + ROLL_EVERY_MS - 1)}`)
+
+    /* 全新档：只对钟，当场不掷 —— 不然刚进游戏就等于白捡一次 45% */
+    ok('主动来信 · 全新档（还没滚过格）→ 只对钟，当场不掷（seed）',
+      rollStep(at(0), T0) === 'seed',
+      `roll = 0 → ${rollStep(at(0), T0)}`)
+
+    /* 「中没中都用掉」的那一半：判定是**盘上那一笔**说了算，函数自己不推进时钟。
+       取的是**该掷**的那一刻 —— 若函数会自己把时钟往前挪，第二次问就会翻成 wait。 */
+    const frozen = at(T0)
+    const before = JSON.stringify(frozen)
+    const first = rollStep(frozen, T0 + ROLL_EVERY_MS + 5_000)
+    const again = rollStep(frozen, T0 + ROLL_EVERY_MS + 5_000)
+    ok('主动来信 · 同一格连问两次：答案一样、且不碰 state（用掉一格靠调用方落那一笔）',
+      first === again && before === JSON.stringify(frozen),
+      `${first} / ${again}，state ${before === JSON.stringify(frozen) ? '未变' : '被改了'}`)
+
+    /* 两个数本身：中奖率在 (0,1) 之间才算「掷了骰」，且刻意的克制不是 1 */
+    ok('主动来信 · 命中率是个真骰子（0 < HIT_CHANCE < 1），且不是「到点必发」',
+      HIT_CHANCE > 0 && HIT_CHANCE < 1,
+      `HIT_CHANCE = ${HIT_CHANCE}`)
+
+    info.push(`主动来信节拍：每 ${ROLL_EVERY_MS / 60000} 分钟滚一格、每格 ${HIT_CHANCE * 100}%`
+      + ' —— 中没中都用掉（`rollStep` 纯读盘上那一笔），所以是「每格 45%」而不是'
+      + '「每格至少一条」。首次进游戏只对钟（`seed`），首条落在 20 分钟之后')
+  } catch (e) {
+    fail.push('主动来信节拍段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

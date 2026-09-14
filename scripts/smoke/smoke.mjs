@@ -689,10 +689,10 @@ try {
   console.log('\n[Phase D] 短信新线程初始没有消息 / 旧线程延续（zts-tavern:v1）')
   /* D0 先验「初始没有消息」：把会话表清空过一遍。点开一个已经遇见过的角色，
      线程里应该是**一条都没有**，只留一句说明 —— 不替对方垫开场白。
-     顺手把主动来信的调度器按住（last 设成当下），否则它在这条断言跑之前
-     插一条进来，验的就不是「初始」了。 */
+     顺手把主动来信的调度器按住（把这一格的钟设成当下，于是最近 20 分钟之内
+     那一骰根本掷不着），否则它在这条断言跑之前插一条进来，验的就不是「初始」了。 */
   await ev(`(()=>{localStorage.setItem('zts-tavern:v1', JSON.stringify({}));
-    localStorage.setItem('zts-sms-auto:v1', JSON.stringify({last: Date.now(), per: {}}));return true})()`)
+    localStorage.setItem('zts-sms-auto:v1', JSON.stringify({roll: Date.now(), per: {}}));return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('短信')
@@ -3150,7 +3150,7 @@ try {
     localStorage.setItem('zts-tavern:v1', JSON.stringify({
       'd:smoke-date-1':[{id:'sd::1',from:'them',
         text:'【V】她靠在栏杆上，风把发梢吹到一边。',time:'15:00'}]}));
-    localStorage.setItem('zts-sms-auto:v1', JSON.stringify({last: Date.now(), per: {}}));
+    localStorage.setItem('zts-sms-auto:v1', JSON.stringify({roll: Date.now(), per: {}}));
     return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true }); await boot()
   await goto('短信')

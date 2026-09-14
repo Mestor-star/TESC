@@ -8,7 +8,8 @@
    ① 来信与观测者在哪个模块无关；
    ② 收下的这条直接落盘（lib/sms.ts），侧栏与联系人行上的未读角标立刻亮。
 
-   频率是刻意的克制：全局至少隔 4 分钟（再加 0–6 分钟抖动），
+   频率是刻意的克制：**每 20 分钟滚一格，格子上再过一道 45% 的骰**
+   （滚过就算用掉，不中的格子不补掷 —— 所以是「每格 45%」不是「每格至少一条」），
    同一个人至少隔 45 分钟 —— 免得一打开终端就涌进来一堆寒暄。
    ============================================================ */
 
@@ -28,27 +29,49 @@ import { plotContextFor } from './crosslink'
 
 export const AUTO_KEY = 'zts-sms-auto:v1'
 
-/** 两次主动来信之间：下限 + 随机抖动 */
-const GAP_MIN_MS = 4 * 60 * 1000
-const GAP_JITTER_MS = 6 * 60 * 1000
+/** 一格有多长：每 20 分钟滚一格（一格 = 一次判定） */
+export const ROLL_EVERY_MS = 20 * 60 * 1000
+/** 每一格命中的概率 —— **中没中，这一格都用掉**（见 `rollStep` 与文件头） */
+export const HIT_CHANCE = 0.45
 /** 同一个人两次主动来信之间 */
 const SAME_CHAR_MS = 45 * 60 * 1000
 /** 巡查间隔 */
 const TICK_MS = 45 * 1000
 
-interface AutoState {
-  /** 上一次主动来信的时刻（epoch ms） */
-  last: number
+export interface AutoState {
+  /**
+   * 上一次**滚格**的时刻（epoch ms）—— 注意不是「上一次来信」：
+   * 那一格掷偏了也照样记，否则下一 tick 会拿同一次 45% 反复掷，
+   * 实际频率就退化成「每 45 秒一次骰」（见 `rollStep` 的注释）。
+   */
+  roll: number
   /** 每个人上一次主动来信的时刻 */
   per: Record<string, number>
 }
 
+/** 这一刻该怎么走 —— 调度器的规矩全在这儿，与 React / localStorage 无关（mech 直接验它） */
+export type RollStep =
+  /** 钟还没对上（首次进游戏 / 旧档没有这一项）：只对钟，**当场不掷** */
+  | 'seed'
+  /** 还没到下一格 */
+  | 'wait'
+  /** 到格了，该掷骰 */
+  | 'roll'
+
+export function rollStep(state: AutoState, now: number): RollStep {
+  if (!state.roll) return 'seed'
+  return now - state.roll >= ROLL_EVERY_MS ? 'roll' : 'wait'
+}
+
+/** 存档里那个数是「滚格时刻」，得是有限数才算数 */
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
 function loadState(): AutoState {
   try {
     const raw = localStorage.getItem(AUTO_KEY)
-    if (!raw) return { last: 0, per: {} }
+    if (!raw) return { roll: 0, per: {} }
     const p = JSON.parse(raw) as unknown
-    if (!p || typeof p !== 'object') return { last: 0, per: {} }
+    if (!p || typeof p !== 'object') return { roll: 0, per: {} }
     const o = p as Record<string, unknown>
     const per: Record<string, number> = {}
     if (o.per && typeof o.per === 'object' && !Array.isArray(o.per)) {
@@ -56,9 +79,13 @@ function loadState(): AutoState {
         if (typeof v === 'number' && Number.isFinite(v)) per[k] = v
       }
     }
-    return { last: typeof o.last === 'number' && Number.isFinite(o.last) ? o.last : 0, per }
+    /* 旧档里那一项叫 `last`（当年是「到点必发」的上一次来信时刻），含义与现在这一格
+       不同但**同样是「上一轮是什么时候」** —— 直接续上，等于把改版前的等待接过来，
+       不必让升级的人白等一格，也不必清档。 */
+    const roll = num(o.roll) || num(o.last)
+    return { roll, per }
   } catch {
-    return { last: 0, per: {} }
+    return { roll: 0, per: {} }
   }
 }
 
@@ -68,19 +95,6 @@ function saveState(s: AutoState): void {
   } catch {
     /* 隐私模式下降级：退化为「本次会话内不重复」 */
   }
-}
-
-/** 距下一次可以来信还差多久（毫秒；0 = 现在就可以） */
-function waitFor(state: AutoState, now: number): number {
-  const gap = GAP_MIN_MS + jitter(state.last)
-  const due = state.last + gap
-  return Math.max(0, due - now)
-}
-
-/** 用 last 时刻推一个确定性的抖动，避免同一台机器每次刷新都算出不同结果导致反复重置 */
-function jitter(last: number): number {
-  if (!last) return 0
-  return (last % 7) * (GAP_JITTER_MS / 7)
 }
 
 /**
@@ -115,7 +129,20 @@ export function useProactiveSms(): void {
       const c = ctx.current
       const now = Date.now()
       const state = loadState()
-      if (waitFor(state, now) > 0) return
+      const step = rollStep(state, now)
+      /* 钟还没对上：只记下此刻，**当场不掷** —— 否则刚进游戏那一下就等于白捡一次 45% */
+      if (step === 'seed') {
+        saveState({ roll: now, per: state.per })
+        return
+      }
+      if (step === 'wait') return
+
+      /* 到格了，先掷这一骰，**中没中这一格都用掉**：掷完先落盘，下面无论从哪一处提前返回
+         （没人在名单上、通道没配好、生成失败），这一格都不再重掷 ——
+         「每 20 分钟 45%」与「每 20 分钟至少一条」的分界就在这一笔。 */
+      const hit = Math.random() < HIT_CHANCE
+      saveState({ roll: now, per: state.per })
+      if (!hit) return
 
       // 在「遇见过、且不在眼前这段事件里」的人中挑一个
       const stage = onStageIds(c.epDone)
@@ -135,8 +162,8 @@ export function useProactiveSms(): void {
       const charId = oldest[Math.floor(Math.random() * oldest.length)]
 
       inFlight.current = true
-      // 先记时刻：哪怕这一条生成失败，也要等过这一轮，不要每 45 秒重试一次
-      saveState({ last: now, per: { ...state.per, [charId]: now } })
+      /* 记她这一笔：同一个人 45 分钟内不接第二条（这一格本身早已用掉，见上）。 */
+      saveState({ roll: now, per: { ...state.per, [charId]: now } })
       try {
         const logs = loadSmsLogs()
         const meta = TAVERN_PERSONAS.find((p) => p.charId === charId)
@@ -202,7 +229,8 @@ export function useProactiveSms(): void {
     }
 
     const id = window.setInterval(() => void tick(), TICK_MS)
-    // 开局先等一会儿再开始巡（免得刚进游戏就弹）
+    /* 开局先巡一次：这一下是**对钟**（见 `rollStep` 的 'seed'），把第一格钉在此刻，
+       首条来信于是落在 20 分钟之后 —— 而不是刚进游戏就被掷一次骰。 */
     const first = window.setTimeout(() => void tick(), 20 * 1000)
     return () => {
       alive = false
