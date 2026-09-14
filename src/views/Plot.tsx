@@ -1848,16 +1848,13 @@ export function Plot() {
 
       <div className={css.layout}>
         {lane === 'date' ? (
-          /* 约会专线：把主线那张会话板整个换成这一路。
+          /* 约会专线：把主线那一对（会话板 + 右栏）整个换成这一路。
+             **壳子由 DateLane 自己出** —— 它返回的是两块（面板 + 右栏），正好坐在
+             主线那两块坐的两个格子上（`.layout`：`minmax(0,1fr) 330px`），
+             于是宽度与主线一模一样；从前在外面套一层 `flex:1` 的壳，反而把里面挤塌了。
              `data-session-area` 不挂在这儿 —— 冒烟与主线各处认的是**主线那一块**，
              这一路单给一个把手（`data-date-lane-area`），两边不打架。 */
-          <section
-            className="panel"
-            data-date-lane-area="1"
-            style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}
-          >
-            <DateLane rvId={datePick} onPick={setDatePick} />
-          </section>
+          <DateLane rvId={datePick} onPick={setDatePick} />
         ) : (
         <section className="panel" data-session-area="1">
           <div className="panel__head">

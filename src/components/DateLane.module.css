@@ -6,49 +6,31 @@
      · 头上的那条带子是「这一场」（人 · 名目 · 地点 · 时间 · 同场），
        不是联系人条 —— 这一场散了就不在了；
      · 右边多一栏，正常一面是「这一场」，翻过来才是色情状态栏。
+
+   **尺寸与主线那一块对齐**（主人指名）：这一路返回的是两块 ——
+   会话板（`panel`）与右栏（`aside`）—— 正好坐在 `Plot.module.css` 的
+   `.layout` 那两个格子上（`minmax(0,1fr) 330px`），所以宽度与主线一模一样。
+
+   这里有一条**踩过的坑**，改版式时别再踩回去：
+   内容体（`.body` / `.thread`）**不许写 `flex:1; min-height:0`** ——
+   这一块的外壳是随内容长的（`align-items: start` 的格子项，高度不定），
+   在高度不定的壳里 `flex:1` + `min-height:0` 会把内容体对父级的内在高度贡献压成 0，
+   面板塌得只剩一条头，再被 `.panel{overflow:hidden}` 一裁，**正文整段看不见**。
+   主线那一块（`Plot.module.css` 的 `.onBody` / `.thread`）就是内容撑开的写法，照它来。
+
    颜色/间距一律走 tokens.css 的设计变量。
    ============================================================ */
 
-.lane {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
+/* ---------- 头上那条：这一场是个什么由头（主线 `panel__head` 的同一副壳） ---------- */
 
-/* ---------- 头上那条：这一场是个什么由头 ---------- */
+.head { flex-wrap: wrap; }
 
-.head {
+.headActs {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-soft, rgba(255, 255, 255, 0.02));
   flex-wrap: wrap;
-}
-
-.headMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  margin-right: auto;
-}
-
-.headMeta b {
-  display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 14px;
-  color: var(--ink);
-}
-
-.headMeta small {
-  font-size: 11px;
-  color: var(--ink-faint);
-  letter-spacing: 0.02em;
+  gap: 6px;
+  margin-left: auto;
 }
 
 /* 「约会专线」这枚小签：提醒主人现在不在主线那一路 */
@@ -80,20 +62,19 @@
   gap: 6px;
 }
 
-/* ---------- 身子：会话流 + 右栏 ---------- */
+/* ---------- 身子：会话流（随内容长）+ 底下那条输入带 ---------- */
 
 .body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: stretch;
-}
-
-.main {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 120px;
+  padding: 18px 18px 10px;
 }
 
 .threadCg {
@@ -172,15 +153,20 @@
   font-size: 11px;
 }
 
-/* ---------- 右栏：这一场 ⇄ 色情状态栏 ---------- */
+/* ---------- 右栏：这一场 ⇄ 色情状态栏 ----------
+   坐的是主线 `aside` 那一个格子（330px）—— **宽度交给格子**，自己不写死。
+   钉在上头（与主线那栏同一条规矩）：正文再长，这一栏跟着窗口停住。 */
 
-.side {
-  width: 380px;
-  flex: none;
-  border-left: 1px solid var(--line);
+.aside {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  min-width: 0;
+  position: sticky;
+  top: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
 }
 
 .sideTabs {
@@ -188,6 +174,7 @@
   gap: 2px;
   padding: 8px 10px 0;
   border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
 }
 
 .sideTab {
@@ -212,15 +199,12 @@
 }
 
 .sideBody {
-  flex: 1;
   min-height: 0;
-  overflow-y: auto;
   padding: 12px;
 }
 
 /* 这一路一场都没有时的那一屏（正常进不来，兜一下） */
 .empty {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -231,7 +215,3 @@
 }
 
 .empty b { font-size: 14px; color: var(--ink-soft, var(--ink)); }
-
-@media (max-width: 1180px) {
-  .side { width: 320px; }
-}

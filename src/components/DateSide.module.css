@@ -3,15 +3,15 @@
    与档案页 / 色情状态栏同一套路数），所以这里不硬写任何角色色。 */
 
 .dateSide {
-  /* 宽度跟着窗口走一点，但两边都兜住：太窄摆不下那张竖立绘，太宽把正文挤没了。 */
-  flex: 0 0 auto;
-  width: min(380px, 34vw);
-  min-width: 280px;
+  /* **宽度由外面那一栏给**（约会专线右栏，330px —— 与主线 `aside` 同一条轨道）。
+     从前这里自己写死 `min(380px, 34vw)`：它跟外面那一栏的宽各说各话，
+     窄一点就横向溢出去。现在只负责铺满，尺寸的事归容器。 */
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-left: 1px solid var(--line);
   background: var(--bg-1);
 }
 

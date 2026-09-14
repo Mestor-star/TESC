@@ -41,17 +41,23 @@
   background: transparent;
 }
 
+/* **说好是「一回一行」，那就一行到底。** 从前这里是 `flex-wrap: wrap` ——
+   宽一点的栏里确实是一行，栏一窄（约会专线右栏 330px）就折成两行，
+   这条提示就从「一条细边」长成了块。文件名不许折，让它省略号收尾：
+   窄到看不全的时候，看得见的那截仍是 id（最要紧的那一段）。 */
 .ph {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
   justify-content: center;
   gap: 3px 8px;
   padding: 7px 10px;
   text-align: center;
+  min-width: 0;
 }
 
 .ph b {
+  flex: none;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.18em;
@@ -64,7 +70,10 @@
   font-size: 10px;
   color: var(--ink-mute);
   opacity: 0.75;
-  word-break: break-all;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cap {

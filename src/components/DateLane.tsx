@@ -428,118 +428,126 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
 
   if (!rv) {
     return (
-      <div className={css.empty} data-date-lane-empty="1">
-        <b>此刻没有开着的约会</b>
-        <span className="muted tiny" style={{ lineHeight: 1.8 }}>
-          这一路只在有一场待人赴的见面时才通 —— 在角色短信里聊到约会，或者推演正文里
-          对方开的口，两样都得把时间与地点说定，才会落下一条事件指令，把这一场送到这儿来。
-        </span>
-      </div>
+      /* 空档也占满整行：这一路没有左右两栏可分，留一条 330px 的空列只是白扣宽度 */
+      <section className="panel" data-date-lane-empty="1" style={{ gridColumn: '1 / -1' }}>
+        <div className={css.empty}>
+          <b>此刻没有开着的约会</b>
+          <span className="muted tiny" style={{ lineHeight: 1.8 }}>
+            这一路只在有一场待人赴的见面时才通 —— 在角色短信里聊到约会，或者推演正文里
+            对方开的口，两样都得把时间与地点说定，才会落下一条事件指令，把这一场送到这儿来。
+          </span>
+        </div>
+      </section>
     )
   }
 
   const c = charOf(rv.charId)
   const partyNames = (rv.party ?? []).map((id) => charOf(id)?.name ?? id)
 
+  /* 返回的是**两块**（会话板 + 右栏），正好坐在主线那两块坐的两个格子上
+     （`Plot.module.css` 的 `.layout`：`minmax(0,1fr) 330px`）—— 所以宽度与主线一模一样。
+     从前这一路是**整个塞进一个 panel 里、自己再劈左右**，于是
+     ① 主线那一栏空占的 330px 白白扣在头上（比主线窄 346px）；
+     ② 里外两层 `flex:1; min-height:0` 在**高度不定**的壳里把内容体对父级的内在高度贡献
+        压成 0，面板塌得只剩一条头，而被 `.panel{overflow:hidden}` 一裁 —— 正文整段看不见。
+     现在按主线的排法来：面板随内容长（内容体不再 flex:1），右栏退回格子里那一列。 */
   return (
-    <div className={css.lane} data-date-lane={rv.id}>
-      <div className={css.head}>
-        {c ? <Portrait avatarId={rv.charId} name={c.name} hue={c.hue} sigil={c.sigil} size={40} round /> : null}
-        <div className={css.headMeta}>
-          <b>
-            {c?.name ?? rv.charId}
-            <span className={css.tag}>约会专线</span>
-            {rv.kind === 'intimate' ? <HeartStraight size={12} weight="fill" /> : null}
-          </b>
-          <small>
+    <>
+      <section className="panel" data-date-lane-area="1" data-date-lane={rv.id}>
+        <div className={`panel__head ${css.head}`}>
+          {c ? <Portrait avatarId={rv.charId} name={c.name} hue={c.hue} sigil={c.sigil} size={28} round /> : null}
+          <span className="panel__title">{c?.name ?? rv.charId} <span className="slash" /></span>
+          {rv.kind === 'intimate' ? <HeartStraight size={12} weight="fill" /> : null}
+          <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>
             {rv.title} · {rv.place}
             {rv.time ? ` · ${rv.time}` : ''}
             {partyNames.length ? ` · 同场：${partyNames.join('、')}` : ''}
-          </small>
-        </div>
-        {/* 换场：手上不止一场时（同一位可以有多场，那是不同的时候） */}
-        {liveRvs.length > 1 ? (
-          <select
-            className="field"
-            style={{ width: 'auto', maxWidth: 220, fontSize: 12 }}
-            aria-label="换一场"
-            value={rv.id}
-            onChange={(e) => { onPick?.(e.currentTarget.value); setFace('scene') }}
-            data-date-switch
-          >
-            {liveRvs.map((x) => (
-              <option key={x.id} value={x.id}>
-                {charOf(x.charId)?.name ?? x.charId} · {x.title}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        {canPickParty ? (
-          <button
-            className="btn btn--ghost"
-            style={{ fontSize: 11, padding: '6px 10px' }}
-            onClick={() => setPickOpen((v) => !v)}
-            title="把别的几位一起带上 —— 多女同场"
-            data-date-party-open
-          >
-            <UsersThree size={13} weight="bold" /> 带人一起
-          </button>
-        ) : null}
-        <button
-          className="btn btn--ghost"
-          style={{ fontSize: 11, padding: '6px 10px' }}
-          onClick={clearScene}
-          title="这一场作罢（名册上那一条一并撤掉）"
-          data-date-clear
-        >
-          <Eraser size={13} weight="bold" /> 作罢
-        </button>
-        <button
-          className="btn btn--ghost"
-          style={{ fontSize: 11, padding: '6px 10px' }}
-          onClick={endScene}
-          title="这一场到此为止（记录留着）"
-          data-date-end
-        >
-          <Check size={13} weight="bold" /> 散场
-        </button>
-      </div>
-
-      {pickOpen ? (
-        <div className={css.partyPick} data-date-party-pick>
-          <div className="tiny muted">
-            这一场还带谁去（可多选，最多 {PARTY_MAX} 位）—— 带上的人与 {c?.name ?? rv.charId} 同场，各记各的账。
-          </div>
-          <div className={css.partyPickRow}>
-            {partyPool.map((p) => {
-              const on = pick.includes(p.id)
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`chip ${on ? 'chip--on' : ''}`}
-                  style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
-                  onClick={() => setPick((prev) => (prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
-                  data-date-party={p.id}
-                  data-date-party-on={on ? '1' : '0'}
-                >
-                  {p.name}
-                </button>
-              )
-            })}
-            <button className="btn btn--primary" style={{ fontSize: 11, padding: '6px 10px' }} onClick={commitParty} data-date-party-go>
-              就这么去
+          </span>
+          <span className={css.tag}>约会专线</span>
+          <div className={css.headActs}>
+            {/* 换场：手上不止一场时（同一位可以有多场，那是不同的时候） */}
+            {liveRvs.length > 1 ? (
+              <select
+                className="field"
+                style={{ width: 'auto', maxWidth: 220, fontSize: 12 }}
+                aria-label="换一场"
+                value={rv.id}
+                onChange={(e) => { onPick?.(e.currentTarget.value); setFace('scene') }}
+                data-date-switch
+              >
+                {liveRvs.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {charOf(x.charId)?.name ?? x.charId} · {x.title}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {canPickParty ? (
+              <button
+                className="btn btn--ghost"
+                style={{ fontSize: 11, padding: '6px 10px' }}
+                onClick={() => setPickOpen((v) => !v)}
+                title="把别的几位一起带上 —— 多女同场"
+                data-date-party-open
+              >
+                <UsersThree size={13} weight="bold" /> 带人一起
+              </button>
+            ) : null}
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 11, padding: '6px 10px' }}
+              onClick={clearScene}
+              title="这一场作罢（名册上那一条一并撤掉）"
+              data-date-clear
+            >
+              <Eraser size={13} weight="bold" /> 作罢
             </button>
-            <button className="btn btn--ghost" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => { setPickOpen(false); setPick([]) }}>
-              <X size={12} weight="bold" /> 算了
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 11, padding: '6px 10px' }}
+              onClick={endScene}
+              title="这一场到此为止（记录留着）"
+              data-date-end
+            >
+              <Check size={13} weight="bold" /> 散场
             </button>
           </div>
         </div>
-      ) : null}
 
-      <div className={css.body}>
-        <div className={css.main}>
-          <div className={comm.thread} data-date-thread>
+        {pickOpen ? (
+          <div className={css.partyPick} data-date-party-pick>
+            <div className="tiny muted">
+              这一场还带谁去（可多选，最多 {PARTY_MAX} 位）—— 带上的人与 {c?.name ?? rv.charId} 同场，各记各的账。
+            </div>
+            <div className={css.partyPickRow}>
+              {partyPool.map((p) => {
+                const on = pick.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`chip ${on ? 'chip--on' : ''}`}
+                    style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
+                    onClick={() => setPick((prev) => (prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
+                    data-date-party={p.id}
+                    data-date-party-on={on ? '1' : '0'}
+                  >
+                    {p.name}
+                  </button>
+                )
+              })}
+              <button className="btn btn--primary" style={{ fontSize: 11, padding: '6px 10px' }} onClick={commitParty} data-date-party-go>
+                就这么去
+              </button>
+              <button className="btn btn--ghost" style={{ fontSize: 11, padding: '6px 10px' }} onClick={() => { setPickOpen(false); setPick([]) }}>
+                <X size={12} weight="bold" /> 算了
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className={css.body}>
+          <div className={css.thread} data-date-thread>
             <div className={comm.dayLabel}>
               <MapPin size={11} weight="bold" /> {rv.place} · {rv.title}
               {rv.time ? ` · ${rv.time}` : ''}
@@ -661,35 +669,37 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
             )}
           </div>
         </div>
+      </section>
 
-        {/* 右栏两面：正常一面是「这一场」（人 + 常服立绘），翻过来是色情状态栏。
-            翻转的那一枚摆在这一栏自己头上 —— 它翻的是这一栏，不是整个页面。 */}
-        <aside className={css.side} data-date-side-pane>
-          <div className={css.sideTabs} role="tablist" aria-label="这一栏看哪一面">
-            <button
-              role="tab"
-              aria-selected={face === 'scene'}
-              className={`${css.sideTab} ${face === 'scene' ? css.sideTabOn : ''}`}
-              onClick={() => setFace('scene')}
-              data-date-face="scene"
-            >这一场</button>
-            <button
-              role="tab"
-              aria-selected={face === 'hud'}
-              className={`${css.sideTab} ${face === 'hud' ? css.sideTabOn : ''}`}
-              onClick={() => setFace('hud')}
-              data-date-face="hud"
-              disabled={!hudIds.length}
-              title={hudIds.length ? '翻转过来：此刻的色情状态栏' : '这一场还没有走到那一步'}
-            >色情状态栏</button>
-          </div>
-          <div className={css.sideBody} data-date-side-body>
-            {face === 'hud'
-              ? <IntimateHud ids={hudIds} hint="此刻 · 这一场在场的人" />
-              : <DateSide rv={rv} />}
-          </div>
-        </aside>
-      </div>
-    </div>
+      {/* 右栏两面：正常一面是「这一场」（人 + 常服立绘），翻过来是色情状态栏。
+          翻转的那一枚摆在这一栏自己头上 —— 它翻的是这一栏，不是整个页面。
+          它坐的是主线 `aside` 那一个格子（`.layout` 第 2 列，330px），所以宽度由格子给，
+          自己不写死（从前写死 380px，又塞在面板里，才把正文那一列挤瘦）。 */}
+      <aside className={css.aside} data-date-side-pane>
+        <div className={css.sideTabs} role="tablist" aria-label="这一栏看哪一面">
+          <button
+            role="tab"
+            aria-selected={face === 'scene'}
+            className={`${css.sideTab} ${face === 'scene' ? css.sideTabOn : ''}`}
+            onClick={() => setFace('scene')}
+            data-date-face="scene"
+          >这一场</button>
+          <button
+            role="tab"
+            aria-selected={face === 'hud'}
+            className={`${css.sideTab} ${face === 'hud' ? css.sideTabOn : ''}`}
+            onClick={() => setFace('hud')}
+            data-date-face="hud"
+            disabled={!hudIds.length}
+            title={hudIds.length ? '翻转过来：此刻的色情状态栏' : '这一场还没有走到那一步'}
+          >色情状态栏</button>
+        </div>
+        <div className={css.sideBody} data-date-side-body>
+          {face === 'hud'
+            ? <IntimateHud ids={hudIds} hint="此刻 · 这一场在场的人" />
+            : <DateSide rv={rv} />}
+        </div>
+      </aside>
+    </>
   )
 }
