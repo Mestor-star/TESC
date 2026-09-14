@@ -242,7 +242,20 @@ export const DATE_CG_INTIMATE: CgRef[] = [
     id: 'cg-date-intim-luna-oral',
     note: '露娜仰躺着含弄你的那一刻 · 一只手攥着底下、一只手在自己腿间',
     cast: ['luna'],
+    dir: 'lunaNSFW/满羁绊加满等级CG',
   },
+  /* 露娜这一档：**一个戏码一个槽位**，每个都带 `cast` —— 缺了她就不进候选。
+     素材按戏码分在 `public/cg/lunaNSFW/<戏码>/`（`dir`），换图不用改这里。
+     带 `variants` 的是同一张画的多版：每次被触发就轮着换下一版，不是动画帧
+     （见 lib/cg.ts 的 `cgVariantId`）。 */
+  { id: 'cg-date-intim-luna-missionary', note: '私密的场面 · 正常位', cast: ['luna'], dir: 'lunaNSFW/正常位', variants: 3 },
+  { id: 'cg-date-intim-luna-spooning', note: '私密的场面 · 侧入式', cast: ['luna'], dir: 'lunaNSFW/侧入式', variants: 3 },
+  { id: 'cg-date-intim-luna-doggystyle', note: '私密的场面 · 后入式', cast: ['luna'], dir: 'lunaNSFW/后入式', variants: 3 },
+  { id: 'cg-date-intim-luna-cowgirl', note: '私密的场面 · 骑乘位', cast: ['luna'], dir: 'lunaNSFW/骑乘位', variants: 3 },
+  { id: 'cg-date-intim-luna-straddle', note: '私密的场面 · 对面座位', cast: ['luna'], dir: 'lunaNSFW/对面座位式' },
+  { id: 'cg-date-intim-luna-paizuri', note: '私密的场面 · 乳交', cast: ['luna'], dir: 'lunaNSFW/乳交', variants: 2 },
+  { id: 'cg-date-intim-luna-oral-b', note: '私密的场面 · 口交', cast: ['luna'], dir: 'lunaNSFW/口交', variants: 2 },
+  { id: 'cg-date-intim-luna-handjob', note: '私密的场面 · 手交', cast: ['luna'], dir: 'lunaNSFW/手交' },
 ]
 
 /**
@@ -254,6 +267,23 @@ export const DATE_CG_INTIMATE: CgRef[] = [
  */
 export function dateWearId(charId: string): string {
   return `cg-datewear-${charId}`
+}
+
+/**
+ * **私密档案立绘**（`cg-intim-<角色id>`）的素材子目录（相对 `public/cg/`）。缺省 = 顶层。
+ *
+ * 立绘的 id 一人一张、由 charId 现算，但**文件可以按人分文件夹收** —— 这批私密立绘
+ * 与日常素材画风不同，主人按 `lunaNSFW/` 归了档。取图那一侧（CgSlot → probeCg）
+ * 就靠这一张表问路：**id 照旧写死，只有目录是登记的**，往后换图仍然不用改码。
+ * 没登记过的人 = 顶层（与先前一致，老素材不受影响）。
+ */
+const INTIM_ART_DIR: Record<string, string> = {
+  luna: 'lunaNSFW/NSFW立绘',
+}
+
+/** 取某人的私密档案立绘在哪个子目录；没登记过 → undefined（顶层） */
+export function intimArtDir(charId: string): string | undefined {
+  return INTIM_ART_DIR[charId]
 }
 
 /**

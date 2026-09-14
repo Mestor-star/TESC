@@ -30,6 +30,8 @@ import css from './CgSlot.module.css'
 export interface CgSlotProps {
   /** 素材 id（= public/cg/<id>.* 的 <id>） */
   cgId: string
+  /** 素材所在的子目录（相对 public/cg/，如 `lunaNSFW/正常位`）。缺省 = 顶层 */
+  dir?: string
   /** 图注；缺省显示 id，好让人一眼知道该往哪个文件名补图。`fill` 模式下由调用方写在父栏底部 */
   caption?: string
   /** 版位宽高比（CSS aspect-ratio），缺省 16/9。`fill` 模式下不起作用 */
@@ -46,6 +48,7 @@ export interface CgSlotProps {
 
 export function CgSlot({
   cgId,
+  dir,
   caption,
   ratio = '16 / 9',
   maxWidth,
@@ -60,9 +63,9 @@ export function CgSlot({
   useEffect(() => {
     let alive = true
     setUrl(null)
-    void probeCg(cgId).then((u) => { if (alive) setUrl(u ?? '') })
+    void probeCg(cgId, dir).then((u) => { if (alive) setUrl(u ?? '') })
     return () => { alive = false }
-  }, [cgId])
+  }, [cgId, dir])
 
   const label = caption ?? cgId
   /* 铺满模式下不摆图注：那一带留给父栏底部的说明带，摆两处会叠在一起 */
@@ -95,7 +98,7 @@ export function CgSlot({
       {/* 一行说清两件事：这一格等着图，以及该往哪个文件名补。 */}
       <span className={css.ph}>
         <b>CG 待补</b>
-        <code>public/cg/{cgId}.webp</code>
+        <code>public/cg/{dir ? `${dir}/` : ''}{cgId}.webp</code>
       </span>
       {cap ? <figcaption className={css.cap}>{cap}</figcaption> : null}
     </figure>

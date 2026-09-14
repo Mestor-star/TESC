@@ -153,6 +153,11 @@ export interface TerminalState {
   setVarsOpen: (open: boolean) => void
   /** 这一场约会此刻挂着的那张 CG（导演没点名 → null，不摆图） */
   cgOf: (id: string) => string | null
+  /**
+   * 这场约会**被点过几次名**（0 = 还没点过）。多变体槽位拿它取模决定这次摆第几版
+   * —— 见 lib/cg.ts 的 `cgVariantId`。
+   */
+  cgTurnOf: (id: string) => number
   setCg: (id: string, cgId: string) => void
   /**
    * 该段**此刻**在场上的人：导演实时改过就用改过的（`world.cast`），
@@ -299,7 +304,7 @@ function takePendingView(): ViewId | null {
 
 function emptyWorld(): WorldState {
   return {
-    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cast: {},
+    offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cgVariant: {}, cast: {},
     intim: {}, attire: {}, acts: {}, rel: {}, records: [],
   }
 }
@@ -355,6 +360,8 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     own: raw?.own ?? [],
     // 旧档没有这一栏（约会那张图是后加的）→ 空表：没点过名就不摆，行为不变
     cg: raw?.cg ?? {},
+    // 旧档没有这一栏（多变体轮换是后加的）→ 空表 + 起始值 1：第一次触发就是第 1 版
+    cgVariant: raw?.cgVariant ?? {},
     // 旧档没有这一栏（实时在场名册是后加的）→ 空表；那些段照静态名册摆，行为不变
     cast: raw?.cast ?? {},
     // 旧档没有这一栏（私密档案是后加的）→ 空表；底档照常可读，只是没有推进的痕迹
@@ -866,14 +873,26 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   /** 某场约会此刻挂着的那张 CG（导演还没点名 → null，那就一张也不摆） */
   const cgOf = useCallback((id: string) => world.cg?.[id] ?? null, [world.cg])
+  const cgTurnOf = useCallback((id: string) => world.cgVariant?.[id] ?? 0, [world.cgVariant])
   /**
    * 导演点名某场约会该摆哪张 CG。同一场可以被反复改写 —— 往下走一幕就是换一张，
    * 后一次覆盖前一次（要看的是「此刻挂着哪张」，不是「换过哪些张」）。
    * 认不认这个 id 由显示端（views/Tavern.tsx 对着 dateCgPalette 判）——
    * 这里只落盘。
+   *
+   * 顺带把这一场的**触发次数** +1：同一张画有多版时，显示端拿这个数取模换下一版
+   * （`lib/cg.ts` 的 `cgVariantId`）。**只有真的换了一张才 +1** —— 导演重复点名
+   * 同一个 id 时不加，否则原地打转那几回合会把变体白转过去。
    */
   const setCg = useCallback((id: string, cgId: string) => {
-    setWorld((prev) => ({ ...prev, cg: { ...prev.cg, [id]: cgId } }))
+    setWorld((prev) => {
+      if (prev.cg?.[id] === cgId) return prev
+      return {
+        ...prev,
+        cg: { ...prev.cg, [id]: cgId },
+        cgVariant: { ...prev.cgVariant, [id]: (prev.cgVariant?.[id] ?? 0) + 1 },
+      }
+    })
   }, [])
 
   /**
@@ -1332,6 +1351,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     unsetVar,
     renameVar,
     cgOf,
+    cgTurnOf,
     setCg,
     castOfEvent,
     setCast,

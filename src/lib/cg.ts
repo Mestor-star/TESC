@@ -29,18 +29,23 @@ import type { CgRef } from '../data/types'
 /** 候选扩展名（按序试）。webp 在前：同画质下体积约为 png 的 1/3。 */
 const EXTS = ['webp', 'png', 'jpg'] as const
 
-function urlOf(file: string, ext: string): string {
-  return `${assetBase()}cg/${encodeURIComponent(file)}.${ext}`
+/** 把 `分类/子分类` 逐段编码再拼成前缀 —— 整串 encode 会把 `/` 也吃掉 */
+function dirPrefix(dir?: string): string {
+  return dir ? dir.split('/').map(encodeURIComponent).join('/') + '/' : ''
+}
+
+function urlOf(file: string, ext: string, dir?: string): string {
+  return `${assetBase()}cg/${dirPrefix(dir)}${encodeURIComponent(file)}.${ext}`
 }
 
 /** 候选 URL 列表：同一 id 先 webp 后 png 再 jpg，404 逐个顺延 */
-export function cgCandidates(cgId: string): string[] {
-  return EXTS.map((e) => urlOf(cgId, e))
+export function cgCandidates(cgId: string, dir?: string): string[] {
+  return EXTS.map((e) => urlOf(cgId, e, dir))
 }
 
 /** 主候选 URL（快速预加载用） */
-export function cgUrl(cgId: string): string {
-  return urlOf(cgId, EXTS[0])
+export function cgUrl(cgId: string, dir?: string): string {
+  return urlOf(cgId, EXTS[0], dir)
 }
 
 /* 素材是否到位：按 cgId 缓存探针结果，同一 id 只探一次。
@@ -48,12 +53,13 @@ export function cgUrl(cgId: string): string {
    渲染完才知道有没有图就晚了 —— 这里提前问一句。 */
 const probes = new Map<string, Promise<string | null>>()
 
-/** 探出第一个真能加载的候选 URL；全 404 → null */
-export function probeCg(cgId: string): Promise<string | null> {
-  const hit = probes.get(cgId)
+/** 探出第一个真能加载的候选 URL；全 404 → null。缓存键带上目录：同 id 换了文件夹要重探 */
+export function probeCg(cgId: string, dir?: string): Promise<string | null> {
+  const key = `${dir ?? ''}/${cgId}`
+  const hit = probes.get(key)
   if (hit) return hit
   const p = new Promise<string | null>((resolve) => {
-    const list = cgCandidates(cgId)
+    const list = cgCandidates(cgId, dir)
     let i = 0
     const next = (): void => {
       if (i >= list.length) { resolve(null); return }
@@ -65,7 +71,7 @@ export function probeCg(cgId: string): Promise<string | null> {
     }
     next()
   })
-  probes.set(cgId, p)
+  probes.set(key, p)
   return p
 }
 
@@ -82,4 +88,23 @@ export function cgIdOf(ref: CgRef): string {
 /** 取一个 CG 位的图注（字符串写法没有图注） */
 export function cgNoteOf(ref: CgRef): string | undefined {
   return typeof ref === 'string' ? undefined : ref.note
+}
+
+/** 取一个 CG 位的素材子目录（字符串写法 = 顶层） */
+export function cgDirOf(ref: CgRef): string | undefined {
+  return typeof ref === 'string' ? undefined : ref.dir
+}
+
+/** 取一个 CG 位有几个变体（字符串写法 = 单张） */
+export function cgVariantsOf(ref: CgRef): number {
+  return typeof ref === 'string' ? 1 : Math.max(1, Math.floor(ref.variants ?? 1))
+}
+
+/**
+ * 多变体槽位的**第 k 张**的文件 id（k 从 1 数，越界绕回）。
+ * 单变体槽位原样返回 —— 文件名不带 `-1`。
+ */
+export function cgVariantId(cgId: string, variants: number, k: number): string {
+  if (variants <= 1) return cgId
+  return `${cgId}-${((k - 1) % variants) + 1}`
 }

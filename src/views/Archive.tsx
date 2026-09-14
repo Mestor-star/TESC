@@ -32,6 +32,7 @@ import { ATTIRE_LOG_MAX, ATTIRE_META } from '../data/attire'
 import { relTier as relTierOf } from '../data/rel'
 import { Portrait, useCharImg } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
+import { intimArtDir } from '../lib/rendezvous'
 
 import css from './Archive.module.css'
 
@@ -436,12 +437,12 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
           底部一条说明带），不是居中的小方框：翻过来时那一栏不该跳位置。
           只是这一栏的素材走 public/cg/cg-intim-<角色id>.*（CgSlot），不是 charimg 的定妆立绘。 */}
       <div className={css.intimBackArt}>
-        <CgSlot cgId={`cg-intim-${charId}`} fill fit="contain" />
+        <CgSlot cgId={`cg-intim-${charId}`} dir={intimArtDir(charId)} fill fit="contain" />
         <span className={css.artFade} aria-hidden />
         <div className={css.artCap}>
           <span className="vhead__kicker" style={{ fontSize: 9 }}>PRIVATE DOSSIER / 立绘</span>
           <span className="tiny muted">
-            私密档案立绘。丢一张 <code>public/cg/cg-intim-{charId}.webp</code> 进来即点亮。
+            私密档案立绘。丢一张 <code>public/cg/{intimArtDir(charId) ? `${intimArtDir(charId)}/` : ''}cg-intim-{charId}.webp</code> 进来即点亮。
           </span>
         </div>
       </div>

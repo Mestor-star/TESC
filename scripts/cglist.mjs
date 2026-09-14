@@ -26,8 +26,10 @@
    所以日后新开一处槽位表，必须同时加到这里；末尾那道重名检查（同一个 id 被两处登记）
    算是替这件事补的一半防线。
 
-   「已补 / 待补」按目录里真的有没有同名文件判（webp / png / jpg 三种都认，
+   「已补 / 待补」按目录里真的有没有这个文件判（webp / png / jpg 三种都认，
    与 src/lib/cg.ts 的候选链一致），所以这份清单可以反复重跑当进度看。
+   **递归扫子目录、比的是相对 public/cg/ 的整条路径** —— 素材分了文件夹（`dir`）
+   之后，只扫顶层会把补好的图全判成待补，且不报错（见下面 walk 的说明）。
    ============================================================ */
 
 import { createServer } from 'vite'
@@ -40,6 +42,23 @@ const OUT = join('public', 'cg', '清单.md')
 /** 候选扩展名 —— 与 src/lib/cg.ts 的 EXTS 同序 */
 const EXTS = ['webp', 'png', 'jpg']
 
+/**
+ * 目录里现有的素材，收成一组**相对 `public/cg/` 的路径**（`/` 分隔）。
+ *
+ * **必须递归**：素材按戏码分了文件夹（`lunaNSFW/正常位/…`）之后，只扫顶层
+ * 会把已经补好的图全判成「待补」—— 而且不报错，清单只是集体变回 ⬜。
+ * 判有没有图照旧按候选链（webp → png → jpg），只是比较的是带目录的整条路径。
+ */
+function walk(dir, base = '') {
+  const out = []
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? `${base}/${e.name}` : e.name
+    if (e.isDirectory()) out.push(...walk(join(dir, e.name), rel))
+    else out.push(rel)
+  }
+  return out
+}
+
 const server = await createServer({
   configFile: false,
   root: process.cwd(),
@@ -51,12 +70,16 @@ const server = await createServer({
 try {
   const { INTIMATE } = await server.ssrLoadModule('/src/data/intimate.ts')
   const { personOf } = await server.ssrLoadModule('/src/data/castmeta.ts')
-  const { DATE_CG, DATE_CG_INTIMATE, dateWearId } = await server.ssrLoadModule('/src/lib/rendezvous.ts')
+  const { DATE_CG, DATE_CG_INTIMATE, dateWearId, intimArtDir } = await server.ssrLoadModule('/src/lib/rendezvous.ts')
 
-  const have = new Set(readdirSync(join('public', 'cg')))
-  /** 这个 id 有没有图（按候选链找一个就算有；返回实际命中的文件名） */
-  const found = (id) => EXTS.map((e) => `${id}.${e}`).find((f) => have.has(f)) ?? null
-  const mark = (id) => (found(id) ? '✅' : '⬜')
+  const have = new Set(walk(join('public', 'cg')))
+  /** 这个 id（可带子目录）有没有图；返回实际命中的**相对路径** */
+  const found = (id, dir) => EXTS
+    .map((e) => `${dir ? `${dir}/` : ''}${id}.${e}`)
+    .find((f) => have.has(f)) ?? null
+  const mark = (id, dir) => (found(id, dir) ? '✅' : '⬜')
+  /** 该往哪个路径补 —— 清单里写全（含子目录），照着一行行对着补 */
+  const pathOf = (id, dir) => (dir ? `${dir}/${id}` : id)
 
   /* CgRef 允许写成裸字符串（等价 { id }）—— 两种都归一化 */
   const norm = (r) => (typeof r === 'string' ? { id: r } : r)
@@ -75,6 +98,9 @@ try {
     id: `cg-intim-${charId}`,
     charId,
     name: personOf(charId)?.name ?? charId,
+    /* 立绘的 id 一人一张写死，**目录是登记的**（`rendezvous.ts` 的 INTIM_ART_DIR）——
+       与 view 那边（Archive.tsx → CgSlot）问的是同一张表，免得两边各写各的路径。 */
+    dir: intimArtDir(charId),
   }))
   /* 见面那一档的图位住在 lib/rendezvous.ts（不在 data/ 下，所以当初漏了这一处）。
      两张表都要：「到私密那一档才进候选」的那两张也是真槽位，只是候选面窄。 */
@@ -90,12 +116,28 @@ try {
     return `${s} · 还要 ${cast.map((c) => personOf(c)?.name ?? c).join('、')} 在场`
   }
 
-  const allIds = [
-    ...wear.map((w) => w.id),
-    ...intim.map((i) => i.id),
-    ...date.map((d) => d.id),
+  /* 每个槽位连同它登记的目录一起过 —— 图分文件夹收了之后，判有没有图得带路走 */
+  const allSlots = [
+    ...wear.map((w) => ({ id: w.id, dir: w.dir, variants: 1 })),
+    ...intim.map((i) => ({ id: i.id, dir: i.dir, variants: 1 })),
+    ...date.map((d) => ({ id: d.id, dir: d.dir, variants: d.variants ?? 1 })),
   ]
-  const missing = allIds.filter((id) => !found(id))
+  const allIds = allSlots.map((s) => s.id)
+  /** 一个槽位该有的文件（多变体逐个展开成 `-1`…`-n`）—— 补图是一张张补的 */
+  const filesOf = (s) => {
+    const n = Math.max(1, Math.floor(s.variants ?? 1))
+    if (n <= 1) return [s.id]
+    return Array.from({ length: n }, (_, i) => `${s.id}-${i + 1}`)
+  }
+  const allFiles = allSlots.flatMap((s) => filesOf(s).map((id) => ({ id, dir: s.dir })))
+  const total = allFiles.length
+  const missing = allFiles.filter((f) => !found(f.id, f.dir)).map((f) => pathOf(f.id, f.dir))
+  /** 一个槽位的补齐情况：全在 ✅ / 缺一部分 ◐ / 一张没有 ⬜ */
+  const slotMark = (s) => {
+    const want = filesOf(s)
+    const hit = want.filter((id) => found(id, s.dir)).length
+    return hit === want.length ? '✅' : hit ? '◐' : '⬜'
+  }
 
   const L = []
   L.push('# 插图补图清单（生成物 · 别手改）')
@@ -109,15 +151,18 @@ try {
   L.push('')
   L.push('## 怎么补')
   L.push('')
-  L.push(`1. 图放进本目录（\`public/cg/\`），文件名 = 下表「文件名」那一列，`
+  L.push(`1. 图放 \`public/cg/\` 下，**路径照下表「文件名」那一列逐字对**（含子目录）—— `
+    + `分文件夹收图是可以的，路径写在登记表里（CG 的 \`dir\`、立绘的 \`INTIM_ART_DIR\`），`
     + `扩展名按 \`${EXTS.join('` → `')}\` 依次试，备一种即可（webp 体积最小）。`)
-  L.push('2. **不用改任何代码**：放一张亮一张；没图的槽位只留一行小字，写着该补的文件名（不占版位）。')
+  L.push('2. **不用改任何代码**：放一张亮一张；没图的槽位只留一行小字，写着该补的文件路径（不占版位）。')
   L.push('3. 版位形状由代码定（**约会 CG 3:2 `cover`；约会常服约 2:3 `contain`；私密立绘约 1:2 `contain`**），'
     + '出图规格不随仓库走 —— 详细说明见同目录 `README.md`。')
-  L.push('4. 改了图不生效：`Ctrl+F5`（`public/` 下的文件不带扩展名哈希，浏览器会吃旧缓存）。')
+  L.push('4. 一个槽位画了几版（同一场戏的细微差别）**就给它编号**：`<id>-1`、`<id>-2`…'
+    + '每次被导演点到就换下一版，转着圈来（不是动画帧）。下表「变体」那一列写着要几版。')
+  L.push('5. 改了图不生效：`Ctrl+F5`（`public/` 下的文件不带扩展名哈希，浏览器会吃旧缓存）。')
   L.push('')
-  L.push(`**当前进度：${allIds.length - missing.length} / ${allIds.length} 已补`
-    + `（还缺 ${missing.length} 张）** —— ✅ = 目录里已有图，⬜ = 待补。`)
+  L.push(`**当前进度：${total - missing.length} / ${total} 张已补`
+    + `（还缺 ${missing.length} 张）** —— ✅ = 已补，⬜ = 待补，◐ = 多变体只补了一部分。`)
   L.push('')
 
   L.push('## 一、约会常服立绘（见面页右栏 · 一人一张）')
@@ -129,7 +174,7 @@ try {
   L.push('| | 角色 | 文件名 |')
   L.push('| --- | --- | --- |')
   for (const w of wear) {
-    L.push(`| ${mark(w.id)} | ${cell(w.name)} | \`${w.id}\` |`)
+    L.push(`| ${mark(w.id, w.dir)} | ${cell(w.name)} | \`${pathOf(w.id, w.dir)}\` |`)
   }
   L.push('')
 
@@ -141,7 +186,7 @@ try {
   L.push('| | 角色 | 文件名 |')
   L.push('| --- | --- | --- |')
   for (const i of intim) {
-    L.push(`| ${mark(i.id)} | ${cell(i.name)} | \`${i.id}\` |`)
+    L.push(`| ${mark(i.id, i.dir)} | ${cell(i.name)} | \`${pathOf(i.id, i.dir)}\` |`)
   }
   L.push('')
 
@@ -153,10 +198,17 @@ try {
   L.push('再往下还有人**认人**的：带 `cast` 的那一张除了档位，**还要名单上那一位在场**'
     + '（主位与同场的都算）—— 只属于某一个人的画，缺了人就不摆。')
   L.push('')
-  L.push('| | 文件名 | 该画什么（`note`） | 什么时候进候选 |')
-  L.push('| --- | --- | --- | --- |')
+  L.push('素材按戏码分了子目录的，`dir` 那一栏就是它的家（下表「文件名」已经带上了目录，'
+    + '照抄即可）—— 目录变了只改登记表里的 `dir`，文件名照旧不用动。')
+  L.push('')
+  L.push('| | 文件名 | 该画什么（`note`） | 什么时候进候选 | 变体 |')
+  L.push('| --- | --- | --- | --- | --- |')
   for (const d of date) {
-    L.push(`| ${mark(d.id)} | \`${d.id}\` | ${cell(d.note)} | ${scopeOf(d)} |`)
+    const dir = d.dir ? `${d.dir}/` : ''
+    const n = Math.max(1, Math.floor(d.variants ?? 1))
+    const file = n <= 1 ? `\`${dir}${d.id}\`` : `\`${dir}${d.id}-1\` … \`-${n}\``
+    const vcell = n <= 1 ? '单张' : `${n} 版 · 每次触发换下一版`
+    L.push(`| ${slotMark(d)} | ${file} | ${cell(d.note)} | ${scopeOf(d)} | ${vcell} |`)
   }
   L.push('')
 
@@ -174,16 +226,18 @@ try {
      它不算「多一张」，会让清单把同一张数两遍、进度也跟着虚高，所以直接报出来。 */
   const dupes = [...new Set(allIds.filter((id, i) => allIds.indexOf(id) !== i))]
 
+  /* 进度按**文件**数（多变体的槽位一张算一张），重名按**槽位**数 —— 两回事，别混着报 */
+  const done = total - missing.length
   if (CHECK) {
-    process.stdout.write(`CG 清单：共 ${allIds.length} 张，已补 ${allIds.length - missing.length}，还缺 ${missing.length}\n`)
+    process.stdout.write(`CG 清单：共 ${total} 张（${allIds.length} 个槽位），已补 ${done}，还缺 ${missing.length}\n`)
     if (dupes.length) process.stdout.write('  重名（两处登记了同一个 id）：' + dupes.join('、') + '\n')
     if (missing.length) process.stdout.write(missing.map((m) => '  ' + m).join('\n') + '\n')
   } else {
     writeFileSync(OUT, L.join('\n'), 'utf8')
     process.stdout.write(`已写出 ${OUT}\n`)
-    process.stdout.write(`共 ${allIds.length} 张：约会常服 ${wear.length}`
-      + ` · 私密立绘 ${intim.length} · 见面约会 ${date.length}`
-      + ` —— 已补 ${allIds.length - missing.length}，还缺 ${missing.length}\n`)
+    process.stdout.write(`共 ${total} 张：约会常服 ${wear.length}`
+      + ` · 私密立绘 ${intim.length} · 见面约会 ${date.length} 个槽位`
+      + ` —— 已补 ${done}，还缺 ${missing.length}\n`)
     if (dupes.length) process.stdout.write('  重名：' + dupes.join('、') + '\n')
   }
 } finally {

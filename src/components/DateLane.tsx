@@ -48,7 +48,7 @@ import { DateSide } from './DateSide'
 import type { ApiSettings, ChatTurn, StreamResult } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { cgIdOf, cgNoteOf } from '../lib/cg'
+import { cgDirOf, cgIdOf, cgNoteOf, cgVariantId, cgVariantsOf } from '../lib/cg'
 import { clock } from '../lib/format'
 import type { ChatMsg } from '../data/types'
 import { applyDirective, dateDirective, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
@@ -91,7 +91,7 @@ export interface DateLaneProps {
 export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   const {
     operatorName, isMet, bondNow, bumpBond, setFlag, flagKeys, navigate, push, epDone, world,
-    cgOf, setCg, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd, bumpActs, setRel,
+    cgOf, cgTurnOf, setCg, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd, bumpActs, setRel,
   } = useTerminal()
 
   /* 台词框铭牌上要写操作员叫什么 —— 与主线同一句口径（见 PlotFlow.opNameOf） */
@@ -575,7 +575,16 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
           <div className={plot.thread} data-date-thread>
             {activeCg ? (
               <div className={css.threadCg}>
-                <CgSlot cgId={cgIdOf(activeCg)} caption={cgNoteOf(activeCg)} ratio="3 / 2" />
+                {/* 同一张画有多版时（`CgRef.variants`）换着摆：拿这场约会**被点过几次名**
+                    取模，第 1、2、3 次依次是 -1、-2、-3，越界绕回第一版。
+                    计的是「这场换过几次图」，不是「屏幕刷了几帧」—— 同一张连点两回不计数
+                    （见 `Terminal` 的 `setCg`），所以原地打转那几回合不会把变体白转过去。 */}
+                <CgSlot
+                  cgId={cgVariantId(cgIdOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id))}
+                  dir={cgDirOf(activeCg)}
+                  caption={cgNoteOf(activeCg)}
+                  ratio="3 / 2"
+                />
               </div>
             ) : null}
             {activeLog.length === 0 && !busy ? (
