@@ -49,7 +49,11 @@ export function listTasks(): SmsTask[] {
       const title = typeof o.title === 'string' ? o.title.trim() : ''
       if (!title) continue
       out.push({
-        id: typeof o.id === 'string' && o.id ? o.id : crypto.randomUUID(),
+        /* 缺 id 的那一条要**每次读出同一个 id**。从前这里落的是 `crypto.randomUUID()` ——
+           每读一次换一根，于是列表每重排一次就换一批 React key，更要命的是
+           勾选/删除拿的是上一帧那个 id，跟这一帧对不上：**点了不动**。
+           旧档与人手塞进来的条目会走这一支，所以按内容定一根稳定的。 */
+        id: typeof o.id === 'string' && o.id ? o.id : `t:${String(o.ts ?? 0)}:${title.slice(0, 32)}`,
         title,
         ...(typeof o.detail === 'string' && o.detail.trim() ? { detail: o.detail.trim() } : {}),
         ...(typeof o.from === 'string' && charOf(o.from) ? { from: o.from as CharId } : {}),

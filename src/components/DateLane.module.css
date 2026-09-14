@@ -1,22 +1,24 @@
 /* ============================================================
    DateLane —— 约会专线（在线推演里的另一路）
    ------------------------------------------------------------
-   版式与短信那条聊天窗**有意长得像**：同一本会话账、同一套气泡，
-   主人不该因为换了个入口就认不出这是聊天。差别只在两处：
-     · 头上的那条带子是「这一场」（人 · 名目 · 地点 · 时间 · 同场），
-       不是联系人条 —— 这一场散了就不在了；
-     · 右边多一栏，正常一面是「这一场」，翻过来才是色情状态栏。
+   **生成界面与在线推演原模原样**（主人指名）：会话体、旁白块、台词框、推演折叠、
+   接续选项、输入带，排法与样式全部取自 `views/Plot.module.css`（渲染在
+   `components/PlotFlow.tsx`）—— 这个文件里**没有**那些东西的第二份。
+   这一路自己的不同只剩两处：
+     · 头上那条带子是「这一场」（人 · 名目 · 地点 · 时间 · 同场）+ 换场 / 带人一起 /
+       作罢 / 散场那几枚；
+     · 右边多一栏，正常一面是「这一场」（人 + 常服立绘），翻过来才是色情状态栏。
 
-   **尺寸与主线那一块对齐**（主人指名）：这一路返回的是两块 ——
-   会话板（`panel`）与右栏（`aside`）—— 正好坐在 `Plot.module.css` 的
-   `.layout` 那两个格子上（`minmax(0,1fr) 330px`），所以宽度与主线一模一样。
+   **尺寸与主线那一块对齐**：这一路返回的是两块 —— 会话板（`panel`）与右栏
+   （`aside`）—— 正好坐在 `Plot.module.css` 的 `.layout` 那两个格子上
+   （`minmax(0,1fr) 330px`），所以宽度与主线一模一样。
 
-   这里有一条**踩过的坑**，改版式时别再踩回去：
-   内容体（`.body` / `.thread`）**不许写 `flex:1; min-height:0`** ——
-   这一块的外壳是随内容长的（`align-items: start` 的格子项，高度不定），
-   在高度不定的壳里 `flex:1` + `min-height:0` 会把内容体对父级的内在高度贡献压成 0，
-   面板塌得只剩一条头，再被 `.panel{overflow:hidden}` 一裁，**正文整段看不见**。
-   主线那一块（`Plot.module.css` 的 `.onBody` / `.thread`）就是内容撑开的写法，照它来。
+   这里有一条**踩过的坑**，改版式时别再踩回去：这一块的外壳随内容长
+   （`align-items: start` 的格子项，高度不定），内容体**不许写 `flex:1; min-height:0`** ——
+   在高度不定的壳里那两行会把内容体对父级的内在高度贡献压成 0，面板塌得只剩一条头，
+   再被 `.panel{overflow:hidden}` 一裁，**正文整段看不见**。
+   主线那一块（`Plot.module.css` 的 `.onBody` / `.thread`）就是内容撑开的写法，
+   这边直接用它，别再自己写一层。
 
    颜色/间距一律走 tokens.css 的设计变量。
    ============================================================ */
@@ -62,95 +64,14 @@
   gap: 6px;
 }
 
-/* ---------- 身子：会话流（随内容长）+ 底下那条输入带 ---------- */
-
-.body {
-  display: flex;
-  flex-direction: column;
-}
-
-.thread {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 120px;
-  padding: 18px 18px 10px;
-}
+/* ---------- 会话流里唯一属于这一路的一块：场景 CG 位 ----------
+   会话体与会话流（`.onBody` / `.thread`）用的是 `views/Plot.module.css` 那一份，
+   这里只管 CG 位摆在哪 —— 居中、不撑满整条会话流。 */
 
 .threadCg {
   align-self: center;
   width: 100%;
   max-width: 520px;
-}
-
-.threadEmpty {
-  align-self: center;
-  margin: 22px 0;
-  font-size: 12px;
-  color: var(--ink-faint);
-  letter-spacing: 0.08em;
-}
-
-.replyMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 74%;
-  align-self: flex-start;
-}
-
-.errLine {
-  align-self: center;
-  font-size: 12px;
-  color: var(--danger, #e06c75);
-}
-
-/* 推演（思考）折叠条 —— 与短信那条同一副样子 */
-.thinkFold {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.thinkHead {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--ink-soft, var(--ink-faint));
-  background: none;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-}
-
-.thinkBody {
-  padding: 8px 10px;
-  font-size: 11.5px;
-  line-height: 1.75;
-  color: var(--ink-faint);
-  white-space: pre-wrap;
-  border-top: 1px solid var(--line);
-}
-
-.optRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.optChip {
-  text-align: left;
-  white-space: normal;
-  line-height: 1.5;
-}
-
-.replyActs {
-  display: flex;
-  gap: 10px;
-  font-size: 11px;
 }
 
 /* ---------- 右栏：这一场 ⇄ 色情状态栏 ----------

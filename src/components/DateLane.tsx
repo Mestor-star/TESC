@@ -11,7 +11,9 @@
        以及 Terminal 的 `requestDate()` —— 短信或正文里聊成一场时由它跳过来；
      · 车道本体自成一体：会话流、输入框、生成、落地、右栏全在这儿，
        与短信那一套**不共用任何 state**（只共用同一本会话账 `lib/sms.ts`，
-       因为线程 id 还是 `d:<uuid>` —— 存档、未读、气泡渲染照旧复用）。
+       因为线程 id 还是 `d:<uuid>` —— 存档、未读照旧复用）。
+       **会话流只与在线推演共用**（`components/PlotFlow.tsx`）：写出来的是正文剧情
+       推演（第三人称叙述 + 「」对白），不是短信那种一来一往的气泡。
 
    为什么从 views/Tavern.tsx 搬过来：那一版把约会塞在短信页里，右栏一挂
    看着就像「短信旁边加了个侧边栏」。规矩是**移到在线推演**，那就得连人带账
@@ -22,19 +24,24 @@
    `date` 指令（两条都走 `dateReady`：时间与地点都说定才算数，见 lib/plot.ts）。
    ============================================================ */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Check, Eraser, HeartStraight, MapPin, PaperPlaneTilt, Stop, UsersThree, X } from '@phosphor-icons/react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Check, Eraser, HeartStraight, UsersThree, X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
-import { PERSON_IDS, OPERATOR_ID } from '../data/castmeta'
+import { PERSON_IDS } from '../data/castmeta'
 import { hasIntimate, INTIMATE_BOND, intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
 import { relName } from '../data/rel'
 import { plotContextFor } from '../lib/crosslink'
-import { Linkified } from './Linkified'
 import { Portrait } from './Portrait'
+/* 会话流那一套壳（旁白块 / 台词框 / 推演折叠 / 接续选项 / 输入带）与**在线推演
+   同一份** —— 主人定的：两边原模原样，只有右栏与里面的内容不一样。
+   排法住在 components/PlotFlow.tsx，样式用的就是 views/Plot.module.css 本身。 */
+import {
+  Composer, EmptyHint, NarrBlock, OptRow, RowActs, ThinkFold, Thinking, YouFrame, opNameOf,
+} from './PlotFlow'
 import { CgSlot } from './CgSlot'
 import { IntimateHud } from './IntimateHud'
 import { DateSide } from './DateSide'
@@ -60,7 +67,7 @@ import {
 } from '../lib/sms'
 import { addTask } from '../lib/smstasks'
 
-import comm from '../views/Comms.module.css'
+import plot from '../views/Plot.module.css'
 import css from './DateLane.module.css'
 
 const idFor = newMsgId
@@ -87,6 +94,9 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
     cgOf, setCg, bumpIntim, bumpAttire, dryAttireAll, meetChar, registerEnd, bumpActs, setRel,
   } = useTerminal()
 
+  /* 台词框铭牌上要写操作员叫什么 —— 与主线同一句口径（见 PlotFlow.opNameOf） */
+  const opName = opNameOf(operatorName)
+
   const [settings, setSettings] = useState<ApiSettings | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -96,6 +106,14 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   /** 右栏两面：正常一面（这一场）· 翻过来（色情状态栏） */
   const [face, setFace] = useState<'scene' | 'hud'>('scene')
   const [foldOpen, setFoldOpen] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleFold = useCallback((id: string) => {
+    setFoldOpen((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }, [])
   const [pickOpen, setPickOpen] = useState(false)
   const [pick, setPick] = useState<string[]>([])
   const abortRef = useRef<AbortController | null>(null)
@@ -358,9 +376,13 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   useEffect(() => {
     if (!rv || opened.current === rv.id) return
     if ((loadSmsLogs()[rv.id] ?? []).length > 0) { opened.current = rv.id; return }
+    /* 通道还没读出来、或者上一场正忙着 —— **先别认下这一场**，等下一轮再来。
+       从前是「先记账、再发话」：正忙时 `fireDate` 一进门就被 `busy` 挡回来，
+       而账已经记下了 —— 这一场就永远哑在那儿，换回来也不会再开一次。 */
+    if (!settings || busy) return
     opened.current = rv.id
-    if (settings) void fireDate(rv.id, [])
-  }, [rv, settings, fireDate])
+    void fireDate(rv.id, [])
+  }, [rv, settings, busy, fireDate])
 
   const send = async () => {
     const text = draft.trim()
@@ -546,128 +568,86 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
           </div>
         ) : null}
 
-        <div className={css.body}>
-          <div className={css.thread} data-date-thread>
-            <div className={comm.dayLabel}>
-              <MapPin size={11} weight="bold" /> {rv.place} · {rv.title}
-              {rv.time ? ` · ${rv.time}` : ''}
-            </div>
+        {/* 会话体与会话流：**壳子与在线推演同一份**（`Plot.module.css` 的
+            `.onBody` / `.thread`，外壳那一段的理由见文件头注释）。这一路的不同
+            只剩右栏与里面的内容 —— 排法一个字都不另立。 */}
+        <div className={plot.onBody}>
+          <div className={plot.thread} data-date-thread>
             {activeCg ? (
               <div className={css.threadCg}>
                 <CgSlot cgId={cgIdOf(activeCg)} caption={cgNoteOf(activeCg)} ratio="3 / 2" />
               </div>
             ) : null}
             {activeLog.length === 0 && !busy ? (
-              <div className={css.threadEmpty} data-date-empty>还没人开口。</div>
+              <EmptyHint
+                title="还没人开口"
+                body={`${c?.name ?? rv.charId} 还没出声 —— 写一句递过去，或者等着看谁先开这个口。`}
+              />
             ) : null}
-            {activeLog.map((m, i) => (
-              <Fragment key={m.id}>
-                <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`} data-date-msg={m.from}>
-                  <span className={comm.msgHead}>
-                    {m.from === 'user'
-                      ? <Portrait avatarId={OPERATOR_ID} size={26} round />
-                      : <Portrait avatarId={rv.charId} size={26} round />}
-                    <span className={comm.msgAuthor}>{m.from === 'them' ? (c?.name ?? rv.charId) : operatorName}</span>
-                  </span>
-                  <span className={comm.bubble}><Linkified text={m.text} /></span>
-                  <span className={comm.msgTime}>{m.time}</span>
-                </div>
+            {activeLog.map((m, i) =>
+              m.from === 'them' ? (
+                <NarrBlock
+                  key={m.id}
+                  label="导演叙述"
+                  time={m.time}
+                  text={m.text}
+                  opName={opName}
+                >
+                  {m.meta?.thinking ? (
+                    <ThinkFold
+                      open={foldOpen.has(m.id)}
+                      text={m.meta.thinking}
+                      onToggle={() => toggleFold(m.id)}
+                    />
+                  ) : null}
 
-                {m.from === 'them' ? (
-                  <div className={css.replyMeta}>
-                    {m.meta?.thinking ? (
-                      <div className={css.thinkFold}>
-                        <button
-                          type="button"
-                          className={css.thinkHead}
-                          onClick={() => setFoldOpen((prev) => {
-                            const n = new Set(prev)
-                            if (n.has(m.id)) n.delete(m.id)
-                            else n.add(m.id)
-                            return n
-                          })}
-                        >
-                          <b>推演</b>
-                          <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
-                            {foldOpen.has(m.id) ? '收起' : `展开 · ${m.meta.thinking.length} 字`}
-                          </span>
-                        </button>
-                        {foldOpen.has(m.id) ? <div className={css.thinkBody}>{m.meta.thinking}</div> : null}
-                      </div>
-                    ) : null}
+                  <OptRow
+                    options={m.meta?.options}
+                    disabled={busy}
+                    onPick={(op) => void pickOptionText(op)}
+                  />
 
-                    {m.meta?.options && m.meta.options.length ? (
-                      <div className={css.optRow}>
-                        {m.meta.options.map((op) => (
-                          <button
-                            key={op}
-                            type="button"
-                            className={`btn btn--ghost ${css.optChip}`}
-                            style={{ fontSize: 12 }}
-                            disabled={busy}
-                            onClick={() => void pickOptionText(op)}
-                          >
-                            {op}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true && !busy ? (
-                      <div className={css.replyActs}>
-                        <button type="button" className="linkGo" onClick={() => void rewriteLast(i)}>重写此回复</button>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </Fragment>
-            ))}
+                  {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true && !busy ? (
+                    <RowActs>
+                      <button type="button" className="linkGo" onClick={() => void rewriteLast(i)}>重写此回复</button>
+                    </RowActs>
+                  ) : null}
+                </NarrBlock>
+              ) : (
+                <YouFrame
+                  key={m.id}
+                  text={m.text}
+                  opName={opName}
+                  foot={<span className={`muted tiny ${plot.youFoot}`}>{m.time}</span>}
+                />
+              ),
+            )}
             {live && live.charId === rv.id && live.text ? (
-              <div className={`${comm.msg} ${comm['msg--them']}`} data-date-live="1">
-                <span className={comm.msgHead}>
-                  <Portrait avatarId={rv.charId} size={26} round />
-                  <span className={comm.msgAuthor}>{c?.name ?? rv.charId}</span>
-                </span>
-                <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
-                <span className={comm.msgTime}>生成中…</span>
-              </div>
+              <NarrBlock
+                label="导演叙述"
+                time="生成中…"
+                plain
+                text={extractLiveDisplay(live.text)}
+                opName={opName}
+              />
             ) : null}
-            {err ? <div className={css.errLine}>{err}</div> : null}
+            {err ? <div className={plot.errLine}>{err}</div> : null}
             {busy && (!live || live.charId !== rv.id || !live.text) ? (
-              <div className={comm.typing} aria-label="对方正在说话"><i /><i /><i /></div>
+              <Thinking text="导演正在铺这一场…" />
             ) : null}
             <div ref={endRef} />
           </div>
 
-          <div className={comm.composer} data-date-composer>
-            <input
-              className="field"
-              placeholder={`面对着 ${c?.name ?? rv.charId} 说…（Enter 送出）`}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  if (busy) stop()
-                  else void send()
-                }
-              }}
-            />
-            {busy ? (
-              <button className={`btn btn--amber ${comm.composerBtn}`} onClick={stop} aria-label="中断回复">
-                <Stop size={18} weight="bold" />
-              </button>
-            ) : (
-              <button
-                className={`btn btn--primary ${comm.composerBtn}`}
-                onClick={() => void send()}
-                disabled={!draft.trim()}
-                aria-label="送出"
-              >
-                <PaperPlaneTilt size={18} weight="bold" />
-              </button>
-            )}
-          </div>
+          <Composer
+            draft={draft}
+            onDraft={setDraft}
+            onSend={() => void send()}
+            onStop={stop}
+            busy={busy}
+            placeholder="这一场：向导演传达言万心叶的行动…（回车送出）"
+            rootProps={{ 'data-date-composer': '1' }}
+            sendTitle="把这一步写下去，导演接着往下铺"
+          />
         </div>
       </section>
 

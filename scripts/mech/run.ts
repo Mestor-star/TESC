@@ -4287,13 +4287,30 @@ export function run(): MechReport {
       'party 空 → 不挂')
 
     ok('多女同场 · 带了人才挂，且把同场的几位列到人（名单 + 各自与他的羁绊）',
-      twoPrompt.includes(HAREM_RULE) && twoPrompt.includes('这一场不止你们两个')
+      twoPrompt.includes(HAREM_RULE) && twoPrompt.includes('这一场不止两个人')
       && twoPrompt.includes('· 光：与他约 75/100'),
       '同场 1 位 → 名单写出来')
 
-    ok('多女同场 · 提示词点明「你只替你这一位开口」（多说话人最容易串到别人身上）',
-      onePrompt.includes('你是这一场里与') && onePrompt.includes('别替别人开口'),
-      '每位各读自己那一份')
+    /* 见面那一档的口径是**正文剧情推演**（主人 2026-09-14：「转换约会了就不要是短信对话了，
+       而是真正的正文剧情推演」）：第三人称全局叙述、篇幅跟着场面走、对白用「」。
+       这几句是那一档的门神 —— 改回短信那种「一到三句」就是走样。 */
+    ok('见面约会 · 口径是正文剧情推演（第三人称全局叙述 + 「」对白），不是隔屏打字',
+      onePrompt.includes('以第三人称全局叙述') && onePrompt.includes('这是正文，不是短信')
+      && onePrompt.includes('「名字：要说的话」') && !onePrompt.includes('每次回复一到三句')
+      && !onePrompt.includes('别写整段旁白小说'),
+      '第三人称 · 正文 · 对白行 · 无短信篇幅限制')
+
+    ok('见面约会 · 言万心叶还是操作员的，导演不许替他下决定、替他说话',
+      onePrompt.includes('由操作员扮演') && onePrompt.includes('绝不能替他下决定、替他说话'),
+      '主角不许被代言')
+
+    /* 同场几位各给一张卡：导演要把她们**一个个演出来**。只摆主位那一张，
+       同场的几位就只剩名字 —— 那正是多人同场最容易出的毛病（合流成一个「她们」）。 */
+    ok('多女同场 · 同场的每位各有一张卡（不是只摆主位那一张）',
+      onePrompt.includes('在场角色：') && onePrompt.includes(`· ${charOf('luna')?.name}（`)
+      && !onePrompt.includes(`· ${charOf('hikari')?.name}（`)
+      && twoPrompt.includes(`· ${charOf('luna')?.name}（`) && twoPrompt.includes(`· ${charOf('hikari')?.name}（`),
+      '一对一 1 张卡 · 带人 2 张卡')
 
     const oneRule = dateBondRule('luna')
     const twoRule = dateBondRule('luna', ['hikari'])

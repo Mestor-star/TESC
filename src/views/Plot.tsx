@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, Key } from 'react'
-import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicWand, PaperPlaneTilt, SlidersHorizontal, Stop, Sword, UploadSimple } from '@phosphor-icons/react'
+import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicWand, SlidersHorizontal, Sword, UploadSimple } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
-import { OPERATOR_ID, PERSON_IDS, personOf, speakerOf } from '../data/castmeta'
+import { OPERATOR_ID, PERSON_IDS, personOf } from '../data/castmeta'
 import { rosterRowsFor } from '../lib/cast'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
@@ -41,7 +41,6 @@ import { allowGateFor, buildLoreContext } from '../lib/lorescan'
 import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, readActivePreset } from '../lib/preset'
 import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
-import { splitSpeech } from '../lib/dialogue'
 import { smsContextFor } from '../lib/crosslink'
 import { INTIMATE_BOND, hasIntimate, intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
@@ -50,8 +49,13 @@ import { DateLane } from '../components/DateLane'
 import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { relName } from '../data/rel'
-import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
+/* 会话流那套壳（旁白块 / 台词框 / 推演折叠 / 接续选项 / 输入带）**住在
+   components/PlotFlow.tsx** —— 约会专线取的是同一份（主人：两边要原模原样）。
+   这里只引，不再自己排一遍。 */
+import {
+  Composer, EmptyHint, NarrBlock, OptRow, RowActs, Speech, ThinkFold, Thinking, YouFrame, opNameOf,
+} from '../components/PlotFlow'
 
 import css from './Plot.module.css'
 
@@ -1530,84 +1534,33 @@ export function Plot() {
 
   const quickReady = !busy && showOnline && ready
 
-  /* —— 台词框渲染辅助 —— */
-  const opName = operatorName.trim() ? operatorName : '言万心叶'
-  /** 把一段正文按「旁白 / 台词框」逐段渲染：
-      narr → 通栏叙述行（不分侧）；say(其它角色) → 整框靠左、立绘嵌左缘、名字嵌左上顶边；
-      you(操作员) → 整框镜像、立绘嵌右缘、名字嵌右上顶边。 */
-  const segNode = (seg: ReturnType<typeof splitSpeech>[number], key: Key) => {
-    if (seg.kind === 'narr') {
-      return (
-        <div key={key} className={css.narrText}>
-          <Linkified text={seg.text} />
-        </div>
-      )
-    }
-    if (seg.kind === 'you') {
-      return (
-        <div key={key} className={css.youRow} data-you="1">
-          <div className={`${css.frame} ${css.youFrame}`}>
-            <span className={css.dlgName}>{opName}</span>
-            <div className={css.frameRow}>
-              <span className={css.bubble}>
-                <Linkified text={seg.text} />
-              </span>
-              <Portrait avatarId="operator" width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
-            </div>
-          </div>
-        </div>
-      )
-    }
-    // 气泡头取「能开口的人」：在册档案 + 只在台词里出现的（如序章的拉法，见 castmeta.VOICE_ONLY）
-    const c = speakerOf(seg.id)
-    const hue = c?.hue ?? '#7fb4ff'
-    return (
-      <div key={key} className={css.sayRow} data-say="1" data-say-for={seg.id}>
-        <div className={`${css.frame} ${css.sayFrame}`}>
-          <span className={css.dlgName} style={{ color: hue }}>{c?.name ?? seg.id}</span>
-          <div className={css.frameRow}>
-            <Portrait avatarId={seg.id} width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
-            <span className={css.bubble}>
-              <Linkified text={seg.text} />
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  /* —— 台词框渲染辅助 ——
+     排法本身住在 components/PlotFlow.tsx（约会专线取的是同一份）；
+     这里只备一个名字 —— `.dlgName` 铭牌上要写操作员叫什么。 */
+  const opName = opNameOf(operatorName)
 
   /* 往期正文的只读渲染：台词与叙述照旧，但不再挂「从此重来／接续选项」这些按钮——
      那些只对当前这一段有意义。 */
   const histMsg = (m: ChatMsg, key: Key) => {
     if (m.from === 'user') {
       return (
-        <div key={key} className={css.youRow} data-you="1">
-          <div className={`${css.frame} ${css.youFrame}`}>
-            <span className={css.dlgName}>{opName}</span>
-            <div className={css.frameRow}>
-              <span className={css.bubble}>
-                <Linkified text={m.text} />
-              </span>
-              <Portrait avatarId="operator" width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
-            </div>
-          </div>
-          <span className={`muted tiny ${css.youFoot}`}>{m.time}</span>
-        </div>
+        <YouFrame
+          key={key}
+          text={m.text}
+          opName={opName}
+          foot={<span className={`muted tiny ${css.youFoot}`}>{m.time}</span>}
+        />
       )
     }
     return (
-      <div
+      <NarrBlock
         key={key}
-        className={m.meta?.opening ? `${css.narr} ${css.open}`
-          : m.meta?.battle ? `${css.narr} ${css.fight}` : css.narr}
-        data-narration={m.meta?.opening ? 'opening' : m.meta?.battle ? 'battle' : 'director'}
-      >
-        <div className={css.narrMeta}>
-          <b>{m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}</b>
-          <span className="muted tiny">{m.time}</span>
-        </div>
-        {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
-      </div>
+        label={m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}
+        tone={m.meta?.opening ? 'opening' : m.meta?.battle ? 'battle' : 'director'}
+        time={m.time}
+        text={m.text}
+        opName={opName}
+      />
     )
   }
 
@@ -1922,105 +1875,76 @@ export function Plot() {
                   </div>
                 ) : null}
                 {activeLog.length === 0 ? (
-                  <div className={css.emptyHint}>
-                    <b>{ready ? '从头推演这一事件' : '此段尚无会话'}</b>
-                    <span>
-                      {ready
-                        ? (pastBlocks.length
-                          ? '写下的都留在上面了。本段由你起头——输入任意消息开始这一事件。'
-                          : '输入任意消息，导演会依据大纲铺陈局势并由你接续行动。')
-                        : '配置主线通道后即可在线推演；当前可切「离线通读」阅读本段原文。'}
-                    </span>
-                  </div>
+                  <EmptyHint
+                    title={ready ? '从头推演这一事件' : '此段尚无会话'}
+                    body={ready
+                      ? (pastBlocks.length
+                        ? '写下的都留在上面了。本段由你起头——输入任意消息开始这一事件。'
+                        : '输入任意消息，导演会依据大纲铺陈局势并由你接续行动。')
+                      : '配置主线通道后即可在线推演；当前可切「离线通读」阅读本段原文。'}
+                  />
                 ) : (
                   activeLog.map((m, i) =>
                     m.from === 'them' ? (
-                      <div key={m.id}
-                        className={m.meta?.opening ? `${css.narr} ${css.open}`
-                          : m.meta?.battle ? `${css.narr} ${css.fight}` : css.narr}
-                        data-narration={m.meta?.opening ? 'opening' : m.meta?.battle ? 'battle' : 'director'}
+                      <NarrBlock
+                        key={m.id}
+                        label={m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}
+                        tone={m.meta?.opening ? 'opening' : m.meta?.battle ? 'battle' : 'director'}
+                        time={m.time}
+                        text={m.text}
+                        opName={opName}
                       >
-                        <div className={css.narrMeta}>
-                          <b>{m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}</b>
-                          <span className="muted tiny">{m.time}</span>
-                        </div>
-                        {splitSpeech(m.text).map((seg, si) => segNode(seg, si))}
-
                         {m.meta?.thinking ? (
-                          <div className={css.thinkFold}>
-                            <button type="button" className={css.thinkHead} onClick={() => toggleFold(m.id)}>
-                              <b>推演</b>
-                              <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
-                                {foldOpen.has(m.id) ? '收起' : `展开 · ${m.meta.thinking.length} 字`}
-                              </span>
-                            </button>
-                            {foldOpen.has(m.id) ? (
-                              <div className={css.thinkBody}>{m.meta.thinking}</div>
-                            ) : null}
-                          </div>
+                          <ThinkFold
+                            open={foldOpen.has(m.id)}
+                            text={m.meta.thinking}
+                            onToggle={() => toggleFold(m.id)}
+                          />
                         ) : null}
 
-                        {m.meta?.options && m.meta.options.length ? (
-                          <div className={css.optRow}>
-                            <span className="tiny" style={{ color: 'var(--ink-faint)', letterSpacing: '0.12em' }}>接续选项</span>
-                            {m.meta.options.map((op) => (
-                              <button
-                                key={op}
-                                type="button"
-                                className={`btn btn--ghost ${css.optChip}`}
-                                style={{ fontSize: 12 }}
-                                disabled={!quickReady}
-                                onClick={() => void pickOption(op)}
-                              >
-                                {op}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
+                        <OptRow
+                          options={m.meta?.options}
+                          disabled={!quickReady}
+                          onPick={(op) => void pickOption(op)}
+                        />
 
                         {showOnline && ready && !busy && !m.meta?.opening ? (
-                          <div className={css.rowActs}>
+                          <RowActs>
                             <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
                             {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true ? (
                               <button type="button" className="linkGo" onClick={() => void rewriteReply(i)}>重写此回复</button>
                             ) : null}
-                          </div>
+                          </RowActs>
                         ) : null}
-                      </div>
+                      </NarrBlock>
                     ) : (
-                      <div key={m.id} className={css.youRow} data-you="1">
-                        <div className={`${css.frame} ${css.youFrame}`}>
-                          <span className={css.dlgName}>{opName}</span>
-                          <div className={css.frameRow}>
-                            <span className={css.bubble}>
-                              <Linkified text={m.text} />
-                            </span>
-                            <Portrait avatarId="operator" width={64} style={{ width: 64, height: '100%', borderRadius: 0 }} className={css.framePortrait} />
-                          </div>
-                        </div>
-                        <span className={`muted tiny ${css.youFoot}`}>
-                          {m.time}
-                          {showOnline && ready && !busy ? (
-                            <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
-                          ) : null}
-                        </span>
-                      </div>
+                      <YouFrame
+                        key={m.id}
+                        text={m.text}
+                        opName={opName}
+                        foot={
+                          <span className={`muted tiny ${css.youFoot}`}>
+                            {m.time}
+                            {showOnline && ready && !busy ? (
+                              <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                            ) : null}
+                          </span>
+                        }
+                      />
                     ),
                   )
                 )}
                 {live && live.evId === focusEv.id && live.text ? (
-                  <div className={css.narr} data-stream-live="1">
-                    <div className={css.narrMeta}>
-                      <b>导演叙述</b>
-                      <span className="muted tiny">生成中…</span>
-                    </div>
-                    <div className={css.narrText}>
-                      <Linkified text={extractLiveDisplay(live.text)} />
-                    </div>
-                  </div>
+                  <NarrBlock
+                    label="导演叙述"
+                    time="生成中…"
+                    plain
+                    text={extractLiveDisplay(live.text)}
+                    opName={opName}
+                  />
                 ) : null}
                 {err ? <div className={css.errLine}>{err}</div> : null}
-                {busy && (!live || !live.text) ? <div className={css.thinking}>导演正在编织叙事…</div> : null}
+                {busy && (!live || !live.text) ? <Thinking text="导演正在编织叙事…" /> : null}
                 {needDir.current ? (
                   <div className={css.dirNotice}>
                     <span>上一回未解析到事件指令（叙述已保留）。</span>
@@ -2105,52 +2029,37 @@ export function Plot() {
                     </div>
                   ) : null}
                   {draftErr ? <div className={css.draftErr}>{draftErr}</div> : null}
-                  {/* 色情状态栏：在场且关系走到那一步的人，此刻的情欲值 / 最近一回 /
-                      贴身衣物（含内裤湿几分）。实时 —— 读数一动它当场就变。 */}
-                  <IntimateHud ids={hudIds} hint="此刻 · 主线在场 · 随推进实时变化" />
-                  <div className={css.composer}>
-                    <input
-                      className="field"
-                      placeholder={`推进事件：向导演传达言万心叶的行动…（回车送出；留空＝这一回合他不发话，照上下文往下推）`}
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          if (busy) stop()
-                          else void send()
-                        }
-                      }}
-                      disabled={!ready}
-                    />
-                    <button
-                      className={`btn btn--ghost ${css.draftBtn}`}
-                      onClick={() => void draftCandidates()}
-                      disabled={busy || drafting}
-                      aria-label="代拟行动候选"
-                    >
-                      {drafting ? <span className={css.draftSpin} aria-hidden="true" /> : null}
-                      <MagicWand size={16} weight="bold" />
-                      <span>{drafting ? '起草中…' : '代拟'}</span>
-                    </button>
-                    {busy ? (
-                      <button className={`btn btn--amber ${css.composerBtn}`} onClick={stop} aria-label="中断推演">
-                        <Stop size={18} weight="bold" />
-                      </button>
-                    ) : (
-                      /* 空着也送得出去：那一趟是「这一回合他不发话」（见 send 的说明）。
-                         按钮因此不再按「有没有字」置灰 —— 那个灰按钮会让这条规矩永远用不上。 */
+                  {/* 色情状态栏**不在这儿** —— 它归右栏那一列（见下面 `<aside>`）。
+                      主人 2026-09-14：「正文推演界面不要出现色情状态栏」——
+                      正文里只有叙述、台词与输入带，读数去右边看。 */}
+                  {/* 输入带（排法在 components/PlotFlow.tsx，与约会专线同一条）。
+                      空着也送得出去：那一趟是「这一回合他不发话」（见 send 的说明）——
+                      所以 `sendWhenEmpty`，按钮不按「有没有字」置灰。 */}
+                  <Composer
+                    draft={draft}
+                    onDraft={setDraft}
+                    onSend={() => void send()}
+                    onStop={stop}
+                    busy={busy}
+                    disabled={!ready}
+                    sendWhenEmpty
+                    placeholder="推进事件：向导演传达言万心叶的行动…（回车送出；留空＝这一回合他不发话，照上下文往下推）"
+                    sendAttrs={{ 'data-composer-send': '1' }}
+                    sendLabel={draft.trim() ? '发送' : '不写也行 · 照上下文推进一回合'}
+                    sendTitle={draft.trim() ? '送出这一回合' : '输入框空着也能送：这一回合他不发话，终端照上下文往下推'}
+                    acts={
                       <button
-                        className={`btn btn--primary ${css.composerBtn}`}
-                        onClick={() => void send()}
-                        data-composer-send
-                        aria-label={draft.trim() ? '发送' : '不写也行 · 照上下文推进一回合'}
-                        title={draft.trim() ? '送出这一回合' : '输入框空着也能送：这一回合他不发话，终端照上下文往下推'}
+                        className={`btn btn--ghost ${css.draftBtn}`}
+                        onClick={() => void draftCandidates()}
+                        disabled={busy || drafting}
+                        aria-label="代拟行动候选"
                       >
-                        <PaperPlaneTilt size={18} weight="bold" />
+                        {drafting ? <span className={css.draftSpin} aria-hidden="true" /> : null}
+                        <MagicWand size={16} weight="bold" />
+                        <span>{drafting ? '起草中…' : '代拟'}</span>
                       </button>
-                    )}
-                  </div>
+                    }
+                  />
                 </>
               ) : null}
             </div>
@@ -2191,16 +2100,9 @@ export function Plot() {
               ) : (
                 <div className={css.offText} data-event={focusEv.id}>
                   {/* 与后面生成的正文同一种排法：旁白走 narrText、台词走气泡 ——
-                      以前这里单开了一套「书」的字号，同一段正史两种长相。 */}
-                  {splitSpeech(offState.text).map((seg, si) =>
-                    seg.kind === 'narr' ? (
-                      <div key={si} className={css.narrText}>
-                        <Linkified text={seg.text} />
-                      </div>
-                    ) : (
-                      segNode(seg, si)
-                    ),
-                  )}
+                      以前这里单开了一套「书」的字号，同一段正史两种长相。
+                      排法取的是 components/PlotFlow.tsx 那一份（`Speech`）。 */}
+                  <Speech text={offState.text ?? ''} opName={opName} keyPrefix={offState.id ?? undefined} />
                 </div>
               )}
               <div className={css.offFoot}>
@@ -2219,6 +2121,15 @@ export function Plot() {
         {lane === 'date' ? null : (
         <aside className={css.aside}>
           {eventCard}
+          {/* 色情状态栏：在场且关系走到那一步的人，此刻的情欲值 / 最近一回 /
+              贴身衣物（含内裤湿几分）。实时 —— 读数一动它当场就变。
+              **挂在右栏，不在正文里**（主人 2026-09-14：「正文推演界面不要出现
+              色情状态栏」）；与约会专线那一栏同一格 —— 那边是翻一面才见它，
+              两边正文里都是一行都不出现。
+              门还是那一道：与输入框同挂在 `ready`（主通道已配）之后。 */}
+          {showOnline && ready ? (
+            <IntimateHud ids={hudIds} hint="此刻 · 主线在场 · 随推进实时变化" />
+          ) : null}
         </aside>
         )}
       </div>
