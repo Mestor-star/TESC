@@ -143,15 +143,25 @@ export function Guide() {
       return { left: vw / 2, top: vh / 2, transform: 'translate(-50%, -50%)' }
     }
     const side = step?.side ?? 'bottom'
+    /* 「挪到锚点旁边」＝挪出**整个**身位，不是挪半个。
+       气泡是 `translate(-50%,-50%)` 居中的，`left/top` 是**中心**；从前这里写的是
+       `spot.right + 16`，于是中心压在锚点边线上 —— 气泡有一半盖在锚点上。
+       `.bubble` 是 `pointer-events: auto`，盖住谁谁就点不着：开屏那一步锚的正是左栏，
+       十一个模块的中间六个当场按不动（主人 2026-09-14：「很多模块都点不开」）。
+       所以右/左、上/下各自要把半个身位加回来。 */
     if (side === 'right' || side === 'left') {
-      const left = side === 'right' ? spot.left + spot.width + 16 : spot.left - 16
+      const left = side === 'right'
+        ? spot.left + spot.width + 16 + hw
+        : spot.left - 16 - hw
       return {
         left: clamp(left, hw + PAD, vw - hw - PAD),
         top: clamp(spot.top + spot.height / 2, hh + PAD, vh - hh - PAD),
         transform: 'translate(-50%, -50%)',
       }
     }
-    const top = side === 'top' ? spot.top - 16 : spot.top + spot.height + 16
+    const top = side === 'top'
+      ? spot.top - 16 - hh
+      : spot.top + spot.height + 16 + hh
     return {
       left: clamp(spot.left + spot.width / 2, hw + PAD, vw - hw - PAD),
       top: clamp(top, hh + PAD, vh - hh - PAD),

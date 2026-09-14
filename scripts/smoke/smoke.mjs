@@ -459,6 +459,18 @@ try {
   const gTxt = await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');return b?b.innerText.replace(/\\s+/g,' ').slice(0,60):''})()`)
   ok('AG1 下一步推进到第 2 步（气泡换文案）', gA2 === '1' && !!gTxt, 'step=' + gA2 + ' txt=' + gTxt)
 
+  /* 气泡不许压在**它自己指的那一格**上。`.bubble` 是 pointer-events:auto —— 压住谁谁就点不着。
+     开屏第 2 步锚的正是左栏（side:'right'），从前气泡中心压在左栏右沿上：十一个模块
+     中间六个当场按不动（「很多模块都点不开」）。这一步锚点就是左栏，量它最直接。 */
+  const gCov = await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');const n=document.querySelector('[data-guide="nav"]');
+    if(!b||!n)return {err:'no bubble/nav'};
+    const rb=b.getBoundingClientRect(),rn=n.getBoundingClientRect();
+    const t=document.elementFromPoint(Math.round(rn.left+rn.width/2),Math.round(rn.top+Math.min(200,rn.height/2)));
+    return {gap:Math.round(rb.left-rn.right),onBubble:b.contains(t),inNav:!!(t&&n.contains(t))}})()`)
+  ok('AG1c 气泡摆到锚点旁边，不压在它身上（左栏那一步点得着）',
+    gCov.err === undefined && gCov.gap >= 0 && gCov.onBubble === false && gCov.inNav === true,
+    JSON.stringify(gCov))
+
   // 长气泡不许把「下一步」顶出屏幕：现场往这一步里灌 40 条，看按钮还在不在视野里
   await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');const ul=b&&b.querySelector('ul');
     if(!ul)return false;
