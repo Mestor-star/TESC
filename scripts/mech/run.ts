@@ -2648,34 +2648,79 @@ export function run(): MechReport {
       for (const m of TOURS.filter((t) => t.id.startsWith('tour-'))) markDone(m.id)
     }
 
+    /** 眼下开着哪几块界面 —— 三个布尔从前是三个位置参数，加上约会专线就四个了，
+        索性收成一个对象：再多一个「开着什么」也不会再改一次签名。 */
+    const on = (inBattle: boolean, bossUp: boolean, dateUp = false) => ({ inBattle, bossUp, dateUp })
+    /** 一个选择器里点名的那些 data-* 属性（锚点核账两处都要用，所以提前到这儿） */
+    const attrsOf = (sel: string | undefined) => (sel ?? '').match(/data-[a-z-]+/g) ?? []
+
     upToBattle()
-    const a1 = nextTour('missions', {}, true, false)
+    const a1 = nextTour('missions', {}, on(true, false))
     ok('梅芙引导：第一次进作战屏，讲的是作战基础（这时模块已讲完，没别的可讲）',
       a1?.id === BATTLE_ID, a1?.id ?? '（没讲）')
-    const a2 = nextTour('missions', {}, false, false)
+    const a2 = nextTour('missions', {}, on(false, false))
     ok('梅芙引导（对照）：不在作战屏上时，这一段不出现 —— 它是绑界面的，不是讲模块的',
       a2 === null, a2?.id ?? '（没讲）')
 
     /* 次序：boss 也在场时，先讲这一屏本身。
        反过来的话，boss 那一段说的「打断咏唱」「槽满接招」在玩家眼里没有落脚点。 */
     upToBattle()
-    const a3 = nextTour('missions', {}, true, true)
+    const a3 = nextTour('missions', {}, on(true, true))
     ok('梅芙引导：boss 也在场时，作战基础仍然排在前面（先认屏，再挨 boss）',
       a3?.id === BATTLE_ID, a3?.id ?? '（没讲）')
     markDone(BATTLE_ID)
-    const a4 = nextTour('missions', {}, true, true)
+    const a4 = nextTour('missions', {}, on(true, true))
     ok('梅芙引导：作战基础讲完、场上又是 boss —— 紧接着讲这一场怎么打',
       a4?.id === BOSS_ID, a4?.id ?? '（没讲）')
 
     /* 跳过教程管得住作战基础（那是玩家明说的「别再讲了」），管不住 boss（那一场不解释是要死人的）。 */
     upToBattle()
     skipTutorial()
-    const a5 = nextTour('missions', {}, true, false)
+    const a5 = nextTour('missions', {}, on(true, false))
     ok('梅芙引导：按过「跳过教程」之后，作战基础不再出现（它与模块讲解在同一条线上）',
       a5 === null, a5?.id ?? '（没讲）')
-    const a6 = nextTour('missions', {}, true, true)
+    const a6 = nextTour('missions', {}, on(true, true))
     ok('梅芙引导（对照）：唯独 boss 那一段，跳过教程也照讲 —— 打到那一场时跳过等于摸黑挨打',
       a6?.id === BOSS_ID, a6?.id ?? '（没讲）')
+
+    /* 约会专线那一段。
+       为什么它必须**另起一段**而不是并进 tour-plot 的尾巴：nextTour 一个模块只发一段
+       （MODULES.find 发第一个没讲过的），而 tour-plot 在第一次打开剧情推进时就被
+       markDone 烧掉了 —— 老档里那一段早讲完了，往它尾巴上补多少步都再也发不出来。
+       所以要有一条断言钉住「它是绑界面（field）的、不是绑模块（view）的」，
+       谁哪天顺手把它改成 view: 'plot'，这一条当场红灯。 */
+    const dateTour = TOURS.find((t) => t.id === 'date-lane')
+    ok('梅芙引导：约会专线单有一段，且绑在界面上而非模块上（并进 tour-plot 的尾巴老档看不到）',
+      !!dateTour && dateTour.field === 'date' && !dateTour.view,
+      dateTour ? `${dateTour.steps.length} 步 · field=${dateTour.field}` : '（找不到这一段）')
+
+    upToBattle()
+    const d1 = nextTour('plot', {}, on(false, false, true))
+    ok('梅芙引导：约会专线开着的时候，讲的是这一路（这时模块已讲完，没别的可讲）',
+      d1?.id === 'date-lane', d1?.id ?? '（没讲）')
+    const d2 = nextTour('plot', {}, on(false, false, false))
+    ok('梅芙引导（对照）：这一路收走之后，那一段不再出现（它绑的是这一路，不是剧情推进那一屏）',
+      d2 === null, d2?.id ?? '（没讲）')
+
+    /* 跳过教程也管得住它 —— 它与模块讲解在同一条线上（tutorial: true）。 */
+    upToBattle()
+    skipTutorial()
+    const d3 = nextTour('plot', {}, on(false, false, true))
+    ok('梅芙引导：按过「跳过教程」之后，约会专线那一段也不出现',
+      d3 === null, d3?.id ?? '（没讲）')
+
+    /* 锚点核账：`at` 里点名的每一个 data-* 属性，都得在约会专线的源码里真的挂着。
+       缺一个，那一步就只剩一个落在屏幕中央的气泡 —— 讲了，但对不上任何一块。 */
+    const dateSrc = readFileSync('src/views/Plot.tsx', 'utf8')
+      + readFileSync('src/components/DateLane.tsx', 'utf8')
+      + readFileSync('src/components/DateSide.tsx', 'utf8')
+    const dateMissing: string[] = []
+    for (const st of dateTour?.steps ?? []) {
+      for (const a of attrsOf(st.at)) if (!dateSrc.includes(a)) dateMissing.push(`${dateTour!.id} → ${a}`)
+    }
+    ok('梅芙引导：约会专线那一段每一步的锚点，在 Plot / DateLane / DateSide 里都真的挂着',
+      dateMissing.length === 0,
+      dateMissing.length ? [...new Set(dateMissing)].join('、') : `${dateTour?.steps.length ?? 0} 步逐条查过`)
     ok('梅芙引导：气泡上的「跳过教程」按钮也照这条线给 —— 作战基础给，boss 不给',
       battle?.tutorial === true && boss?.tutorial !== true,
       `作战基础 tutorial=${battle?.tutorial}　boss tutorial=${boss?.tutorial}`)
@@ -2683,7 +2728,6 @@ export function run(): MechReport {
     /* 锚点核账：`at` 里点名的每一个 data-* 属性，都得在作战屏源码里真的挂着。
        缺一个，那一步就只剩一个落在屏幕中央的气泡 —— 讲了，但对不上任何一块。 */
     const battleSrc = readFileSync('src/views/Battle.tsx', 'utf8')
-    const attrsOf = (sel: string | undefined) => (sel ?? '').match(/data-[a-z-]+/g) ?? []
     const fieldTours = [battle, boss].filter((t): t is (typeof TOURS)[number] => !!t)
     const missing: string[] = []
     for (const t of fieldTours) {

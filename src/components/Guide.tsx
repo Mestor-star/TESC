@@ -47,20 +47,23 @@ function sameSpot(a: Spot | null, b: Spot | null): boolean {
 }
 
 export function Guide() {
-  const { view, epDone } = useTerminal()
+  const { view, epDone, operatorName } = useTerminal()
   const [tour, setTour] = useState<GuideTour | null>(null)
   const [i, setI] = useState(0)
   const [spot, setSpot] = useState<Spot | null>(null)
-  /** 作战屏与 boss 都在文档里，不在 React 树上 —— 从 DOM 上读回来 */
-  const [field, setField] = useState({ inBattle: false, bossUp: false })
+  /** 作战屏、boss、约会专线都长在文档里，不在 React 树上 —— 从 DOM 上读回来 */
+  const [field, setField] = useState({ inBattle: false, bossUp: false, dateUp: false })
   const startedIn = useRef(view)
 
-  /* ---- 场上有没有在打仗、有没有 boss：气泡要等这两个条件才出来讲机制 ---- */
+  /* ---- 哪几块界面开着：气泡要等条件够了才出来讲那一段 ---- */
   useEffect(() => {
     const tick = () => {
       const inBattle = !!document.querySelector('[data-battle]')
       const bossUp = inBattle && !!document.querySelector('[data-chant]')
-      setField((f) => (f.inBattle === inBattle && f.bossUp === bossUp ? f : { inBattle, bossUp }))
+      // 约会专线：这一路的面板挂上来了（`Plot.tsx` 只在 lane === 'date' 且有一场在的时候挂它）
+      const dateUp = !!document.querySelector('[data-date-lane-area]')
+      setField((f) => (f.inBattle === inBattle && f.bossUp === bossUp && f.dateUp === dateUp
+        ? f : { inBattle, bossUp, dateUp }))
     }
     tick()
     const id = window.setInterval(tick, 800)
@@ -70,7 +73,7 @@ export function Guide() {
   /* ---- 该讲哪一段 ---- */
   useEffect(() => {
     if (tour) return
-    const t = nextTour(view, epDone, field.inBattle, field.bossUp)
+    const t = nextTour(view, epDone, field)
     if (t) {
       startedIn.current = view
       setTour(t)
@@ -83,12 +86,13 @@ export function Guide() {
     if (tour?.view && view !== startedIn.current) setTour(null)
   }, [view, tour])
 
-  /* ---- 绑界面的那一段（boss 讲解）退出作战屏就撤 ----
-     它没有 view，上面那条 `tour?.view` 的守卫对它整个短路；
-     玩家打到一半撤退，气泡会赖在终端菜单上不走。 */
+  /* ---- 绑界面的那几段：那一屏收走了就撤 ----
+     它们没有 view，上面那条 `tour?.view` 的守卫对它们整个短路；
+     玩家打到一半撤退、或者把约会那一路切回主线，气泡会赖在终端菜单上不走。 */
   useEffect(() => {
     if (tour?.field === 'battle' && !field.inBattle) setTour(null)
-  }, [tour, field.inBattle])
+    if (tour?.field === 'date' && !field.dateUp) setTour(null)
+  }, [tour, field.inBattle, field.dateUp])
 
   const step = tour && i < tour.steps.length ? tour.steps[i] : undefined
 
@@ -171,6 +175,11 @@ export function Guide() {
 
   if (!tour || !step) return null
 
+  /* 文案里的 `{op}` 换成操作员自己填的名字。
+     梅芙叫的是那个人的名字（原著里是「言万同学」），而名字是玩家在开屏自己填的 ——
+     写死在文案里的话，改了名的人就会听见她在叫别人。 */
+  const say = (l: string) => l.replace(/\{op\}/g, operatorName)
+
   const last = i >= tour.steps.length - 1
   /* 「跳过教程」只给教程那几条 —— 绑在界面上、又不算教程的（boss 讲解）不给：
      打到那一场的时候，跳过等于让人摸黑挨打。作战基础那一段算教程，
@@ -206,7 +215,7 @@ export function Guide() {
           </div>
           <div className={css.title}>{step.title}</div>
           <ul className={css.lines}>
-            {step.lines.map((l, n) => <li key={n}>{l}</li>)}
+            {step.lines.map((l, n) => <li key={n}>{say(l)}</li>)}
           </ul>
           <div className={css.foot}>
             <span className={`${css.pager} mono`}>{i + 1} / {tour.steps.length}</span>

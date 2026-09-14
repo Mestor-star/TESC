@@ -456,6 +456,30 @@ function hostileEffectOf(eff: SkillSpec['effect'] | undefined): boolean {
 }
 
 /**
+ * 一手的效果拆成「给自己的」与「打在别人身上的」两半。
+ *
+ * 原来这两栏只写在 resolve 的主路里，回响（`k.echo`）就把自己整份抄来的效果
+ * 落在手上不了 —— 抄了、没接（见下面 echo 那一支）。两处各写一份的话，
+ * 加了新键只改一处，另一处会安静地漏掉，所以抽成一处，谁要用谁来取。
+ */
+function splitEffect(e: NonNullable<SkillSpec['effect']>) {
+  const friendly: typeof e = {
+    heal: e.heal, cleanse: e.cleanse, shield: e.shield, evade: e.evade, accUp: e.accUp,
+    atkUp: e.atkUp, skillMul: e.skillMul, spdUp: e.spdUp, pushBar: e.pushBar, taunt: e.taunt,
+    ward: e.ward, charge: e.charge,
+  }
+  const hostile: typeof e = {
+    mark: e.mark, slow: e.slow, pushBack: e.pushBack,
+    silence: e.silence, bleed: e.bleed, frail: e.frail,
+    stasis: e.stasis, lockdown: e.lockdown, archive: e.archive,
+    stall: e.stall, clearBar: e.clearBar, breakGuard: e.breakGuard,
+  }
+  const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.accUp
+    || e.atkUp || e.skillMul || e.spdUp || e.pushBar || e.taunt || e.ward || e.charge)
+  return { friendly, hostile, hasFriendly, hasHostile: hostileEffectOf(e) }
+}
+
+/**
  * 一手的效果结算。
  * @param foes 受益方的敌方（用来施加压制）；缺省按施术者阵营取
  */
@@ -799,7 +823,12 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
 
   /* 回响：把我方上一手原样复写一遍，打到我们自己脸上。
      这一手不叠加在常规伤害上 —— 它本身就是「那一手」，
-     所以倍率、轴、附带效果都照抄，只按 echoPower 打个折。 */
+     所以倍率、轴、附带效果都照抄，只按 echoPower 打个折。
+
+     附带效果要单独落地：`...stolen` 把 `effect` 一并抄了进来，但打伤害的
+     `hit()` 只管算血，从不碰效果 —— 从前这一支只调 `hit()`，于是抄来的减益
+     永远不生效（「照抄附带效果」这句在代码里落空）。分法照常规那一支走：
+     给自己上的落在施术者身上，打在别人身上的落在那一个挨打的身上。 */
   if (k.echo && s.lastSkill) {
     const stolen = s.lastSkill
     const pool = aliveOf(s.allies)
@@ -818,6 +847,11 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
         note: `${atk.name} 把「${stolen.name}」原样念了回来 —— 复写落在 ${t.name} 身上。`,
       })
       if (ek.power > 0) pushLog(s, hit(s, atk, t, ek))
+      if (ek.effect) {
+        const sp = splitEffect(ek.effect)
+        if (sp.hasFriendly) applyEffect(s, atk, sp.friendly, [atk], [], ek.turns)
+        if (sp.hasHostile) applyEffect(s, atk, sp.hostile, [], [t], ek.turns)
+      }
     }
   }
 
@@ -868,22 +902,9 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     // 出手时点上的技能效果倍率（旧吉他解封）。在这里取一次定值：
     // 若这手本身就把 skillMul 加上去了，那也**从下一手**才生效，不自乘。
     const smul = skillSpecOf(atk)
-    const friendly: typeof e = {
-      heal: e.heal, cleanse: e.cleanse, shield: e.shield, evade: e.evade, accUp: e.accUp,
-      atkUp: e.atkUp, skillMul: e.skillMul, spdUp: e.spdUp, pushBar: e.pushBar, taunt: e.taunt,
-      ward: e.ward, charge: e.charge,
-    }
-    const hostile: typeof e = {
-      mark: e.mark, slow: e.slow, pushBack: e.pushBack,
-      silence: e.silence, bleed: e.bleed, frail: e.frail,
-      stasis: e.stasis, lockdown: e.lockdown, archive: e.archive,
-      stall: e.stall, clearBar: e.clearBar, breakGuard: e.breakGuard,
-    }
-    const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.accUp
-      || e.atkUp || e.skillMul || e.spdUp || e.pushBar || e.taunt || e.ward || e.charge)
     // 「打在别人身上的那一半」统一走一个判据 —— 两处各写一份的话，
     // 加了新键只改一处，另一处就会安静地漏掉（护持也会跟着挡不住）。
-    const hasHostile = hostileEffectOf(e)
+    const { friendly, hostile, hasFriendly, hasHostile } = splitEffect(e)
 
     if (k.target === 'all' || k.target === 'one') {
       if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, smul)
@@ -1338,7 +1359,12 @@ export function act(s: BattleState, cmd: Command): BattleState {
       target: targets.map((t) => t.name).join('、') || undefined,
       note: it.desc,
     })
-    applyEffect(s, me, it.effect, targets, [], 3)
+    /* 敌向的道具（target: 'enemyOne'，现在只有镇静剂）要走 **hostileTargets** 那一栏：
+       `clearBar` 的清咏唱、`mark` 这类压制，全都在 applyEffect 的敌向那一圈里。
+       从前一律塞进友方那一栏、敌向给空数组 —— 于是镇静剂只把行动条清零、
+       咏唱纹丝不动，与 types 里写死的设计（清条即破咏唱）对不上。 */
+    const toFoe = it.target === 'enemyOne'
+    applyEffect(s, me, it.effect, toFoe ? [] : targets, toFoe ? targets : [], 3)
   } else if (cmd.t === 'guard') {
     beginAction(s, me)
     const rec = Math.round(TUNING.guardRecover + me.axes.意志力 * TUNING.guardRecoverPerWill)
