@@ -41,7 +41,10 @@ import { putRecord } from '../lib/battle/store'
 import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import type { GearDef } from '../lib/battle/types'
 import { passiveText } from '../lib/battle/roster'
-import { effectTextsOf, mulTextOf, talentToText, talentUsesText, talentWhenText } from '../lib/battle/skilltext'
+import {
+  BUFF_LABEL, effectTextsOf, modsTextsOf, mulTextOf, talentEffectTexts, talentToText,
+  talentUsesText, talentWhenText,
+} from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
 import { enemyFormation } from '../lib/battle/derive'
@@ -971,18 +974,29 @@ ${siteR.f.word}`}>
                         <b>天赋（Talent）</b>
                         <span className={css.groupNote}>自动触发 · 一格都不点</span>
                       </div>
-                      {actor.passive?.talents?.length ? actor.passive.talents.map((t) => (
-                        <div key={`${actor.id}-talent-${t.name}`} className={css.talentRow} data-talent={t.name}>
-                          <span className={css.rowName}>{t.name}</span>
-                          <span className={css.rowCost}>{talentWhenText(t)}</span>
-                          <span className={css.rowDesc} data-talent-desc>
-                            {t.desc}
-                            {talentToText(t) || (t.uses ?? 1) !== 1
-                              ? ` 〔${talentUsesText(t)}${talentToText(t) ? ` · ${talentToText(t)}` : ''}〕`
-                              : ''}
-                          </span>
-                        </div>
-                      )) : (
+                      {actor.passive?.talents?.length ? actor.passive.talents.map((t) => {
+                        /* 效果单独一行（主人 2026-09-15：「效果什么的要写出来」）——
+                           触发档与次数只说「什么时候响」，这一行说的是「响了给什么数」。
+                           翻法在 skilltext.talentEffectTexts：效果 / 节拍 / 增益同一把尺。 */
+                        const eff = talentEffectTexts(t)
+                        return (
+                          <div key={`${actor.id}-talent-${t.name}`} className={css.talentRow} data-talent={t.name}>
+                            <span className={css.rowName}>{t.name}</span>
+                            <span className={css.rowCost}>{talentWhenText(t)}</span>
+                            <span className={css.rowDesc} data-talent-desc>
+                              {t.desc}
+                              {talentToText(t) || (t.uses ?? 1) !== 1
+                                ? ` 〔${talentUsesText(t)}${talentToText(t) ? ` · ${talentToText(t)}` : ''}〕`
+                                : ''}
+                            </span>
+                            {eff.length ? (
+                              <span className={css.talentEffect} data-talent-effect>
+                                {eff.join(' · ')}
+                              </span>
+                            ) : null}
+                          </div>
+                        )
+                      }) : (
                         <div className={css.talentRow} data-talent="（无）">
                           <span className={css.rowName}>——</span>
                           <span className={css.rowDesc} data-talent-desc>
@@ -1271,7 +1285,7 @@ function notesOf(k: SkillSpec): string[] {
   if (k.cost) out.push(`耗 ${k.cost} 节拍`)
   if (k.cd) out.push(`冷却 ${k.cd} 拍`)
 
-  const eff = effectTextsOf(k)
+  const eff = effectTextsOf(k.effect, k.turns)
   if (eff.length) out.push(...eff)
   else if (k.power <= 0) out.push('不造成伤害 · 亦无附带效果')
 
@@ -1292,18 +1306,9 @@ function notesOf(k: SkillSpec): string[] {
   return out
 }
 
-/** 装具的要点：装上去究竟改了什么数（取自 GearDef.mods，不另写一份） */
+/** 装具的要点：装上去究竟改了什么数（翻法在 skilltext.modsTextsOf，军需处读同一份） */
 function gearNotes(g: GearDef): string[] {
-  const out: string[] = []
-  for (const [k, v] of Object.entries(g.mods)) {
-    if (typeof v !== 'number' || !v) continue
-    if (k === 'spd') out.push(`充能 +${Math.round(v * 100)}%`)
-    else if (k === 'evade') out.push(`闪避 +${Math.round(v * 100)}%`)
-    else if (k === 'shield') out.push(`减伤 ${Math.round(v * 100)}%`)
-    else if (k === 'atk') out.push(`攻击 +${Math.round(v * 100)}%`)
-    else if (k === 'basicMul') out.push(`普攻 ×${(1 + v).toFixed(1)}`)
-    else out.push(`${k} ${v > 0 ? '+' : ''}${v}`)
-  }
+  const out = modsTextsOf(g.mods)
   if (g.skill) out.push(`附带一手「${g.skill.name}」`)
   if (g.unlockMain) out.push('须先完成对应主线才上架')
   return out
@@ -1368,15 +1373,8 @@ function Bar({ c }: { c: Combatant }) {
 function BuffTags({ c }: { c: Combatant }) {
   const guard = c.guardAxis ? c.guardPts : 0
   if (!c.buffs.length && !c.shield && !c.taunt && !guard && !c.broken && !c.ward && c.charge <= 1) return null
-  const label: Record<string, string> = {
-    /* `mark` 读作「易伤」不是「破绽」——
-       它是一条「被打更重」的减益，而「破绽」是反现实实体身上那层轴护盾
-       （guardPts / guardAxis，见下面单独那一条）。两个词从前混用过，这里分开。 */
-    atk: '攻势', spd: '加速', evade: '闪避', acc: '命中', shield: '护罩', mark: '易伤', slow: '减速',
-    // 敌方向我方挂的：标签直说后果，不必让玩家去翻说明
-    silence: '沉默', bleed: '流血', frail: '减攻',
-    stasis: '停滞', lockdown: '观测封锁', stall: '断拍',
-  }
+  /* 标签表搬去 skilltext.BUFF_LABEL（天赋那一格读的也是它，两处不能各写一套） */
+  const label = BUFF_LABEL
   return (
     <div className={css.buffs}>
       {/* 破绽：反现实实体身上那层「只有对上这条轴才削得动」的护盾。

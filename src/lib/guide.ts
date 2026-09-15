@@ -22,8 +22,34 @@
    进度落在本地：zts-guide:v1 —— 哪些讲完了、跳没跳。
    ============================================================ */
 
+import { personOf } from '../data/castmeta'
+import { LEVEL_BASE_COST, LEVEL_RATE, LEVEL_STEP_PCT } from './battle/store'
+
 /** 气泡挂在锚点的哪一侧 */
 export type GuideSide = 'top' | 'bottom' | 'left' | 'right'
+
+/**
+ * 一句**插话**：正文里由别人说的那一条。
+ *
+ * 气泡的身子一直是梅芙的（头像、名字、"跳过教程"都在她名下），
+ * 但一段讲下来全是一个人念说明书，读的人会走神 —— 而且有些事本来就不是
+ * 她该说的：军需处是她哥的柜台，作战屏上小柴比我熟。
+ * 所以正文的每一行都可以署上别人：那一位的话单独起一行、带自己的小头像与主题色，
+ * 像是她讲着讲着有人在旁边插了一句。
+ *
+ * `by` 是 **castmeta 的角色 id**（那二十位在册的）—— 名字、主题色、纹章、头像
+ * 全从那儿查，不在这里重抄一份；不在册的那几位（泰尔米别克）在 GUIDE_GUESTS 里单列。
+ */
+export interface GuideSay {
+  by: string
+  text: string
+}
+
+/** 正文的一行：光写字符串 = 梅芙自己说的；写成 GuideSay = 别人插一句 */
+export type GuideLine = string | GuideSay
+
+/** 署名的插话 —— 数据里写起来短一点 */
+const say = (by: string, text: string): GuideSay => ({ by, text })
 
 export interface GuideStep {
   /** 锚点：CSS 选择器。给不出 / 找不到 —— 气泡落在屏幕正中 */
@@ -32,7 +58,36 @@ export interface GuideStep {
   /** 这一步的标题（梅芙的一句话结论） */
   title: string
   /** 正文：一行一件事，别写长段 */
-  lines: string[]
+  lines: GuideLine[]
+}
+
+/** 插话的那一位怎么显示（名字 / 主题色 / 纹章 / 头像素材 id） */
+export interface GuideVoice {
+  name: string
+  hue: string
+  sigil: string
+  avatarId: string
+}
+
+/**
+ * 会在引导里插话、但**不在 castmeta 名册上**的那几位。
+ * 泰尔米别克 · 简别科娃（梅芙的哥哥，研究所 B-267）：军需处的柜台是他的，
+ * 他开口是这一段最自然的一句 —— 但他不是登场人物，没有档案页，所以字面放这儿。
+ * 主题色取苍之学园那一系的冷灰蓝（与他在原文里的身份对得上，不与在册者撞色）。
+ */
+export const GUIDE_GUESTS: Record<string, GuideVoice> = {
+  termi: { name: '泰尔米别克 · 简别科娃', hue: '#9fb4c7', sigil: '泰', avatarId: 'termi' },
+}
+
+/**
+ * 插话那一位的念法：先查名册，查不到再查 GUIDE_GUESTS。
+ * 两边都没有 = 数据写错了 id —— 返回 null，气泡上就不署这个名字
+ * （宁可只剩正文，也不摆一个「?」在那儿），mech 有一条断言专门守它。
+ */
+export function guideVoiceOf(id: string): GuideVoice | null {
+  const p = personOf(id)
+  if (p) return { name: p.name, hue: p.hue, sigil: p.sigil, avatarId: p.avatarId }
+  return GUIDE_GUESTS[id] ?? null
 }
 
 export interface GuideTour {
@@ -40,7 +95,7 @@ export interface GuideTour {
   /** 只在某个模块里出现；不给 = 全局 */
   view?: string
   /**
-   * 绑在哪个**界面**上（不是模块）：'battle' 或 'date'。
+   * 绑在哪个**界面**上（不是模块）：'battle' / 'date' / 'shop'。
    * 用它那三段讲的不是某个模块怎么用，而是**这一屏怎么用** ——
    * 所以它们既不该在切模块时撤、也不该在这一屏收走之后赖着不走（见 Guide 的轮询）。
    *
@@ -49,7 +104,7 @@ export interface GuideTour {
    * 剧情推进时就被 `markDone` 烧掉了 —— 往后往它身上补多少步，老玩家都再也看不到。
    * 这一路是后加的，老档里那一段早讲完了，所以照作战屏那两段的写法另起一段。
    */
-  field?: 'battle' | 'date'
+  field?: 'battle' | 'date' | 'shop'
   /**
    * 这一段算**教程**（气泡右下角给「跳过教程」）。
    * 绑在界面上、没有 view 的那两段默认不算教程 —— 但作战基础那一段算：
@@ -152,6 +207,9 @@ const BOOT: GuideTour = {
         '每推进一段，羁绊、终末点数、作战记录三个数都会变。这三个数在终端总览那一屏一次给全。',
         '总览不看就推剧情，等于不侦察就进场。',
         '现在进「终端总览」。',
+        /* 讲完这一段是她在旁边听着 —— 全篇的插话只此一句，收在这里最自然：
+           她是这个人的女仆，本来就站在旁边（原文「好了，回去吧——我的小主人」）。 */
+        say('luna', '「……听完了？好孩子。走吧，我的小主人。」'),
       ],
     },
   ],
@@ -625,6 +683,9 @@ const DATE: GuideTour = {
         '「约会专线」是另开的一路。账目、正文、往来记录，跟主线各记各的，互不打扰。',
         '它只在名册上还剩一场没散的时候才通 —— 那一场散了，这一枚当场收走，人也会被送回主线。',
         '先说清楚：这一路不是我拟的。委员会把它配下来的时候我核过一遍，签字的是别人。',
+        /* 这一段从头到尾是梅芙一个人不太自在的独白，插一句别人才显得屋里有人。
+           露娜用「泡茶」两个字把整段尴尬接了过去 —— 她本来就是这个脾气。 */
+        say('luna', '「……哦。这一路啊。我去泡茶。」'),
       ],
     },
     {
@@ -668,6 +729,71 @@ const DATE: GuideTour = {
         '这一路你要用就用，它不是我的东西，我没资格拦你。',
         '但账是记着的，一场一场都在。别让我在观测记录里成天撞见新名字。',
         '……说得太多了。总之，别太花心。',
+      ],
+    },
+  ],
+}
+
+/** —— 军需处：第一次点开柜台，把这一格讲一遍 ——
+ *
+ * 绑在**界面**上（field: 'shop'）：柜台开着才讲、关了就撤。
+ * 为什么不是并进「任务简报」那一段：任务简报讲的是板子（接单、出击、记录），
+ * 军需处是板子下面那一条挂牌，点开才展开 —— 挂在 view: 'missions' 那一段上的话，
+ * 玩家还没见过柜台就先听了一遍柜台怎么用。
+ *
+ * 这一段的插话是**泰尔米别克**（GUIDE_GUESTS.termi）—— 柜台本来就是他的，
+ * 那几句也照抄柜台顶上他说的原话。梅芙讲操作、他讲价钱与规矩：
+ * 一个在读说明书，一个在柜台后面不抬头。
+ */
+const SHOP: GuideTour = {
+  id: 'shop-intro',
+  field: 'shop',
+  tutorial: true,
+  steps: [
+    {
+      at: '[data-shop-seller]',
+      side: 'bottom',
+      title: '军需处 —— 这一格，是我哥的。',
+      lines: [
+        '委员会的研究所柜面。管它的是泰尔米别克 · 简别科娃，我哥，研究所 B-267 那位 —— 他一般不抬头。',
+        '这里不用钱。作战结算攒下的终末点数，在这儿就叫贡献点；能兑到什么，看的是你打过什么。',
+        say('termi', '「终末点数你攒得不少了。这些不是买来的，是我们做出来、记在贡献上的东西。挑一件吧，一个人一件。」'),
+        '……这几句我替他说了。往下三个柜台，我一个一个讲。',
+      ],
+    },
+    {
+      at: '[data-shop-tab="装具"]',
+      side: 'bottom',
+      title: '三个柜台：装备、补给、终末等级。',
+      lines: [
+        '「研究所产出的装备」是常驻的那一类 —— 装上就一直生效，每人至多装配一件，战斗中换装不消耗回合。',
+        '「道具补给」是消耗品：出击时按补给池带走，用一件少一件。',
+        '最右边那一格不是东西，是评级 —— 下一步单说。',
+        say('termi', '「有些件得先走完对应的主线才上架。没上架的东西，我不会先给你。」'),
+        say('termi', '「还有，配给一人一件。兑完为止。」'),
+      ],
+    },
+    {
+      at: '[data-shop-grid]',
+      side: 'top',
+      title: '每一张卡片：一句它是什么，一行它改哪几个数。',
+      lines: [
+        '数那一行与编成、档案里的读法是同一份 —— 破坏力 +6 就是破坏力 +6，减伤 6% 就是实打实的 6%。',
+        '附带一手的那几件会多写一行：那一手占技能菜单，不另花回合。',
+        '右下那枚按钮暗着，无非两种情形：贡献点不够，或者这件已经兑到上限了。',
+        '带「需完成主线」的那几件不是坏了，是还没到上架的时候 —— 打完那一段再回来。',
+      ],
+    },
+    {
+      at: '[data-shop-tab="终末等级"]',
+      side: 'bottom',
+      title: '最后一格：终末等级。它与剧情里的「终末」没有半点关系。',
+      lines: [
+        '剧情里的终末 Stage 是那个人命里带来的东西，按原文读数记在档案上，谁也不能改；这一栏记的是另一回事。',
+        `终端替在册者记的常驻强化评级 —— 每升一级，本人的五轴与生命整体上抬 ${LEVEL_STEP_PCT}%，不封顶。`,
+        `价往上翻：第一级 ${LEVEL_BASE_COST} 贡献点，之后每一级都在上一级的价上乘 ${LEVEL_RATE}。`,
+        '所以先给主力升，别平摊。平摊是给贡献点多得没处放的人准备的。',
+        say('termi', '「……听见了就好。」'),
       ],
     },
   ],
@@ -742,6 +868,8 @@ const BATTLE: GuideTour = {
         '攻击：普通攻击，最省的一手，不耗技能，只按倍率算。打出去还回一点节拍——按职能给：调度、取材回两点，主音只回一点。',
         '技能：点开来是技能表，下面单独讲。',
         '道具：消耗品，用完即没。清行动条的镇静剂那类东西在这里。它不消耗回合，一个回合里全队合起来能用一次，还顺手回两点节拍。',
+        /* 道具这一格归她讲 —— 麻醉担当是她的活，仓库里的镇静剂也是她调的 */
+        say('nyau', '「喵——那支镇静剂是小柴调的。扎进去，对面就动不了了。」'),
         '防御：这一道现在管的不只是减伤，下面单独讲。',
         '更换装备：也不消耗回合，一个回合里全队一次。作战中改的就是他身上这一套——冷却不会因为换来换去而刷新。',
         '战略撤退：按钮上写着成功率，按下去先掷这一下。失败了这一手白费，对面照常行动。',
@@ -834,6 +962,8 @@ const BATTLE: GuideTour = {
         '羁绊管的是两套不一样的联动：整队那一条走共鸣槽，双人那些走追击的条件。牌上挂着哪种读数，就是哪一套——一个是有槽要蓄，一个是够条件就接。',
         '两套的拍数都由交情定：交情够的档位，槽要的更少、冷却也更短。',
         '所以「攒羁绊」是有回报的：聊天、一起打仗都往上抬，抬到下一档，这两样一起变快。',
+        /* 羁绊那一行由她说：那条线本来就是她的（丝线续行那一条，原文里她替他拽回来） */
+        say('luna', '「跟我一起上场的时候，那条线会自己收紧。……随便你怎么理解。」'),
       ],
     },
     {
@@ -1041,7 +1171,7 @@ const BOSS: GuideTour = {
 }
 
 /** 全部引导，按出场顺序排 */
-export const TOURS: GuideTour[] = [BOOT, ...MODULES, DATE, BATTLE, BOSS]
+export const TOURS: GuideTour[] = [BOOT, ...MODULES, DATE, SHOP, BATTLE, BOSS]
 
 export interface GuideState {
   /** 已经讲完（或跳过）的引导 id */
@@ -1108,13 +1238,13 @@ export function writeGuide(g: GuideState | undefined): void {
  * 现在该讲哪一段。
  * @param view    当前模块
  * @param epDone  已收束的事件
- * @param on      眼下哪几块界面是开着的（作战屏 / boss / 约会专线）——
+ * @param on      眼下哪几块界面是开着的（作战屏 / boss / 约会专线 / 军需处）——
  *                这几个都是**从 DOM 上读回来**的，不在 React 树上（见 Guide 的轮询）
  */
 export function nextTour(
   view: string,
   epDone: Record<string, true>,
-  on: { inBattle: boolean; bossUp: boolean; dateUp: boolean },
+  on: { inBattle: boolean; bossUp: boolean; dateUp: boolean; shopUp: boolean },
 ): GuideTour | null {
   const g = readGuide()
   const seen = (id: string) => g.done.includes(id)
@@ -1130,6 +1260,9 @@ export function nextTour(
   /* 约会专线那一段：这一路开着才讲。它排在模块之前 —— 玩家既然切到了这一路，
      想听的是这一路怎么走，不是「剧情推进」那一屏怎么用（那一屏他早认过了）。 */
   if (on.dateUp && tutorialOpen && !seen(DATE.id)) return DATE
+  /* 军需处那一段：柜台开着才讲。它排在模块之前 —— 玩家是自己点开柜台的，
+     这时候要听的是「这一格能兑什么」，不是「任务简报那一屏怎么用」。 */
+  if (on.shopUp && tutorialOpen && !seen(SHOP.id)) return SHOP
   if (!tutorialOpen) return null
   if (!seen(BOOT.id)) return BOOT
   const t = MODULES.find((m) => m.view === view && !seen(m.id))

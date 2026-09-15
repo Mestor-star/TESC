@@ -126,6 +126,34 @@
   color: var(--ink-mute);
 }
 
+/* 插话那一行：小头像 + 名字，与梅芙自己的条目分开 ——
+   缩进让出来，读起来像是「有人从旁边接了半句」，而不是列表里多了一条。
+   名字的颜色由数据给（castmeta 的主题色），不在这里写死任何一个人。 */
+.lines li.guest {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  /* 顶到列表的左沿：正文那块缩进是给梅芙的条目留的，插话要看起来像另一个人的 */
+  margin-left: -14px;
+  padding: 3px 0 3px 6px;
+  border-left: 2px solid var(--line-2);
+}
+.guestFace {
+  flex: none;
+  display: flex;
+  line-height: 0;
+  /* 与首行文字对齐（12px × 1.62 的行高里，18px 的头像往上提一点才平） */
+  margin-top: -1px;
+}
+.guestBody {
+  min-width: 0;
+}
+.guestBody b {
+  margin-right: 5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .foot {
   display: flex;
   align-items: center;

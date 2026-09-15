@@ -1507,6 +1507,16 @@
   background: color-mix(in srgb, var(--violet) 5%, transparent);
 }
 .talentRow .rowName { color: color-mix(in srgb, var(--violet) 74%, var(--ink)); }
+/* 天赋给的那几个数：单独占满一行，与上面那句 prose 分开 ——
+   读的人要先看见「+15%」这种能对上的数，再回头看它什么时候响 */
+.talentEffect {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--amber) 72%, var(--ink));
+}
 .talentMeta {
   font-style: normal;
   font-family: var(--font-mono);

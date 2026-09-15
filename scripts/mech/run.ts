@@ -114,7 +114,10 @@ import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissi
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { assertDutySlots, passiveText, ROSTER } from '../../src/lib/battle/roster'
-import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
+import {
+  BUFF_LABEL, ITEM_TARGET_LABEL, effectLineOf, effectTextsOf, modsTextsOf, mulTextOf,
+  talentEffectTexts,
+} from '../../src/lib/battle/skilltext'
 import { battleStoryBrief, templateStorylog } from '../../src/lib/battle/storylog'
 import type { BattleRecord } from '../../src/lib/battle/types'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
@@ -190,7 +193,8 @@ import { applyDirective, directiveHasFx, dateDirective, dateReady, sanitizeDirec
 import {
   EPISODES, countMainlineDone, episodeOf, freeIdAfterVol, freeLabel, isFreeId, nextEpisodeAfter,
 } from '../../src/lib/freetime'
-import { markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
+import { GUIDE_GUESTS, guideVoiceOf, markDone, nextTour, skipTutorial, TOURS } from '../../src/lib/guide'
+import type { GuideLine } from '../../src/lib/guide'
 import type { ChannelCfg } from '../../src/lib/schemes'
 import type { BedName, Chord } from '../../src/lib/audio/music'
 import type { ActCount, Mission, RelId, TimelineEvent, WorldRecord, WorldState } from '../../src/data/types'
@@ -4078,9 +4082,12 @@ export function run(): MechReport {
 
     /** 眼下开着哪几块界面 —— 三个布尔从前是三个位置参数，加上约会专线就四个了，
         索性收成一个对象：再多一个「开着什么」也不会再改一次签名。 */
-    const on = (inBattle: boolean, bossUp: boolean, dateUp = false) => ({ inBattle, bossUp, dateUp })
+    const on = (inBattle: boolean, bossUp: boolean, dateUp = false, shopUp = false) =>
+      ({ inBattle, bossUp, dateUp, shopUp })
     /** 一个选择器里点名的那些 data-* 属性（锚点核账两处都要用，所以提前到这儿） */
     const attrsOf = (sel: string | undefined) => (sel ?? '').match(/data-[a-z-]+/g) ?? []
+    /** 正文一行取字：光字符串 = 梅芙说的，`{ by, text }` = 别人插一句（见 guide.GuideLine） */
+    const lineText = (l: GuideLine) => (typeof l === 'string' ? l : l.text)
 
     upToBattle()
     const a1 = nextTour('missions', {}, on(true, false))
@@ -4195,7 +4202,11 @@ export function run(): MechReport {
 
     // 每一步都得有话说：空标题 / 空条目 = 玩家点了一下「下一步」，什么也没发生
     const hollow = fieldTours.flatMap((t) => t.steps
-      .map((st, i) => ({ t: t.id, i, empty: !st.title.trim() || st.lines.length === 0 || st.lines.some((l) => !l.trim()) }))
+      .map((st, i) => ({
+        t: t.id, i,
+        empty: !st.title.trim() || st.lines.length === 0
+          || st.lines.some((l) => !lineText(l).trim()),
+      }))
       .filter((x) => x.empty)
       .map((x) => `${x.t} 第 ${x.i + 1} 步`))
     ok('梅芙引导：作战屏那两段没有空步骤（标题与条目都得有字）',
@@ -4214,7 +4225,7 @@ export function run(): MechReport {
       .map((m) => ({ id: m[1]!, cn: m[2]! }))
     const bootTour = TOURS.find((t) => t.id === 'boot')
     const navStep = bootTour?.steps.find((s) => s.at === '[data-guide="nav"]')
-    const named = (navStep?.lines[0] ?? '').replace(/。$/, '').split('、')
+    const named = lineText(navStep?.lines[0] ?? '').replace(/。$/, '').split('、')
     const NUM: Record<string, number> = {
       一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12,
     }
@@ -4232,6 +4243,118 @@ export function run(): MechReport {
     ok('梅芙引导（对照）：反过来，没有哪一段是挂在侧栏不存在的模块上的',
       noRail.length === 0, noRail.length ? `挂着空模块：${noRail.join('、')}` : '没有孤立的模块讲解')
     info.push(`侧栏 ${rail.length} 格 ↔ 模块讲解 ${TOURS.filter((t) => t.view).length} 段，逐格对得上`)
+
+    /* ---- 军需处那一段（主人 2026-09-15：「商店介绍（梅芙引导）」）----
+       与约会专线同一个道理：柜台是 Missions 里点开才展开的一层，绑 view: 'missions'
+       的话玩家还没见过柜台就先听了一遍。所以它也得是 field: 'shop'。 */
+    const shopTour = TOURS.find((t) => t.id === 'shop-intro')
+    ok('梅芙引导：军需处单有一段，且绑在柜台上而非模块上（挂在任务简报上等于没展开就先讲）',
+      !!shopTour && shopTour.field === 'shop' && !shopTour.view && shopTour.tutorial === true,
+      shopTour ? `${shopTour.steps.length} 步 · field=${shopTour.field} · tutorial=${shopTour.tutorial}` : '（找不到这一段）')
+
+    upToBattle()
+    const s1 = nextTour('missions', {}, on(false, false, false, true))
+    ok('梅芙引导：柜台开着的时候，讲的是军需处那一段（这时模块已讲完，没别的可讲）',
+      s1?.id === 'shop-intro', s1?.id ?? '（没讲）')
+    const s2 = nextTour('missions', {}, on(false, false, false, false))
+    ok('梅芙引导（对照）：柜台关上之后，那一段不再出现（它绑的是柜台，不是任务简报那一屏）',
+      s2 === null, s2?.id ?? '（没讲）')
+    upToBattle()
+    skipTutorial()
+    const s3 = nextTour('missions', {}, on(false, false, false, true))
+    ok('梅芙引导：按过「跳过教程」之后，军需处那一段也不出现（与模块讲解在同一条线上）',
+      s3 === null, s3?.id ?? '（没讲）')
+
+    /* 终末等级那两句是**照常数算的**，不是抄死在文案里 —— 主人哪天再调一次曲线，
+       （1000 / ×1.6 / +10%）文案跟着走。抄死的话，讲的和柜台里卖的就是两回事。 */
+    const lvStep = shopTour?.steps.find((st) => (st.at ?? '').includes('终末等级'))
+    const lvText = (lvStep?.lines ?? []).map(lineText).join('\n')
+    ok('梅芙引导：军需处那一段讲的价与加成，是从 store 的常数现算的（不是抄死的数）',
+      !!lvStep && lvText.includes(String(LEVEL_BASE_COST)) && lvText.includes(String(LEVEL_RATE))
+      && lvText.includes(`${LEVEL_STEP_PCT}%`),
+      `第一级 ${LEVEL_BASE_COST} · 每级 ×${LEVEL_RATE} · 每级 +${LEVEL_STEP_PCT}% 都在文案里`)
+
+    /* 锚点核账：军需处那一段的每一步，属性都得在 Missions.tsx 里真的挂着 */
+    const missionSrc = readFileSync('src/views/Missions.tsx', 'utf8')
+    const shopMissing: string[] = []
+    for (const st of shopTour?.steps ?? []) {
+      for (const a of attrsOf(st.at)) if (!missionSrc.includes(a)) shopMissing.push(`shop-intro → ${a}`)
+    }
+    ok('梅芙引导：军需处那一段每一步的锚点，在 Missions.tsx 里都真的挂着',
+      shopMissing.length === 0,
+      shopMissing.length ? [...new Set(shopMissing)].join('、') : `${shopTour?.steps.length ?? 0} 步逐条查过`)
+
+    /* ---- 插话（主人 2026-09-15：「之前的教程中可以增加其他人的插话」）----
+       正文的一行从前只能是字符串（＝梅芙自己说的），现在也可以是署了名的一条。
+       署错 id 的后果是**静的**：气泡上那一行不署名，读的人只当是梅芙换了口气 ——
+       所以每一位插话者都得能在 castmeta（或 GUIDE_GUESTS）里查到。 */
+    const speaks = TOURS.flatMap((t) => t.steps.flatMap((st, i) => st.lines
+      .filter((l): l is Exclude<GuideLine, string> => typeof l !== 'string')
+      .map((l) => ({ tour: t.id, i, by: l.by, text: l.text }))))
+    const unknown = speaks.filter((x) => !guideVoiceOf(x.by))
+    ok('梅芙引导：教程里的插话者都查得到（castmeta 在册，或 GUIDE_GUESTS 单列的那一位）',
+      speaks.length > 0 && unknown.length === 0,
+      unknown.length
+        ? `查不到：${unknown.map((x) => `${x.tour} 第 ${x.i + 1} 步 → ${x.by}`).join('、')}`
+        : `${speaks.length} 句插话，分布在 ${[...new Set(speaks.map((x) => x.tour))].join('、')}`)
+    ok('梅芙引导（对照）：同一条判据认得出一个没登记过的 id',
+      guideVoiceOf('not-a-real-id') === null && !!guideVoiceOf('luna')
+      && guideVoiceOf('termi')?.name === GUIDE_GUESTS.termi!.name,
+      `luna → ${guideVoiceOf('luna')?.name}　termi → ${guideVoiceOf('termi')?.name}`)
+    const emptySay = speaks.filter((x) => !x.text.trim())
+    ok('梅芙引导：插话那一行也得有字（空的一行＝气泡里多出一个空条目）',
+      emptySay.length === 0, emptySay.length ? '有空的插话' : `${speaks.length} 句都查过`)
+
+    /* ---- 商店的描述与天赋的描述：数要落在屏上（主人 2026-09-15 的两条）----
+       界面那两处（Missions 的卡片、Battle 的天赋格）在源码上对账：
+       两处都得读 skilltext 那一份，不许自己再写一套翻法。 */
+    ok('商店的描述：卡片上的数与效果读的是 skilltext 那一份（源码账：Missions 调了 modsTextsOf）',
+      /modsTextsOf\(/.test(missionSrc) && /effectTextsOf\(/.test(missionSrc),
+      'Missions 的卡片挂上了 modsTextsOf / effectTextsOf')
+    const battleSrc2 = readFileSync('src/views/Battle.tsx', 'utf8')
+    ok('天赋的描述：作战屏那一格写出效果（源码账：Battle 调了 talentEffectTexts，且挂 data-talent-effect）',
+      /talentEffectTexts\(/.test(battleSrc2) && battleSrc2.includes('data-talent-effect'),
+      'Battle 的天赋行挂上了 talentEffectTexts')
+    ok('天赋的描述（对照）：状态标签表不再各处各写一份（Battle 不再自带那个 label 表）',
+      !/atk: '攻势'/.test(battleSrc2) && BUFF_LABEL.atk === '攻势',
+      'Battle 里那七行标签已经搬回 skilltext.BUFF_LABEL')
+
+    /* 写出来的是**数**，不是又一句散文 —— 拿真数据点名验两条：
+       露娜的「丝线记事」（打出暴击 → 目标受伤 +15%）与一件补给（回复 35% × 意志力）。 */
+    const tal = (ROSTER.luna?.passive?.talents ?? [])[0]
+    const talTxt = tal ? talentEffectTexts(tal).join(' · ') : ''
+    ok('天赋的描述：数写在屏上（露娜的丝线记事读得出「目标受伤 +15%」）',
+      !!tal && talTxt.includes('15%'), tal ? `${tal.name} → ${talTxt || '（一条都没读出来）'}` : '（露娜没有天赋）')
+    const noEff = { name: '（无效果的）', desc: '', trigger: { on: 'battleStart' } } as typeof tal
+    ok('天赋的描述（对照）：没有效果的那一条就是空的，不是硬凑一句话',
+      !!tal && talentEffectTexts(noEff).length === 0 && talentEffectTexts(tal).length > 0,
+      '无效果 → 0 条；丝线记事 → ' + talentEffectTexts(tal).length + ' 条')
+    const ration = ITEMS.find((i) => i.id === 'ration')!
+    const sedative = ITEMS.find((i) => i.id === 'sedative')!
+    ok('商店的描述：补给读得出「回复 35% × 意志力」「清空行动条 · 打断咏唱」',
+      effectTextsOf(ration.effect).join(' · ').includes('35%')
+      && effectTextsOf(sedative.effect).join(' · ').includes('清空行动条'),
+      `观测口粮 → ${effectTextsOf(ration.effect).join(' · ')}`)
+    const thread = GEARS.find((g) => g.id === 'luna-thread')!
+    const brace = GEARS.find((g) => g.id === 'brace')!
+    ok('商店的描述：装具读得出轴修正与减伤（露娜的丝线 / 反现实护板）',
+      modsTextsOf(thread.mods).some((s) => s.startsWith('破坏力 +8'))
+      && modsTextsOf(brace.mods).includes('减伤 6%'),
+      `露娜的丝线 → ${modsTextsOf(thread.mods).slice(0, 3).join(' · ')}…`)
+    /* 同一件东西在两处读成两句话 —— 从前 Archive 的那套写着「普攻倍率 +60%」，
+       编成那一套写着「普攻 ×1.6」。现在只有一处翻法，这条钉住它。 */
+    ok('商店的描述（对照）：普攻倍率只按乘数读（0.6 → 普攻 ×1.6，不再有第二套读法）',
+      modsTextsOf({ basicMul: 0.6 }).join('') === '普攻 ×1.6'
+      && !/普攻倍率/.test(readFileSync('src/views/Archive.tsx', 'utf8')),
+      modsTextsOf({ basicMul: 0.6 }).join(''))
+    ok('商店的描述：补给的目标读法不与技能那张表混用（键同义反）',
+      ITEM_TARGET_LABEL.one === '对我方一人' && ITEM_TARGET_LABEL.enemyOne === '对敌方一人',
+      `one → ${ITEM_TARGET_LABEL.one}　enemyOne → ${ITEM_TARGET_LABEL.enemyOne}`)
+
+    info.push(`军需处引导：${shopTour?.steps.length ?? 0} 步；正文里的插话 ${speaks.length} 句`
+      + `（${[...new Set(speaks.map((x) => x.by))].join('、')}）`)
+    info.push('商店与天赋的描述：数从 skilltext 一份口径出（装备轴修正 / 补给效果 / 天赋效果）'
+      + ' —— 主人 2026-09-15 那两条各钉住')
 
     info.push(`作战屏引导：作战基础 ${battle?.steps.length ?? 0} 步 + boss ${boss?.steps.length ?? 0} 步；`
       + `次序 作战基础 → boss；跳过教程管得住前者、管不住后者`)

@@ -24,6 +24,7 @@ import { PAIRS, TRAITS, bondCut, bondNext, bondsOf, pairsOf, traitsOf } from '..
 import { genBoard } from '../lib/battle/missiongen'
 import { mainlineMissions } from '../lib/battle/mainline'
 import { GEAR_SHOP, ITEMS, GEAR_OF, canEquip } from '../lib/battle/gear'
+import { ITEM_TARGET_LABEL, effectTextsOf, modsTextsOf } from '../lib/battle/skilltext'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
 
 import css from './Missions.module.css'
@@ -514,7 +515,7 @@ export function Missions() {
               </button>
             </div>
 
-            <div className={css.shopSeller}>
+            <div className={css.shopSeller} data-shop-seller>
               研究所仓库的账本摊在桌上。泰尔米别克 · 简别科娃——梅芙的哥哥——没有抬头：
               「终末点数你攒得不少了。这些不是买来的，是我们做出来、记在贡献上的东西。
               挑一件吧，一个人一件。」
@@ -598,6 +599,18 @@ export function Missions() {
                         {g.maxOwn ? <span className={css.limitTag}>限兑 {g.maxOwn}</span> : null}
                       </div>
                       <p className={css.shopDesc}>{g.desc}</p>
+                      {/* 装备改了哪几个数 —— 与编成、档案读同一份翻法（skilltext.modsTextsOf）。
+                          从前卡片上只有一句散文，买的人对着「沉，但顶用」猜不到它加什么。 */}
+                      <p className={css.shopMods} data-shop-mod={g.id}>
+                        {modsTextsOf(g.mods).join(' · ') || '无修正'}
+                      </p>
+                      {g.skill ? (
+                        <p className={css.shopEff} data-shop-skill={g.id}>
+                          <b>附带一手「{g.skill.name}」</b>
+                          {effectTextsOf(g.skill.effect).length
+                            ? ` · ${effectTextsOf(g.skill.effect).join(' · ')}` : ''}
+                        </p>
+                      ) : null}
                       <div className={css.shopFoot}>
                         <span className="tiny muted">
                           持有 {owned}{g.maxOwn ? `/${g.maxOwn}` : ''}
@@ -655,6 +668,12 @@ export function Missions() {
                       <i className="mono">补给</i>
                     </div>
                     <p className={css.shopDesc}>{it.desc}</p>
+                    {/* 补给的效果逐条写出来（同上：一处口径）——买的是「+35% 回复」，不是那句散文 */}
+                    <p className={css.shopMods} data-shop-effect={it.id}>
+                      {ITEM_TARGET_LABEL[it.target] ?? it.target}
+                      {effectTextsOf(it.effect).length
+                        ? ` · ${effectTextsOf(it.effect).join(' · ')}` : ''}
+                    </p>
                     <div className={css.shopFoot}>
                       <span className="tiny muted">携带 {bag[it.id] ?? 0}</span>
                       <button

@@ -16,7 +16,7 @@ import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { AXIS_KEYS, OP_PERIODS, opBuiltinAt, opPeriodAt } from '../lib/operator-arc'
 import { GEAR_OF, GEARS, canEquip } from '../lib/battle/gear'
 import { passiveText } from '../lib/battle/roster'
-import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
+import { effectTextsOf, modsTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { combatantOf, periodProgress } from '../lib/battle/derive'
 import { dutyOf } from '../lib/battle/duty'
@@ -718,7 +718,8 @@ function CombatPanel({ id, progress, gearId }: { id: string; progress: number; g
             <p>{k.desc}</p>
             {/* 效果逐条写出来 —— 面板读的就是引擎算的数（skilltext 一份口径） */}
             <p className={css.combatEffect} data-skill-effect>
-              {effectTextsOf(k).length ? effectTextsOf(k).join(' · ') : '本手无附带效果'}
+              {effectTextsOf(k.effect, k.turns).length
+                ? effectTextsOf(k.effect, k.turns).join(' · ') : '本手无附带效果'}
             </p>
           </div>
         ))}
@@ -789,23 +790,12 @@ function CombatBack({ id, name, hue, progress, gearId, onBack }: {
   )
 }
 
-/** 装具改了哪几个数（直接读 GearDef.mods，不另写一份口径） */
+/** 装具改了哪几个数 —— 翻法在 skilltext.modsTextsOf（军需处 / 编成 / 档案同一份） */
 function gearModText(g: GearDef): string {
-  const out: string[] = []
-  const axisMods = g.mods as Record<string, number | undefined>
-  for (const k of AXIS_ORDER) {
-    const v = axisMods[k]
-    if (typeof v === 'number' && v) out.push(`${k} ${v > 0 ? '+' : ''}${v}`)
-  }
-  if (g.mods.atk) out.push(`攻击 ${pct(g.mods.atk)}`)
-  if (g.mods.basicMul) out.push(`普攻倍率 ${pct(g.mods.basicMul)}`)
-  if (g.mods.spd) out.push(`充能 ${pct(g.mods.spd)}`)
-  if (g.mods.evade) out.push(`闪避 ${pct(g.mods.evade)}`)
-  if (g.mods.shield) out.push(`减伤 ${pct(g.mods.shield)}`)
+  const out = modsTextsOf(g.mods)
   if (g.skill) out.push(`附带一手「${g.skill.name}」`)
   return out.join(' · ') || '无修正'
 }
-const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`
 
 /**
  * 在档案里换反现实辅助装备。

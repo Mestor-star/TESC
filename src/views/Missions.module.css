@@ -519,6 +519,19 @@
 .shopName b { font-size: 13px; }
 .shopName i { font-style: normal; font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
 .shopDesc { margin: 0; font-size: 11.5px; line-height: 1.65; color: var(--ink-mute); }
+/* 卡片上「到底买到了什么数」的那一行 —— 读的是引擎算的数，不是散文。
+   与装备那句 flavor 分开排：先看见 +12、减伤 6%，再回头看故事。 */
+.shopMods {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--amber) 76%, var(--ink));
+}
+/* 附带的那一手：名字在前、效果在后 */
+.shopEff { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }
+.shopEff b { color: color-mix(in srgb, var(--violet) 72%, var(--ink)); font-weight: 600; }
 .shopFoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
 
 /* 主线作战的记录单独描一道边：一眼能从巡逻任务里挑出来 */

@@ -18,8 +18,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { markDone, nextTour, skipTutorial } from '../lib/guide'
-import type { GuideTour } from '../lib/guide'
+import { guideVoiceOf, markDone, nextTour, skipTutorial } from '../lib/guide'
+import type { GuideLine, GuideTour } from '../lib/guide'
 import { useTerminal } from '../terminal/Terminal'
 import { Portrait } from './Portrait'
 
@@ -51,8 +51,8 @@ export function Guide() {
   const [tour, setTour] = useState<GuideTour | null>(null)
   const [i, setI] = useState(0)
   const [spot, setSpot] = useState<Spot | null>(null)
-  /** 作战屏、boss、约会专线都长在文档里，不在 React 树上 —— 从 DOM 上读回来 */
-  const [field, setField] = useState({ inBattle: false, bossUp: false, dateUp: false })
+  /** 作战屏、boss、约会专线、军需处都长在文档里，不在 React 树上 —— 从 DOM 上读回来 */
+  const [field, setField] = useState({ inBattle: false, bossUp: false, dateUp: false, shopUp: false })
   const startedIn = useRef(view)
 
   /* ---- 哪几块界面开着：气泡要等条件够了才出来讲那一段 ---- */
@@ -62,8 +62,10 @@ export function Guide() {
       const bossUp = inBattle && !!document.querySelector('[data-chant]')
       // 约会专线：这一路的面板挂上来了（`Plot.tsx` 只在 lane === 'date' 且有一场在的时候挂它）
       const dateUp = !!document.querySelector('[data-date-lane-area]')
+      // 军需处：柜台展开的那一层（`Missions.tsx` 点开「打开军需处」才挂它）
+      const shopUp = !!document.querySelector('[data-shop-modal]')
       setField((f) => (f.inBattle === inBattle && f.bossUp === bossUp && f.dateUp === dateUp
-        ? f : { inBattle, bossUp, dateUp }))
+        && f.shopUp === shopUp ? f : { inBattle, bossUp, dateUp, shopUp }))
     }
     tick()
     const id = window.setInterval(tick, 800)
@@ -92,7 +94,8 @@ export function Guide() {
   useEffect(() => {
     if (tour?.field === 'battle' && !field.inBattle) setTour(null)
     if (tour?.field === 'date' && !field.dateUp) setTour(null)
-  }, [tour, field.inBattle, field.dateUp])
+    if (tour?.field === 'shop' && !field.shopUp) setTour(null)
+  }, [tour, field.inBattle, field.dateUp, field.shopUp])
 
   const step = tour && i < tour.steps.length ? tour.steps[i] : undefined
 
@@ -180,6 +183,30 @@ export function Guide() {
      写死在文案里的话，改了名的人就会听见她在叫别人。 */
   const say = (l: string) => l.replace(/\{op\}/g, operatorName)
 
+  /* 正文的一行：光字符串 = 梅芙说的；署了名的 = 别人插一句。
+     插话那一行带自己的小头像与主题色，名字照 castmeta 查（查不到就不署名，
+     宁可只剩正文 —— 见 guide.guideVoiceOf 上那一段）。 */
+  const line = (l: GuideLine, n: number) => {
+    if (typeof l === 'string') return <li key={n}>{say(l)}</li>
+    const v = guideVoiceOf(l.by)
+    return (
+      <li key={n} className={css.guest} data-guide-say={l.by}>
+        {v ? (
+          <span className={css.guestFace} aria-hidden>
+            <Portrait
+              avatarId={v.avatarId} name={v.name} hue={v.hue} sigil={v.sigil}
+              size={18} round fit="cover"
+            />
+          </span>
+        ) : null}
+        <span className={css.guestBody}>
+          {v ? <b style={{ color: v.hue }}>{v.name}</b> : null}
+          {say(l.text)}
+        </span>
+      </li>
+    )
+  }
+
   const last = i >= tour.steps.length - 1
   /* 「跳过教程」只给教程那几条 —— 绑在界面上、又不算教程的（boss 讲解）不给：
      打到那一场的时候，跳过等于让人摸黑挨打。作战基础那一段算教程，
@@ -215,7 +242,7 @@ export function Guide() {
           </div>
           <div className={css.title}>{step.title}</div>
           <ul className={css.lines}>
-            {step.lines.map((l, n) => <li key={n}>{say(l)}</li>)}
+            {step.lines.map(line)}
           </ul>
           <div className={css.foot}>
             <span className={`${css.pager} mono`}>{i + 1} / {tour.steps.length}</span>
