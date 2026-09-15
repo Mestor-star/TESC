@@ -78,6 +78,22 @@ export interface Rendezvous {
    * 指令那边也放开这几位各自的 intim / acts / rel（见 lib/plot.ts 的 dateDirective）。
    */
   party?: string[]
+  /**
+   * **这一场走到过哪几个节拍**（`DATE_BEATS` 里登记的 id）。
+   *
+   * 与 `EventBrief.beats`（`data/types.ts` 的「逐拍情节线」，原文那一侧的事实）
+   * **同名不同物**：那一份是给导演看的原文，这一份是**这一场自己走到哪儿了**。
+   *
+   * 干什么用：给几张画当**前提** —— 带 `CgRef.needs` 的那张，节拍没走到就不进
+   * `dateCgPalette` 的候选（导演连它叫什么都不知道），也就点不出来。
+   * 立这一栏的理由是主人那条口径：**只算这一场** —— 散场 = 这条记录不再挂名册、
+   * 下一场是**另一条** `Rendezvous`，`beats` 从空开始。归零是结构自带的，
+   * 不靠谁去清（所以它也不该记进 `world.flags`：那本账跨线、还在变量面板上给人看）。
+   *
+   * 只增不减、只认登记过的 id（`listRendezvous` 读回来时逐条筛）；
+   * 旧档没有这一栏 → 空数组，行为与从前一致。
+   */
+  beats?: string[]
   ts: number
   /** 走完了（会话里点「结束这一场」） */
   done: boolean
@@ -123,6 +139,11 @@ export function listRendezvous(): Rendezvous[] {
         ? [...new Set(o.party.filter((x): x is string => typeof x === 'string' && !!charOf(x) && x !== o.charId))]
             .slice(0, PARTY_MAX)
         : []
+      /* 走过的节拍：只认登记过的（`isDateBeat`）、去重 —— 认不出来的丢掉，
+         免得旧档或手改过的存档凭一个编的 id 点亮一张画 */
+      const beats = Array.isArray(o.beats)
+        ? [...new Set(o.beats.filter((x): x is string => typeof x === 'string' && isDateBeat(x)))]
+        : []
       out.push({
         id: o.id,
         charId: o.charId,
@@ -133,6 +154,13 @@ export function listRendezvous(): Rendezvous[] {
         ...(typeof o.time === 'string' && o.time.trim() ? { time: o.time.trim().slice(0, 40) } : {}),
         from: o.from === 'them' ? 'them' : 'you',
         ...(party.length ? { party } : {}),
+        /* 走过的节拍：只留**登记过的** id（认不出来的丢掉 —— 旧档、改名之后留下的
+           旧值、或者谁手改过存档，都不该因此点亮一张画），去重，空则不写这个键。
+           ⚠ 这一栏**漏搬就等于没有** —— `listRendezvous` 是白名单重建，每一次读
+           都会把没列在这里的字段原地丢掉。`beats` 那种「存了又读不出来」的坏法
+           全程无声（不报错、只是那张画永远差一步），所以 mech §36b 手写一条带
+           `beats` 的原始账读一遍，看它回家之后还在不在。 */
+        ...(beats.length ? { beats } : {}),
         ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : 0,
         done: o.done === true,
       })
@@ -187,7 +215,7 @@ export function openRendezvous(
 
 export function patchRendezvous(
   id: string,
-  patch: Partial<Pick<Rendezvous, 'kind' | 'title' | 'place' | 'time' | 'done' | 'party'>>,
+  patch: Partial<Pick<Rendezvous, 'kind' | 'title' | 'place' | 'time' | 'done' | 'party' | 'beats'>>,
 ): void {
   store(listRendezvous().map((r) => (r.id === id ? { ...r, ...patch } : r)))
 }
@@ -222,13 +250,79 @@ export function openDateOf(charId: string): Rendezvous | undefined {
    缺图时 <CgSlot> 只留一行「待补」提示，**不占版位**（29 个槽位一张都没补，
    按比例占空框会满屏虚线 —— 那条规矩见 components/CgSlot.tsx 文件头）。
 
-   越私密的那几张只有走到私密那一档才进候选；**再往下还有一种窄法** ——
-   `cast` 钉住某一个人（只属于她的那张，缺了人就不进候选，见 `dateCgPalette`）。
+   越私密的那几张只有走到私密那一档才进候选；**再往下还有两道窄法**（三道是叠着的，见
+   `dateCgPalette`）：
+     · `cast` —— 钉住某一个人（只属于她的那张，缺了人就不进候选）；
+     · `needs` —— 钉住**先走到哪一步**（见下面 `DATE_BEATS`，主人点的那张「买完衣服、
+       试穿之后才给」就是这一道）。
    ============================================================ */
+
+/**
+ * 一个**节拍**：这一场走到哪一步了。
+ *
+ * 为什么要有它：有几张画自带前提（「买完衣服、试穿之后才给」），而那是**硬规矩**，
+ * 不能只写在提示词里当请求 —— 提示词是请求，落地那一道才是规矩（与 lib/flagname.ts
+ * 开头那段同一个道理）。
+ *
+ * 为什么是**闭集**：正因为它要守「必须」，就不能让模型自己起名 —— 换个说法写
+ * `clothes_try_on` 就绕过去了。要新前提就**在这儿加一行**，再在那张画上写 `needs`。
+ *
+ * ⚠ **id 写错一个字 = 那张画永远差一步**（不报错、不告警、只是永远不进候选），
+ * 所以 mech 有一条断言对着「每个 `needs` 都在这张表里」。
+ */
+export interface DateBeat {
+  id: string
+  /** 走到哪一步才算落地 —— **这一句原样进提示词**，所以写得能直接照着判 */
+  when: string
+  /**
+   * 只在这些人出场时才**提**这个节拍（角色 id；缺省 = 谁在场都提）。
+   *
+   * 与 `CgRef.cast` 是两件事，别合并：那一条管「谁在场才能**摆**这张画」，
+   * 这一条管「谁的场面里才该**提**这回事」—— 不提，模型就不会把每场见面
+   * 都往「买衣服」上带。
+   */
+  cast?: string[]
+}
+
+/** 登记在册的节拍（见 `DateBeat`）。加一个节拍 = 在这儿加一行 + 在那张画上写 `needs` */
+export const DATE_BEATS: DateBeat[] = [
+  {
+    id: 'outfit-tryon',
+    when: '这一场里真的买了新衣服、并且已经试穿上了',
+    cast: ['luna'],
+  },
+]
+
+/** 是不是登记过的节拍 id —— `listRendezvous` 读回来时拿它筛（编的 id 一律丢掉） */
+export function isDateBeat(id: string): boolean {
+  return DATE_BEATS.some((b) => b.id === id)
+}
+
+/**
+ * **这一场此刻该知道的节拍**（提示词那一节用）：登记过、且 `cast` 对得上的那几条。
+ *
+ * 只算「该提的」，不算「走到没走到」—— 哪几条已经落地由调用方拿 `rv.beats` 自己分
+ * （提示词里只列**还没走到的**，已经走过的再提一遍等于催他重走一遍）。
+ */
+export function dateBeatsFor(rv: Rendezvous): DateBeat[] {
+  const here = new Set(rvAllIds(rv))
+  return DATE_BEATS.filter((b) => !b.cast?.length || b.cast.some((id) => here.has(id)))
+}
+
 export const DATE_CG: CgRef[] = [
   { id: 'cg-date-street', note: '并肩走着的两人 · 黄昏的学园街' },
   { id: 'cg-date-night', note: '夜里的高处 · 脚下的城市灯海' },
   { id: 'cg-date-room', note: '房间门口 · 只开着一盏灯' },
+  /* 买衣服那一场：**先走到试穿那一步才进候选**（`needs`）。这一张是主人 2026-09-15
+     自己丢进来的（`lunaSFW/cg-date-shop-luna.webp`），画的是露娜一个人 ——
+     所以 `cast` 与 `needs` 两样都带，缺人、或还没走到那一步，都进来不了。 */
+  {
+    id: 'cg-date-shop-luna',
+    note: '买完衣服 · 换上新的一身站到你面前',
+    cast: ['luna'],
+    dir: 'lunaSFW',
+    needs: 'outfit-tryon',
+  },
 ]
 
 /** 已到私密那一档才进候选的那几张（挪进清单里，导演才点得到。图待补） */
@@ -293,20 +387,28 @@ export function intimArtDir(charId: string): string | undefined {
  * 「导演点名的 id 认不认」的判断 —— 认不出来（模型编的、或清单改过之后留下的旧值）
  * 就当没点，不摆图。
  *
- * **两道窄法**（都收在这一处，调用方不用各判各的）：
+ * **三道窄法**（都收在这一处，调用方不用各判各的；三道是**叠着**的，不是互相替代）：
  *   · 档位 —— 私密那几张要 `kind: 'intimate'` 才进来；
  *   · 认人 —— 带 `cast` 的那几张还要**名单上这几位真的在场**才算数
  *     （`cast` 里有一个在人堆里就进候选。主位与同场的都算 —— 见 `rvAllIds`）。
  *     这一条是替「只属于某一个人的那张」把关：缺了人还摆，等于凭空多一个人。
+ *   · 节拍 —— 带 `needs` 的那几张还要**这一场先走到那一步**（`rv.beats`）。
+ *     这一条是替「自带前提出场」的那张把关：还没走到就摆，等于跳过了一整段戏。
+ *     「买完衣服试穿那张」两样都带 —— 缺人、或没走到那一步，各自都能把它挡在外面。
+ *
+ * **不给前提的那几张不受影响**（三道都是「没写就不管」）：街景那三张谁都能点。
  *
  * **立绘不在这里面** —— 它不进候选、不由导演挑（要那张脸就去 `dateWearId`）。
  */
 export function dateCgPalette(rv: Rendezvous): CgRef[] {
   const here = new Set(rvAllIds(rv))
+  const beats = new Set(rv.beats ?? [])
   const base = rv.kind === 'intimate' ? [...DATE_CG, ...DATE_CG_INTIMATE] : [...DATE_CG]
   return base.filter((r) => {
-    const cast = typeof r === 'string' ? undefined : r.cast
-    return !cast?.length || cast.some((id) => here.has(id))
+    if (typeof r === 'string') return true
+    if (r.cast?.length && !r.cast.some((id) => here.has(id))) return false
+    if (r.needs && !beats.has(r.needs)) return false
+    return true
   })
 }
 
@@ -384,6 +486,18 @@ export function rendezvousPrompt(
         .map((p) => `  · ${p.name}：与他约 ${p.bond}/100（仅作语气参考，别把数字说出口）`)
         .join('\n')}\n`
     : ''
+  /* 这一场**该提、且还没走到**的节拍。都走过了、或者这一场压根没有该提的
+     （`DateBeat.cast` 没对上）→ 整节不出现，与 plotContext 一个规矩：
+     没内容就不留空壳。已经走过的不再列 —— 再提一遍等于催他重走一遍。 */
+  const beatsTodo = dateBeatsFor(rv).filter((b) => !(rv.beats ?? []).includes(b.id))
+  const beatsBlock = beatsTodo.length
+    ? `\n\n【这一场的节拍（走到哪一步了）】
+${beatsTodo.map((b) => `- ${b.id} —— ${b.when}`).join('\n')}
+
+这几步是这一场往下走会经过的节点。走到哪一步，就在**那一回合**的收尾 JSON 里加上
+"beat": "那一步的 id"（一次只报刚走到的这一个，id 照抄上面）。
+**没走到就别报** —— 提前报等于把还没发生的那一幕先算成发生了。`
+    : ''
   /* 正文那一截紧跟在情境后面 —— 与短信那一条同一个位置、同一个用法：
      都是「一路推下来真发生的事」，只作延续性背景，不许逐条复述。 */
   return `${core}
@@ -404,7 +518,7 @@ ${PROSE_RULES}${others ? `\n${HAREM_RULE}` : ''}${intimate ? `
    写就写足 —— 这一档不必回避任何词：顺序、那一处此刻的样子、她说过的每一句、
    到了哪一步，都照实落笔，不要用省略号跳过（怎么写细见上面底层规矩里那一整条）。
    但推进要跟着对方走 —— 他给了那层意思就自然接住，
-   他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}
+   他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}${beatsBlock}
 
 【这一场的场景 CG（换画面时才点名）】
 ${cgPalette || '（本场暂无登记的图位）'}`
@@ -435,6 +549,7 @@ export function dateBondRule(charId: string, party: string[] = []): string {
     .join(',\n')
   return `\n（可选 · 本回合的推进：若这一场让这段关系或气氛有明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
 { "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "some_state": 值 }, "cg": "上面清单里的一个 id",
+  "beat": "【这一场的节拍】里刚走到的那一个 id",
   "rel": { "${charId}": "${REL_IDS.join('|')}" },
   "intim": [
 ${intimLines}
@@ -448,6 +563,8 @@ ${attireLines}
 说明：
 · bond.delta 只针对该角色取 ±1~5（正=更亲近）；flag 为可选的分支标记；
 · cg 只从上面那份【这一场的场景 CG】清单里挑，且**画面真的换了**才给，一直同画面就别重复给；
+· beat 是**这一场刚走到的那一步**（见上面【这一场的节拍】那一节）：id 照抄那一节里列出来的，
+  只在那一步真的在这一回合里发生了才给，一次一个 —— 没走到、或那一节整个不在，就整条省略；
 · intim 只在**这一回合确实往前走了、且她确实接受了**时才给，几路各记各的：
     · slot 取 ${slots} 之一（哪一处被开发了），dev 为这一次的增量（1~3，一回合一小步），
       state 可选（覆盖该处原有的状态句；**写详细** —— 那一处此刻是什么样、被碰到会怎样，

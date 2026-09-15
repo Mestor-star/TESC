@@ -58,7 +58,8 @@ import {
 import type { Rendezvous } from '../lib/rendezvous'
 import {
   PARTY_MAX, cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous,
-  listRendezvous, patchRendezvous, rendezvousPrompt, rendezvousVersion, rvAllIds, subscribeRendezvous,
+  isDateBeat, listRendezvous, patchRendezvous, rendezvousPrompt, rendezvousVersion, rvAllIds,
+  subscribeRendezvous,
 } from '../lib/rendezvous'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
@@ -308,6 +309,17 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
         if (fx.date?.place?.trim()) patch.place = fx.date.place.trim()
         if (fx.date?.kind === 'intimate') patch.kind = 'intimate'
         if (fx.intim.length) patch.kind = 'intimate'
+        /* 节拍：**只认登记过的那个 id**（模型编的、或换个写法写的，一律不写进名册）——
+           净化那一道只拦垃圾，认不认得出是「登记过的节拍」是这一层的事。
+           走过的就不重复写（这一栏只增不减）。
+           ⚠ 并进**上面这同一个 patch**，别另开一次写：同一回合里模型很可能既写走完试穿、
+           又点名那张画（正文说的是同一幕），而「认不认这个 cg id」的那一判
+           （`activeCg` → `dateCgPalette`）读的就是名册上这一栏 —— 一次写齐，
+           两件事在同一笔账上落地，不靠下一次读盘才凑到一起。 */
+        const beat = fx.beat && isDateBeat(fx.beat) && !(cur.beats ?? []).includes(fx.beat)
+          ? fx.beat
+          : null
+        if (beat) patch.beats = [...(cur.beats ?? []), beat]
         if (Object.keys(patch).length) {
           patchRendezvous(rvId, patch)
           setRvs(listRendezvous())
@@ -317,6 +329,7 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
         const hasFx = fx.bonds.length > 0 || fx.flags.length > 0 || fx.met.length > 0
           || fx.ends.length > 0 || fx.intim.length > 0 || fx.attire.length > 0
           || fx.acts.length > 0 || fx.rel.length > 0
+          || beat !== null
           || newTasks.length > 0
         if (fx.intim.length || fx.attire.length || fx.acts.length || fx.rel.length) {
           const parts: string[] = []

@@ -59,6 +59,20 @@ export interface PlotDirective {
    */
   cg?: string
   /**
+   * **这一场又走到了哪一步**（节拍 id）—— 给自带前提的那几张画开门用的。
+   *
+   * 只在这一回合**真的**走到那一步时给（正文里把那一幕写出来了才算，别提前报）；
+   * 一个回合一枚就够。id 必须是 `lib/rendezvous.ts` 的 `DATE_BEATS` 里登记过的那几个，
+   * 且只在**上面【这一场的节拍】那一节列出来的**（也就是这一场该提、还没走过的）
+   * 里面挑 —— 已经走过的不必再给，编出来的 id 落不进去。
+   *
+   * 落点是**这一场**（`Rendezvous.beats`），不是主线那本变量账 —— 所以散场即归零，
+   * 下一场得重新走到这一步。
+   *
+   * **只有约会那一路放行**（`dateDirective`）—— 主线导演与短信都不给这个字段。
+   */
+  beat?: string
+  /**
    * **此刻真的在场上的人**（角色 id）：剧情右栏那份在场名册的实时修正。
    * 事件静态名册（`ev.cast`）说的是「这一段大体上有谁」，可这一段里人会走会来 ——
    * 走了的不该继续挂在右栏，中途进场的也不该等到下一段才出现。
@@ -185,6 +199,9 @@ const CHAR_IDS = new Set<string>(PERSON_IDS)
 
 const KNOWN_FIELDS = new Set([
   'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
+  // 约会的**节拍**（这一场走到哪一步了，给带 `needs` 的那几张画当前提）：同上 ——
+  // 漏在名单外就整条安静地丢，那张画永远差一步，而且不报错。
+  'beat',
   // 短信/群聊的「托付」用这一条。漏在名单外的话，sanitizeDirective 末尾那道
   // 「只留认识的字段」会把它连同已净化好的内容一起删掉 —— 写信写得好好的，
   // 任务却永远落不了地，而且一声不吭。
@@ -467,6 +484,15 @@ export function sanitizeDirective(v: unknown): PlotDirective {
   if (typeof src.cg === 'string') {
     const id = src.cg.trim().slice(0, CG_ID_MAX)
     if (id) out.cg = id
+  }
+
+  /* 约会的**节拍**（这一场走到哪一步了）。与 `cg` 同一把尺：这里只拦垃圾（非空字符串、
+     长度封顶），**认不认这个 id 是登记过的节拍**留到落地那一层（`lib/rendezvous.ts`
+     的 `isDateBeat`，由 DateLane 判）—— 净化是纯函数，手里没有那张登记表。
+     编出来的节拍 id 落不进名册，也就点亮不了任何一张画。 */
+  if (typeof src.beat === 'string') {
+    const id = src.beat.trim().slice(0, CG_ID_MAX)
+    if (id) out.beat = id
   }
 
   /* 变量名先过一遍机械归正（见 lib/flagname.ts）：`Trust` / `trust ` / `trust-level`
@@ -952,6 +978,8 @@ export interface DirectiveEffects {
   flags: [string, FlagValue][]
   /** 导演点名的 CG id（约会那一路：调用方按**这一场约会**落到 world.cg[d:uuid]） */
   cg?: string
+  /** 这一次走到了哪个节拍（约会那一路：调用方按**这一场约会**落到 Rendezvous.beats） */
+  beat?: string
   /** 导演修正的在场名册（调用方按**当前事件**落到 world.cast[evId]，全量覆盖） */
   cast?: string[]
   diverged: boolean
@@ -1024,6 +1052,8 @@ export function applyDirective(
   // CG 点名不在这儿落盘：applyDirective 手里没有「这一场是哪个约会」，
   // 硬塞就得给 DirectiveApi 再加一层。改由调用方读 fx.cg，配着自己知道的约会 id 写。
   if (d.cg) fx.cg = d.cg
+  // 节拍同理：手里没有「这是哪一场」，调用方读 fx.beat 配着自己知道的约会 id 落
+  if (d.beat) fx.beat = d.beat
   // 在场的实时名册同理：手里没有「当前事件 id」，由调用方读 fx.cast 自己写
   if (d.cast?.length) fx.cast = d.cast
   /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
@@ -1155,6 +1185,8 @@ export function smsDirective(d: PlotDirective | null, charId: string): PlotDirec
  *   · bond：只认**对方**，一次 ±5（一场约会里的分量比一条短信重）；
  *   · met / ends / flag / task：照放（约会也能遇见人、撞见图鉴实体、被托付事）；
  *   · cg：照放（这一场该摆哪张画，由调用方落到 world.cg[d:uuid]）；
+ *   · beat：照放（这一场又走到了哪一步 —— 带 `needs` 的那几张画拿它当前提，
+ *     由调用方落到 Rendezvous.beats）；
  *   · intim / acts：**只有这一路放行**（私密档案与次数账都只发生在见面的时候），
  *     intim 的开发度增量再收一道到 ±3 一回合（sanitize 那道 8 是单项上限）。
  *   · rel：照放（关系档位由剧情给 —— 见面正是一段关系往前走的地方）。
@@ -1181,6 +1213,9 @@ export function dateDirective(d: PlotDirective | null, charId: string, party: st
   if (d.flag && Object.keys(d.flag).length) out.flag = d.flag
   if (d.task && d.task.length) out.task = d.task
   if (d.cg) out.cg = d.cg
+  /* 节拍：照放 —— 与 cg 同一道门。认不认这个 id 是登记过的节拍由落地那一层判
+     （DateLane 拿 `isDateBeat` 筛一道才写进这一场），编的 id 到不了名册。 */
+  if (d.beat) out.beat = d.beat
   if (d.intim && d.intim.length) {
     const intim = d.intim
       .filter((it) => allowed.has(it.char))

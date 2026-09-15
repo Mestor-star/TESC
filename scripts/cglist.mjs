@@ -70,7 +70,8 @@ const server = await createServer({
 try {
   const { INTIMATE } = await server.ssrLoadModule('/src/data/intimate.ts')
   const { personOf } = await server.ssrLoadModule('/src/data/castmeta.ts')
-  const { DATE_CG, DATE_CG_INTIMATE, dateWearId, intimArtDir } = await server.ssrLoadModule('/src/lib/rendezvous.ts')
+  const { DATE_CG, DATE_CG_INTIMATE, DATE_BEATS, dateWearId, intimArtDir } =
+    await server.ssrLoadModule('/src/lib/rendezvous.ts')
 
   const have = new Set(walk(join('public', 'cg')))
   /** 这个 id（可带子目录）有没有图；返回实际命中的**相对路径** */
@@ -107,13 +108,23 @@ try {
   const date = [...DATE_CG, ...DATE_CG_INTIMATE].map(norm)
   const dateIntimIds = new Set(DATE_CG_INTIMATE.map((r) => norm(r).id))
   /* 「什么时候进候选」那一列 —— 与 lib/rendezvous.ts 的 `dateCgPalette` 同一把尺，
-     两道窄法都写出来：档位（私密那几张）与认人（带 `cast` 的那张要人在场）。
+     **三道**窄法都写出来：档位（私密那几张）、认人（带 `cast` 的要人在场）、
+     节拍（带 `needs` 的要这一场**先走到那一步**）。
      这一列是给人看的，多写的半个字不花谁的钱；漏了才要命 —— 会照着旧规矩收图。 */
+  const beatOf = new Map(DATE_BEATS.map((b) => [b.id, b]))
   const scopeOf = (d) => {
-    const s = dateIntimIds.has(d.id) ? '`kind: intimate` 才进候选' : '每一场见面都能点'
+    let s = dateIntimIds.has(d.id) ? '`kind: intimate` 才进候选' : '每一场见面都能点'
     const cast = d.cast ?? []
-    if (!cast.length) return s
-    return `${s} · 还要 ${cast.map((c) => personOf(c)?.name ?? c).join('、')} 在场`
+    if (cast.length) s += ` · 还要 ${cast.map((c) => personOf(c)?.name ?? c).join('、')} 在场`
+    /* 节拍那一道：连「走到哪一步」一并写出来 —— 只写一个 id，补图的人不知道指的是什么。
+       登记表里查不到这个 id 就当场挑明（对着那一行写 ⚠），别让它安静地永远进不了候选。 */
+    if (d.needs) {
+      const beat = beatOf.get(d.needs)
+      s += beat
+        ? ` · 且这一场先走到「${beat.when}」（节拍 \`${beat.id}\`）`
+        : ` · ⚠ 节拍 \`${d.needs}\` **没登记** —— 这一张永远进不了候选`
+    }
+    return s
   }
 
   /* 每个槽位连同它登记的目录一起过 —— 图分文件夹收了之后，判有没有图得带路走 */

@@ -3386,6 +3386,49 @@ try {
     vOld.txt.includes('没说定') && vOld.txt.includes('只有你们两个')
     && vOld.n === 1 && vOld.wears === 1, JSON.stringify(vOld))
 
+  /* V8 约会 CG 的第三道窄法：**买完衣服、试穿上了**那一张才点得到
+     （`CgRef.needs` 对 `Rendezvous.beats` —— 主人 2026-09-15 那一张 `cg-date-shop-luna`）。
+     两条**对照**，用 `data-cg-slot` 数，**不依赖那张图补没补**（有图摆图、缺图摆一行提示，
+     两个分支挂的是同一个属性）。世界里**导演已经点了名**（`world.cg` 里写着它）——
+     要证的正是这件事：点名了也不算数，得这一场先走到那一步。
+     数法里带上常服立绘那一档（`cg-datewear-*`）：它按同一把尺挂着、此刻就该有一位，
+     所以那一位在 = 探针没瞎；此时 shop 数着 0，才是真的「没摆」。 */
+  const v8Probe = async (tag) => {
+    await goto('剧情推进')
+    await poll(`!!document.querySelector('[data-plot-lane="date"]')`, 20000, tag + ' lane tab')
+    await ev(`(()=>{const b=document.querySelector('[data-plot-lane="date"]');if(b)b.click();return !!b})()`)
+    await poll(`!!document.querySelector('[data-date-lane]')`, 15000, tag + ' date lane')
+    return ev(`(()=>{return {
+      shop:document.querySelectorAll('[data-cg-slot="cg-date-shop-luna"]').length,
+      wear:document.querySelectorAll('[data-cg-slot^="cg-datewear-"]').length,
+      named:(((JSON.parse(localStorage.getItem('zts-terminal:v3'))||{}).world||{}).cg||{})
+        ['d:smoke-date-3']||null}})()`)
+  }
+  await ev(`(()=>{
+    localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
+      {id:'d:smoke-date-3',charId:'luna',kind:'date',title:'去买新衣服',place:'商店街的成衣店',
+       from:'you',ts:Date.now(),done:false}]));
+    localStorage.setItem('zts-tavern:v1', JSON.stringify({
+      'd:smoke-date-3':[{id:'sd::3',from:'them',text:'【V8】橱窗玻璃上映着两个人。',time:'15:00'}]}));
+    const t=JSON.parse(localStorage.getItem('zts-terminal:v3'));
+    t.world.cg={'d:smoke-date-3':'cg-date-shop-luna'};
+    localStorage.setItem('zts-terminal:v3', JSON.stringify(t));
+    return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  const vShopNo = await v8Probe('V8')
+  ok('V8 导演点了名、但这一场还没走到那一步 → 那张 CG 不摆（节拍没到，点名也不算数）',
+    vShopNo.shop === 0 && vShopNo.wear === 1 && vShopNo.named === 'cg-date-shop-luna',
+    JSON.stringify(vShopNo))
+
+  /* 对照：同一场、同一次点名，把节拍补上（`Rendezvous.beats`）→ 下次读名册它就进候选、当场顶上 */
+  await ev(`(()=>{const a=JSON.parse(localStorage.getItem('zts-rendezvous:v1'));
+    a[0].beats=['outfit-tryon'];
+    localStorage.setItem('zts-rendezvous:v1', JSON.stringify(a));return true})()`)
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  const vShopYes = await v8Probe('V8b')
+  ok('V8b 走到那一步之后（beats 落了 outfit-tryon）→ 同一张当场摆上（对照：上一条的 0 不是探针瞎了）',
+    vShopYes.shop === 1 && vShopYes.wear === 1, JSON.stringify(vShopYes))
+
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */
   if (process.env.SHOT) {

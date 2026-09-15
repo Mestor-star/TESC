@@ -877,7 +877,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /**
    * 导演点名某场约会该摆哪张 CG。同一场可以被反复改写 —— 往下走一幕就是换一张，
    * 后一次覆盖前一次（要看的是「此刻挂着哪张」，不是「换过哪些张」）。
-   * 认不认这个 id 由显示端（views/Tavern.tsx 对着 dateCgPalette 判）——
+   * 认不认这个 id 由显示端（components/DateLane.tsx 对着 dateCgPalette 判）——
    * 这里只落盘。
    *
    * 顺带把这一场的**触发次数** +1：同一张画有多版时，显示端拿这个数取模换下一版

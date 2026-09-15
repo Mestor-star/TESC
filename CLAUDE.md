@@ -111,5 +111,11 @@ node scripts/smoke/smoke.mjs   # 全链路冒烟
   翻过来是色情状态栏（`IntimateHud`）。车道本体在 `src/components/DateLane.tsx`。
   开一场只看**对话**：短信回执或推演回执里 `dateReady` 认了**时间与地点**才算数，
   没有「约 TA」那一枚。跨视图意图走 `Terminal` 的 `dateRequest` / `requestDate()`。
+- **约会 CG 的节拍门槛已落地（2026-09-15）。** `dateCgPalette` 由两道窄法变三道
+  （档位 `kind` → 认人 `cast` → **认节拍 `needs`**，三道叠着、没写的等于不管）。
+  节拍登记在 `rendezvous.ts` 的 `DATE_BEATS`（闭集，只有登记过的 id 能落），
+  记在**这一场自己**身上（`Rendezvous.beats`）—— 散场即归零，下一场重新走。
+  触发一律走推演回执的 `"beat"` 字段（`dateDirective` 放行、`DateLane` 拿
+  `isDateBeat` 筛一道才写进名册），**不新开界面、不加按钮**。
 - 变量名统一（`world.flags`）已落地，见 `src/lib/flagname.ts` 的 `snapFlagKey`。
 给露娜的webui生图想tag

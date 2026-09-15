@@ -80,6 +80,8 @@
      35  湿润回落     —— 没人管它时湿润自己退一步，退到 0 就停（此刻，不是勋章）
    · 图
      36  约会 CG 认人 —— 只属于某人的那张画：她不在场就不进候选（档位之上再加一道）
+     36b 约会 CG 节拍 —— 第三道窄法：还要**这一场先走到那一步**才进候选（买完衣服
+                        试穿那张 · 闭集 · 只这一场 · 走推演回执的 `beat` 字段触发）
    · 节拍
      37  主动来信     —— 每 20 分钟滚一格、每格 45% 的骰；中没中都用掉（不补掷），
                         首次进游戏只对钟 —— 所以是「每格 45%」不是「每格至少一条」
@@ -150,8 +152,8 @@ import { cgIdOf } from '../../src/lib/cg'
 import { HIT_CHANCE, ROLL_EVERY_MS, rollStep } from '../../src/lib/smsauto'
 import type { AutoState } from '../../src/lib/smsauto'
 import {
-  DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBondRule, dateCgPalette, listRendezvous,
-  patchRendezvous, rendezvousPrompt,
+  DATE_BEATS, DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBeatsFor, dateBondRule, dateCgPalette,
+  isDateBeat, listRendezvous, patchRendezvous, rendezvousPrompt,
 } from '../../src/lib/rendezvous'
 import type { Rendezvous, RendezvousParty } from '../../src/lib/rendezvous'
 import { BEDS } from '../../src/lib/audio/music'
@@ -6706,7 +6708,9 @@ export function run(): MechReport {
      **她不在场就不进候选** —— 不然一场蕾雅的私密场面里会顶出一个露娜来。
      「在场」= 主位或同场（`rvAllIds`）—— 多女同场里她算在。
 
-     两道窄法都点一遍：档位（私密那几张要 `kind: 'intimate'`）与认人（`cast`）。
+     三道窄法里的**前两道**点在这儿：档位（私密那几张要 `kind: 'intimate'`）与认人（`cast`）。
+     第三道（节拍 `needs`）归紧跟着的 §36b —— 那一道要动名册（`Rendezvous.beats`），
+     场地不一样，另起一段好读。
      每条「进候选」都配一条对照 —— 只证「她在的时候有」，
      会漏掉「她不在的时候也有」这种浑水（对照是这一支的老规矩）。
 
@@ -6731,9 +6735,16 @@ export function run(): MechReport {
        别把张数写死 —— 写死的话，下一次加一张画这条就假红一次。 */
     const ownedByLuna = [...DATE_CG, ...DATE_CG_INTIMATE]
       .filter((c) => typeof c !== 'string' && (c.cast ?? []).includes('luna')).length
+    /* 期望值**按「谁会掉」数，不拿总数减** —— 三道窄法各筛各的：这里的 `other` 是
+       「露娜不在场、名册上也没有节拍」，所以留下来的正是「没钉露娜、也没有节拍前提」
+       的那几张。写成 `ALL - ownedByLuna` 只在「带 needs 的那张恰好也带 cast: luna」
+       的今天碰巧相等 —— 明天加一张只带 `needs`、不带 `cast` 的画，那条就凭空假红。 */
+    const openToOther = [...DATE_CG, ...DATE_CG_INTIMATE]
+      .filter((c) => (typeof c === 'string' ? true : !(c.cast ?? []).includes('luna') && !c.needs))
+      .length
     ok('约会 CG（对照）· 同一档同一场、换了人 → 属于她的那几张全不进候选（别的照在）',
       !ids(other).includes(LUNA) && ownedByLuna >= 1
-      && ids(other).length === ALL - ownedByLuna,
+      && ids(other).length === openToOther,
       `${other.charId}：${ids(other).length} / ${ALL} 张（她的 ${ownedByLuna} 张被筛掉）`)
 
     /* 认人是**加在档位之上**的一道，不是替掉它：同一个人、档位没到 → 照样不进 */
@@ -6756,6 +6767,177 @@ export function run(): MechReport {
       + '（主位或同场都算）。收在这一处，喂提示词的清单与视图认不认那个 id 共用同一份')
   } catch (e) {
     fail.push('约会 CG 认人段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+
+  /* ============================================================
+     §36b 约会 CG 的**第三道窄法**：节拍（`CgRef.needs`）
+     ------------------------------------------------------------
+     口径（主人 2026-09-15）：「加了一个约会时买新衣服的 —— **这张必须在买完衣服
+     试穿才能用**」＋「**只这一场**」。所以那张 `cg-date-shop-luna` 带
+     `needs: 'outfit-tryon'`，而节拍记在**这一场自己身上**（`Rendezvous.beats`）：
+     散场即归零，下一场是另一条记录，不靠谁去清。
+
+     **闭集**是这一段的骨头：节拍 id 只在 `DATE_BEATS` 里登记过才算数。
+     自由串守不住「必须」这两个字 —— 模型换个说法写 `clothes_try_on` 就绕过去了，
+     而门槛的全部意义就是绕不过去。所以除了「到了就进候选」那一对，还要钉
+     「编的落不住」（M4）与「`needs` 写错一个字母 = 永不解锁」（M5）。
+
+     三道窄法是**叠着**的（档位 → 认人 → 节拍），不是互相替代 —— 这一张两样都带，
+     所以「露娜不在场」与「还没走到试穿」各自都能把它挡在外面（M1 / M3）。
+
+     界面那一半（会话流头顶那张图认不认这个 id）归冒烟 V8。
+     ============================================================ */
+  try {
+    const base: Rendezvous = {
+      id: 'd:mech-beat', charId: 'luna', kind: 'date', title: '一次见面',
+      place: '商店街', from: 'them', ts: 0, done: false,
+    }
+    const ids = (rv: Rendezvous) => dateCgPalette(rv).map(cgIdOf)
+    const SHOP = 'cg-date-shop-luna'
+    const TOP = 'outfit-tryon'
+
+    /* —— 一对：没走到那一步 / 走到了 —— */
+    ok('约会 CG 节拍 · 还没走到「买完衣服、试穿上了」→ 那张不进候选（人在场也不算）',
+      !ids(base).includes(SHOP),
+      `露娜在场 · beats 空 → ${ids(base).length} 张（${SHOP} 不在）`)
+
+    ok('约会 CG 节拍（对照）· 落了 outfit-tryon → 那张当场进候选',
+      ids({ ...base, beats: [TOP] }).includes(SHOP),
+      `beats: ['${TOP}'] → ${ids({ ...base, beats: [TOP] }).length} 张`)
+
+    /* —— 三道**叠着**：节拍到了但人不在场 → 照样不进（认人那一道不因为节拍到了就让路） —— */
+    ok('约会 CG 节拍（对照）· 节拍到了、但这一场不是她（露娜不在场）→ 那张仍不进候选',
+      !ids({ ...base, charId: 'hikari', beats: [TOP] }).includes(SHOP),
+      `主位 hikari（露娜不在场）· beats 到了 → ${SHOP} 仍在候选外`)
+
+    /* 反面：人换了、但她在**同场**里 —— 认人那一道放行，节拍也到了 → 进
+       （与上面那条配成一对：证明挡下来的是「人不在」，不是别的什么） */
+    ok('约会 CG 节拍 · 主位是别人、同场带着露娜，节拍也到了 → 照进候选（在场 = 主位或同场）',
+      ids({ ...base, charId: 'hikari', party: ['luna'], beats: [TOP] }).includes(SHOP),
+      `主位 hikari · 同场 luna · beats 到了 → 进`)
+
+    /* ---- 落地那一侧：节拍住在名册上（`zts-rendezvous:v1`），走真 `patchRendezvous` ---- */
+    const g = globalThis as { localStorage?: unknown }
+    const hadLS = 'localStorage' in g
+    const prevLS = g.localStorage
+    const mem = new Map<string, string>()
+    g.localStorage = {
+      getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+      setItem: (k: string, v: string) => { mem.set(k, String(v)) },
+      removeItem: (k: string) => { mem.delete(k) },
+      clear: () => { mem.clear() },
+    }
+    try {
+      const A = 'd:mech-beat-a'
+      const B = 'd:mech-beat-b'
+      const rec = (id: string) => ({
+        id, charId: 'luna', kind: 'date', title: '一次见面', place: '商店街',
+        from: 'them', ts: 1, done: false,
+      })
+      mem.set('zts-rendezvous:v1', JSON.stringify([rec(A), rec(B)]))
+      patchRendezvous(A, { beats: [TOP] })
+      const rvA = listRendezvous().find((r) => r.id === A)!
+      const rvB = listRendezvous().find((r) => r.id === B)!
+
+      /* M2「只这一场」：同一个人、同一档（kind: date）的另一条记录 —— A 走过不等于 B 走过 */
+      ok('约会 CG 节拍 · 只认**这一场**：同一个人、同一档的另一场不因为这一场走过就算走过',
+        ids(rvA).includes(SHOP) && !ids(rvB).includes(SHOP),
+        `A beats=${JSON.stringify(rvA.beats ?? [])} → 有；B beats=${JSON.stringify(rvB.beats ?? [])} → 无`)
+
+      ok('约会 CG 节拍 · 没登记过的 id 不当节拍（闭集：模型换个写法就绕不过去了）',
+        isDateBeat(TOP) && !isDateBeat('outfit_try_on') && !isDateBeat(''),
+        `${TOP} → ${isDateBeat(TOP)}；outfit_try_on → ${isDateBeat('outfit_try_on')}；空串 → ${isDateBeat('')}`)
+
+      /* M4：硬塞一个编的节拍 id —— 写侧照收，**读侧白名单重建当场丢掉**（图也不因此亮） */
+      patchRendezvous(B, { beats: [TOP, 'clothes_try_on', ''] })
+      const rvB2 = listRendezvous().find((r) => r.id === B)!
+      ok('约会 CG 节拍 · 硬塞一个编的节拍 id：读回来只剩登记过的那个（上一次读的 B 还什么都算不上）',
+        JSON.stringify(rvB2.beats) === JSON.stringify([TOP]) && ids(rvB2).includes(SHOP),
+        `塞 ['${TOP}','clothes_try_on',''] → 读回 ${JSON.stringify(rvB2.beats ?? [])}`)
+
+      /* M6：**读侧**白名单重建（上面那条走写侧）—— 手写一条带 beats 与两个编造字段的原始账，
+         看重建之后谁在谁不在。这一处是本轮最容易**悄悄坏**的：读一次重建一次，
+         没搬的字段当场没了，全程不报错，只是那张画永远差一步。 */
+      mem.set('zts-rendezvous:v1', JSON.stringify([{
+        ...rec('d:mech-beat-raw'),
+        beats: [TOP, 'clothes_try_on'],
+        junk: '编的字段', rating: 5,
+      }]))
+      const raw = listRendezvous()[0]!
+      ok('约会 CG 节拍 · 读侧白名单重建真的搬了 beats，且编的字段被丢掉（账上写什么不算数）',
+        JSON.stringify(raw.beats) === JSON.stringify([TOP])
+        && !('junk' in raw) && !('rating' in raw),
+        `读回 beats=${JSON.stringify(raw.beats ?? [])} · 编的字段 ${('junk' in raw) ? '还在' : '丢了'}`)
+    } finally {
+      if (hadLS) g.localStorage = prevLS
+      else delete g.localStorage
+    }
+
+    /* M5：**数据自检** —— `needs` 写错一个字就是「那张画永远差一步」，不报错也不告警。
+       把它变成一条断言，而不是等人有一天发现某张图怎么也点不出来。 */
+    const withNeeds = [...DATE_CG, ...DATE_CG_INTIMATE]
+      .filter((c): c is { id: string; needs?: string } => typeof c !== 'string' && !!c.needs)
+    const orphan = withNeeds
+      .filter((c) => !DATE_BEATS.some((b) => b.id === c.needs))
+      .map((c) => c.id)
+    ok('约会 CG 节拍 · 数据自检：每个 needs 都在 DATE_BEATS 里登记过（防一个字母之差变成永不解锁）',
+      orphan.length === 0 && withNeeds.length >= 1,
+      `带节拍前提的 ${withNeeds.length} 张 · 查无此节拍的：${orphan.length ? orphan.join('、') : '无'}`)
+
+    /* —— M7 指令管道：节拍走**回执字段**进来（主人 2026-09-15：「以后触发 CG 都是直接在
+       正文（在线推演）的字段里面触发」），所以这四道闸各钉一条 —— */
+    const clean = sanitizeDirective({ beat: TOP })
+    ok('约会 CG 节拍 · 指令管道认 beat（`KNOWN_FIELDS` 是白名单，漏登记 = 整条安静地丢）',
+      clean.beat === TOP,
+      `sanitizeDirective({ beat: '${TOP}' }) → ${JSON.stringify(clean.beat)}`)
+
+    ok('约会 CG 节拍（对照）· 空白 / 非字符串的 beat → 不生成（没走到就是没走到）',
+      sanitizeDirective({ beat: '   ' }).beat === undefined
+      && sanitizeDirective({ beat: 7 }).beat === undefined
+      && sanitizeDirective({ beat: [TOP] }).beat === undefined,
+      `'   ' → ${JSON.stringify(sanitizeDirective({ beat: '   ' }).beat)}；7 → ${JSON.stringify(sanitizeDirective({ beat: 7 }).beat)}`)
+
+    /* 形状校验只裁形状（与 cg 同款）：截到同一个上限，**认不认这个 id 留给落地那一道** */
+    ok('约会 CG 节拍 · 超长的 beat 与 cg 截在同一个上限（净化只裁形状，不认 id）',
+      sanitizeDirective({ beat: 'x'.repeat(400) }).beat?.length
+        === sanitizeDirective({ cg: 'x'.repeat(400) }).cg?.length,
+      `400 字 → beat ${sanitizeDirective({ beat: 'x'.repeat(400) }).beat?.length} 字 ／ cg ${sanitizeDirective({ cg: 'x'.repeat(400) }).cg?.length} 字`)
+
+    ok('约会 CG 节拍 · 约会那一路放行 beat（`dateDirective` 只筛「这一场谁算数」，不吞字段）',
+      dateDirective({ beat: TOP }, 'luna', []).beat === TOP,
+      `dateDirective → ${JSON.stringify(dateDirective({ beat: TOP }, 'luna', []).beat)}`)
+
+    /* 对照：**短信那条路不给**这个字段 —— 短信写不进节拍，与「CG 一律走推演回执」同口径 */
+    ok('约会 CG 节拍（对照）· 短信那一路不放行 beat（短信里写不进节拍）',
+      smsDirective({ beat: TOP, date: { title: '天台', place: '天台', time: '明天' } }, 'luna').beat === undefined,
+      'smsDirective → beat 不在')
+
+    const api = {
+      meetChar: () => {}, bumpBond: () => {}, registerEnd: () => {}, setFlag: () => {},
+      bumpIntim: () => {}, bumpActs: () => {}, setRel: () => {},
+    }
+    const fxBeat = applyDirective(clean, api)
+    ok('约会 CG 节拍 · applyDirective 把它落进 fx.beat（盘由调用方落：这一层手里没有「这是哪一场」）',
+      fxBeat.beat === TOP,
+      `fx.beat → ${JSON.stringify(fxBeat.beat)}`)
+
+    ok('约会 CG 节拍（对照）· 没有 beat 的那条回执 → fx.beat 不出现（不凭空造一个空节拍）',
+      applyDirective(sanitizeDirective({ title: '顺手一句' }), api).beat === undefined,
+      '只有 title 的指令 → fx.beat 无')
+
+    /* 对照：`directiveHasFx` 是**主线**那条「重写此回复」的逐键枚举 —— beat 只归约会那一路，
+       混进去等于给主线添一个永远不合法的「有落地效果」分支 */
+    ok('约会 CG 节拍（对照）· beat 不进 directiveHasFx（那是主线那一支的枚举）',
+      directiveHasFx({ beat: TOP }) === false,
+      `directiveHasFx({ beat }) → ${directiveHasFx({ beat: TOP })}`)
+
+    info.push('约会 CG 节拍（第三道窄法）：`CgRef.needs` 由 `dateCgPalette` 落地 —— 带 needs 的那张，'
+      + '除了档位与人在场，还要求这一场**先走到那一步**（节拍登记在 `DATE_BEATS`，'
+      + '记在 `Rendezvous.beats` 上，散场即归零）。触发走推演回执的 `beat` 字段：'
+      + '白名单认得它、applyDirective 落进 fx.beat，由 DateLane 并进**同一次**名册写入')
+  } catch (e) {
+    fail.push('约会 CG 节拍段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
 

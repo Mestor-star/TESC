@@ -18,6 +18,11 @@
  *
  * 与 Portrait 的分工：Portrait 缺图会回退成纹章（必须摆一个位子的地方用），
  * CgSlot 缺图塌成一条提示。两者都不参与推演，纯展示。
+ *
+ * 两个分支（有图 / 缺图）都挂 `data-cg-slot="<素材 id>"`：说的是「这一格此刻摆的是
+ * 哪个素材」，**与有没有图无关**。冒烟靠它判某一格认没认下某个 id —— 不带这个把手
+ * 就只能去认图注那一行文字，而图注是写给人看的、随时会改。
+ * （叫 `cg-slot` 而不是 `cg`：立绘也走这个组件，而「立绘 ≠ CG」是立过的规矩。）
  */
 
 import { useEffect, useState } from 'react'
@@ -86,7 +91,7 @@ export function CgSlot({
 
   if (url) {
     return (
-      <figure className={cls} style={box}>
+      <figure className={cls} style={box} data-cg-slot={cgId}>
         <img className={css.img} style={{ objectFit: fit }} src={url} alt={label} loading="lazy" decoding="async" />
         {cap ? <figcaption className={css.cap}>{cap}</figcaption> : null}
       </figure>
@@ -94,7 +99,7 @@ export function CgSlot({
   }
 
   return (
-    <figure className={cls} style={box}>
+    <figure className={cls} style={box} data-cg-slot={cgId}>
       {/* 一行说清两件事：这一格等着图，以及该往哪个文件名补。 */}
       <span className={css.ph}>
         <b>CG 待补</b>

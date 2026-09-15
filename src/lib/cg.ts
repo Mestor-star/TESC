@@ -15,7 +15,7 @@
  * 这里只管**取图**（候选链 + 探针缓存）——「哪一张该上屏」由各调用方自己定。
  * 上屏三处，**CG 与立绘不是一回事**（主人立的规矩）：
  *   · **CG**：见面约会顶部那张 —— 导演点名，记在 `world.cg[d:uuid]`
- *     （候选清单见 lib/rendezvous.ts 的 `dateCgPalette`；见 views/Tavern.tsx）
+ *     （候选清单见 lib/rendezvous.ts 的 `dateCgPalette`；见 components/DateLane.tsx）
  *   · **立绘**：见面右栏的约会常服 —— 写死的 `cg-datewear-<角色id>`
  *     （id 由 lib/rendezvous.ts 的 `dateWearId` 现算；见 components/DateSide.tsx）
  *   · **立绘**：私密档案左栏 —— 写死的 `cg-intim-<角色id>`（见 views/Archive.tsx）

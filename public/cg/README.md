@@ -65,11 +65,17 @@
   （主位与同场的都算，见 `rvAllIds`）。只属于某一个人的那张 —— 例
   `cg-date-intim-luna-oral`（`cast: ['luna']`）—— **缺了人就不进候选**，
   也就不会在没有她的场面里顶出来。
+- 最后还有一种**认节拍**的（`CgRef.needs`）：除了档位与人在场，**还要这一场先走到那一步**。
+  节拍登记在 `src/lib/rendezvous.ts` 的 `DATE_BEATS`（每条一句话说清「走到哪一步才算」），
+  例：`cg-date-shop-luna` 带 `needs: 'outfit-tryon'` —— **买完衣服、试穿上了**才进候选。
+  节拍记在**这一场自己**身上（`Rendezvous.beats`），所以**散场即归零**，下一场得重新走到。
 - 导演从合并后的清单里点名，落进 `world.cg[约会id]`（见 `src/lib/rendezvous.ts` 的
   `dateCgPalette` 与 `src/components/DateLane.tsx`）。**点名前一张都不摆** ——
   一进线程就顶一张图，把开场那两句挤到屏幕外，不划算。
-- **认不认这个 id 由 `dateCgPalette` 说了算**：档位不到、该在场的人不在，或者压根是
-  模型编出来的 id，一律当没点 —— 那张图也不摆（上游 `world.cg` 里存着什么不算数）。
+- **认不认这个 id 由 `dateCgPalette` 说了算**：档位不到、该在场的人不在、那一步还没走到，
+  或者压根是模型编出来的 id，一律当没点 —— 那张图也不摆（上游 `world.cg` 里存着什么不算数）。
+- 三道窄法是**叠着**的（`kind` → `cast` → `needs`），不是互相替代：**没写的那一道等于不管**，
+  所以街景那三张谁都能点。
 
 ### 私密档案立绘（档案卡背面）
 
