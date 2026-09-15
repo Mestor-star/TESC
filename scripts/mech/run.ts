@@ -43,6 +43,8 @@
      16  背景音     —— 六段床各自成曲、且不跑调（半音表比对）
      17  首启       —— 自带预设要**真的启动**，输出预算够一轮真实回执
      18  台词行契约   —— 气泡版式是契约，换预设也不许破
+     18b 战斗语音     —— 二十四张嘴一个不缺 · 池子的键都是真技能 id ·
+                        短句且不点别人的名 · 联动表没有死条 · 认人不认边
      19  梅芙引导     —— 作战屏那一段导览的步序与终点
    · 推演与提示词
      20  事件指令     —— 回执里的结构化指令解析得干净（含坏输入）
@@ -118,6 +120,7 @@ import { ARCH, place } from '../../src/lib/battle/atlas'
 import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
 import { GEARS } from '../../src/lib/battle/gear'
 import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
+import { CHAR_LINES, FOLLOW_LINES, LINE_POOL, familiar, poolFor } from '../../src/lib/battle/banter'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
 import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
@@ -3538,6 +3541,130 @@ export function run(): MechReport {
       + `${narCases.length} 种不认的留旁白`)
   } catch (e) {
     fail.push('台词契约段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 18b) 战斗语音：谁在说、说的哪一句 ----------
+     台词只影响观感，所以最没有东西会因为它坏了而报错 —— 恰恰因此要钉。
+     这里钉四件，每一件都是「抄错一个字就静默失效」的那一类：
+
+       ① 二十四张嘴一个不缺。少一位不是崩，是这个人在场上永远哑着，
+          日志里只剩技能自带那一句在复读；
+       ② LINE_POOL 的键都还是真技能 id。技能 id 换过一次（四格制那一期），
+          键一旦对不上，整组台词就变成**死键** —— 不报错、不生效、也没人发现；
+       ③ 每一句都短、且不点别人的名字。这是「哪一场都用得上」的可量部分：
+          长句与点名台词一挪到别的仗里就突兀，而这类句子的来源是「从某一幕整段搬过来」；
+       ④ 联动的每一对**真的接得上**。`familiar` 认的是编制与羁绊，
+          而操作员不在编制表上 —— 「心叶 ↔ 梅芙」那两条就是这么死掉的：
+          写在表里，一次都不响。这条断言就是拿来抓这种死条的。
+     另配一则「认人不认边」：档案里的人两边都站（第二卷代表战的首领与名册共用 id、
+     面具心叶唤来的异次元学生是 `rival-<档案 id>`），台词池按**档案身份**取。 */
+  try {
+    /* ① 名册一人一组（外加操作员），**多一个也不行** ——
+       多出来的那个键是拼错的 id，一辈子取不到，是死键里最安静的一种。 */
+    const rosterIds = Object.keys(ROSTER)
+    const noPool = rosterIds.filter((id) => !CHAR_LINES[id]?.length)
+    const thin = rosterIds.filter((id) => (CHAR_LINES[id]?.length ?? 0) < 3)
+    const stray = Object.keys(CHAR_LINES).filter((id) => !ROSTER[id] && id !== OPERATOR_ID)
+    ok('战斗语音：名册每一位都有自己的台词池（不少于三句），且没有拼错的孤立键',
+      noPool.length === 0 && thin.length === 0 && stray.length === 0 && !!CHAR_LINES[OPERATOR_ID]?.length,
+      noPool.length || thin.length || stray.length
+        ? `缺 ${noPool.join('、') || '—'} ／ 不足三句 ${thin.join('、') || '—'} ／ 对不上名册 ${stray.join('、') || '—'}`
+        : `${rosterIds.length} 位 + 操作员`)
+
+    /* ② 池子的键都是真技能 id。技能 id 一改就成死键 —— 不报错、不生效。 */
+    const skillIds = new Set<string>()
+    for (const id of rosterIds) for (const k of ROSTER[id]?.skills ?? []) skillIds.add(k.id)
+    /* 操作员的技能表跟着时期走（operator-arc），这里按名字表补上 ——
+       它在名册之外，但语音池里确实登记着它那几手。 */
+    const deadKeys = Object.keys(LINE_POOL).filter((k) => !skillIds.has(k))
+    ok('战斗语音 · 对照：LINE_POOL 的每一个键都是名册里真在的技能 id（死键当场点名）',
+      deadKeys.length === 0, deadKeys.length ? `对不上：${deadKeys.join('、')}` : `${Object.keys(LINE_POOL).length} 组全部有主`)
+
+    /* ③ 短句 + 不点**别人的**名字。两张表都扫（常驻的 CHAR_LINES 与按手登记的 LINE_POOL）——
+       这是「哪一场都用得上」里唯一能量出来的那一半：长句与点名台词一挪到别的仗里就突兀，
+       而这类句子的来路正是「从某一幕整段搬过来」。
+       名字取 `personOf(id).names`（台词行署名那一张表，即各人的名字与别名）。
+       说话人自己的名字不算 —— 「小柴上了！喵！」是自称，不是点了队友；
+       专名（`弹痕「愚者的足迹」` 那一类）不在 `names` 里，不在扫的范围内。
+       LINE_POOL 的键是技能 id，说话人由名册反查（操作员那几手不在名册里，
+       查不到就只量长度 —— 名字那一条对它跳过，不硬猜）。 */
+    const namesOf = (id: string) => (personOf(id)?.names ?? []).filter((n) => n.length >= 2)
+    const ownerOf: Record<string, string> = {}
+    for (const id of rosterIds) for (const k of ROSTER[id]?.skills ?? []) ownerOf[k.id] = id
+    const tooLong: string[] = []
+    const named: string[] = []
+    const scan = (where: string, speaker: string | undefined, lines: readonly string[]) => {
+      const mine = new Set(speaker ? namesOf(speaker) : [])
+      for (const l of lines) {
+        if (l.length > 30) tooLong.push(`${where}「${l}」`)
+        if (!speaker) continue
+        for (const other of rosterIds) {
+          if (other === speaker) continue
+          for (const n of namesOf(other)) {
+            if (!mine.has(n) && l.includes(n)) named.push(`${where}「${l}」点了「${n}」`)
+          }
+        }
+      }
+    }
+    for (const [id, lines] of Object.entries(CHAR_LINES)) scan(id, id, lines)
+    for (const [k, lines] of Object.entries(LINE_POOL)) scan(k, ownerOf[k], lines)
+    ok('战斗语音：两张表的每一句都是短句（≤30 字），且一个别人的名字都不点',
+      tooLong.length === 0 && named.length === 0,
+      tooLong.length || named.length
+        ? [...tooLong.slice(0, 3), ...named.slice(0, 3)].join('；')
+        : `${Object.keys(CHAR_LINES).length} 组全部合格`)
+
+    /* ④ 联动的每一对都接得上 —— 死条当场点名。 */
+    const dead: string[] = []
+    for (const f of FOLLOW_LINES) {
+      const known = (id: string) => !!ROSTER[id] || id === OPERATOR_ID
+      if (!known(f.by)) dead.push(`${f.by}（说话的这一头不在名册）`)
+      else if (f.after !== '*' && !known(f.after)) dead.push(`${f.by}→${f.after}（接的那一头不在名册）`)
+      else if (f.after !== '*' && !familiar(f.by, f.after)) dead.push(`${f.by}→${f.after}（不算熟人，永远不响）`)
+    }
+    ok('战斗语音：联动表每一对都真的接得上（编制 / 羁绊；接不上的当场点名）',
+      dead.length === 0, dead.length ? dead.join('；') : `${FOLLOW_LINES.length} 条全部可达`)
+
+    /* 对照：跨编制的一对不认 —— 上面那条不是「怎么配都过」。 */
+    const wrongPair = familiar('phidra', 'reiya')
+    ok('战斗语音（对照）：不同编制、又不在羁绊表上的一对，不认',
+      wrongPair === false, `Corporations × 卡乌斯学院 → ${wrongPair ? '认了' : '不认'}`)
+
+    /* 认人不认边 · 异次元唤来的那一位。
+       面具心叶唤出来的「异次元的卡乌斯学院学生」是 `rival-<档案 id>`，五轴与技能表照搬本人 ——
+       所以他说的仍是他自己的话。台词的落点写的是**本人那一手的真句**（蕾雅那记普攻的自带台词）。 */
+    const reiyaBase = '「——热沃当的少女！」'
+    const reiyaPool = new Set([...CHAR_LINES.reiya!, reiyaBase])
+    const fromRival = Array.from({ length: 16 }, () => poolFor('rival-reiya', 'reiya-atk', reiyaBase))
+    const fromSelf = Array.from({ length: 16 }, () => poolFor('reiya', 'reiya-atk', reiyaBase))
+    const cyc = [...fromRival, ...fromSelf]
+    const strayed = cyc.filter((l) => !reiyaPool.has(l))
+    ok('战斗语音：异次元唤来的那一位（rival-reiya）说的话与本人同一池 —— 认人不认边',
+      strayed.length === 0,
+      strayed.length ? strayed.slice(0, 3).join('；') : `${cyc.length} 次抽样全在本人池内`)
+    /* 对照：这一条不是「池子恒等于一句」蒙过去的 —— 抽样里得真见过不止一种说法。 */
+    ok('战斗语音（对照）：同一池抽多次会出现不止一句（不是恒定复读）',
+      new Set(cyc).size >= 2, `抽出 ${new Set(cyc).size} 种`)
+
+    /* 认人不认边 · 第二卷代表战站在对面的那几位（首领与名册**共用 id**，技能 id 却是首领那一套）。
+       梅尔文那一手 `boss-merwen-portal` 不在 LINE_POOL 里 → 走本人 CHAR_LINES。 */
+    const merwenBase = '「——这一手，我可是练了很久的。」'
+    const merwenPool = new Set([...CHAR_LINES['merwen-gray']!, merwenBase])
+    const fromBoss = Array.from({ length: 16 }, () => poolFor('merwen-gray', 'boss-merwen-portal', merwenBase))
+    ok('战斗语音：第二卷代表战里站在对面的那几位（与名册共用 id）同样说自己的话',
+      fromBoss.every((l) => merwenPool.has(l)),
+      `有池外句：${fromBoss.filter((l) => !merwenPool.has(l)).slice(0, 3).join('；') || '无'}`)
+
+    /* 对照：杂兵与观测体的 id 不在名册上 —— 取不到池子，原样返回技能自带那句。 */
+    const foeBase = '「低语 · 灌耳」的原句'
+    const fromFoe = new Set(Array.from({ length: 16 }, () => poolFor('foe-whisper-din', 'foe-whisper-din', foeBase)))
+    ok('战斗语音（对照）：杂兵不在名册上 → 原样说技能自带的那一句（不硬套池子）',
+      fromFoe.size === 1 && fromFoe.has(foeBase), `抽样结果：${[...fromFoe].join('／')}`)
+
+    info.push(`战斗语音：「${Object.keys(CHAR_LINES).length}」组常驻 ·「${Object.keys(LINE_POOL).length}」组专写 · `
+      + `联动 ${FOLLOW_LINES.length} 条全可达 · 长句与点名台词 0 条`)
+  } catch (e) {
+    fail.push('战斗语音段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   /* ---------- 19) 梅芙引导：作战屏那一段 ----------

@@ -12,9 +12,14 @@
         说着当时才对得上的事），它一挪到别的仗里就突兀。所以本表里的句子一律：
        **不点队友的名字、不指某一场、不带一段叙事**；点名与关系全交给下面的联动表，
         它本来就看得见「谁在场、刚才谁出的手」。
-     4. **这一池只服务我方名册**。敌阵说它自己那一手的话（写在技能自带的那一句上）——
-        哪怕对面站着的是同名的那一位（`bosses.ts` 里的首领与名册共用 id），
-        也不该拿这里的池子去换掉她那一手的台词。闸在 `engine` 的 `pushLog` 里。
+     4. **认人，不认边**。这一池是按档案写的，而档案里的人**两边都站**：
+        第二卷天空竞技祭的代表战里，梅尔文、玛丽娅、亚历克斯、菲德拉、凯特琳、吴诗涵
+        就是站在对面的（`bosses.ts` 的首领与名册共用同一个 id）；
+        面具心叶从另一侧唤出来的「异次元的卡乌斯学院学生」，五轴与技能表照搬本人，
+        id 只多一个前缀（`rival-reiya`）。这些都不是别人，就是他们自己 ——
+        所以台词池按**档案身份**取，两边一样（见 `archiveIdOf`）。
+        首领那一套技能 id（`boss-merwen-portal` 一类）不登记在 `LINE_POOL` 里 ——
+        于是那一手自带的那句话照旧算一手，与本人的常驻几句一起挑。
 
    熟悉与否不发散判定，只看既有关系：
      · 羁绊（PAIRS：黄金狮子 / 如散文般 / 婚约者）
@@ -29,7 +34,20 @@
 
 import { OPERATOR_ID } from '../../data/castmeta'
 import { ROSTER_GROUPS } from '../../data/roster'
+import { RIVAL_PREFIX } from './derive'
 import { PAIRS } from './synergy'
+
+/**
+ * 这一位**是谁** —— 把「被唤上来的同行者」还原成档案里那个人。
+ *
+ * 台词池与联动判定都走这个：档案里的人两边都站（第二卷代表战的首领与名册共用 id；
+ * 面具心叶唤来的异次元学生是 `rival-<档案 id>`），站在哪一边不改变他是谁。
+ * 认不出前缀的原样返回 —— 杂兵与观测体的 id 本来就不在名册上，取不到池子，
+ * 它们照旧说技能自带的那一句。
+ */
+function archiveIdOf(actorId: string): string {
+  return actorId.startsWith(RIVAL_PREFIX) ? actorId.slice(RIVAL_PREFIX.length) : actorId
+}
 
 /** 事件（本次出手）的上下文 —— 只取判定台词要用到的那几样 */
 export interface BanterCtx {
@@ -261,7 +279,7 @@ export const CHAR_LINES: Record<string, string[]> = {
 
 /* ---------- 2. 联动台词：熟人接得上 ---------- */
 
-interface FollowLine {
+export interface FollowLine {
   /** 谁接话（角色 id） */
   by: string
   /** 前一手是谁打的；'*' = 只要是这个人就行 */
@@ -282,7 +300,7 @@ interface FollowLine {
  * 谁在场由 `recent` 保证：前一手不是表里那个人的时候，这一条根本不会响，
  * 所以「点着某个人的名字说」在这里是安全的。
  */
-const FOLLOW: FollowLine[] = [
+export const FOLLOW_LINES: FollowLine[] = [
   /* 心叶 → 露娜：黄金狮子，一个把她甩出去、一个在半空听对方的心声 */
   { by: 'luna', after: OPERATOR_ID, skill: /读心|低语/, when: 'any', line: '「集中精神，小主人！」' },
   { by: 'luna', after: OPERATOR_ID, when: 'hit', line: '「干得漂亮，小主人。」' },
@@ -388,11 +406,13 @@ const RECENT_LOOKBACK = 3
 export function lineFor(ctx: BanterCtx, base: string): string {
   const { actorId, recent, dmg, miss } = ctx
   const outcome: 'hit' | 'miss' = miss || !dmg ? 'miss' : 'hit'
+  const me = archiveIdOf(actorId)
 
   for (const r of (recent ?? []).slice(0, RECENT_LOOKBACK)) {
-    if (!familiar(actorId, r.id)) continue
-    const hit = FOLLOW.filter(
-      (f) => f.by === actorId && (f.after === r.id || f.after === '*') && (!f.skill || f.skill.test(r.skill)),
+    const you = archiveIdOf(r.id)
+    if (!familiar(me, you)) continue
+    const hit = FOLLOW_LINES.filter(
+      (f) => f.by === me && (f.after === you || f.after === '*') && (!f.skill || f.skill.test(r.skill)),
     )
     if (!hit.length) continue
     const exact = hit.filter((f) => f.when === outcome)
@@ -410,11 +430,15 @@ export function lineFor(ctx: BanterCtx, base: string): string {
  * 再把原句掺回去，等于没改。想留的那句原文，抄进池子里就是。
  * 没专写过才回落到这个人的常驻几句，这时候技能自带的那一句仍然算一手 ——
  * 它是这一手自己的话，留着。
+ *
+ * `actorId` 先还原成**档案身份**（见 `archiveIdOf`）：站在对面的那一位
+ * （第二卷代表战的首领、面具心叶唤来的异次元学生）说的一样是他自己的话。
  */
 export function poolFor(actorId: string, skillId: string, base: string): string {
+  const who = archiveIdOf(actorId)
   const own = LINE_POOL[skillId]
-  if (own?.length) return pick(own, skillId + actorId)
-  const pool = CHAR_LINES[actorId]
+  if (own?.length) return pick(own, skillId + who)
+  const pool = CHAR_LINES[who]
   if (!pool?.length) return base
-  return pick(base ? [base, ...pool] : pool, skillId + actorId)
+  return pick(base ? [base, ...pool] : pool, skillId + who)
 }

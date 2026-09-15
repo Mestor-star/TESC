@@ -1175,8 +1175,11 @@ export const RIVAL_TAG = '异次元'
  * 同行者的 id 前缀。**后面原样接档案 id**（`rival-reiya`）——
  * 前缀只是把「对面这一位」与我方编队里同名的那一位分开（引擎的 find 先我方后敌方，
  * 同 id 会认错人），档案 id 得留着，不然认不出这一位档案里是谁。
+ *
+ * 导出给 `banter`：那边要拿它把「对面这一位」还原成「档案里是谁」，
+ * 台词池认的是人、不是他站在哪一边（见 banter 头注）。
  */
-const RIVAL_PREFIX = 'rival-'
+export const RIVAL_PREFIX = 'rival-'
 
 /**
  * 这一位是不是「被唤上来的同行者」；是的话，档案里是谁。
