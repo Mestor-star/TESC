@@ -15,11 +15,32 @@
    对白不像人话 —— 所以这里要把战斗中的话**写出来**：谁在什么时候、
    对谁、说了什么，照其性子与此刻的处境写；底稿有台词的地方照抄，
    没有的地方补写出他们真会说的那一句（这是成文，不是抄录）。
+
+   **别再让这一趟悄悄退回底稿**（主人 2026-09-15 撞见的那一次）。退回是允许的
+   （没通道也得看得下去），但必须**说出来** —— 底稿看着像「写成了这样」，
+   其实是一场失败的成文，这条界线得在界面上看得见。见 `narrateStorylog`。
    ============================================================ */
 
 import { chatCompletion, isReady, loadProfile } from '../api'
-import type { ChatTurn } from '../api'
+import type { ApiSettings, ChatTurn } from '../api'
+import { clampBudget } from '../budget'
 import type { BattleRecord, LogEntry } from './types'
+
+/**
+ * 空正文时补发的那一句（与 `Plot.tsx:156` 的 RETRY_NUDGE 同一手，只是这儿要的是正文、
+ * 不是事件指令，所以另写一句）。
+ *
+ * **为什么非有这一手不可。** 2026-09-15 主人打完一场，回填进来的是一段战报腔底稿 ——
+ * 查下来不是写法问题，是**成文那一趟根本没通**：这一处从前硬写 `maxTokens: 2600`，
+ * 而 `lib/budget.ts` 开头那段早就写明了「1500 那一档在思考型通道上根本不够 ——
+ * 预算先被内部思考吃光，正文一个字没写就被长度掐断」。2600 对思考型通道正是这一档：
+ * 思考吃完，`content` 是空串 → 落到 `text || fallback` → 端出底稿，
+ * 而那句 `catch` 又把原因吞了，界面上只留一句「正在把这一仗写成正文」。
+ * 现在：预算读通道自己配的那一份（与主线同源），空正文自动补发一次，失败**照实报**。
+ */
+const STORY_NUDGE =
+  '（系统注：上一回的回复为空。请直接给出正文，不要再做长篇内部思考；'
+  + '如需思考请压缩篇幅，别让思考占掉正文的额度。）'
 
 /** 对手的档位 —— 记录里怎么留的档，正文就按哪一档写 */
 export type FoeTier = 'elite' | 'boss' | null
@@ -140,24 +161,69 @@ export interface StorylogOpts {
   maxTokens?: number
 }
 
-/** 经推演通道成文；未接通或失败一律退回模板，不抛错 */
-export async function narrateStorylog(rec: BattleRecord, opts: StorylogOpts = {}): Promise<string> {
+/** 成文那一趟的结果 —— `ok: false` 时端的是底稿，`why` 里是照实记下的原因 */
+export interface StorylogOutcome {
+  text: string
+  ok: boolean
+  /** 没走通的原因（走通了就没有这一项）。界面上照着它说，别再吞 */
+  why?: string
+}
+
+/**
+ * 经推演通道成文；未接通或失败一律退回底稿，**并把原因带出来**。
+ *
+ * 两处与主线那一套对齐（从前这里是没有的，正是主人那次「收到战报」的根子）：
+ *   · **预算读通道自己配的那一份**（`clampBudget(cfg.maxTokens)`，默认 30000），
+ *     不再硬写 2600 —— 成文是八百到一千五百字的长篇，比一次普通回合还长，
+ *     照主线「事件衔接」那一档再放宽 1.6 倍。思考型通道上，小预算等于没有预算。
+ *   · **空正文补发一次**：思考把额度吃光是这一类通道最常见的失手，补发时加一句催告、
+ *     并把预算抬到 1.8 倍（照 `Plot.tsx:902` 那一手）。
+ *
+ * 仍然**不抛**：成文失败不该把主人卡在作战屏上。但失败一定要说出来 ——
+ * 返回 `ok:false` + `why`，由调用处弹给主人看。
+ */
+export async function narrateStorylog(rec: BattleRecord, opts: StorylogOpts = {}): Promise<StorylogOutcome> {
   const fallback = templateStorylog(rec)
+  let cfg: ApiSettings
   try {
-    const cfg = await loadProfile('main')
-    if (!isReady(cfg)) return fallback
-    const messages: ChatTurn[] = [
-      { role: 'system', content: opts.system ?? systemPrompt() },
-      ...(opts.history ?? []),
-      { role: 'user', content: userPrompt(rec) },
-    ]
-    const text = (await chatCompletion(cfg, messages, {
-      maxTokens: opts.maxTokens ?? 2600,
-      temperature: 0.8,
-      meta: { channel: '交战推演', act: `战报成文 · ${rec.place}` },
-    })).trim()
-    return text || fallback
+    cfg = await loadProfile('main')
   } catch {
-    return fallback
+    return { text: fallback, ok: false, why: '读不到推演通道的配置' }
   }
+  if (!isReady(cfg)) {
+    return { text: fallback, ok: false, why: '推演通道还没配（接口地址或模型名空着）' }
+  }
+
+  /* 预算：与主线同源。成文比普通回合长，照「事件衔接」那一档放宽 1.6 倍 */
+  const budget = clampBudget(cfg.maxTokens)
+  const first = opts.maxTokens ?? Math.max(2600, Math.round(budget * 1.6))
+
+  const base: ChatTurn[] = [
+    { role: 'system', content: opts.system ?? systemPrompt() },
+    ...(opts.history ?? []),
+    { role: 'user', content: userPrompt(rec) },
+  ]
+
+  let why = '通道未返回任何内容'
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const outbox = attempt === 1 ? base : [...base, { role: 'user' as const, content: STORY_NUDGE }]
+    const cap = attempt === 1 ? first : Math.max(5000, Math.round(first * 1.8))
+    try {
+      const text = (await chatCompletion(cfg, outbox, {
+        maxTokens: cap,
+        temperature: 0.8,
+        meta: { channel: '交战推演', act: `战报成文 · ${rec.place}` },
+      })).trim()
+      if (text) return { text, ok: true }
+      /* 空答：多半是内部思考把预算吃光了（budget.ts 开头记的就是这一种）——补发一次 */
+      why = attempt === 1
+        ? '通道没写出正文（多半是内部思考把输出预算吃光了）'
+        : '补发一次仍是空的 —— 该通道的输出预算可能还是不够'
+    } catch (e) {
+      why = e instanceof Error ? e.message : String(e)
+      /* 网络那一下抖动值得再试；报错本身（地址 / 密钥 / 额度）就不必再撞一次 */
+      if (attempt === 2) break
+    }
+  }
+  return { text: fallback, ok: false, why }
 }

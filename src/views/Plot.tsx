@@ -2211,8 +2211,15 @@ export function Plot() {
               const scanText = `${toTurns(logs[evId], 10).map((t) => t.content).join('\n')}\n${brief}`
               const { system } = await directorPromptFor(ev, scanText, { act: '交战成文', needDirective: false })
               const story = await narrateStorylog(rec, { system, history: toTurns(logs[evId], 8) })
+              /* 成文没走通时端的是**底稿**（一段战报腔的拼装）。它看着像「就写成这样」，
+                 其实是一场失败的成文 —— 所以必得当场说一句，别让主人对着底稿以为是正文
+                 （2026-09-15 主人打的那一场就是这么被骗过去的：那一处从前把错吞了）。 */
+              if (!story.ok) {
+                push('warn', '成文没走通 · 先按底稿回填', `${story.why}。这一场的正文是底稿拼的，`
+                  + '比不得推演那一副笔墨；通道那边理顺之后，重打一场就补得回来。', false)
+              }
               setLogs(persistMsg(evId, {
-                id: idFor(), from: 'them', text: story, time: clock(), meta: { battle: true },
+                id: idFor(), from: 'them', text: story.text, time: clock(), meta: { battle: true },
               }))
             }
             setPlotBattle(null)

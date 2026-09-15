@@ -5703,7 +5703,33 @@ export function run(): MechReport {
       src.includes('opts.system ?? systemPrompt()') && src.includes('history'),
       'storylog：system / history 两个入口')
 
-    info.push('交战成文：打完仗回填的是推演正文（经过 · 战斗中的人话 · 战后对话），走剧情通道的提示词，无通道退回模板')
+    /* ---- 主人 2026-09-15 那一场「收到战报」的根子，三样各钉一条 ----
+       打完之后回填进来的是一段战报腔底稿 —— 不是写法不对，是**成文那一趟根本没通**：
+       这一处从前硬写 `maxTokens: 2600`（`lib/budget.ts` 开头那段早就写明 1500 那一档
+       在思考型通道上不够），空正文不补发，失败还被 `catch` 吞掉。于是思考吃完额度 →
+       `text` 是空串 → 落进 `text || fallback` → 端底稿，而界面上一切正常。 */
+    const sl = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    ok('交战成文：输出预算读**通道自己配的那一份**（与主线同源），不再硬写一个小数',
+      sl.includes('clampBudget(cfg.maxTokens)') && !/maxTokens:\s*opts\.maxTokens\s*\?\?\s*2600/.test(sl),
+      '照 lib/budget.ts：思考型通道上，小预算等于没有预算')
+    ok('交战成文（对照）：主线那一侧读的是**同一个**函数 —— 两边同源，不是各写各的',
+      readFileSync('src/views/Plot.tsx', 'utf8').includes('clampBudget(cfgMain!.maxTokens)'),
+      'Plot.tsx 的 clampBudget(cfgMain!.maxTokens)')
+    ok('交战成文：空正文补发一次（内部思考吃光额度是这一类通道最常见的失手）',
+      /for \(let attempt = 1; attempt <= 2; attempt\+\+\)/.test(sl) && sl.includes('STORY_NUDGE'),
+      '两趟循环 + 催告那一句')
+    ok('交战成文：失败不再吞 —— 退回底稿时带出 `ok:false` 与原因，交给调用处照实说',
+      /StorylogOutcome/.test(sl) && /return \{ text: fallback, ok: false, why \}/.test(sl)
+      && !/catch \{\s*return fallback/.test(sl),
+      '三处退回（读不到配置 / 没配通道 / 两趟都没成）各自带 why')
+    const plotSrc2 = readFileSync('src/views/Plot.tsx', 'utf8')
+    ok('交战成文：调用处真的读了那个 `ok` —— 没走通时当场弹一句，不让人对着底稿以为就写成这样',
+      /if \(!story\.ok\)/.test(plotSrc2) && /text: story\.text/.test(plotSrc2)
+      && !/text: story,/.test(plotSrc2),
+      '读了 story.ok 并 push(' + "'warn'" + ')；落盘取的是 story.text')
+    info.push('交战成文：打完仗回填的是推演正文（经过 · 战斗中的人话 · 战后对话），走剧情通道的提示词，无通道退回模板');
+    info.push('交战成文 · 预算与重试：预算读通道自己配的那一份（同源主线）、空正文补发一次、'
+      + '失败带出原因不再吞（主人 2026-09-15 那一场「收到战报」的根子）')
   } catch (e) {
     fail.push('交战成文段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
