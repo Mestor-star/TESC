@@ -2,7 +2,7 @@
 
 /* 顶栏连接状态 */
 .linkState { display: flex; align-items: center; gap: 8px; font-size: 11px; }
-.linkState button { padding: 0; background: none; border: none; color: var(--steel-deep); cursor: pointer; font-size: 11px; text-decoration: underline dotted; }
+.linkState button { padding: 0; background: none; border: none; color: var(--steel-deep); cursor: var(--cursor-point); font-size: 11px; text-decoration: underline dotted; }
 
 /* 联系人列表项内多行 */
 .castName { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 800; }
@@ -61,7 +61,7 @@
   background: transparent;
   border: none;
   padding: 6px 11px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   text-align: left;
   color: var(--ink-mute);
 }
@@ -113,7 +113,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   border-radius: var(--radius-sm);
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: color var(--t-fast), border-color var(--t-fast);
 }
 .tab:hover { color: var(--ink); border-color: var(--steel); }
@@ -165,7 +165,7 @@
   font-family: inherit;
   font-size: 11px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .sectBtn:hover { color: var(--amber-deep); border-color: var(--amber); }
 
@@ -189,7 +189,7 @@
   background: var(--bg-1);
   border-radius: var(--radius-sm);
   color: var(--amber-deep);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .taskMain { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .taskMain b { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1.5; }
@@ -202,7 +202,7 @@
   border: 0;
   background: transparent;
   color: var(--ink-faint);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .taskDel:hover { color: var(--red-deep); }
 
@@ -235,7 +235,7 @@
   border: 0;
   background: transparent;
   color: var(--ink-mute);
-  cursor: pointer;
+  cursor: var(--cursor-point);
   padding: 2px;
 }
 .modalX:hover { color: var(--red-deep); }
@@ -262,7 +262,7 @@
   font-size: 12.5px;
   border-radius: var(--radius-sm);
   text-align: left;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .pickRow:hover { color: var(--ink); border-color: var(--line-2); }
 .pickOn { color: var(--amber-deep); border-color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--bg-1)); }
@@ -290,7 +290,7 @@
   align-items: center;
   gap: 6px;
 }
-.partyPickRow > .chip { cursor: pointer; font-family: inherit; font-size: 12px; }
+.partyPickRow > .chip { cursor: var(--cursor-point); font-family: inherit; font-size: 12px; }
 
 /* ---------------- 对谈区的下半：会话列 + 见面右栏 ----------------
    `.chatPane` 是 overflow:hidden 的竖排 flex，它唯一能滚的是里面的消息流 ——

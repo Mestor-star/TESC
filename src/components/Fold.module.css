@@ -15,7 +15,7 @@
   font: inherit;
   text-align: left;
   padding: 10px 14px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .headBtn:hover { background: var(--bg-3); }
 .headBtn:focus-visible { outline: 1px solid var(--line-3); outline-offset: -1px; }
@@ -43,7 +43,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   color: inherit;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: background var(--t-fast) var(--ease-out);
 }
 .iconBtn:hover { background: var(--bg-3); }
@@ -59,6 +59,6 @@
   gap: 8px;
   padding: 0 2px;
 }
-.bar .btn { cursor: pointer; }
+.bar .btn { cursor: var(--cursor-point); }
 .bar .btn[disabled] { opacity: 0.4; cursor: default; }
 .grow { flex: 1 1 auto; }

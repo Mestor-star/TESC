@@ -13,7 +13,7 @@
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.04em;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
 }
 .catBtn small { font-family: var(--font-mono); font-size: 10px; font-weight: 400; color: var(--ink-faint); margin-left: 2px; }

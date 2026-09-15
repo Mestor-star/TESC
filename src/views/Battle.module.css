@@ -662,7 +662,7 @@
   font-family: var(--font-mono);
   font-size: 9.5px;
   line-height: 15px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   white-space: nowrap;
 }
 .foeInfoBtn:hover {
@@ -1307,7 +1307,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-1) 70%, transparent);
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
 }
 .seqBtn:hover {
@@ -1348,7 +1348,7 @@
   border-radius: 5px;
   background: transparent;
   color: var(--ink-mute);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .x:hover { color: var(--ink); border-color: var(--amber); }
 
@@ -1366,7 +1366,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-1) 66%, transparent);
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 .row:hover:not(:disabled) {
@@ -1448,7 +1448,7 @@
   border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--red) 8%, transparent);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .risk:hover { background: color-mix(in srgb, var(--red) 16%, transparent); }
 
@@ -1658,7 +1658,7 @@
   background: var(--bg-1);
   color: var(--ink);
   font-size: 12.5px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .morphChip:hover { background: var(--bg-2); border-color: var(--c, var(--line)); }
 

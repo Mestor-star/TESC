@@ -336,7 +336,7 @@
 .msgRow {
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 7px 10px; border: 1px solid transparent; border-left: 2px solid var(--line-2);
-  border-radius: var(--radius-sm); background: transparent; cursor: pointer; text-align: left;
+  border-radius: var(--radius-sm); background: transparent; cursor: var(--cursor-point); text-align: left;
   transition: background 0.12s, border-color 0.12s, transform 0.12s;
 }
 .msgRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
@@ -436,7 +436,7 @@
 .pickRow {
   display: flex; align-items: baseline; gap: 8px; width: 100%;
   padding: 6px 9px; border: 1px solid transparent; border-radius: var(--radius-sm);
-  background: transparent; cursor: pointer; text-align: left; transition: background 0.12s, border-color 0.12s;
+  background: transparent; cursor: var(--cursor-point); text-align: left; transition: background 0.12s, border-color 0.12s;
 }
 .pickRow:hover { background: var(--bg-2); border-color: var(--line-2); }
 .pickRow[data-on='1'] {
@@ -465,7 +465,7 @@
 }
 .mapSvg { width: 100%; height: auto; aspect-ratio: 100 / 74; overflow: visible; }
 .mapEdge { stroke: var(--line-2); stroke-width: 0.4; stroke-dasharray: 1.6 1.4; }
-.mapNode { cursor: pointer; }
+.mapNode { cursor: var(--cursor-point); }
 .mapHalo {
   fill: color-mix(in srgb, var(--c) 12%, transparent);
   stroke: color-mix(in srgb, var(--c) 45%, transparent);

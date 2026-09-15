@@ -11,7 +11,7 @@
   opacity: 0.88;
   border-bottom: 1px dotted currentColor;
   padding-bottom: 0;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: opacity 0.15s ease;
 }
 .lk:hover,

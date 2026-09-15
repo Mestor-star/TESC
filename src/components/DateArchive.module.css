@@ -21,7 +21,7 @@
   color: var(--ink-mute);
   font-size: 11px;
   line-height: 1.5;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .pick:hover {
   border-color: color-mix(in srgb, var(--amber) 55%, var(--line-2));

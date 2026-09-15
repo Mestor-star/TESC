@@ -137,7 +137,7 @@
   box-shadow: var(--shadow-2);
   user-select: none;
   touch-action: none;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: transform var(--t-fast);
 }
 .fp:hover {

@@ -33,7 +33,7 @@
   flex: 0 0 auto;
   width: 42px; height: 42px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm); color: var(--ink-mute); cursor: pointer;
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm); color: var(--ink-mute); cursor: var(--cursor-point);
 }
 .eyeBtn:hover { color: var(--ink); border-color: var(--line-3); }
 
@@ -143,7 +143,7 @@
   background: var(--bg-1);
   border-radius: var(--radius-sm);
   padding: 8px 11px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 /* 预设调配：已接管几本书的小徽标 */
 .tuneBadge {
@@ -242,7 +242,7 @@
   width: 100%;
   --slider: var(--amber);
   height: 18px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .volNote { font-size: 11px; line-height: 1.5; color: var(--ink-faint); }
 
@@ -260,7 +260,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 11px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   color: var(--ink-mute);
 }
 .logHead:hover { background: var(--bg-1); }

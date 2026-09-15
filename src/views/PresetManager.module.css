@@ -50,7 +50,7 @@
   font-size: 12px;
   padding: 7px 14px;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .tab:hover { color: var(--ink); }
 .tab.isOn { background: var(--bg-1); color: var(--amber-deep); border-color: var(--line-3); }
@@ -105,7 +105,7 @@
   color: var(--ink);
   padding: 6px 8px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .row b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -130,7 +130,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--ink-faint);
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: all var(--t-fast);
 }
 .sw:hover { background: var(--bg-1); color: var(--ink); border-color: var(--line-2); }
@@ -159,7 +159,7 @@
 .miniRow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
 .miniRow label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-mute); }
 .num { width: 92px; }
-.ck { cursor: pointer; }
+.ck { cursor: var(--cursor-point); }
 .textarea {
   width: 100%;
   min-height: 240px;
@@ -186,7 +186,7 @@
   color: var(--ink);
   padding: 8px 9px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .bookRow:hover { background: var(--bg-1); }
 .bookRow.isActive { background: var(--bg-1); border-color: var(--line-2); }
@@ -204,7 +204,7 @@
   background: var(--bg-2);
   padding: 7px 10px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
+  cursor: var(--cursor-point);
   text-align: left;
   color: var(--ink);
 }

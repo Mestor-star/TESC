@@ -96,7 +96,7 @@
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   border-radius: var(--radius);
   transition: border-color 0.15s ease, background 0.15s ease;
 }

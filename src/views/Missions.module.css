@@ -287,7 +287,7 @@
   color: inherit;
   font: inherit;
   font-size: 12px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   text-align: left;
   transition: border-color 0.15s, background 0.15s;
 }
@@ -340,7 +340,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius-pill);
   background: transparent;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 .loadBtn:hover { border-color: color-mix(in srgb, var(--amber) 60%, transparent); color: var(--ink); }
@@ -381,7 +381,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   text-align: left;
 }
 .recTop:hover { background: color-mix(in srgb, var(--amber) 10%, transparent); }
@@ -414,7 +414,7 @@
   white-space: pre-wrap;
   color: var(--ink-mute);
 }
-.recRaw summary { cursor: pointer; color: var(--ink-faint); }
+.recRaw summary { cursor: var(--cursor-point); color: var(--ink-faint); }
 .recPre {
   margin: 6px 0 0;
   max-height: 220px;
@@ -500,7 +500,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius-pill);
   background: transparent;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .shopTab.isOn { color: var(--amber-deep); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
 

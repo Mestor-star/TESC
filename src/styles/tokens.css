@@ -103,6 +103,24 @@
   /* 「次元错位」的签名：一点淡青、一点淡粉，错开两像素叠在字上 */
   --duo-shadow: -2px 0 0 rgba(47, 159, 240, 0.30), 2px 0 0 rgba(255, 77, 121, 0.30);
 
+  /* —— 指针 ——
+     两枚 SVG 就摆在同目录（`cursor-arrow.svg` / `cursor-point.svg`）：
+     常驻是粉→紫的菱形箭，悬停（可点的东西上）换成同一条箭形、
+     多出一圈光晕与尾上一点紫 ✦。两枚的**箭尖都钉在 (4,2)**，
+     所以从别处移到按钮上时瞄点不动 —— 热点那两个数因此在两处写得一模一样。
+
+     三条规矩，改这一块的人先读：
+     1. **带兜底关键字**（`auto` / `pointer`）。图万一没载出来，退回系统指针，
+        绝不是「没有指针」—— 那比丑严重得多。
+     2. **url() 放在下面那两条变量里，各处 `cursor: var(--cursor-x)` 取。**
+        已验过：Vite 会把自定义属性里的 url() 一并重写，这两枚又都在内联线
+        （4 KB）之内，构建后是 data-URI —— 站根、子路径、Pages 三种挂法都不受影响。
+        往后若要换一张更大的图，超过内联线会变成带哈希的文件，同样由 Vite 改写，
+        不必为此改哪儿。
+     3. 输入框**不给这套** —— 文本框里必须是 I 形光标，那是打字的地方。 */
+  --cursor-arrow: url('./cursor-arrow.svg') 4 2, auto;
+  --cursor-point: url('./cursor-point.svg') 4 2, pointer;
+
   /* —— 字体 —— */
   --font-sans: "Inter", "Inter Fallback", "Microsoft YaHei", "微软雅黑", "PingFang SC", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Consolas", "Microsoft YaHei", monospace;
@@ -145,6 +163,8 @@ body {
   text-rendering: optimizeLegibility;
   overflow: hidden;
   letter-spacing: 0.01em;
+  /* 全站常驻指针（见上面「指针」那一段）—— 热点 (4,2) 就是那枚箭的箭尖 */
+  cursor: var(--cursor-arrow);
 }
 
 /* 覆在整体上的**点阵**（笔记本纸那一层）——
@@ -159,9 +179,11 @@ body {
   background: radial-gradient(rgba(36, 31, 58, 0.055) 1px, transparent 1.2px) 0 0 / 22px 22px;
 }
 
-a { color: inherit; text-decoration: none; }
-button { font-family: inherit; cursor: pointer; }
-input, textarea, select { font-family: inherit; }
+a { color: inherit; text-decoration: none; cursor: var(--cursor-point); }
+button { font-family: inherit; cursor: var(--cursor-point); }
+/* 输入框与文本域走 I 形 —— 那儿的指针是「光标」，不是「准星」，不能跟着换 */
+input, textarea { font-family: inherit; cursor: text; }
+select { font-family: inherit; cursor: var(--cursor-point); }
 
 ::selection { background: var(--red); color: var(--on-accent); }
 
@@ -430,7 +452,7 @@ input[type='range'] {
   appearance: none;
   height: 16px;
   background: transparent;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 input[type='range']::-webkit-slider-runnable-track {
   box-sizing: border-box;
@@ -637,7 +659,7 @@ input[type='range']::-moz-range-thumb {
   background: none;
   border: 0;
   padding: 4px 0;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   font-family: var(--font-mono);
   font-size: 11.5px;
   letter-spacing: 0.04em;

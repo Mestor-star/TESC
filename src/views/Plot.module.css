@@ -93,7 +93,7 @@
   font-family: var(--font-mono);
   letter-spacing: 0.05em;
   padding: 7px 14px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .segBtn:hover { color: var(--ink); }
 .segBtn.isOn {
@@ -199,7 +199,7 @@
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .pastFold:hover b { color: var(--amber-deep); }
 .pastFold:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
@@ -460,7 +460,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 6px 11px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
 }
 .draftOpt:hover { border-color: var(--amber); color: var(--amber-deep); }
 .draftErr {
@@ -645,7 +645,7 @@
   background: transparent;
   border: none;
   padding: 7px 12px;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   text-align: left;
   color: var(--ink-mute);
 }
@@ -720,7 +720,7 @@
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: var(--cursor-point);
   transition: background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
 }
 .castRow:hover {
