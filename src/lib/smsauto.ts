@@ -34,7 +34,7 @@ export const ROLL_EVERY_MS = 20 * 60 * 1000
 /** 每一格命中的概率 —— **中没中，这一格都用掉**（见 `rollStep` 与文件头） */
 export const HIT_CHANCE = 0.45
 /** 同一个人两次主动来信之间 */
-const SAME_CHAR_MS = 45 * 60 * 1000
+export const SAME_CHAR_MS = 45 * 60 * 1000
 /** 巡查间隔 */
 const TICK_MS = 45 * 1000
 
@@ -110,13 +110,43 @@ function onStageIds(epDone: Record<string, boolean>): Set<string> {
 }
 
 /**
+ * 这一位此刻可不可以主动发一条 —— **四道条件叠着，全过了才发**。
+ *
+ *   ① **短信页开着**（`unlocked`）。卷一「欢迎来到，终末停滞委员会」走完之前，
+ *      短信是受门禁保护的那一档（`LOCKED_VIEWS` 里就有 `tavern`）：信收不到、
+ *      页点不进去，可来信仍会把未读角标挂在**锁着的**模块上 —— 那一段**谁都不发**。
+ *   ② 遇见过（`met`）—— 没见过的人不该有你的号码。
+ *   ③ 不在眼前这一段事件里（`!onStage`）—— 人站在面前，不会同时给你发短信。
+ *   ④ 距她上一次来信够久（`SAME_CHAR_MS`）—— 免得同一位连着刷屏。
+ *
+ * 单独拎出来，是因为这四条是**规矩**、不是流程：mech 直接验它（§37）。
+ * 写在挑选那一步的 `filter` 里、而不是 tick 顶上提前 return ——
+ * 这样没解锁的那一段照样滚格、照样掷骰（掷空而已），解锁之后不必白等一格。
+ */
+export interface SendGate {
+  /** 短信页解锁了没（卷一门禁） */
+  unlocked: boolean
+  /** 遇见过、档案已解锁 */
+  met: boolean
+  /** 此刻就在眼前这一段事件里 */
+  onStage: boolean
+  /** 她上一次主动来信的时刻（0 = 从没发过） */
+  last: number
+  now: number
+}
+
+export function canSendNow(g: SendGate): boolean {
+  return g.unlocked && g.met && !g.onStage && g.now - g.last >= SAME_CHAR_MS
+}
+
+/**
  * 主动来信的调度钩子。挂在常驻的 Shell 上，全局只有一份。
  */
 export function useProactiveSms(): void {
-  const { operatorName, isMet, bondNow, epDone, push, world } = useTerminal()
+  const { operatorName, isMet, bondNow, epDone, push, world, unlocked } = useTerminal()
   /* 上下文放进 ref：调度是「到点才看」的，闭包不该因为依赖变化而重启计时 */
-  const ctx = useRef({ operatorName, isMet, bondNow, epDone, push, world })
-  ctx.current = { operatorName, isMet, bondNow, epDone, push, world }
+  const ctx = useRef({ operatorName, isMet, bondNow, epDone, push, world, unlocked })
+  ctx.current = { operatorName, isMet, bondNow, epDone, push, world, unlocked }
 
   const inFlight = useRef(false)
 
@@ -144,11 +174,15 @@ export function useProactiveSms(): void {
       saveState({ roll: now, per: state.per })
       if (!hit) return
 
-      // 在「遇见过、且不在眼前这段事件里」的人中挑一个
+      // 在「短信已解锁、遇见过、且不在眼前这段事件里」的人中挑一个（规矩见 `canSendNow`）
       const stage = onStageIds(c.epDone)
-      const metas = TAVERN_PERSONAS.map((p) => p.charId)
-        .filter((id) => c.isMet(id) && !stage.has(id))
-        .filter((id) => now - (state.per[id] ?? 0) >= SAME_CHAR_MS)
+      const metas = TAVERN_PERSONAS.map((p) => p.charId).filter((id) => canSendNow({
+        unlocked: c.unlocked,
+        met: c.isMet(id),
+        onStage: stage.has(id),
+        last: state.per[id] ?? 0,
+        now,
+      }))
       if (!metas.length) return
 
       const cfg = await loadProfile('sms').catch(() => null)

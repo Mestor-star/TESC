@@ -40,6 +40,26 @@ interface Spot {
   height: number
 }
 
+/**
+ * 这一步的正文**按说话人分成两组**：光字符串归梅芙，署了名的各自成一组（保序）。
+ *
+ * 「别人插话」在数据里就是那一条署了名的（`GuideSay`），但**摆法上不跟梅芙挤一张气泡** ——
+ * 插话那位有自己的一张：自己的脸、自己的尖角、自己的名字（颜色照 castmeta 的主题色），
+ * 横着并到梅芙旁边（主人 2026-09-15：「并排在旁边」，像两个人对着说话）。
+ * 数据里每一步至多一位插话者，并排那一路摆不下第三张 —— mech 有一条断言钉着。
+ */
+function splitLines(lines: GuideLine[], say: (s: string) => string) {
+  const meave: string[] = []
+  const guests: { by: string; text: string[] }[] = []
+  for (const l of lines) {
+    if (typeof l === 'string') { meave.push(say(l)); continue }
+    const last = guests[guests.length - 1]
+    if (last && last.by === l.by) last.text.push(say(l.text))
+    else guests.push({ by: l.by, text: [say(l.text)] })
+  }
+  return { meave, guests }
+}
+
 function sameSpot(a: Spot | null, b: Spot | null): boolean {
   if (!a || !b) return a === b
   return Math.abs(a.left - b.left) < 1.5 && Math.abs(a.top - b.top) < 1.5
@@ -183,29 +203,8 @@ export function Guide() {
      写死在文案里的话，改了名的人就会听见她在叫别人。 */
   const say = (l: string) => l.replace(/\{op\}/g, operatorName)
 
-  /* 正文的一行：光字符串 = 梅芙说的；署了名的 = 别人插一句。
-     插话那一行带自己的小头像与主题色，名字照 castmeta 查（查不到就不署名，
-     宁可只剩正文 —— 见 guide.guideVoiceOf 上那一段）。 */
-  const line = (l: GuideLine, n: number) => {
-    if (typeof l === 'string') return <li key={n}>{say(l)}</li>
-    const v = guideVoiceOf(l.by)
-    return (
-      <li key={n} className={css.guest} data-guide-say={l.by}>
-        {v ? (
-          <span className={css.guestFace} aria-hidden>
-            <Portrait
-              avatarId={v.avatarId} name={v.name} hue={v.hue} sigil={v.sigil}
-              size={18} round fit="cover"
-            />
-          </span>
-        ) : null}
-        <span className={css.guestBody}>
-          {v ? <b style={{ color: v.hue }}>{v.name}</b> : null}
-          {say(l.text)}
-        </span>
-      </li>
-    )
-  }
+  /* 正文按说话人分好组：梅芙一组，插话那位（若有）自己一组 */
+  const { meave, guests } = splitLines(step.lines, say)
 
   const last = i >= tour.steps.length - 1
   /* 「跳过教程」只给教程那几条 —— 绑在界面上、又不算教程的（boss 讲解）不给：
@@ -230,37 +229,72 @@ export function Guide() {
         <div className={css.scrim} />
       )}
 
-      <div className={css.bubble} data-guide-bubble style={box} ref={bubbleRef}>
-        <span className={css.faceWrap} data-guide-face>
-          <Portrait avatarId="mefisa" size={52} className={css.face} />
-        </span>
-        <div className={css.tail} aria-hidden />
-        <div className={css.body}>
-          <div className={css.who}>
-            <b>梅芙莉莎 · 简别科娃</b>
-            <span className="tiny muted">恋兔队 · 战术副官</span>
-          </div>
-          <div className={css.title}>{step.title}</div>
-          <ul className={css.lines}>
-            {step.lines.map(line)}
-          </ul>
-          <div className={css.foot}>
-            <span className={`${css.pager} mono`}>{i + 1} / {tour.steps.length}</span>
-            {tutorialPart ? (
-              <button
-                className="btn btn--ghost"
-                style={{ fontSize: 12 }}
-                data-guide-skip
-                onClick={() => { skipTutorial(); setTour(null); setI(0) }}
-              >
-                跳过教程
+      {/* 一排：梅芙那张在前，插话那位并排在后。
+          定位与入场动画挂在**这一排**上（`box` 算的也是这一排的中心），
+          里头每一张各自是一整张气泡。`data-guide-bubble` 只挂在梅芙这一张上 ——
+          冒烟那几条几何断言量的就是她这张与锚点的关系。 */}
+      <div className={css.row} style={box} ref={bubbleRef} data-guide-row>
+        <div className={css.bubble} data-guide-bubble>
+          <span className={css.faceWrap} data-guide-face>
+            <Portrait avatarId="mefisa" size={52} className={css.face} />
+          </span>
+          <div className={css.tail} aria-hidden />
+          <div className={css.body}>
+            <div className={css.who}>
+              <b>梅芙莉莎 · 简别科娃</b>
+              <span className="tiny muted">恋兔队 · 战术副官</span>
+            </div>
+            <div className={css.title}>{step.title}</div>
+            <ul className={css.lines}>
+              {meave.map((l, n) => <li key={n}>{l}</li>)}
+            </ul>
+            <div className={css.foot}>
+              <span className={`${css.pager} mono`}>{i + 1} / {tour.steps.length}</span>
+              {tutorialPart ? (
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 12 }}
+                  data-guide-skip
+                  onClick={() => { skipTutorial(); setTour(null); setI(0) }}
+                >
+                  跳过教程
+                </button>
+              ) : null}
+              <button className="btn btn--amber" style={{ fontSize: 12 }} data-guide-next onClick={() => (last ? finish() : setI(i + 1))}>
+                {last ? '知道了' : '下一步'}
               </button>
-            ) : null}
-            <button className="btn btn--amber" style={{ fontSize: 12 }} data-guide-next onClick={() => (last ? finish() : setI(i + 1))}>
-              {last ? '知道了' : '下一步'}
-            </button>
+            </div>
           </div>
         </div>
+
+        {guests.map((g) => {
+          /* 查不到这个人（castmeta 里没登记、也不在 GUIDE_GUESTS 里）就只剩正文：
+             宁可不署名，也不把 id 摆到脸上 —— 见 guide.guideVoiceOf 上那一段 */
+          const v = guideVoiceOf(g.by)
+          return (
+            <div key={g.by} className={css.bubble} data-guide-say={g.by}>
+              {v ? (
+                <span className={css.faceWrap} data-guide-guest-face>
+                  <Portrait
+                    avatarId={v.avatarId} name={v.name} hue={v.hue} sigil={v.sigil}
+                    size={52} className={css.face}
+                  />
+                </span>
+              ) : null}
+              {v ? <div className={css.tail} aria-hidden /> : null}
+              <div className={css.body}>
+                {v ? (
+                  <div className={css.who}>
+                    <b style={{ color: v.hue }}>{v.name}</b>
+                  </div>
+                ) : null}
+                <ul className={css.lines}>
+                  {g.text.map((t, n) => <li key={n}>{t}</li>)}
+                </ul>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>,
     document.body,

@@ -148,12 +148,13 @@ import {
   BOTTOM_RULES, EXCLUSIVE_RULE, HAREM_RULE, INTIM_DEPTH_RULE, PROSE_RULES, SMOOTH_RULE, haremRule,
 } from '../../src/lib/worldrules'
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
+import { clearRunStorage } from '../../src/lib/slots'
 import { cgIdOf } from '../../src/lib/cg'
-import { HIT_CHANCE, ROLL_EVERY_MS, rollStep } from '../../src/lib/smsauto'
-import type { AutoState } from '../../src/lib/smsauto'
+import { HIT_CHANCE, ROLL_EVERY_MS, SAME_CHAR_MS, canSendNow, rollStep } from '../../src/lib/smsauto'
+import type { AutoState, SendGate } from '../../src/lib/smsauto'
 import {
-  DATE_BEATS, DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBeatsFor, dateBondRule, dateCgPalette,
-  isDateBeat, listRendezvous, patchRendezvous, rendezvousPrompt,
+  DATE_BEATS, DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, cgListText, dateBeatsFor, dateBondRule,
+  dateCgPalette, isDateBeat, listRendezvous, patchRendezvous, rendezvousPrompt,
 } from '../../src/lib/rendezvous'
 import type { Rendezvous, RendezvousParty } from '../../src/lib/rendezvous'
 import { BEDS } from '../../src/lib/audio/music'
@@ -4330,6 +4331,33 @@ export function run(): MechReport {
     const emptySay = speaks.filter((x) => !x.text.trim())
     ok('梅芙引导：插话那一行也得有字（空的一行＝气泡里多出一个空条目）',
       emptySay.length === 0, emptySay.length ? '有空的插话' : `${speaks.length} 句都查过`)
+    /* ---- 「每一步至多一位插话者」—— 并排那一路的前提（主人 2026-09-15：「并排在旁边」）----
+       插话那一位在界面上**不跟梅芙挤一张气泡**，是另起一张横着并到她旁边
+       （`Guide.tsx` 的 `splitLines` 把正文按说话人分成两组，一组一张）。
+       那一排摆不下第三张：`box` 那个 clamp 是按**整排**的中心算的，再多一位就被顶出屏幕。
+       所以这一条不是限制写法，是钉住摆法的前提 —— 数据里真加了第三位，
+       这里先红，提醒回去改摆法（改成往下摞一列），而不是让它悄悄溢出。 */
+    const multi = TOURS.flatMap((t) => t.steps.map((st, i) => ({ tour: t.id, i, st })))
+      .map((x) => ({
+        ...x,
+        bys: [...new Set(x.st.lines
+          .filter((l): l is Exclude<GuideLine, string> => typeof l !== 'string')
+          .map((l) => l.by))],
+      }))
+      .filter((x) => x.bys.length > 1)
+    const stepCount = TOURS.reduce((n, t) => n + t.steps.length, 0)
+    ok('梅芙引导：每一步至多一位插话者（并排那一路只有两张的位置）',
+      multi.length === 0,
+      multi.length
+        ? multi.map((x) => `${x.tour} 第 ${x.i + 1} 步：${x.bys.join('、')}`).join('；')
+        : `${stepCount} 步逐条查过`)
+    ok('梅芙引导（对照）：一条一步里署两个不同的名，上面那条判据认得出',
+      (() => {
+        const lines: GuideLine[] = ['梅芙的一句', { by: 'luna', text: '甲' }, { by: 'termi', text: '乙' }]
+        const bys = new Set(lines.filter((l): l is Exclude<GuideLine, string> => typeof l !== 'string').map((l) => l.by))
+        return bys.size === 2
+      })(),
+      'luna + termi 两位 → 数 2')
 
     /* ---- 商店的描述与天赋的描述：数要落在屏上（主人 2026-09-15 的两条）----
        界面那两处（Missions 的卡片、Battle 的天赋格）在源码上对账：
@@ -6786,6 +6814,11 @@ export function run(): MechReport {
      三道窄法是**叠着**的（档位 → 认人 → 节拍），不是互相替代 —— 这一张两样都带，
      所以「露娜不在场」与「还没走到试穿」各自都能把它挡在外面（M1 / M3）。
 
+     **两头都要钉**：一头是「图进不进候选」（`dateCgPalette`），另一头是提示词里
+     【这一场的节拍】那一节（`rendezvousPrompt` 的 `beatsBlock`）——
+     只顾一头都白搭：图不进候选只挡住点不出来，可**不提**的话，导演压根不知道
+     有这一步，那张图永远等不到它。
+
      界面那一半（会话流头顶那张图认不认这个 id）归冒烟 V8。
      ============================================================ */
   try {
@@ -6932,6 +6965,41 @@ export function run(): MechReport {
       directiveHasFx({ beat: TOP }) === false,
       `directiveHasFx({ beat }) → ${directiveHasFx({ beat: TOP })}`)
 
+    /* —— 提示词那一侧：【这一场的节拍】那一节 ——
+       「图不进候选」只挡住「点不出来」；**该不该提**是另一半 —— 不提，导演压根不知道
+       有这一步，那张图永远等不到它。所以这一节也得钉，三条各配一条对照：
+       ① 还没走到 → 整节在，列的正是待办的那一步（id 与 when 两样照抄）；
+       ② 已经走过 → 整节不出现（再提一遍等于催他重走一遍）；
+       ③ 这一场压根不该提（`DateBeat.cast` 没对上那张脸）→ 整节不出现。 */
+    const promptOf = (rv: Rendezvous) => rendezvousPrompt(
+      rv.charId, '言万心叶', 30, rv, cgListText(dateCgPalette(rv)),
+    )
+    const HEAD = '【这一场的节拍（走到哪一步了）】'
+    const firstBeat = DATE_BEATS[0]!
+    const todoPrompt = promptOf(base)
+    ok('约会 CG 节拍 · 提示词里有【这一场的节拍】那一节，列的正是那一步的 id 与 when',
+      todoPrompt.includes(HEAD) && todoPrompt.includes(firstBeat.id)
+      && todoPrompt.includes(firstBeat.when) && todoPrompt.includes('"beat"'),
+      `节在=${todoPrompt.includes(HEAD)}　id=${todoPrompt.includes(firstBeat.id)}　`
+      + `when=${todoPrompt.includes(firstBeat.when)}`)
+
+    const donePrompt = promptOf({ ...base, beats: [TOP] })
+    ok('约会 CG 节拍（对照）· 这一步已经走过 → 整节不出现（不一催再催）',
+      !donePrompt.includes(HEAD),
+      `beats: ['${TOP}'] → 那一节${donePrompt.includes(HEAD) ? '还在' : '没了'}`)
+
+    const otherPrompt = promptOf({ ...base, charId: 'hikari' })
+    ok('约会 CG 节拍（对照）· 这一场不该提（她不在场，`cast` 没对上）→ 整节不出现',
+      !otherPrompt.includes(HEAD) && dateBeatsFor({ ...base, charId: 'hikari' }).length === 0
+      && dateBeatsFor(base).some((b) => b.id === TOP),
+      `主位 hikari → ${dateBeatsFor({ ...base, charId: 'hikari' }).length} 条　`
+      + `露娜在场 → ${dateBeatsFor(base).length} 条`)
+
+    ok('约会 CG 节拍 · 收尾 schema 里声明了 beat，且指回上面那一节',
+      dateBondRule('luna').includes('"beat"') && dateBondRule('luna').includes('【这一场的节拍】'),
+      `dateBondRule 提到 beat = ${dateBondRule('luna').includes('"beat"')}　`
+      + `指回那一节 = ${dateBondRule('luna').includes('【这一场的节拍】')}`)
+
     info.push('约会 CG 节拍（第三道窄法）：`CgRef.needs` 由 `dateCgPalette` 落地 —— 带 needs 的那张，'
       + '除了档位与人在场，还要求这一场**先走到那一步**（节拍登记在 `DATE_BEATS`，'
       + '记在 `Rendezvous.beats` 上，散场即归零）。触发走推演回执的 `beat` 字段：'
@@ -6956,6 +7024,11 @@ export function run(): MechReport {
 
      「刚开局不白掷」（`seed`）单点一条 —— 否则首次进游戏二十秒后就被骰一次，
      新档的第一条来得比稳态还快。
+
+     另有一道**总闸**：`canSendNow` 的四道条件（短信解锁 / 遇见过 / 不在场 / 间隔够久）。
+     头一道是主人 2026-09-15 点的 —— **解锁短信之前，不会有人发消息**：
+     短信页受卷一门禁保护（`LOCKED_VIEWS` 含 `tavern`），没解锁时来信收不到、
+     页点不进去，却还能把未读角标挂在锁着的模块上。每条条件各配一条对照。
      ============================================================ */
   try {
     const T0 = 1_700_000_000_000
@@ -6989,6 +7062,46 @@ export function run(): MechReport {
     ok('主动来信 · 命中率是个真骰子（0 < HIT_CHANCE < 1），且不是「到点必发」',
       HIT_CHANCE > 0 && HIT_CHANCE < 1,
       `HIT_CHANCE = ${HIT_CHANCE}`)
+
+    /* —— 总闸：解锁短信之前，谁都不发（主人 2026-09-15）——
+       四条条件叠着，全过才发；单摘一条就得假。 */
+    const gate: SendGate = { unlocked: true, met: true, onStage: false, last: 0, now: T0 }
+
+    ok('主动来信 · 四道条件全过 → 发',
+      canSendNow(gate) === true,
+      `解锁 · 遇见过 · 不在场 · 没发过 → ${canSendNow(gate)}`)
+
+    /* 主人 2026-09-15：「在解锁短信之前，不会有人发消息」——
+       短信页还锁着的那一段，来信是收不到也点不开的（未读角标挂在锁着的模块上）。 */
+    ok('主动来信（对照）· **短信还没解锁** → 谁都不发',
+      canSendNow({ ...gate, unlocked: false }) === false,
+      `unlocked = false → ${canSendNow({ ...gate, unlocked: false })}`)
+
+    ok('主动来信（对照）· 没遇见过 → 不发',
+      canSendNow({ ...gate, met: false }) === false,
+      `met = false → ${canSendNow({ ...gate, met: false })}`)
+
+    ok('主动来信（对照）· 人就在眼前这一段里 → 不发',
+      canSendNow({ ...gate, onStage: true }) === false,
+      `onStage = true → ${canSendNow({ ...gate, onStage: true })}`)
+
+    ok('主动来信（对照）· 刚发过、差 1ms 不满 45 分钟 → 不发',
+      canSendNow({ ...gate, last: T0, now: T0 + SAME_CHAR_MS - 1 }) === false,
+      `距上次来信 ${SAME_CHAR_MS - 1}ms → ${canSendNow({ ...gate, last: T0, now: T0 + SAME_CHAR_MS - 1 })}`)
+
+    ok('主动来信 · 满 45 分钟 → 又发得',
+      canSendNow({ ...gate, last: T0, now: T0 + SAME_CHAR_MS }) === true,
+      `距上次来信 ${SAME_CHAR_MS}ms → ${canSendNow({ ...gate, last: T0, now: T0 + SAME_CHAR_MS })}`)
+
+    /* 源码账：规矩写在 `canSendNow` 里不算数，得**挑人那一步真的走它**。
+       不查这一条，谁把 filter 改回 `c.isMet(id) && !stage.has(id)`，闸就白加了 —— 而且
+       一行都不会红（`canSendNow` 仍是对的，只是没人用它）。 */
+    const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    const poolSrc = strip(readFileSync('src/lib/smsauto.ts', 'utf8'))
+      .split('const metas =')[1]?.slice(0, 400) ?? ''
+    ok('主动来信 · 挑人那一步真的走这道闸（源码账：filter 里调 canSendNow，且拿的是 c.unlocked）',
+      poolSrc.includes('canSendNow(') && poolSrc.includes('c.unlocked'),
+      poolSrc ? `可发名单：${poolSrc.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 72)}…` : '找不到 `const metas =`')
 
     info.push(`主动来信节拍：每 ${ROLL_EVERY_MS / 60000} 分钟滚一格、每格 ${HIT_CHANCE * 100}%`
       + ' —— 中没中都用掉（`rollStep` 纯读盘上那一笔），所以是「每格 45%」而不是'
@@ -7099,6 +7212,8 @@ export function run(): MechReport {
        ② **那一扇门确实开了、且是只读的**（源码账 + 对照 —— 只读这一条最怕
           将来有人顺手在里面加个输入框：加进去就等于把一段已经收场的戏续上）。
      ③ 顺带把「散场」与「作罢」两条路的差别钉死：一个留账、一个真删。
+     ④ 还有重置那一趟：`clearRunStorage()` 得把名册一并清掉（从前的欠账），
+        但对**手动存档那份 key** 一个字都不许动。
      ============================================================ */
   try {
     const g = globalThis as { localStorage?: unknown }
@@ -7174,8 +7289,24 @@ export function run(): MechReport {
         && arcSrc.includes("from '../views/Plot.module.css'"),
         'NarrBlock / YouFrame / Plot.module.css 三样都在')
 
+      /* —— 重置那一趟：名册必须跟着走 ——
+         「行动开始 / 世界重置」走的是 `clearRunStorage()`，它从前只清三个 key
+         （运行档 / 正文账 / 会话账）＋ 引导进度，**约会名册不在里面**：
+         底下的账被清了、元数据还留在名册上，于是新档里挂着一条点进去一个字都没有的
+         空线程，还带着上一轮的节拍。CLAUDE.md 那条「新增持久化状态必须在 slots.ts
+         的存档读写里登记」，欠的就是这里。 */
+      mem.set('zts-slots:v1', JSON.stringify({ v: 1, slots: [], autosave: null }))
+      clearRunStorage()
+      ok('约会名册 · 「世界重置」把它连同会话账一起清掉（不清就是上一轮的约会赖在新档上）',
+        !mem.has('zts-rendezvous:v1') && !mem.has('zts-tavern:v1') && !mem.has('zts-plot:v1'),
+        `名册 ${mem.has('zts-rendezvous:v1') ? '还在' : '已清'} · 会话账 ${mem.has('zts-tavern:v1') ? '还在' : '已清'}`
+        + ` · 正文账 ${mem.has('zts-plot:v1') ? '还在' : '已清'}`)
+      ok('约会名册（对照）· 重置**绝不碰**手动存档那份 key',
+        mem.has('zts-slots:v1'),
+        `zts-slots:v1 ${mem.has('zts-slots:v1') ? '还在' : '被误删了'}`)
+
       info.push('约会记录：散场立 done 留账 · 段头那一格接的是已散场的那一份（只读，'
-        + '不写账不生成）· 作罢那条路仍是真的删')
+        + '不写账不生成）· 作罢那条路仍是真的删 · 「世界重置」连名册一起清')
     } finally {
       if (hadLS) g.localStorage = prevLS
       else delete g.localStorage

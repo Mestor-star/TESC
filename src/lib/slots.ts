@@ -9,6 +9,7 @@
  *    让 provider 重新从存储读取（本模块保持无 React、可测）。
  */
 import type { ChatMsg, WorldState } from '../data/types'
+import { RENDEZVOUS_KEY } from './rendezvous'
 import { readGuide, resetGuide, writeGuide } from './guide'
 import type { GuideState } from './guide'
 
@@ -222,9 +223,17 @@ export function applySnapshot(snapshot: RunSnapshot): void {
   writeGuide(snapshot.guide)
 }
 
-/** 清除当前运行（重置 / 开新档用）：清运行档、会话日志与引导进度，绝不碰 zts-slots:v1 */
+/**
+ * 清除当前运行（重置 / 开新档用）：清运行档、会话日志、约会名册与引导进度，
+ * **绝不碰 zts-slots:v1**。
+ *
+ * 约会名册（`zts-rendezvous:v1`）必须在这一趟里：它的「一场」是挂在那本会话日志
+ * （`zts-tavern:v1`）上的元数据 —— 底下的账被清了、元数据还留着，名册上就挂着一条
+ * **点进去一个字都没有**的空线程，还带着上一轮的 `beats`（约会 CG 的节拍）。
+ * CLAUDE.md 那条「新增持久化状态必须…在 slots.ts 的存档读写里登记」说的正是这里。
+ */
 export function clearRunStorage(): void {
-  for (const key of [RUN_KEY, PLOT_KEY, TAVERN_KEY]) {
+  for (const key of [RUN_KEY, PLOT_KEY, TAVERN_KEY, RENDEZVOUS_KEY]) {
     try {
       localStorage.removeItem(key)
     } catch {

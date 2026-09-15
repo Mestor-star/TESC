@@ -487,6 +487,36 @@ try {
     gFit.err === undefined && gFit.top >= -1 && gFit.bottom <= gFit.vh + 1 && gFit.btn <= gFit.vh + 1 && gFit.scrolls === true,
     JSON.stringify(gFit))
 
+  /* 插话那一位**另起一张气泡，并排到梅芙旁边**（主人 2026-09-15：「并排在旁边」），
+     不跟梅芙挤在同一张里。开屏那一段的**最后一步**挂着一句露娜的插话，走到那儿量最直接。
+     先把上面灌进去的 40 行测试条目收掉：那些是 React 之外的野节点，换一步不会自己消失，
+     留着会让两张气泡的高度都不是真的（量出来的并排关系也就不是屏上那一个）。 */
+  await ev(`(()=>{const b=document.querySelector('[data-guide-bubble]');if(!b)return false;
+    [...b.querySelectorAll('li')].filter(x=>x.textContent.indexOf('撑高测试行')===0).forEach(x=>x.remove());
+    window.dispatchEvent(new Event('resize'));return true})()`)
+  let gSay = null
+  for (let n = 0; n < 12 && !gSay; n++) {
+    await ev(`(()=>{const b=document.querySelector('[data-guide-next]');if(b)b.click();return true})()`)
+    await sleep(280)
+    gSay = await ev(`(()=>{const s=document.querySelector('[data-guide-say]');
+      if(!s)return null;
+      const r=document.querySelector('[data-guide-row]'),m=document.querySelector('[data-guide-bubble]');
+      if(!r||!m)return null;
+      const f=s.querySelector('[data-guide-guest-face]');
+      const rs=s.getBoundingClientRect(),rm=m.getBoundingClientRect();
+      return {by:s.getAttribute('data-guide-say'),name:s.innerText.replace(/\\s+/g,' ').slice(0,20),
+        face:f?Math.round(f.getBoundingClientRect().width):0,
+        insideMave:m.contains(s),inRow:r.contains(s),
+        gap:Math.round(rs.left-rm.right),dy:Math.round(Math.abs(rs.top-rm.top)),
+        w:Math.round(rs.width),vw:innerWidth,
+        inView:rs.left>=-1&&rs.right<=innerWidth+1}})()`)
+  }
+  ok('AG1d 别人插话另起一张气泡，并排在梅芙旁边（不挤进她那一张，也不被顶出屏幕）',
+    !!gSay && gSay.by === 'luna' && gSay.insideMave === false && gSay.inRow === true
+    && gSay.gap >= 0 && gSay.gap <= 40 && gSay.dy <= 40 && gSay.face > 24 && gSay.w > 100
+    && gSay.name.includes('露娜') && gSay.inView === true,
+    JSON.stringify(gSay))
+
   await ev(`(()=>{const b=document.querySelector('[data-guide-skip]');if(b)b.click();return true})()`)
   await sleep(400)
   const gSkip = await ev(`(()=>{let st=null;try{st=JSON.parse(localStorage.getItem('zts-guide:v1'))}catch(e){}

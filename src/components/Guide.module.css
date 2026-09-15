@@ -25,8 +25,20 @@
   background: rgba(5, 7, 11, 0.74);
 }
 
-.bubble {
+/* 一排气泡：梅芙那张，加上插话那位并排的那张（没有插话就只她一张）。
+   定位（`box` 算出来的中心）与入场动画都挂在**这一排**上 ——
+   排本身不吃点击，能点的只有里头的气泡。 */
+.row {
   position: fixed;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+  animation: guideIn 0.2s ease both;
+}
+
+.bubble {
+  position: relative;
   width: 332px;
   /* 一步的字多了也不许把气泡顶出屏幕：封顶之后由条目自己滚，
      「下一步」那一行始终挂在屏幕里点得到 */
@@ -43,7 +55,6 @@
   border-radius: var(--radius);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
-  animation: guideIn 0.2s ease both;
 }
 
 @keyframes guideIn {
@@ -126,33 +137,9 @@
   color: var(--ink-mute);
 }
 
-/* 插话那一行：小头像 + 名字，与梅芙自己的条目分开 ——
-   缩进让出来，读起来像是「有人从旁边接了半句」，而不是列表里多了一条。
-   名字的颜色由数据给（castmeta 的主题色），不在这里写死任何一个人。 */
-.lines li.guest {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  /* 顶到列表的左沿：正文那块缩进是给梅芙的条目留的，插话要看起来像另一个人的 */
-  margin-left: -14px;
-  padding: 3px 0 3px 6px;
-  border-left: 2px solid var(--line-2);
-}
-.guestFace {
-  flex: none;
-  display: flex;
-  line-height: 0;
-  /* 与首行文字对齐（12px × 1.62 的行高里，18px 的头像往上提一点才平） */
-  margin-top: -1px;
-}
-.guestBody {
-  min-width: 0;
-}
-.guestBody b {
-  margin-right: 5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
+/* 插话那位手里那张气泡：与梅芙那张同一个壳（自己的头像、尖角、名字与正文），
+   名字的颜色由数据给（castmeta 的主题色），不在这里写死任何一个人。
+   她的话通常只有一两句，所以这张短 —— 高度由内容自己撑。 */
 
 .foot {
   display: flex;
@@ -168,6 +155,9 @@
   letter-spacing: 0.08em;
 }
 
+/* 窄屏：一排放不下两张，改成竖着摞（不摞的话 `box` 那个 clamp 的区间会翻过来，
+   区间一翻，第一张就被顶到屏幕外去） */
 @media (max-width: 900px) {
+  .row { flex-direction: column }
   .bubble { width: min(332px, calc(100vw - 24px)) }
 }
