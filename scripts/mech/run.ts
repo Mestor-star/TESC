@@ -91,6 +91,9 @@
    · 拉不到分块的时候
      39  分块自动重取 —— 原地重取一次 → 不行再带 `?v=` 整页重来 → 再不行才摊兜底；
                         额度记在**块名**上（防打转的关键：别的块成功不许销它的账）
+   · 剧情交战那一边
+     40  参战名单     —— 主角由模型点名（白名单放行 `operator`，不保送）·
+                        上限读 TUNING.squadMax；名录那四样仍不认他
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -119,7 +122,7 @@ import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
 import { AXIS_SCALE, COIN_SCALE, EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
-import { battleMissionOf } from '../../src/lib/battle/from-directive'
+import { battleMissionOf, plotSquadOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { assertDutySlots, passiveText, ROSTER } from '../../src/lib/battle/roster'
 import {
@@ -5722,14 +5725,52 @@ export function run(): MechReport {
       /StorylogOutcome/.test(sl) && /return \{ text: fallback, ok: false, why \}/.test(sl)
       && !/catch \{\s*return fallback/.test(sl),
       '三处退回（读不到配置 / 没配通道 / 两趟都没成）各自带 why')
+    /* ---- 主人 2026-09-15 报的第二桩：「战斗正文会突然结束」----
+       那不是写法问题，是**被长度掐断**：非流式那一趟从前连 `finish_reason` 都不留
+       （只有流式记得下），于是半截正文与一整篇写在消息里长得一模一样。
+       两刀：额度抬到成文该有的那一档；掐断要**认出来**（不认就永远只是「写得短」）。 */
+    ok('交战成文：额度抬到成文该有的那一档（下限 12000 · 通道那一份的 2.4 倍 · 不越过 MAX_BUDGET）',
+      /const STORY_MIN = 12000/.test(sl) && /const STORY_GAIN = 2\.4/.test(sl)
+      && /Math\.max\(STORY_MIN, Math\.round\(budget \* STORY_GAIN\)\)/.test(sl)
+      && /Math\.min\(MAX_BUDGET,/.test(sl) && sl.includes('MAX_BUDGET'),
+      'STORY_MIN 12000 × STORY_GAIN 2.4，封顶 MAX_BUDGET')
+
+    const apiSrc = readFileSync('src/lib/api.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    ok('通道：非流式那一路也把 finish_reason 报出来（从前只有流式记得下 —— 半截与一整篇看不出差别）',
+      /onFinish\?: \(r: \{ finishReason\?: string; text: string \}\) => void/.test(apiSrc)
+      && apiSrc.includes('opts?.onFinish?.({ finishReason: fr, text })')
+      && /done\(\{ ok: true, text, finishReason: fr \}\)/.test(apiSrc),
+      'onFinish 收尾读数 ＋ 一并进通联日志')
+    ok('通道（对照）：认不出 finish_reason 时（网关不给）不算掐断 —— 不认得的不能瞎猜',
+      /typeof data\?\.choices\?\.\[0\]\?\.finish_reason === 'string'/.test(apiSrc),
+      '只在真是字符串时才认')
+
+    ok('交战成文：被长度掐断要认（`length` 走 onFinish 读进来），半截不再冒充成品',
+      /onFinish: \(r\) => \{ truncated = r\.finishReason === 'length' \}/.test(sl)
+      && /if \(text && !truncated\) return \{ text, ok: true \}/.test(sl),
+      'truncated 为真时不返回 ok:true')
+    ok('交战成文：掐断那一种补发时催的是**收尾**（与「空正文」那一种分开两句话）',
+      /const STORY_CUT_NUDGE/.test(sl) && sl.includes('STORY_CUT_NUDGE') && sl.includes('STORY_NUDGE')
+      && /const nudge = attempt === 1 \? null : cut \? STORY_CUT_NUDGE : STORY_NUDGE/.test(sl),
+      '空答 → 催它开口；掐断 → 催它收尾')
+    ok('交战成文：两趟都是半截时，端的是**模型写的**那一份（写得最长的），并带上 `cut` 标记',
+      /if \(best\) \{[\s\S]{0,220}?cut: true/.test(sl) && /let best = ''/.test(sl)
+      && /if \(text\.length > best\.length\) best = text/.test(sl),
+      '半截 ≠ 底稿：端 best、标 cut，而不是 fallback')
+
     const plotSrc2 = readFileSync('src/views/Plot.tsx', 'utf8')
     ok('交战成文：调用处真的读了那个 `ok` —— 没走通时当场弹一句，不让人对着底稿以为就写成这样',
       /if \(!story\.ok\)/.test(plotSrc2) && /text: story\.text/.test(plotSrc2)
       && !/text: story,/.test(plotSrc2),
       '读了 story.ok 并 push(' + "'warn'" + ')；落盘取的是 story.text')
+    ok('交战成文：调用处照 `cut` 分两种话讲（半截是「模型写的没收尾」，底稿是「没写成」）',
+      /story\.cut \? '成文被长度掐断/.test(plotSrc2) && /story\.cut\s*\n?\s*\?/.test(plotSrc2)
+      && plotSrc2.includes('这一场是模型写的，只是没收到尾'),
+      '两句话分开，不混成一句')
     info.push('交战成文：打完仗回填的是推演正文（经过 · 战斗中的人话 · 战后对话），走剧情通道的提示词，无通道退回模板');
-    info.push('交战成文 · 预算与重试：预算读通道自己配的那一份（同源主线）、空正文补发一次、'
-      + '失败带出原因不再吞（主人 2026-09-15 那一场「收到战报」的根子）')
+    info.push('交战成文 · 预算与重试：预算读通道自己配的那一份（同源主线）并抬到成文那一档、'
+      + '空正文补发一次、被长度掐断认得出且照实说、失败带出原因不再吞')
   } catch (e) {
     fail.push('交战成文段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
@@ -7463,6 +7504,88 @@ export function run(): MechReport {
       + '分块错与渲染错分开说话（前者「重新载入」，后者「重挂界面」）')
   } catch (e) {
     fail.push('分块重取段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ============================================================
+     §40 剧情交战的参战名单（`battle/from-directive.ts` 的 `plotSquadOf`
+         ＋ `plot.ts` 的 `SQUAD_IDS` ＋ `views/Plot.tsx` 的调用处）
+     ------------------------------------------------------------
+     主人 2026-09-15 撞见的那一条：在线推演打起来的那一场**没有主角**。
+     根子是两处白名单各拦了一道 ——
+       · `plot.ts` 的 CHAR_IDS 是「档案角色 24 人」，模型写了 `"operator"`
+         也当场静悄悄地删掉（一句错都不报）；
+       · `Plot.tsx` 那一侧照 `isMet` 筛，而操作员没有 `met` 那一格 ——
+         他自己就是「还没遇见过自己」，恒为 false。
+     于是主角不在场：人少了是小事，露娜 / 梅芙那几条双人追击、七人整队连携
+     （`synergy.ts` 里带着 OPERATOR_ID）、挂在他身上的战斗语音，全都一次不响。
+     这一节把「放行」与「封顶」两条钉在纯函数上；界面上看得见的那半归 smoke。
+     ============================================================ */
+  try {
+    const rd = (p: string) => readFileSync(p, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    /* 这一场的「已遇见」：只见着露娜一个。操作员**不走它** —— 他本来就不在名录里。 */
+    const seenLuna = (id: string) => id === 'luna'
+
+    ok('剧情交战：模型点了主角，他就留得住（不因「他还没遇见过自己」被筛掉）',
+      plotSquadOf(['operator', 'luna'], seenLuna).join(',') === 'operator,luna',
+      `['operator','luna'] → ${plotSquadOf(['operator', 'luna'], seenLuna).join('、') || '（空）'}`)
+    ok('剧情交战（对照）：没遇见过的人照旧进不来 —— 放行的**只有**主角一个，不是把闸整个拉掉',
+      plotSquadOf(['luna', 'hikari'], seenLuna).join(',') === 'luna',
+      `['luna','hikari']（只见着露娜）→ ${plotSquadOf(['luna', 'hikari'], seenLuna).join('、') || '（空）'}`)
+
+    ok('剧情交战：模型没点他，名单里就没有他 —— 他与不上由模型说了算，这一层不保送',
+      (() => {
+        const s = plotSquadOf(['luna'], seenLuna)
+        return s.length === 1 && !s.includes(OPERATOR_ID)
+      })(),
+      `['luna'] → ${plotSquadOf(['luna'], seenLuna).join('、') || '（空）'}`)
+
+    const many = plotSquadOf([OPERATOR_ID, ...PERSON_IDS.slice(0, 12)], () => true)
+    ok('剧情交战：名单封顶读 TUNING.squadMax（与作战屏编队同一个数，不再各写各的）',
+      many.length === TUNING.squadMax && many[0] === OPERATOR_ID,
+      `点进去 ${PERSON_IDS.slice(0, 12).length + 1} 人 → 留下 ${many.length}（squadMax=${TUNING.squadMax}）`)
+    ok('剧情交战：同一个名字写两遍只算一个（重复占位会把别人挤下去）',
+      plotSquadOf(['luna', 'luna', 'operator'], seenLuna).join(',') === 'luna,operator',
+      `['luna','luna','operator'] → ${plotSquadOf(['luna', 'luna', 'operator'], seenLuna).join('、')}`)
+
+    /* —— 白名单那一半（指令层）—— */
+    const dOp = sanitizeDirective({ battle: { name: '复核 · 现场', squad: ['operator', 'luna'] } }).battle
+    ok('剧情交战：指令里写的 operator 在净化那一层留得住（从前就是这儿把它安静地删掉的）',
+      dOp?.squad?.includes('operator') === true && dOp?.squad?.includes('luna') === true,
+      `squad → ${JSON.stringify(dOp?.squad ?? null)}`)
+    ok('剧情交战（对照）：认不出的 id 照旧丢掉 —— 参战那份白的只多一个操作员，不是来者不拒',
+      sanitizeDirective({ battle: { name: '复核 · 现场', squad: ['__nobody__', 'operator'] } })
+        .battle?.squad?.join(',') === 'operator',
+      '__nobody__ 被丢掉，operator 留着')
+
+    /* —— 别把闸整个拉掉：名录那四样仍然不认他 —— */
+    ok('剧情交战（对照）：`met` / `bond` / `rel` / `cast` 里写主角一条都不落 —— 参战放行 ≠ 让他凭空长出档案卡与羁绊线',
+      sanitizeDirective({ met: [OPERATOR_ID] }).met === undefined
+      && sanitizeDirective({ bond: [{ char: OPERATOR_ID, delta: 3 }] }).bond === undefined
+      && sanitizeDirective({ rel: { [OPERATOR_ID]: 'friend' } }).rel === undefined
+      && sanitizeDirective({ cast: [OPERATOR_ID] }).cast === undefined,
+      'met / bond / rel / cast 四样都答「没有」')
+
+    /* —— 提示词那一侧：不写这个 id，模型点不出这个人 ——
+       这条**不剥注释**：schema 那几行本身就是模板字符串里的注释列，剥了就一起没了。 */
+    ok('剧情交战：事件指令 schema 的 squad 那一行点了操作员那个 id（且与常量同源，不写死字面量）',
+      /"squad"[\s\S]{0,260}?\$\{OPERATOR_ID\}/.test(readFileSync('src/lib/plot.ts', 'utf8')),
+      'schema 里带着 ${OPERATOR_ID}')
+
+    /* —— 接线（源码账）：调用处真的走这条纯函数，硬写的 4 也没了 ——
+       只针对**参战名单**那两行：Plot.tsx 别处的 `slice(0, 4)`（接续选项切前四条）与这一笔无关。 */
+    const plotView = rd('src/views/Plot.tsx')
+    ok('剧情交战：调用处走 plotSquadOf，兜底与封顶也读同一个数（两处都不再硬写数字）',
+      /plotSquadOf\(d\.battle\.squad \?\? \[\], isMet\)/.test(plotView)
+      && /PERSON_IDS\.filter\(\(id\) => isMet\(id\)\)\.slice\(0, TUNING\.squadMax\)/.test(plotView)
+      && !/want\.slice\(0, 4\)/.test(plotView)
+      && !/PERSON_IDS\.filter\(\(id\) => isMet\(id\)\)\.slice\(0, 4\)/.test(plotView),
+      'plotSquadOf(...) ＋ slice(0, TUNING.squadMax)，参战那两行的硬写 4 都没了')
+
+    info.push('剧情交战的参战名单：主角由**模型点名**（白名单放行，不保送）· 上限读 TUNING.squadMax · '
+      + 'met / bond / rel / cast 四样不放行')
+  } catch (e) {
+    fail.push('剧情交战名单段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

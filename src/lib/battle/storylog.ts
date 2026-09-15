@@ -19,11 +19,18 @@
    **别再让这一趟悄悄退回底稿**（主人 2026-09-15 撞见的那一次）。退回是允许的
    （没通道也得看得下去），但必须**说出来** —— 底稿看着像「写成了这样」，
    其实是一场失败的成文，这条界线得在界面上看得见。见 `narrateStorylog`。
+
+   **半截正文也别冒充成品**（主人 2026-09-15 报的「战斗正文会突然结束」）。
+   非流式那一趟从前连 `finish_reason` 都不留（只有流式记得下），于是**被长度
+   掐断的半截**与一整篇写在消息里长得一模一样 —— 谁也不知道那是断的。
+   现在：认 `length`（`onFinish`），补发一次并催它**收尾**；再不行就把模型写的
+   那半截照实上屏、标明「被长度掐断」（`StorylogOutcome.cut`），
+   既不端底稿去顶它，也不假装写完了。
    ============================================================ */
 
 import { chatCompletion, isReady, loadProfile } from '../api'
 import type { ApiSettings, ChatTurn } from '../api'
-import { clampBudget } from '../budget'
+import { MAX_BUDGET, clampBudget } from '../budget'
 import type { BattleRecord, LogEntry } from './types'
 
 /**
@@ -41,6 +48,31 @@ import type { BattleRecord, LogEntry } from './types'
 const STORY_NUDGE =
   '（系统注：上一回的回复为空。请直接给出正文，不要再做长篇内部思考；'
   + '如需思考请压缩篇幅，别让思考占掉正文的额度。）'
+
+/**
+ * 上一回**写到一半被长度掐断**时补发的那一句（与空正文那一种分开写）。
+ *
+ * 两件事不一样：空正文是「没写」，掐断是「写了但没写完」—— 前者要催它开口，
+ * 后者要催它**收尾**。主人 2026-09-15 报的就是后者：战斗正文写到半句突然没了。
+ */
+const STORY_CUT_NUDGE =
+  '（系统注：上一回的正文在中途被长度上限掐断了，没有收尾。'
+  + '这一次请把篇幅收在 800 字上下、内部思考压到最短，务必写到收尾那一句。）'
+
+/**
+ * 成文这一趟的额度 —— 比一个普通回合**宽得多**。
+ *
+ * 成文是八百到一千五百字的长篇，思考型通道上还得先让内部思考吃一截；
+ * 所以下限抬到 12000（`lib/budget.ts` 那个「1500 一档在思考型通道上根本不够」
+ * 说的就是这一件事），再照通道自己配的那一份放宽 2.4 倍，全程不越过 MAX_BUDGET
+ * （再高就该去调模型自己的输出上限，而不是留着界面替它挡）。
+ *
+ * 补发那一次再往上抬 1.8 倍 —— 但**抬额度救不了「通道自己的输出上限」**：
+ * 上游若按自己的顶格截断，我们给多大它都只写那么多。所以「被掐断」这件事
+ * 必须**认出来**（`onFinish` 的 finishReason），不能端半截冒充成品。
+ */
+const STORY_MIN = 12000
+const STORY_GAIN = 2.4
 
 /** 对手的档位 —— 记录里怎么留的档，正文就按哪一档写 */
 export type FoeTier = 'elite' | 'boss' | null
@@ -167,6 +199,14 @@ export interface StorylogOutcome {
   ok: boolean
   /** 没走通的原因（走通了就没有这一项）。界面上照着它说，别再吞 */
   why?: string
+  /**
+   * 这一份**是模型写的**，只是写到一半被长度上限掐断了（没有收尾）。
+   *
+   * 与「退回底稿」是两回事，得分开说：底稿是没写成，半截是**没写完** ——
+   * 前者比分低，后者只差一口气。调用处照这个标记换一种话讲（见 `Plot.tsx` 的
+   * `!story.ok` 那一段），别把模型写的半截说成「底稿拼的」。
+   */
+  cut?: boolean
 }
 
 /**
@@ -194,9 +234,9 @@ export async function narrateStorylog(rec: BattleRecord, opts: StorylogOpts = {}
     return { text: fallback, ok: false, why: '推演通道还没配（接口地址或模型名空着）' }
   }
 
-  /* 预算：与主线同源。成文比普通回合长，照「事件衔接」那一档放宽 1.6 倍 */
+  /* 预算：与主线同源，再照 STORY_GAIN 放宽 —— 见 STORY_MIN 那一段注释 */
   const budget = clampBudget(cfg.maxTokens)
-  const first = opts.maxTokens ?? Math.max(2600, Math.round(budget * 1.6))
+  const first = opts.maxTokens ?? Math.min(MAX_BUDGET, Math.max(STORY_MIN, Math.round(budget * STORY_GAIN)))
 
   const base: ChatTurn[] = [
     { role: 'system', content: opts.system ?? systemPrompt() },
@@ -205,24 +245,59 @@ export async function narrateStorylog(rec: BattleRecord, opts: StorylogOpts = {}
   ]
 
   let why = '通道未返回任何内容'
+  /* 上一趟是不是被长度掐断的（决定补发时催哪一句话） */
+  let cut = false
+  /* 两趟下来写得最长的那一份 —— 都掐断时，端写得多的那一份出去 */
+  let best = ''
+  /* 补发那一趟要是报了错（地址 / 密钥 / 额度），一并带出去 —— 别把两种败因混成一句 */
+  let lastErr = ''
+  const CUT_WHY = '正文被长度上限掐断了（这一趟写到一半就停了）'
+
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const outbox = attempt === 1 ? base : [...base, { role: 'user' as const, content: STORY_NUDGE }]
-    const cap = attempt === 1 ? first : Math.max(5000, Math.round(first * 1.8))
+    const nudge = attempt === 1 ? null : cut ? STORY_CUT_NUDGE : STORY_NUDGE
+    const outbox: ChatTurn[] = nudge
+      ? [...base, { role: 'user', content: nudge }]
+      : base
+    const cap = attempt === 1
+      ? first
+      : Math.min(MAX_BUDGET, Math.max(first, Math.round(first * 1.8)))
+    let truncated = false
     try {
       const text = (await chatCompletion(cfg, outbox, {
         maxTokens: cap,
         temperature: 0.8,
         meta: { channel: '交战推演', act: `战报成文 · ${rec.place}` },
+        /* 收尾读数：`length` = 写到一半被上限掐了。正文非空也不再算「写成了」——
+           主人 2026-09-15 看见的那一场，端上桌的就是这么半截（没有收尾的正文）。 */
+        onFinish: (r) => { truncated = r.finishReason === 'length' },
       })).trim()
-      if (text) return { text, ok: true }
-      /* 空答：多半是内部思考把预算吃光了（budget.ts 开头记的就是这一种）——补发一次 */
-      why = attempt === 1
-        ? '通道没写出正文（多半是内部思考把输出预算吃光了）'
-        : '补发一次仍是空的 —— 该通道的输出预算可能还是不够'
+      if (text && !truncated) return { text, ok: true }
+      if (text.length > best.length) best = text
+      cut = truncated
+      if (truncated) {
+        why = CUT_WHY
+      } else {
+        /* 空答：多半是内部思考把预算吃光了（budget.ts 开头记的就是这一种）——补发一次 */
+        why = attempt === 1
+          ? '通道没写出正文（多半是内部思考把输出预算吃光了）'
+          : '补发一次仍是空的 —— 该通道的输出预算可能还是不够'
+      }
     } catch (e) {
-      why = e instanceof Error ? e.message : String(e)
+      lastErr = e instanceof Error ? e.message : String(e)
+      why = lastErr
       /* 网络那一下抖动值得再试；报错本身（地址 / 密钥 / 额度）就不必再撞一次 */
       if (attempt === 2) break
+    }
+  }
+
+  /* 两趟都只拿到半截：那是**模型写的**（不是底稿），照实上屏，但把话说明白 ——
+     它差的是收尾那一句，不是「没写成」。 */
+  if (best) {
+    return {
+      text: best,
+      ok: false,
+      cut: true,
+      why: CUT_WHY + (lastErr ? ` · 补发那一趟还报了错：${lastErr}` : ''),
     }
   }
   return { text: fallback, ok: false, why }

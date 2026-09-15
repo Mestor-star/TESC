@@ -164,6 +164,15 @@ export interface ChatOpts {
   temperature?: number
   /** 通联日志用的身份：谁在问、问什么、预设与世界书各进了多少（见 lib/ailog.ts） */
   meta?: AiLogMeta
+  /**
+   * 这一趟的收尾读数（**非流式也给**）—— 只读，不改变返回值，也不吞错。
+   *
+   * 给「正文被长度掐断」这一类判断用：`finishReason === 'length'` 的意思不是
+   * 「写完了」，是**写到一半被输出上限掐了**。从前只有流式那一支记得下它，
+   * 于是非流式那几条路（比如交战成文）拿到的半截正文与一整篇长得一模一样 ——
+   * 端上桌谁也不知道那是断的（主人 2026-09-15 撞见的那一次）。
+   */
+  onFinish?: (r: { finishReason?: string; text: string }) => void
 }
 
 /** 一趟请求的结局：成了给正文，没成给原因 */
@@ -248,9 +257,18 @@ export async function chatCompletion(
       throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
     }
     const data = (await res.json().catch(() => null)) as {
-      choices?: { message?: { content?: string | null; reasoning_content?: string | null } }[]
+      choices?: {
+        message?: { content?: string | null; reasoning_content?: string | null }
+        finish_reason?: unknown
+      }[]
     } | null
-    const text = data?.choices?.[0]?.message?.content?.trim()
+    const text = data?.choices?.[0]?.message?.content?.trim() ?? ''
+    /* 收尾读数先报出去（正文空不空都报）：空的那一路下面会抛，
+       而「为什么空」的答案常常就写在这儿（length = 预算被思考吃光了）。 */
+    const fr = typeof data?.choices?.[0]?.finish_reason === 'string'
+      ? (data.choices[0].finish_reason as string)
+      : undefined
+    opts?.onFinish?.({ finishReason: fr, text })
     if (!text) {
       const thought = data?.choices?.[0]?.message?.reasoning_content?.trim() ?? ''
       throw new Error(
@@ -259,7 +277,8 @@ export async function chatCompletion(
           : '通道未返回可用内容',
       )
     }
-    done({ ok: true, text })
+    // finishReason 一并进通联日志：非流式从前只记 ok，掐断与写完在日志里看不出差别
+    done({ ok: true, text, finishReason: fr })
     return text
   } catch (e) {
     done({ ok: false, error: e instanceof Error ? e.message : String(e) })

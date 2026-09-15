@@ -21,7 +21,7 @@ import {
   readLevels, readStamina,
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
-import { battleMissionOf } from '../lib/battle/from-directive'
+import { battleMissionOf, plotSquadOf } from '../lib/battle/from-directive'
 import { periodProgress } from '../lib/battle/derive'
 import { TUNING } from '../lib/battle/tuning'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
@@ -669,8 +669,10 @@ export function Plot() {
       }
       // 交战先于收束结算：本段打完，再由操作员点「进入下一事件」推进
       if (d.battle?.name) {
-        const want = (d.battle.squad ?? []).filter((id) => isMet(id))
-        const squad = want.length ? want.slice(0, 4) : PERSON_IDS.filter((id) => isMet(id)).slice(0, 4)
+        /* 参战名单由模型点（`plotSquadOf` 只放行不保送），点空了才退回「已遇见者里挑」。
+           上限读 TUNING.squadMax —— 与作战屏编队同一个数（从前这儿硬写 4）。 */
+        const want = plotSquadOf(d.battle.squad ?? [], isMet)
+        const squad = want.length ? want : PERSON_IDS.filter((id) => isMet(id)).slice(0, TUNING.squadMax)
         if (squad.length) {
           // 落成待战，而不是当场开打：点「进入战斗」才进；打赢了本段才继续
           setPendingBattle({ evId, name: d.battle.name, mission: battleMissionOf(d.battle, evId), squad })
@@ -2213,10 +2215,16 @@ export function Plot() {
               const story = await narrateStorylog(rec, { system, history: toTurns(logs[evId], 8) })
               /* 成文没走通时端的是**底稿**（一段战报腔的拼装）。它看着像「就写成这样」，
                  其实是一场失败的成文 —— 所以必得当场说一句，别让主人对着底稿以为是正文
-                 （2026-09-15 主人打的那一场就是这么被骗过去的：那一处从前把错吞了）。 */
+                 （2026-09-15 主人打的那一场就是这么被骗过去的：那一处从前把错吞了）。
+                 而「半截」是**另一回事**：那是模型写的、只差收尾那一句（`cut`）——
+                 两种话分开讲，混成一句同样是骗人。 */
               if (!story.ok) {
-                push('warn', '成文没走通 · 先按底稿回填', `${story.why}。这一场的正文是底稿拼的，`
-                  + '比不得推演那一副笔墨；通道那边理顺之后，重打一场就补得回来。', false)
+                push('warn', story.cut ? '成文被长度掐断 · 先按半截上屏' : '成文没走通 · 先按底稿回填',
+                  story.cut
+                    ? `${story.why}。这一场是模型写的，只是没收到尾 —— 把该通道的输出预算抬高些，`
+                      + '重打一场就补得回来。'
+                    : `${story.why}。这一场的正文是底稿拼的，比不得推演那一副笔墨；`
+                      + '通道那边理顺之后，重打一场就补得回来。', false)
               }
               setLogs(persistMsg(evId, {
                 id: idFor(), from: 'them', text: story.text, time: clock(), meta: { battle: true },

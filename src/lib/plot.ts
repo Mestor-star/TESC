@@ -26,7 +26,7 @@ import { briefOf } from '../data/briefs'
 import { personaCardOf } from '../data/persona'
 import { temperAt } from '../data/temper'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
-import { genderOf, personOf, PERSON_IDS } from '../data/castmeta'
+import { OPERATOR_ID, genderOf, personOf, PERSON_IDS } from '../data/castmeta'
 import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { castOf } from './cast'
@@ -196,6 +196,20 @@ export interface PlotBattle {
 
 /** 档案角色 id 白名单（角色档案全员 24 人，不含操作员） */
 const CHAR_IDS = new Set<string>(PERSON_IDS)
+
+/**
+ * **参战**名单的白名单 —— 比上面那张**只多一个操作员**。
+ *
+ * 为什么另开一张、不图省事并上去：`met` / `bond` / `rel` / `cast` 共用 `CHAR_IDS`，
+ * 而操作员不在那二十四人的档案名录里（见 `castmeta` 的操作员条目）。把他并进去，
+ * 模型写一句 `"met": ["operator"]` 他就凭空长出一张档案卡、一条羁绊线 —— 那是另一件事。
+ * 可**参战**不同：他就是队里的人，只是那一条由模型自己点（主人 2026-09-15 拍的）——
+ * 他这一场在场就写进 squad，不在场就别领他。
+ *
+ * 从前这里就是 `CHAR_IDS`，于是模型写了 `"squad": ["operator"]` 也会被当场
+ * **安静地**删掉：一句错都不报，主角就是这么从在线推演的战斗里消失的。
+ */
+const SQUAD_IDS = new Set<string>([...PERSON_IDS, OPERATOR_ID])
 
 const KNOWN_FIELDS = new Set([
   'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
@@ -457,10 +471,12 @@ export function sanitizeDirective(v: unknown): PlotDirective {
       const st = finiteNum(b.stage)
       if (st !== null) out2.stage = clamp(Math.round(st), 1, 10)
       if (Array.isArray(b.squad)) {
+        // 参战名单走 SQUAD_IDS（多认操作员本人）；认不认这个人**此刻在场**是下一层
+        // 的事 —— 见 `battle/from-directive.ts` 的 `plotSquadOf`
         const sq = b.squad
           .filter((x): x is string => typeof x === 'string')
           .map((x) => x.trim())
-          .filter((x) => CHAR_IDS.has(x))
+          .filter((x) => SQUAD_IDS.has(x))
         if (sq.length) out2.squad = [...new Set(sq)]
       }
       out.battle = out2
@@ -1800,7 +1816,9 @@ ${free ? '' : `  "eventDone": true,                          // 这一段该了�
     "nature": "异端 / 残渣 / 机械 / 低语 / 魔王",// 决定敌阵档案与演出，从这五类里选最贴的一个
     "stage": 1,                                // 危险度 1~10；照本段原文的规模给，别一律给高
     "place": "交战地点",
-    "squad": ["在场的参战角色id"],              // 只列此刻确实在场的人；空 = 由已遇见者里挑
+    "squad": ["在场的参战者id"],                // 只列此刻确实在场的人；空 = 由已遇见者里挑
+                                               // **言万心叶本人就是 "${OPERATOR_ID}"** —— 这一场他在场就把他写进去
+                                               // （他不在场就别写，别为了凑人把他领来）
     "force": true                              // true = 本段必然开打
   }${intimIds.length ? `,
   "intim": [                                  // 私密档案推进（仅【私密往来】名单上的人；本回合确实推进了才给）

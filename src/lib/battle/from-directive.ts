@@ -9,12 +9,43 @@
 
 import type { PlotBattle } from '../plot'
 import type { Mission } from '../../data/types'
+import { OPERATOR_ID } from '../../data/castmeta'
 import { namedBossOf } from './bosses'
 import { headFoeOf, isMainlineEvent } from './mainline'
+import { TUNING } from './tuning'
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 
 let seq = 0
+
+/**
+ * 剧情交战的参战名单：模型点的那一份 → 真能上场的那一份。
+ *
+ * 依次做三件事：**放行 → 去重 → 封顶**。
+ *
+ * **为什么操作员要单独放行。** 他不在那二十四人的档案名录里（`castmeta` 的操作员
+ * 条目单列一条线），`met` 里也没有他那一格 —— 所以 `isMet('operator')` 恒为 false。
+ * 从前这里就是照 isMet 一筛，于是**主角永远进不了在线推演打起来的这一场**：
+ * 人少了不说，露娜 / 梅芙那几条双人追击、七人整队连携（`synergy.ts` 里带着
+ * OPERATOR_ID）、还有挂在他身上的战斗语音，全都一次不响。2026-09-15 主人撞见的
+ * 就是这一条。
+ * 他与不上由**模型自己点**（主人 2026-09-15 拍）：他这一场在场就写进 squad，
+ * 不在场就别写 —— 这儿只放行，**不保送**，所以 `named` 里没有他就真的没有他。
+ *
+ * 封顶读 `TUNING.squadMax` —— 与作战屏编队那一边**同一个数**（从前这里硬写 4，
+ * 两条路的上限对不上，平衡一动就得记着改第二处）。
+ *
+ * @param named 模型写下的参战 id（`sanitizeDirective` 已过一道白名单，认得操作员）
+ * @param isMet 这个人此刻算不算「已遇见」——操作员不走它，由常量直接放行
+ */
+export function plotSquadOf(named: string[], isMet: (id: string) => boolean): string[] {
+  const out: string[] = []
+  for (const id of named) {
+    if (id !== OPERATOR_ID && !isMet(id)) continue
+    if (!out.includes(id)) out.push(id)
+  }
+  return out.slice(0, TUNING.squadMax)
+}
 
 /**
  * 现场交战 → 作战单（编号 OBS-xxx，性质缺省按反现实实体处理）
