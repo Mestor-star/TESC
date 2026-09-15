@@ -35,6 +35,7 @@ import { battleBed, sfx } from '../lib/audio'
 import type { SfxName } from '../lib/audio'
 import { isReady, loadProfile } from '../lib/api'
 import type { ApiSettings } from '../lib/api'
+import { inkOf } from '../lib/hue'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { putRecord } from '../lib/battle/store'
@@ -1454,7 +1455,8 @@ function LinkPop({ link }: { link: { id: string; name: string; members: string[]
             >
               <Portrait avatarId={id} name={f.name} hue={f.hue} sigil={f.sigil}
                 className={css.linkPopAva} size={54} round eager />
-              <i style={{ color: f.hue ?? 'var(--ink)' }}>{f.name}</i>
+              {/* 身份色当字先过 inkOf —— 与 Saga 右栏那个读数同一个写法（见 lib/hue.ts） */}
+              <i style={{ color: f.hue ? inkOf(f.hue) : 'var(--ink)' }}>{f.name}</i>
             </span>
           )
         })}

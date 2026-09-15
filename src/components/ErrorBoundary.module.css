@@ -5,7 +5,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: var(--bg-1);
+  background: var(--bg-0);
   overflow: auto;
 }
 
@@ -14,7 +14,8 @@
   padding: 20px;
   border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line));
   border-radius: var(--radius);
-  background: var(--bg-2);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-3);
 }
 
 .head {
@@ -33,7 +34,7 @@
 .head i {
   font-style: normal;
   font-size: 10px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.12em;
   color: var(--ink-mute);
 }
 
@@ -45,7 +46,7 @@
   flex-shrink: 0;
   border-radius: 50%;
   border: 1px solid var(--red);
-  color: var(--red);
+  color: var(--red-deep);
   font-family: var(--font-mono);
   font-weight: 700;
 }
@@ -63,8 +64,8 @@
   margin: 0 0 14px;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
   font-family: var(--font-mono);
   font-size: 10.5px;
   line-height: 1.6;

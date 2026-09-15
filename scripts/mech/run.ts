@@ -94,6 +94,11 @@
    · 剧情交战那一边
      40  参战名单     —— 主角由模型点名（白名单放行 `operator`，不保送）·
                         上限读 TUNING.squadMax；名录那四样仍不认他
+   · 皮
+     41  配色两档     —— 原色当「底」、`-deep` 当「字」：六支 deep 档都对白底过 4.5:1；
+                        镜面那一半（本色当底）压 `--on-accent` 墨字，白字走具名例外表，
+                        原色本身过不了（两档是两支，不是抄一遍）；运行时同一把尺是
+                        `lib/hue.ts` 的 inkOf()。module 里 `color:` 挂裸主题色即红
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -156,6 +161,7 @@ import {
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
 import { clearRunStorage } from '../../src/lib/slots'
 import { cgIdOf } from '../../src/lib/cg'
+import { inkOf } from '../../src/lib/hue'
 import { CHUNK_ERR, RETRY_KEY, chunkError, clearRetry, freshUrl, isChunkError, takeRetryOnce } from '../../src/lib/chunkretry'
 import type { RetryStore } from '../../src/lib/chunkretry'
 import { HIT_CHANCE, ROLL_EVERY_MS, SAME_CHAR_MS, canSendNow, rollStep } from '../../src/lib/smsauto'
@@ -7586,6 +7592,245 @@ export function run(): MechReport {
       + 'met / bond / rel / cast 四样不放行')
   } catch (e) {
     fail.push('剧情交战名单段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 41) 配色两档：原色当「底」、deep 档当「字」 ---------- */
+  try {
+    const tok = readFileSync('src/styles/tokens.css', 'utf8')
+    /** 取 `--x: #rrggbb;` 那一串字面值。只认十六进制 —— 写成 rgba()/color-mix() 的
+        一概取不到，正好当「这一支没有可量的定值」处理（下面按取不到=失败算）。 */
+    const litOf = (name: string): string => {
+      const m = tok.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`))
+      return m ? m[1]!.toLowerCase() : ''
+    }
+    const chan = (v: number) => {
+      const s = v / 255
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+    }
+    const lumOf = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+      return 0.2126 * chan(r!) + 0.7152 * chan(g!) + 0.0722 * chan(b!)
+    }
+    /** 对 `--bg-1`（白底）的对比度 —— 这就是 inkOf() 运行时用的同一把尺 */
+    const bg1 = litOf('bg-1')
+    const ratioOf = (hex: string) => {
+      const pair = [lumOf(hex), lumOf(bg1)].sort((a, b) => b - a)
+      return (pair[0]! + 0.05) / (pair[1]! + 0.05)
+    }
+
+    /* 有 -deep 兄弟的那几支主题色。加主题色时把名字补进来 —— 漏了就等于新色没有字档。 */
+    const HUES = ['red', 'amber', 'steel', 'jade', 'violet', 'rose']
+
+    const deepRows = HUES.map((h) => ({ h, hex: litOf(`${h}-deep`) }))
+    const deepBad = deepRows.filter((r) => !r.hex || ratioOf(r.hex) < 4.5)
+    ok('配色两档：每一支 `-deep` 都对白底过 4.5:1（当字用的那一档真的读得清）',
+      deepBad.length === 0,
+      deepBad.length
+        ? deepBad.map((r) => `--${r.h}-deep ${r.hex || '（取不到十六进制值）'}${r.hex ? ' ' + ratioOf(r.hex).toFixed(2) + ':1' : ''}`).join(' · ')
+        : deepRows.map((r) => `${r.h} ${ratioOf(r.hex).toFixed(2)}`).join(' · '))
+
+    /* 对照：原色**本来就不够** —— 否则这两档就是同一支抄了两遍，
+       deep 那一档也就没什么好守的（这条红了说明有人把原色压深了，两档又并回一支）。 */
+    const baseGood = HUES.filter((h) => {
+      const hex = litOf(h)
+      return hex && ratioOf(hex) >= 4.5
+    })
+    ok('配色两档（对照）：原色本身**过不了** 4.5:1 —— 证明 deep 档是真退过的另一支，不是抄一遍',
+      baseGood.length === 0,
+      baseGood.length ? `这几支已经够读了（该撤掉它的 deep 档）：${baseGood.join('、')}` : '六支原色全部低于线')
+
+    /* 运行时那把尺（lib/hue.ts 的 inkOf）与上面这条线同源：
+         够色的原样放回、不够的退到过线、不认得的输入不动它（hue 允许是 var(...) / 空）。 */
+    const inked = inkOf('#ff4d79')
+    ok('配色两档：inkOf() 把不够色的本色退到 4.5:1 以上（界面侧与 tokens 侧同一把尺）',
+      /^#[0-9a-f]{6}$/.test(inked) && ratioOf(inked) >= 4.5,
+      `inkOf('#ff4d79') → ${inked} ${ratioOf(inked).toFixed(2)}:1`)
+    ok('配色两档（对照）：已经够色的本色原样放回；不认得的输入一个字不动',
+      inkOf('#241f3a') === '#241f3a' && inkOf('var(--x)') === 'var(--x)' && inkOf(undefined) === '',
+      `inkOf('#241f3a') → ${inkOf('#241f3a')} · inkOf('var(--x)') → ${inkOf('var(--x)')}`)
+
+    /* 界面那一半：当字用的地方不许直接挂**非 deep 档**的主题色。三样都算「字」：
+         · CSS 的 `color:`
+         · SVG 的 `fill:`（虚线地图上那几个读数就是拿 fill 画的）
+         · `.tsx` 里行内 `style` 的那两种写法（`color: 'var(--x)'` 与 data 表里
+           当配置写着的 `color: 'var(--x)'` —— 这两处都漏过一次，所以一并量）
+       tokens.css 自己不在其列 —— 它正是定义这两档的地方。
+
+       **具名例外**：每一条都要写清「这一处的字底下是彩底/深底，原色本来就够读」。
+       加例外 = 承认这一处不走 deep 档；例外表里出现解释不清的条目，比红着更糟。 */
+    const EXEMPT: Record<string, string> = {}
+    const offenders: string[] = []
+    const walkSrc = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${ent.name}`
+        if (ent.isDirectory()) { walkSrc(p); continue }
+        const isCss = ent.name.endsWith('.module.css')
+        const isTsx = ent.name.endsWith('.tsx')
+        if (!isCss && !isTsx) continue
+        readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
+          const m = isCss
+            ? line.match(/^\s*(?:color|fill):\s*var\(--([a-z-]+)\)/)
+            : line.match(/color:\s*['"`]var\(--([a-z-]+)\)['"`]/)
+          if (!m || !HUES.includes(m[1]!)) return
+          const key = `${p}:${i + 1}`
+          if (EXEMPT[key]) return
+          offenders.push(`${key} → var(--${m[1]})`)
+        })
+      }
+    }
+    walkSrc('src')
+    ok('配色两档：当字用的一律走 `-deep` 档（module 的 `color:`/`fill:` 与 tsx 的行内三种写法同一条尺）',
+      offenders.length === 0,
+      offenders.length ? `${offenders.length} 处漏网：${offenders.slice(0, 6).join(' · ')}${offenders.length > 6 ? ' …' : ''}` : '全站当字处没有裸的主题色')
+
+    /* 另一处漏网：**身份色**（名册里带来的 `c.hue` / `focus.hue`）直接当字。
+       它不是主题色，走不到上面那张 HUES 表里管；而且多数是给暗底挑的浅色，
+       浅底上直接糊掉（量过：名册那几支 2.5~3.5:1，全在 4.5 以下）。
+       当字一律先过 inkOf() —— 与 Saga 右栏那个读数同一个写法。
+
+       只认行内 `color:` 后面直接跟 `.hue` 的那种。`.tone` 是留给装饰的
+       （圆环描边、投影），不在此列；`inkOf(...)` 整段先抹掉再看，
+       否则「已经过尺」的那几处会被自己误伤。 */
+    const hueRaw: string[] = []
+    const walkHue = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${ent.name}`
+        if (ent.isDirectory()) { walkHue(p); continue }
+        if (!ent.name.endsWith('.tsx')) continue
+        readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
+          /* 判据：当字的那个表达式里出现了 `.hue`，却**一次都没提 inkOf**。
+             写成 `f.hue ? inkOf(f.hue) : 'var(--ink)'` 这种带兜底的算是过了 ——
+             条件里那个裸 `.hue` 是守卫，不是色值。 */
+          const m = line.match(/color:\s*([^,;}]*)/)
+          if (!m) return
+          if (/\.hue\b/.test(m[1]!) && !/inkOf/.test(m[1]!)) hueRaw.push(`${p}:${i + 1}`)
+        })
+      }
+    }
+    walkHue('src')
+    ok('配色两档：身份色（名册的 `.hue`）当字一律先过 inkOf()（它不是主题色，走不到上面那张表）',
+      hueRaw.length === 0,
+      hueRaw.length ? `${hueRaw.length} 处裸用：${hueRaw.slice(0, 5).join(' · ')}` : '全站身份色当字都过了 inkOf()')
+
+    /* 严重度那两支色（`lib/format.ts`）是这一套的一个特例：同一个读数既要当字
+       （读数、标签）又要当底（圆环描边、投影、进度条、状态点）。所以它返**两支**：
+       `color` 走 deep、`tone` 走原色。从前只返一支原色，于是每一处 `style={{color: sev.color}}`
+       都悄悄拿着 2.05:1 的 `--amber` 写小字。
+       这条量的是**声明那一处**：只要有人把 `color` 改回原色，全站七八处读数当场退回糊的，
+       而界面上看不出来「是哪一处错的」—— 所以钉在源头。 */
+    const fmt = readFileSync('src/lib/format.ts', 'utf8')
+    const sevReturns = fmt.match(/return \{ cls: 'sev-(?:ok|warn|hi)', color: 'var\(--([a-z-]+)\)', tone: 'var\(--([a-z-]+)[^']*\)'/g) ?? []
+    const sevBad = sevReturns.filter((s) => !/-deep\)/.test(s.split(', tone')[0]!))
+    /* 应到 7 支：stageSeverity 四档（低/中/高/极危）＋ rSeverity 三档（稳定/轻/重）。
+       少一支 = 有人新加了一档却没给 tone，或多删了一支 —— 两种都当场红。 */
+    ok('配色两档：严重度 helpers 的 `color` 一律 deep、`tone` 一律原色（读数当字、圆环当底，两支各归各）',
+      sevReturns.length === 7 && sevBad.length === 0,
+      sevReturns.length === 7
+        ? '七支齐全，每支的 color 都是 -deep、tone 都是原色'
+        : `对上了 ${sevReturns.length} 支（应为 7 = stageSeverity 四档 + rSeverity 三档）`
+          + (sevBad.length ? ` · 其中 ${sevBad.length} 支的 color 不是 deep 档` : ''))
+    ok('配色两档（对照）：`.sev-*` 三条类也走 deep 档 —— 走类的那些地方（顶栏 R 值那一枚）不许漏',
+      /\.sev-ok \{ color: var\(--steel-deep\); \}/.test(tok)
+      && /\.sev-warn \{ color: var\(--amber-deep\); \}/.test(tok)
+      && /\.sev-hi \{ color: var\(--red-deep\); \}/.test(tok),
+      '三条都指着 -deep')
+
+    /* ===== 镜面那一半：本色当「底」时，压在底上的字 =====
+       上面六条量的都是「本色当**字**」。翻过来 —— 本色当**底**、白字压上去 ——
+       在晨光浅底这一版几乎全线塌掉（量过：--amber 2.05:1、--red 3.19:1，
+       粉→紫那两头 3.19 / 4.36）。旧版配白字是因为底本来是暗的，这一版不作数了。
+
+       所以这一侧的字一律走 `--on-accent`（墨）。下面先把那三支量出来。 */
+    const onAccent = litOf('on-accent')
+    /** 把本色按 `color-mix(in srgb, var(--x) N%, #fff)` 掺出来 —— 与 CSS 同一算式 */
+    const liftOf = (name: string): string => {
+      const m = tok.match(new RegExp(`--${name}:\\s*color-mix\\(in srgb, var\\(--([a-z-]+)\\) (\\d+)%, #fff\\)`))
+      if (!m) return ''
+      const base = litOf(m[1]!)
+      if (!base) return ''
+      const p = Number(m[2]) / 100
+      const ch = [1, 3, 5].map((i) => {
+        const a = parseInt(base.slice(i, i + 2), 16)
+        return Math.round(a * p + 255 * (1 - p))
+      })
+      return '#' + ch.map((v) => v.toString(16).padStart(2, '0')).join('')
+    }
+    /** 两个颜色之间的对比度（上面那把尺是「对白底」，这里要的是「对特定的底」） */
+    const ratioBetween = (a: string, b: string) => {
+      const pair = [lumOf(a), lumOf(b)].sort((x, y) => y - x)
+      return (pair[0]! + 0.05) / (pair[1]! + 0.05)
+    }
+    const onRows = [
+      ['--amber', litOf('amber')],
+      ['--red', litOf('red')],
+      ['--red-lift', liftOf('red-lift')],
+      ['--violet-lift', liftOf('violet-lift')],
+    ] as const
+    const onBad = onRows.filter(([, hex]) => !hex || !onAccent || ratioBetween(onAccent, hex) < 4.5)
+    ok('配色两档：本色当底时，压在底上的墨字（--on-accent）四支底全都过 4.5:1',
+      !!onAccent && onBad.length === 0,
+      !onAccent
+        ? '取不到 --on-accent 的十六进制值'
+        : onBad.length
+          ? onBad.map(([n, hex]) => `${n} 上只有 ${hex ? ratioBetween(onAccent, hex).toFixed(2) : '（取不到）'}:1`).join(' · ')
+          : onRows.map(([n, hex]) => `${n} ${ratioBetween(onAccent!, hex).toFixed(2)}`).join(' · ')
+            + ` · --on-accent ${onAccent}`)
+
+    /* 对照：白字在这一头**本来就不行** —— 这正是要走墨的原因。
+       哪天有人把亮底调暗到白字也够读了，这条会红：那时该重新决定这一侧配谁，而不是两边都留。 */
+    const whiteBad = onRows.filter(([, hex]) => hex && ratioBetween('#ffffff', hex) >= 4.5)
+    ok('配色两档（对照）：同样的底、白字过不了线 —— 证明墨字不是随手换的',
+      whiteBad.length === 0,
+      whiteBad.length
+        ? `这几支已经深到白字也够读了（该重新定这一侧）：${whiteBad.map(([n]) => n).join('、')}`
+        : '四支底上白字全部低于线')
+
+    /* 界面那一半：`.css` 里凡「本规则自带底色 + 白字」的一对，必须登记在册。
+       具名例外，与上面那张表同一条规矩 —— 每条都要写清「这一处的底为什么够深」。
+
+       只查**同一规则里自带底**的那种（按钮、角标、圆章），因为白字能不能读取决于
+       底是渐变还是 color-mix、有没有叠在别的层上 —— 静态算不准。算不准的就不硬算，
+       用**具名例外**关住，别再无声无息长出来。压在祖先底上的白字（如暗幕上的题注）
+       不在此列，那种靠人看，落不进这条机械尺。 */
+    const WHITE_OK: Record<string, string> = {
+      'src/views/Archive.module.css .opGlyph':
+        '84px 方块里 30px/800 的姓字 —— 大字线是 3:1，白字在它那两头 3.19 / 4.64 都过',
+    }
+    const whiteOnFill: string[] = []
+    const cssFiles: string[] = ['src/styles/tokens.css']
+    const walkCss = (dir: string) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${ent.name}`
+        if (ent.isDirectory()) { walkCss(p); continue }
+        if (ent.name.endsWith('.module.css')) cssFiles.push(p)
+      }
+    }
+    walkCss('src')
+    for (const p of cssFiles) {
+      const text = readFileSync(p, 'utf8')
+      const re = /([^{}]*)\{([^{}]*)\}/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text))) {
+        const body = m[2]!
+        if (!/color:\s*(?:#fff(?:fff)?|white)\b/i.test(body)) continue
+        if (!/background(?:-color)?\s*:/.test(body)) continue
+        const sel = (m[1]!.trim().split('\n').pop() ?? '').trim().replace(/\s+/g, ' ')
+        const key = `${p} ${sel}`
+        if (WHITE_OK[key]) continue
+        whiteOnFill.push(`${key}（第 ${text.slice(0, m.index).split('\n').length} 行）`)
+      }
+    }
+    ok('配色两档：`.css` 里「自带彩底 + 白字」的一律登记在册（每一条都得写清底为什么够深）',
+      whiteOnFill.length === 0,
+      whiteOnFill.length
+        ? `${whiteOnFill.length} 处白字没登记：${whiteOnFill.slice(0, 4).join(' · ')}${whiteOnFill.length > 4 ? ' …' : ''}`
+        : `没有未登记的白字；在册的例外 ${Object.keys(WHITE_OK).length} 条`)
+
+    info.push('配色两档：原色当底、`-deep` 当字（六支都退到 4.5:1 以上）· '
+      + '运行时同一把尺是 lib/hue.ts 的 inkOf() · 严重度那两支走 format.ts 的 color/tone · '
+      + '镜面那一半（本色当底）压 `--on-accent` 墨字，白字只剩一张具名例外表')
+  } catch (e) {
+    fail.push('配色两档段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

@@ -2,11 +2,11 @@
 
 /* 顶栏连接状态 */
 .linkState { display: flex; align-items: center; gap: 8px; font-size: 11px; }
-.linkState button { padding: 0; background: none; border: none; color: var(--steel); cursor: pointer; font-size: 11px; text-decoration: underline dotted; }
+.linkState button { padding: 0; background: none; border: none; color: var(--steel-deep); cursor: pointer; font-size: 11px; text-decoration: underline dotted; }
 
 /* 联系人列表项内多行 */
 .castName { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 800; }
-.bondMini { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--red); }
+.bondMini { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--red-deep); }
 .castSub { color: var(--ink-mute); font-size: 11px; line-height: 1.45; margin-top: 2px; }
 .castLock { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
 
@@ -37,17 +37,18 @@
 /* 自动回复出错的内联条 */
 .errLine {
   align-self: center; max-width: 92%; width: 100%;
-  border: 1px dashed rgba(232, 173, 51, 0.55);
-  background: rgba(232, 173, 51, 0.06);
-  color: var(--amber);
+  border: 1px dashed color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+  color: var(--amber-deep);
   padding: 7px 12px; font-size: 11.5px; letter-spacing: 0.02em;
+  border-radius: var(--radius-sm);
 }
 
 /* —— 回复 meta（推演 / 接续选项 / 重写） —— */
 .replyMeta { display: flex; flex-direction: column; gap: 8px; padding: 2px 6px 4px; }
 .thinkFold {
   border: 1px dashed var(--line-2);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
   overflow: hidden;
   max-width: 72%;
@@ -64,7 +65,7 @@
   text-align: left;
   color: var(--ink-mute);
 }
-.thinkHead b { font-size: 11px; letter-spacing: 0.14em; color: var(--steel); text-transform: uppercase; }
+.thinkHead b { font-size: 11px; letter-spacing: 0.14em; color: var(--steel-deep); text-transform: uppercase; }
 .thinkHead:hover b { color: var(--ink); }
 .thinkBody {
   padding: 8px 11px 10px;
@@ -85,7 +86,7 @@
   background: var(--bg-1);
   color: var(--ink-mute);
 }
-.optChip:hover:not(:disabled) { color: var(--amber); border-color: var(--amber); }
+.optChip:hover:not(:disabled) { color: var(--amber-deep); border-color: var(--amber); }
 .replyActs { display: flex; justify-content: flex-end; }
 
 
@@ -111,11 +112,12 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color var(--t-fast), border-color var(--t-fast);
 }
 .tab:hover { color: var(--ink); border-color: var(--steel); }
-.tabOn { color: var(--amber); border-color: var(--amber); background: var(--bg-2); }
+.tabOn { color: var(--amber-deep); border-color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--bg-1)); }
 .tabDot {
   font-family: var(--font-mono);
   font-style: normal;
@@ -124,7 +126,7 @@
   padding: 0 5px;
   border-radius: 8px;
   background: var(--red);
-  color: #fff;
+  color: var(--on-accent);   /* 10px 的小字，白压在樱粉上只有 3.19:1 */
 }
 
 .unreadDot {
@@ -136,7 +138,7 @@
   padding: 0 5px;
   border-radius: 8px;
   background: var(--red);
-  color: #fff;
+  color: var(--on-accent);   /* 10px 的小字，白压在樱粉上只有 3.19:1 */
 }
 
 .sectHead {
@@ -162,9 +164,10 @@
   color: var(--ink-mute);
   font-family: inherit;
   font-size: 11px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.sectBtn:hover { color: var(--amber); border-color: var(--amber); }
+.sectBtn:hover { color: var(--amber-deep); border-color: var(--amber); }
 
 .taskRow {
   display: flex;
@@ -184,14 +187,15 @@
   place-items: center;
   border: 1px solid var(--line-2);
   background: var(--bg-1);
-  color: var(--amber);
+  border-radius: var(--radius-sm);
+  color: var(--amber-deep);
   cursor: pointer;
 }
 .taskMain { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .taskMain b { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1.5; }
 .taskDone .taskMain b { text-decoration: line-through; }
 .taskDetail { font-size: 11.5px; line-height: 1.6; color: var(--ink-faint); word-break: break-word; }
-.taskFrom { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--steel); }
+.taskFrom { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--steel-deep); }
 .taskDel {
   flex: none;
   padding: 2px;
@@ -200,7 +204,7 @@
   color: var(--ink-faint);
   cursor: pointer;
 }
-.taskDel:hover { color: var(--red); }
+.taskDel:hover { color: var(--red-deep); }
 
 .modal {
   position: fixed;
@@ -209,7 +213,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.62);
+  background: color-mix(in srgb, var(--ink) 62%, transparent);
   backdrop-filter: blur(2px);
 }
 .modalCard {
@@ -222,7 +226,8 @@
   padding: 16px 18px 14px;
   background: var(--bg-2);
   border: 1px solid var(--line-2);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
 }
 .modalHead { display: flex; align-items: center; justify-content: space-between; }
 .modalHead b { font-size: 13px; letter-spacing: 0.06em; }
@@ -233,7 +238,7 @@
   cursor: pointer;
   padding: 2px;
 }
-.modalX:hover { color: var(--red); }
+.modalX:hover { color: var(--red-deep); }
 .modalNote { font-size: 11.5px; line-height: 1.7; color: var(--ink-faint); }
 .pickList {
   display: flex;
@@ -242,6 +247,7 @@
   max-height: 42vh;
   overflow: auto;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 6px;
 }
 .pickRow {
@@ -254,11 +260,12 @@
   color: var(--ink-mute);
   font-family: inherit;
   font-size: 12.5px;
+  border-radius: var(--radius-sm);
   text-align: left;
   cursor: pointer;
 }
 .pickRow:hover { color: var(--ink); border-color: var(--line-2); }
-.pickOn { color: var(--amber); border-color: var(--amber); }
+.pickOn { color: var(--amber-deep); border-color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--bg-1)); }
 .pickRow > span:nth-child(2) { flex: 1; }
 .modalFoot { display: flex; justify-content: flex-end; gap: 8px; }
 

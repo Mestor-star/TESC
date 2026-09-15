@@ -4,8 +4,9 @@
   position: fixed;
   inset: 0;
   z-index: 130;
-  background: rgba(5, 6, 12, 0.72);
-  backdrop-filter: blur(2px);
+  /* 浅底上的遮罩：用墨紫压暗（比纯黑柔和），底下的晨光还透得出来一点 */
+  background: color-mix(in srgb, var(--ink) 52%, transparent);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -18,8 +19,8 @@
   flex-direction: column;
   background: var(--bg-1);
   border: 1px solid var(--line-3);
-  border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
 }
 
@@ -34,7 +35,7 @@
 .kicker {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
   margin-bottom: 3px;
 }
@@ -58,6 +59,7 @@
 }
 .hint {
   border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
   padding: 9px 12px;
   display: flex;
@@ -67,7 +69,7 @@
   line-height: 1.7;
   color: var(--ink-mute);
 }
-.hint b { color: var(--amber); font-size: 12px; }
+.hint b { color: var(--amber-deep); font-size: 12px; }
 
 .secHead {
   display: flex;
@@ -89,6 +91,7 @@
   gap: 8px;
   padding: 9px 11px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
 }
 .addRow .field { flex: 1; min-width: 120px; }
@@ -99,11 +102,13 @@
   background: var(--bg-1);
   color: var(--ink);
   border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
   padding: 8px 6px;
 }
 
 .empty {
   border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
   padding: 20px 16px;
   text-align: center;
   color: var(--ink-mute);
@@ -117,6 +122,7 @@
   align-items: center;
   gap: 10px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
   padding: 7px 11px;
 }
@@ -126,7 +132,7 @@
   flex: 0 0 220px;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--steel);
+  color: var(--steel-deep);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -138,7 +144,8 @@
   letter-spacing: 0.08em;
   color: var(--ink-faint);
   border: 1px solid var(--line-2);
-  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
   background: var(--bg-1);
 }
 .val {
@@ -164,7 +171,7 @@
   align-items: center;
   gap: 6px;
 }
-.danger { border-color: var(--red) !important; color: var(--red) !important; }
+.danger { border-color: var(--red) !important; color: var(--red-deep) !important; }
 
 .divider { border-top: 1px dashed var(--line-2); margin-top: 8px; }
 

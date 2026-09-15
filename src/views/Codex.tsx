@@ -21,11 +21,11 @@ const CANON_ORDER = [
 ]
 
 const STATE_META: Record<string, { cls: string; color: string; label: string }> = {
-  活跃: { cls: 'chip chip--danger', color: 'var(--red)', label: '活跃' },
-  抑制: { cls: 'chip chip--warn', color: 'var(--amber)', label: '抑制' },
-  收容: { cls: 'chip chip--on', color: 'var(--jade)', label: '收容' },
+  活跃: { cls: 'chip chip--danger', color: 'var(--red-deep)', label: '活跃' },
+  抑制: { cls: 'chip chip--warn', color: 'var(--amber-deep)', label: '抑制' },
+  收容: { cls: 'chip chip--on', color: 'var(--jade-deep)', label: '收容' },
   已清除: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '已清除' },
-  运转中: { cls: 'chip chip--warn', color: 'var(--amber)', label: '运转中' },
+  运转中: { cls: 'chip chip--warn', color: 'var(--amber-deep)', label: '运转中' },
   去向不明: { cls: 'chip chip--off', color: 'var(--ink-dim)', label: '去向不明' },
   存疑: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '存疑' },
 }
@@ -220,7 +220,7 @@ export function Codex() {
         </div>
         <div className={css.metric}>
           <small>已遭遇登记</small>
-          <b style={{ color: 'var(--steel)' }}>{counts.reg}</b>
+          <b style={{ color: 'var(--steel-deep)' }}>{counts.reg}</b>
         </div>
         <div className={css.metric}>
           <small>封存未解</small>
@@ -228,11 +228,11 @@ export function Codex() {
         </div>
         <div className={css.metric}>
           <small>活跃中</small>
-          <b style={{ color: 'var(--red)' }}>{counts.active}</b>
+          <b style={{ color: 'var(--red-deep)' }}>{counts.active}</b>
         </div>
         <div className={css.metric}>
           <small>已清除</small>
-          <b style={{ color: 'var(--jade)' }}>{counts.cleared}</b>
+          <b style={{ color: 'var(--jade-deep)' }}>{counts.cleared}</b>
         </div>
       </div>
 
@@ -255,7 +255,8 @@ export function Codex() {
                 fontFamily: 'var(--font-mono)',
                 fontSize: 11,
                 letterSpacing: '0.05em',
-                color: on ? '#fff' : 'var(--ink-dim)',
+                /* 选中不是「白字压粉底」—— 浅底上那样等于没字。走 -deep 档压在粉洗上 */
+                color: on ? 'var(--red-deep)' : 'var(--ink-dim)',
                 borderColor: on ? 'var(--red)' : 'var(--line-2)',
                 background: on ? 'var(--red-soft)' : 'var(--bg-2)',
                 boxShadow: on ? 'inset 0 0 0 1px var(--red)' : 'none',
@@ -280,7 +281,8 @@ export function Codex() {
                 fontFamily: 'var(--font-mono)',
                 fontSize: 11,
                 letterSpacing: '0.05em',
-                color: on ? '#fff' : 'var(--ink-dim)',
+                /* 选中不是「白字压粉底」—— 浅底上那样等于没字。走 -deep 档压在粉洗上 */
+                color: on ? 'var(--red-deep)' : 'var(--ink-dim)',
                 borderColor: on ? 'var(--red)' : 'var(--line-2)',
                 background: on ? 'var(--red-soft)' : 'var(--bg-2)',
                 boxShadow: on ? 'inset 0 0 0 1px var(--red)' : 'none',
@@ -395,7 +397,7 @@ export function Codex() {
                     aria-expanded={open}
                   >
                     <span className={css.itemStage}>
-                      <span className={css['s']} style={{ color: 'var(--amber)', fontSize: 20 }}>{o.stage < 0 ? '?' : o.stage}</span>
+                      <span className={css['s']} style={{ color: 'var(--amber-deep)', fontSize: 20 }}>{o.stage < 0 ? '?' : o.stage}</span>
                       <small>{o.stageKw}</small>
                     </span>
                     <span className={css.itemMain}>

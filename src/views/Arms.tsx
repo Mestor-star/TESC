@@ -4,6 +4,7 @@ import { Lock } from '@phosphor-icons/react'
 import { ARMS, ARM_TRADITIONS } from '../data/arms'
 import type { ArmEntry, ArmKind } from '../data/types'
 import { useTerminal } from '../terminal/Terminal'
+import { inkOf } from '../lib/hue'
 
 import css from './Arms.module.css'
 
@@ -105,7 +106,9 @@ export function Arms() {
               style={{
                 '--c': color,
                 borderColor: on ? color : 'var(--line-2)',
-                color: on ? '#fff' : 'var(--ink-dim)',
+                /* 同上：那一档本色是数据表里带来的（还可能浅到发白），当字压不住 ——
+                   选中的字一律走墨色，本色留给底洗与描边去认 */
+                color: on ? 'var(--ink)' : 'var(--ink-dim)',
                 background: on ? 'color-mix(in srgb, ' + color + ' 16%, transparent)' : 'var(--bg-2)',
                 boxShadow: on ? `inset 0 0 0 1px ${color}` : 'none',
               } as CSSProperties}
@@ -222,13 +225,14 @@ export function Arms() {
                         <p className={css.expText}>{a.power}</p>
                         {a.awakened ? (
                           <>
-                            <div className={css.expLabel} style={{ color: 'var(--red)' }}>○ 到达点 · AWAKENED</div>
+                            <div className={css.expLabel} style={{ color: 'var(--red-deep)' }}>○ 到达点 · AWAKENED</div>
                             <p className={css.expText}>{a.awakened}</p>
                           </>
                         ) : null}
                         <div className={css.expFoot}>
                           <span className={css.schoolChip}>{g.trad.school}</span>
-                          <span className={css.schoolChip} style={{ borderColor: g.trad.color, color: g.trad.color }}>{a.kind}</span>
+                          {/* 传统本色是给黑底挑的浅色，当字要先过 inkOf；描边照旧用原色 */}
+                          <span className={css.schoolChip} style={{ borderColor: g.trad.color, color: inkOf(g.trad.color) }}>{a.kind}</span>
                           <span className={css.refChip}>首见 · {a.ref}</span>
                         </div>
                       </div>

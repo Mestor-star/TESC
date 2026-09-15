@@ -4,7 +4,7 @@
   position: fixed;
   inset: 0;
   z-index: 130;
-  background: rgba(5, 6, 12, 0.72);
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -18,8 +18,8 @@
   flex-direction: column;
   background: var(--bg-1);
   border: 1px solid var(--line-3);
-  border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
 }
 
@@ -34,7 +34,7 @@
 .kicker {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
   margin-bottom: 3px;
 }
@@ -49,16 +49,16 @@
   color: var(--ink-faint);
   font-size: 12px;
   padding: 7px 14px;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   cursor: pointer;
 }
 .tab:hover { color: var(--ink); }
-.tab.isOn { background: var(--bg-1); color: var(--amber, #ffb347); border-color: var(--line-3); }
+.tab.isOn { background: var(--bg-1); color: var(--amber-deep); border-color: var(--line-3); }
 
 .hint {
   padding: 9px 16px;
   border-bottom: 1px dashed var(--line);
-  background: rgba(244, 180, 63, 0.05);
+  background: color-mix(in srgb, var(--amber) 6%, transparent);
   line-height: 1.75;
 }
 
@@ -104,7 +104,7 @@
   background: transparent;
   color: var(--ink);
   padding: 6px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .row b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -115,7 +115,7 @@
 /* 启用态：左沿一道金条。这一列里真正要一眼看出的是**哪几条在喂提示词**，
    而不是哪一条被点开了 —— 被点开的那一条恰恰可能是关着的。
    与词条树那边「启用的图标是金色」是同一套读法。 */
-.row:not(.isOff):not(.isPh) { box-shadow: inset 2px 0 0 var(--amber, #ffb347); }
+.row:not(.isOff):not(.isPh) { box-shadow: inset 2px 0 0 var(--amber); }
 .row.isOff { opacity: 0.45; }
 .row.isOff b { text-decoration: line-through; }
 .row.isPh { opacity: 0.5; }
@@ -128,7 +128,7 @@
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--ink-faint);
   cursor: pointer;
   transition: all var(--t-fast);
@@ -138,6 +138,7 @@
 /* —— 右列（编辑表单 / 词条树） —— */
 .pane { overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .empty {
+  border-radius: var(--radius-sm);
   padding: 30px 20px;
   text-align: center;
   color: var(--ink-mute);
@@ -170,7 +171,7 @@
   background: var(--bg-2);
   color: var(--ink);
   border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .textarea:focus { outline: none; border-color: var(--amber); }
 
@@ -184,16 +185,16 @@
   background: transparent;
   color: var(--ink);
   padding: 8px 9px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .bookRow:hover { background: var(--bg-1); }
 .bookRow.isActive { background: var(--bg-1); border-color: var(--line-2); }
 .bookRow b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bookMeta { display: flex; gap: 6px; align-items: center; font-size: 10px; color: var(--ink-faint); flex-wrap: wrap; }
-.tagOn { color: var(--amber, #ffb347); }
-.tagManaged { color: var(--cyan, #5fd3f3); }
-.tagOff { color: var(--red, #ff6b6b); font-weight: 700; }
+.tagOn { color: var(--amber-deep); }
+.tagManaged { color: var(--steel-deep); }
+.tagOff { color: var(--red-deep); font-weight: 700; }
 
 .entryRow {
   display: flex;
@@ -202,7 +203,7 @@
   border: 1px solid var(--line);
   background: var(--bg-2);
   padding: 7px 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
   color: var(--ink);
@@ -213,7 +214,7 @@
 .entryRow b { font-size: 12.5px; flex: none; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entryKeys { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--ink-faint); }
 .entrySw { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--ink-faint); }
-.entryRow:not(.isOff) .entrySw { color: var(--amber, #ffb347); }
+.entryRow:not(.isOff) .entrySw { color: var(--amber-deep); }
 
 .foot {
   display: flex;

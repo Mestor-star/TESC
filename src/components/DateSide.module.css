@@ -29,7 +29,8 @@
   gap: 8px;
   font-size: 11px;
   letter-spacing: 0.08em;
-  color: var(--rose);
+  /* 这一栏是暖的那一档（与私密档案同一支玫瑰）；浅底上压深一档才读得出来 */
+  color: var(--rose-deep);
 }
 
 .sceneRows {
@@ -72,7 +73,7 @@
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-2) 60%, transparent);
 }
 
@@ -113,8 +114,9 @@
   font-style: normal;
   font-size: 10px;
   padding: 1px 5px;
-  border: 1px solid var(--line-2);
-  color: var(--rose);
+  border: 1px solid color-mix(in srgb, var(--rose) 40%, var(--line-2));
+  border-radius: var(--radius-pill);
+  color: var(--rose-deep);
 }
 
 .role {
@@ -134,7 +136,7 @@
   font-size: 11px;
   padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
 }
 
 /* 没给过档位的：不必穿角色本色，弱一档就好 */

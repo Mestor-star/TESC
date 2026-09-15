@@ -4,7 +4,7 @@
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgba(5, 6, 12, 0.72);
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -18,8 +18,8 @@
   flex-direction: column;
   background: var(--bg-1);
   border: 1px solid var(--line-3);
-  border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
 }
 .panel.wide { width: min(960px, 96vw); }
@@ -35,7 +35,7 @@
 .kicker {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
   margin-bottom: 3px;
 }
@@ -74,7 +74,7 @@
   gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px dashed var(--line);
-  background: rgba(244, 180, 63, 0.05);
+  background: color-mix(in srgb, var(--amber) 6%, transparent);
 }
 .createRow .field { flex: 1; }
 
@@ -89,11 +89,13 @@
 .listHint {
   border: 1px dashed var(--line-2);
   background: var(--bg-2);
+  border-radius: var(--radius-sm);
   padding: 8px 12px;
   line-height: 1.7;
 }
 .empty {
   border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
   padding: 26px 18px;
   display: flex;
   flex-direction: column;
@@ -116,6 +118,7 @@
   gap: 12px;
   border: 1px solid var(--line);
   background: var(--bg-2);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
 }
 .toggle {
@@ -128,12 +131,13 @@
   color: var(--ink-faint);
   font-size: 11px;
   padding: 5px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 .toggle.isOn {
-  border-color: rgba(244, 180, 63, 0.5);
-  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 50%, transparent);
+  color: var(--amber-deep);
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-1));
 }
 .dot {
   width: 7px; height: 7px;
@@ -161,7 +165,7 @@
   align-items: center;
   gap: 6px;
 }
-.danger { border-color: var(--red) !important; color: var(--red) !important; }
+.danger { border-color: var(--red) !important; color: var(--red-deep) !important; }
 
 .foot {
   display: flex;
@@ -211,7 +215,7 @@
   background: transparent;
   color: var(--ink);
   padding: 7px 9px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .entryRow b {
@@ -242,7 +246,7 @@
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--ink-faint);
   cursor: pointer;
   transition: all var(--t-fast);
@@ -254,7 +258,7 @@
 
 /* 整本批量开关 + 关闭计数 */
 .bulkSw { display: inline-flex; gap: 4px; margin-left: auto; }
-.offCount { color: var(--amber, #ffb347); font-weight: 700; }
+.offCount { color: var(--amber-deep); font-weight: 700; }
 
 .form {
   overflow: auto;
@@ -265,6 +269,7 @@
 }
 .formEmpty {
   border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
   padding: 30px 20px;
   text-align: center;
   color: var(--ink-mute);

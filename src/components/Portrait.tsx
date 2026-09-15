@@ -13,6 +13,7 @@ import type { CSSProperties } from 'react'
 import { charImgCandidates, FACE_FOCUS, probeCharImg } from '../lib/charimg'
 import type { CharImgVariant } from '../lib/charimg'
 import { personOf } from '../data/castmeta'
+import { inkOf } from '../lib/hue'
 
 /**
  * 素材是否到位（真能加载的那张 URL；全 404 → null）。
@@ -96,7 +97,8 @@ export function Portrait(props: PortraitProps) {
     height: h,
     flex: 'none',
     overflow: 'hidden',
-    borderRadius: round ? '50%' : 8,
+    borderRadius: round ? '50%' : 12,
+    /* 本色只当**底纹**：浅底上原样淡淡一层就够（当文字用要另走 inkOf） */
     background: `linear-gradient(150deg, ${meta.hue}2e 0%, ${meta.hue}55 100%)`,
     ...style,
   }
@@ -120,7 +122,7 @@ export function Portrait(props: PortraitProps) {
             objectFit: fit,
             objectPosition: fit === 'cover' ? (focus ?? FACE_FOCUS) : undefined,
             display: 'block',
-            background: '#0b0e14',
+            background: 'var(--bg-2)',
           }}
         />
       ) : (
@@ -131,7 +133,7 @@ export function Portrait(props: PortraitProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: meta.hue,
+            color: inkOf(meta.hue),
             fontSize: Math.max(12, Math.round(Math.min(w, h) * 0.46)),
             fontWeight: 700,
             fontFamily: 'var(--font-serif, serif)',

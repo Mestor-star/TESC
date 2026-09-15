@@ -20,6 +20,7 @@ import { PaperPlaneTilt, Stop } from '@phosphor-icons/react'
 
 import { OPERATOR_ID, speakerOf } from '../data/castmeta'
 import { splitSpeech } from '../lib/dialogue'
+import { inkOf } from '../lib/hue'
 import { Linkified } from './Linkified'
 import { Portrait } from './Portrait'
 import css from '../views/Plot.module.css'
@@ -62,7 +63,7 @@ export function SayFrame({ id, text }: { id: string; text: string }) {
   return (
     <div className={css.sayRow} data-say="1" data-say-for={id}>
       <div className={`${css.frame} ${css.sayFrame}`}>
-        <span className={css.dlgName} style={{ color: c?.hue ?? '#7fb4ff' }}>{c?.name ?? id}</span>
+        <span className={css.dlgName} style={{ color: inkOf(c?.hue) || 'var(--steel)' }}>{c?.name ?? id}</span>
         <div className={css.frameRow}>
           <Portrait avatarId={id} width={64} style={framePortrait} className={css.framePortrait} />
           <span className={css.bubble}><Linkified text={text} /></span>

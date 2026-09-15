@@ -16,8 +16,8 @@
   flex-direction: column;
   justify-content: center;
   background:
-    repeating-linear-gradient(115deg, transparent 0 26px, rgba(255, 46, 67, 0.035) 26px 52px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 45%),
+    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--red) 7%, transparent) 26px 52px),
+    linear-gradient(180deg, color-mix(in srgb, var(--violet) 6%, transparent), transparent 45%),
     var(--bg-1);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -31,7 +31,7 @@
   font-weight: 800;
   font-size: 86px;
   letter-spacing: 0.04em;
-  color: rgba(255, 46, 67, 0.05);
+  color: color-mix(in srgb, var(--red) 10%, transparent);
   line-height: 1;
   pointer-events: none;
   user-select: none;
@@ -40,9 +40,9 @@
 .heroKicker {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--red);
+  color: var(--red-deep);
 }
 .heroGreet {
   margin: 12px 0 4px;
@@ -53,8 +53,9 @@
 }
 .heroGreet em {
   font-style: normal;
-  color: var(--red);
-  text-shadow: 0 0 18px rgba(255, 46, 67, 0.4);
+  color: var(--red-deep);
+  /* 名字上也错开两像素 —— 全站「次元错位」那一手的同一个写法 */
+  text-shadow: var(--duo-shadow);
 }
 .heroText {
   color: var(--ink-mute);
@@ -98,7 +99,7 @@
   margin-top: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 .gaugeMeta {
@@ -126,17 +127,20 @@
   margin-bottom: 18px;
   padding: 14px 18px;
   overflow: hidden;
-  border: 1px solid rgba(255, 46, 67, 0.45);
+  border: 1px solid color-mix(in srgb, var(--red) 42%, transparent);
+  border-radius: var(--radius);
   background:
-    repeating-linear-gradient(115deg, transparent 0 30px, rgba(255, 46, 67, 0.05) 30px 60px),
-    linear-gradient(180deg, rgba(255, 46, 67, 0.1), rgba(255, 46, 67, 0.02));
+    repeating-linear-gradient(115deg, transparent 0 30px, color-mix(in srgb, var(--red) 8%, transparent) 30px 60px),
+    linear-gradient(180deg, color-mix(in srgb, var(--red) 12%, transparent), color-mix(in srgb, var(--red) 3%, transparent));
   animation: flickerIn 600ms linear both;
 }
+/* 左侧那一块警戒纹：上一版是「主调 + 近黑」，压在晨光浅底上太沉，
+   换成全站的糖纸纹（主调 + 白，见 tokens 的 .hazard）。 */
 .threatHazard {
   flex: 0 0 auto;
   width: 96px;
   align-self: stretch;
-  background: repeating-linear-gradient(-45deg, var(--red) 0 10px, #0b0b13 10px 20px);
+  background: repeating-linear-gradient(-45deg, var(--red) 0 10px, #fff 10px 20px);
 }
 .threatBody { flex: 1; min-width: 0; }
 .threatBody b { font-size: 16px; font-weight: 900; letter-spacing: 0.02em; }
@@ -149,8 +153,8 @@
 .threatStage .num {
   font-size: 42px;
   font-weight: 800;
-  color: var(--red);
-  text-shadow: 0 0 18px rgba(255, 46, 67, 0.55);
+  color: var(--red-deep);
+  text-shadow: 0 2px 14px color-mix(in srgb, var(--red) 45%, transparent);
   line-height: 1;
 }
 
@@ -162,6 +166,7 @@
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
   transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-mid) var(--ease-out);
 }
@@ -180,7 +185,7 @@
   font-size: 15px;
   transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
 }
-.miniAction:hover { color: var(--red); border-color: rgba(255, 46, 67, 0.5); background: var(--red-soft); }
+.miniAction:hover { color: var(--red-deep); border-color: color-mix(in srgb, var(--red) 50%, transparent); background: var(--red-soft); }
 
 .stack { display: flex; flex-direction: column; gap: 8px; }
 
@@ -192,12 +197,13 @@
   align-items: center;
   padding: 9px 12px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
   text-align: left;
   transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-mid) var(--ease-out);
 }
 .rRow:hover { border-color: var(--line-3); background: var(--bg-2); transform: translateY(-1px); }
-.rRow.isFocus { border-color: rgba(88, 198, 255, 0.55); box-shadow: inset 3px 0 0 var(--steel); }
+.rRow.isFocus { border-color: color-mix(in srgb, var(--steel) 55%, transparent); box-shadow: inset 3px 0 0 var(--steel); }
 .rRowName { min-width: 0; }
 .rRowName b { display: block; font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rRowName small { color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; }
@@ -212,6 +218,7 @@
   gap: 12px;
   padding: 10px 12px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
   transition: border-color var(--t-fast), background var(--t-fast);
   width: 100%;
@@ -257,11 +264,11 @@
   padding: 6px 11px;
   border: 1px solid var(--line-2);
   border-left: 2px solid var(--violet);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
 }
 .stat b { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: 0.02em; }
-.stat small { font-size: 10px; letter-spacing: 0.14em; color: var(--ink-mute); }
+.stat small { font-size: 10px; letter-spacing: 0.1em; color: var(--ink-mute); }
 .stat[data-stat='coin'] { border-left-color: var(--amber); }
 .stat[data-stat='stamina'] { border-left-color: var(--jade); }
 .stat[data-stat='records'] { border-left-color: var(--steel); }
@@ -276,7 +283,7 @@
   padding: 10px 12px;
   border: 1px solid var(--line-2);
   border-left: 2px solid var(--amber);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--amber) 5%, transparent);
 }
 .nextUp[data-all-done] { border-left-color: var(--jade); background: color-mix(in srgb, var(--jade) 5%, transparent); }
@@ -286,10 +293,10 @@
   gap: 5px;
   flex: 0 0 auto;
   font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--amber);
+  letter-spacing: 0.1em;
+  color: var(--amber-deep);
 }
-.nextUp[data-all-done] .nextKicker { color: var(--jade); }
+.nextUp[data-all-done] .nextKicker { color: var(--jade-deep); }
 .nextBody { flex: 1; min-width: 0; }
 .nextBody b { display: block; font-size: 14px; font-weight: 800; }
 .nextBody small { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-mute); }
@@ -298,7 +305,7 @@
   margin-top: 4px;
   padding: 1px 7px;
   border: 1px solid var(--line-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--ink-dim);
@@ -310,9 +317,9 @@
 .nextMark {
   margin-left: 6px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--amber) 20%, transparent);
-  color: var(--amber);
+  color: var(--amber-deep);
   font-size: 10px;
   font-style: normal;
   font-weight: 500;
@@ -329,7 +336,7 @@
 .msgRow {
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 7px 10px; border: 1px solid transparent; border-left: 2px solid var(--line-2);
-  border-radius: 4px; background: transparent; cursor: pointer; text-align: left;
+  border-radius: var(--radius-sm); background: transparent; cursor: pointer; text-align: left;
   transition: background 0.12s, border-color 0.12s, transform 0.12s;
 }
 .msgRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
@@ -341,8 +348,8 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .badgeUnread {
-  flex: 0 0 auto; min-width: 20px; padding: 1px 6px; border-radius: 999px;
-  background: var(--red); color: #fff; font-family: var(--font-mono);
+  flex: 0 0 auto; min-width: 20px; padding: 1px 6px; border-radius: var(--radius-pill);
+  background: var(--red); color: var(--on-accent); font-family: var(--font-mono);
   font-size: 10.5px; font-weight: 700; text-align: center;
 }
 
@@ -354,12 +361,12 @@
 .recBody b { display: block; font-size: 12.5px; font-weight: 800; }
 .recBody small { display: block; margin-top: 2px; color: var(--ink-mute); font-size: 11px; }
 .resTag {
-  flex: 0 0 auto; padding: 1px 7px; border-radius: 999px;
+  flex: 0 0 auto; padding: 1px 7px; border-radius: var(--radius-pill);
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
 }
-.resTag[data-r='胜'] { background: color-mix(in srgb, var(--jade) 18%, transparent); color: var(--jade); }
-.resTag[data-r='败'] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
-.resTag[data-r='撤'] { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
+.resTag[data-r='胜'] { background: color-mix(in srgb, var(--jade) 18%, transparent); color: var(--jade-deep); }
+.resTag[data-r='败'] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red-deep); }
+.resTag[data-r='撤'] { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber-deep); }
 
 /* —— 军需 / 装具 / 补给 —— */
 .kv { display: flex; gap: 10px; align-items: baseline; padding: 6px 2px; border-bottom: 1px dashed var(--line); }
@@ -369,7 +376,7 @@
 .kvVal b { font-family: var(--font-mono); font-weight: 700; }
 .gearTag {
   display: inline-block; margin: 0 4px 4px 0; padding: 1px 7px;
-  border: 1px solid var(--line-2); border-radius: 999px; font-size: 11px; color: var(--ink-dim);
+  border: 1px solid var(--line-2); border-radius: var(--radius-pill); font-size: 11px; color: var(--ink-dim);
 }
 .gearTag i { font-style: normal; color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; }
 
@@ -396,7 +403,7 @@
 
 /* 推算读数（不在标定表上的地点）挂牌 */
 .estTag {
-  margin-left: 6px; padding: 0 5px; border-radius: 999px;
+  margin-left: 6px; padding: 0 5px; border-radius: var(--radius-pill);
   border: 1px dashed var(--line-3); color: var(--ink-faint);
   font-size: 10px; font-style: normal; font-weight: 500; letter-spacing: 0.06em;
 }
@@ -408,7 +415,7 @@
 .nowSite {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 11px 12px 12px; border: 1px solid var(--line-2);
-  border-left: 3px solid var(--steel); border-radius: 5px; background: var(--bg-2);
+  border-left: 3px solid var(--steel); border-radius: var(--radius-sm); background: var(--bg-2);
 }
 .nowSiteBody { flex: 1; min-width: 0; }
 .nowSiteBody b { display: block; font-size: 14.5px; font-weight: 800; }
@@ -422,13 +429,13 @@
 
 .picker {
   display: flex; flex-direction: column; gap: 1px; padding: 6px;
-  border: 1px solid var(--line-2); border-radius: 5px;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid var(--line-2); border-radius: var(--radius);
+  background: var(--bg-2);
 }
-.pickerHead { padding: 3px 9px 7px; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.14em; }
+.pickerHead { padding: 3px 9px 7px; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.1em; }
 .pickRow {
   display: flex; align-items: baseline; gap: 8px; width: 100%;
-  padding: 6px 9px; border: 1px solid transparent; border-radius: 4px;
+  padding: 6px 9px; border: 1px solid transparent; border-radius: var(--radius-sm);
   background: transparent; cursor: pointer; text-align: left; transition: background 0.12s, border-color 0.12s;
 }
 .pickRow:hover { background: var(--bg-2); border-color: var(--line-2); }
@@ -451,7 +458,7 @@
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px 6px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius);
   background:
     radial-gradient(120% 90% at 30% 20%, color-mix(in srgb, var(--steel) 7%, transparent), transparent 70%),
     var(--bg-1);
@@ -474,10 +481,10 @@
 }
 .mapNode[data-on='1'] .mapDot { fill: #fff; }
 .mapLabel {
-  fill: var(--ink-2, #b6b3ae);
+  fill: var(--ink-mute);
   font-size: 3.1px; font-weight: 700; letter-spacing: 0.06px;
 }
-.mapNode[data-on='1'] .mapLabel { fill: var(--ink, #e8e6e3); }
+.mapNode[data-on='1'] .mapLabel { fill: var(--ink); }
 .mapR { fill: var(--ink-faint); font-family: var(--font-mono); font-size: 2.6px; }
 /* 「在此」= 剧情此刻走到哪，跟选中态（data-on 那圈呼吸光）不是一回事。
    单开一圈收容色慢转虚线环，名字一并染上 —— 钉在别的格子上查数时，
@@ -488,11 +495,12 @@
   transform-box: fill-box; transform-origin: center;
   animation: mapSpin 24s linear infinite;
 }
-.mapNode[data-here='1'] .mapLabel { fill: var(--jade); }
-.mapNode[data-here='1'] .mapR { fill: color-mix(in srgb, var(--jade) 78%, var(--ink-faint)); }
+/* 图上的字也是字：本色一律走 deep 档（与下一行 amber 那一条同一口径） */
+.mapNode[data-here='1'] .mapLabel { fill: var(--jade-deep); }
+.mapNode[data-here='1'] .mapR { fill: var(--jade-deep); }
 /* 「下一段」压在「在此」之上：两样都占着同一格时（剧情就停在这一格、下一段也在这儿），
    那句话说的是更该照着办的事 —— 环照旧画，字读 amber。 */
-.mapNode[data-next='1'] .mapR { fill: var(--amber); }
+.mapNode[data-next='1'] .mapR { fill: var(--amber-deep); }
 .mapFoot { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .mapFoot > span { display: inline-flex; align-items: center; gap: 4px; }
 @keyframes mapPing {

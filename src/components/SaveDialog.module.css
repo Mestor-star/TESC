@@ -4,7 +4,8 @@
   position: fixed;
   inset: 0;
   z-index: 130;
-  background: rgba(5, 6, 12, 0.72);
+  /* 遮罩走墨紫而不是纯黑：浅底上黑罩发脏，墨紫罩与这一版同调 */
+  background: color-mix(in srgb, var(--ink) 62%, transparent);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -18,8 +19,8 @@
   flex-direction: column;
   background: var(--bg-1);
   border: 1px solid var(--line-3);
-  border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
 }
 
@@ -34,7 +35,7 @@
 .kicker {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
   margin-bottom: 3px;
 }
@@ -58,6 +59,7 @@
 }
 .hint {
   border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
   padding: 9px 12px;
   display: flex;
@@ -67,7 +69,8 @@
   line-height: 1.7;
   color: var(--ink-mute);
 }
-.hint b { color: var(--amber); font-size: 12px; }
+/* 暖阳在浅底上偏亮，压深一档才读得清 */
+.hint b { color: var(--amber-deep); font-size: 12px; }
 
 /* 自动存档信息条 */
 .autoCard {
@@ -75,16 +78,18 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 14px;
-  border: 1px solid var(--line-2);
-  background: rgba(63, 224, 160, 0.05);
+  border: 1px solid color-mix(in srgb, var(--jade) 35%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--jade) 8%, transparent);
   padding: 9px 12px;
 }
 .autoLabel {
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: 0.18em;
-  color: var(--jade);
+  letter-spacing: 0.16em;
+  /* 薄荷本身在浅底上偏淡，掺一点墨紫压深 */
+  color: var(--jade-deep);
   text-transform: uppercase;
 }
 .autoTxt {

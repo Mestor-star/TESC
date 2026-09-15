@@ -33,16 +33,16 @@
   flex: 0 0 auto;
   width: 42px; height: 42px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--bg-2); border: 1px solid var(--line-2); color: var(--ink-mute); cursor: pointer;
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm); color: var(--ink-mute); cursor: pointer;
 }
 .eyeBtn:hover { color: var(--ink); border-color: var(--line-3); }
 
 .tempWrap { display: flex; align-items: center; gap: 12px; }
-.tempWrap input[type='range'] { flex: 1; accent-color: var(--steel); }
+.tempWrap input[type='range'] { flex: 1; --slider: var(--steel); }
 .tempVal {
   flex: 0 0 auto; min-width: 46px; text-align: center;
-  font-family: var(--font-mono); font-size: 12px; color: var(--steel);
-  border: 1px solid var(--line-2); padding: 4px 6px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--steel-deep);
+  border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 4px 6px;
 }
 
 /* 底噪开关：一件「要不要」，不是一档音量 —— 所以摆成一枚开关旁边挂一句说明 */
@@ -51,7 +51,8 @@
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-left: 2px solid color-mix(in srgb, var(--amber) 45%, transparent);
-  background: color-mix(in srgb, var(--bg-2) 40%, transparent);
+  background: var(--bg-2);
+  border-radius: var(--radius-sm);
 }
 .bedSw button { flex: none; }
 .bedSw span { line-height: 1.6; }
@@ -63,13 +64,14 @@
   border: 1px solid var(--line);
   background: var(--bg-2);
   padding: 12px 14px;
+  border-radius: var(--radius-sm);
   font-size: 12.5px;
   line-height: 1.85;
   color: var(--ink-mute);
 }
-.note b { color: var(--amber); }
-.okLine { font-family: var(--font-mono); font-size: 12px; color: var(--jade); word-break: break-all; }
-.errLine { font-family: var(--font-mono); font-size: 12px; color: var(--red); word-break: break-all; }
+.note b { color: var(--amber-deep); }
+.okLine { font-family: var(--font-mono); font-size: 12px; color: var(--jade-deep); word-break: break-all; }
+.errLine { font-family: var(--font-mono); font-size: 12px; color: var(--red-deep); word-break: break-all; }
 
 /* —— 世界书数据管理 —— */
 .grow { flex: 1; }
@@ -85,12 +87,13 @@
   border: 1px solid var(--line-2);
   background: var(--bg-2);
   padding: 12px 14px;
+  border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .importHead { display: flex; align-items: center; gap: 8px; }
-.importHead b { color: var(--amber); letter-spacing: 0.12em; font-size: 11px; }
+.importHead b { color: var(--amber-deep); letter-spacing: 0.12em; font-size: 11px; }
 .importHead span { font-size: 11px; color: var(--ink-faint); }
 .importRow {
   display: flex;
@@ -98,6 +101,7 @@
   gap: 12px;
   border: 1px solid var(--line);
   background: var(--bg-1);
+  border-radius: var(--radius-sm);
   padding: 9px 12px;
 }
 .importInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -107,19 +111,21 @@
 .importAct { flex: 0 0 auto; }
 .confirmNote {
   border-left: 2px solid var(--red);
-  background: rgba(255, 46, 67, 0.07);
+  background: var(--red-soft);
+  border-radius: var(--radius-sm);
   padding: 7px 12px;
   font-size: 12px;
-  color: var(--red);
+  color: var(--red-deep);
   line-height: 1.7;
 }
-.danger { border-color: var(--red) !important; color: var(--red) !important; }
+.danger { border-color: var(--red) !important; color: var(--red-deep) !important; }
 
 /* —— 方案 —— */
 .schemeBox {
   border: 1px solid var(--line);
   background: var(--bg-2);
   padding: 12px 14px;
+  border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -135,6 +141,7 @@
   gap: 10px;
   border: 1px solid var(--line);
   background: var(--bg-1);
+  border-radius: var(--radius-sm);
   padding: 8px 11px;
   cursor: pointer;
 }
@@ -147,9 +154,9 @@
   height: 14px;
   margin-left: 5px;
   padding: 0 4px;
-  border-radius: 999px;
-  background: var(--amber, #ffb347);
-  color: #12131a;
+  border-radius: var(--radius-pill);
+  background: var(--amber);
+  color: var(--ink);
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
@@ -163,7 +170,7 @@
   margin-left: 7px;
   padding: 1px 6px;
   border: 1px solid var(--line-2);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
   color: var(--ink-faint);
   font-family: var(--font-mono);
@@ -179,8 +186,8 @@
    而金边必须跟着「生效」走 —— 否则列表上亮着的那一行和实际生效的那一份能对不上。 */
 .schemeRow.isOn {
   border-color: var(--amber);
-  background: linear-gradient(90deg, rgba(255, 181, 46, 0.10), rgba(255, 181, 46, 0.02) 55%, var(--bg-1));
-  box-shadow: inset 0 0 0 1px rgba(255, 181, 46, 0.35), 0 0 14px rgba(255, 181, 46, 0.16);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 12%, transparent), color-mix(in srgb, var(--amber) 3%, transparent) 55%, var(--bg-1));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 38%, transparent), var(--glow-amber);
   position: relative;
 }
 .schemeRow.isOn::before {
@@ -190,6 +197,7 @@
   top: 0;
   bottom: 0;
   width: 3px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(180deg, var(--amber), var(--amber-deep));
 }
 .onMark {
@@ -197,9 +205,9 @@
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.1em;
-  color: var(--amber);
-  border: 1px solid rgba(255, 181, 46, 0.5);
-  border-radius: 3px;
+  color: var(--amber-deep);
+  border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent);
+  border-radius: var(--radius-pill);
   padding: 1px 6px;
 }
 .schemeRow:hover { border-color: var(--line-3); }
@@ -229,10 +237,10 @@
 .volTop { display: flex; align-items: baseline; gap: 7px; }
 .volTop b { font-size: 12px; color: var(--ink); }
 .volTop i { font-style: normal; letter-spacing: 0.08em; }
-.volTop .num { margin-left: auto; font-size: 12px; color: var(--amber); }
+.volTop .num { margin-left: auto; font-size: 12px; color: var(--amber-deep); }
 .vol input[type='range'] {
   width: 100%;
-  accent-color: var(--amber);
+  --slider: var(--amber);
   height: 18px;
   cursor: pointer;
 }
@@ -243,8 +251,10 @@
 .logRow {
   border: 1px solid var(--line);
   background: var(--bg-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
-.logRow.logBad { border-color: rgba(255, 96, 96, 0.4); }
+.logRow.logBad { border-color: color-mix(in srgb, var(--red) 45%, transparent); }
 .logHead {
   display: flex;
   align-items: center;
@@ -264,7 +274,7 @@
   font-size: 11.5px;
   letter-spacing: 0.02em;
 }
-.logWarnIcon { color: var(--red); flex: none; }
+.logWarnIcon { color: var(--red-deep); flex: none; }
 .logBody {
   border-top: 1px solid var(--line);
   padding: 11px 13px;
@@ -282,23 +292,24 @@
 .logKv span { color: var(--ink-faint); }
 .logKv b { font-weight: 500; color: var(--ink-mute); font-family: var(--font-mono); word-break: break-all; }
 .logBlock { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
-.logBlock > b { color: var(--amber); font-size: 11.5px; letter-spacing: 0.06em; }
+.logBlock > b { color: var(--amber-deep); font-size: 11.5px; letter-spacing: 0.06em; }
 .logHits { display: flex; flex-wrap: wrap; gap: 5px; }
 .logHit {
   border: 1px solid var(--line-2);
   background: var(--bg-2);
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   padding: 1px 6px;
   font-size: 10.5px;
   color: var(--ink-mute);
 }
-.logOk { color: var(--jade); }
-.logNo { color: var(--red); }
+.logOk { color: var(--jade-deep); }
+.logNo { color: var(--red-deep); }
 .logPre {
   max-height: 260px;
   overflow: auto;
   border: 1px solid var(--line);
   background: var(--bg-2);
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
   font-family: var(--font-mono);
   font-size: 11px;

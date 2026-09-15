@@ -1,4 +1,6 @@
-/* ===== 终端外壳：布局 / 导航 / 顶栏 / 通知 ===== */
+/* ===== 终端外壳：布局 / 导航 / 顶栏 / 通知 =====
+   2026-09-15 整体改版：暗底工业 → 晨光浅底。斜切全数换圆角，
+   字距从「宽得像编号」收回到正常读得下去的档。 */
 
 .root {
   position: relative;
@@ -17,20 +19,20 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(255, 46, 67, 0.05), transparent 30%),
+    linear-gradient(180deg, rgba(255, 77, 121, 0.07), transparent 26%),
     var(--bg-1);
   border-right: 1px solid var(--line);
   overflow: hidden;
 }
 
-/* 底部一抹红色警戒斜纹 */
+/* 底部一抹警戒斜纹（浅底上改成糖纸纹：主调 + 白） */
 .rail::after {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 5px;
-  background: repeating-linear-gradient(-45deg, var(--red) 0 12px, #0c0c15 12px 24px);
-  opacity: 0.6;
+  background: repeating-linear-gradient(-45deg, var(--red) 0 12px, #fff 12px 24px);
+  opacity: 0.75;
 }
 
 .brand {
@@ -40,23 +42,25 @@
   padding: 18px 16px 16px;
   border-bottom: 1px solid var(--line);
 }
+/* 角标：粉→紫的渐变，是这一版「次元错位」最小的一处签名（圆角，不再切角）。
+   18px 的「终」是正文字号 —— 字走墨、紫那头走提亮档（见 tokens 的 --on-accent） */
 .brandMark {
   flex: 0 0 auto;
   width: 42px; height: 42px;
   display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  background: linear-gradient(150deg, var(--red), var(--red-deep));
+  color: var(--on-accent);
+  background: linear-gradient(140deg, var(--red), var(--violet-lift));
   font-family: var(--font-mono);
   font-weight: 800;
   font-size: 18px;
+  border-radius: var(--radius-sm);
   box-shadow: var(--glow-red);
-  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
 }
 .brandText b {
   display: block;
   font-size: 13px;
   font-weight: 900;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.06em;
   white-space: nowrap;
 }
 .brandText i {
@@ -64,7 +68,7 @@
   font-style: normal;
   font-family: var(--font-mono);
   font-size: 9.5px;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.14em;
   color: var(--ink-mute);
   margin-top: 3px;
   white-space: nowrap;
@@ -75,14 +79,14 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   padding: 14px 10px;
   overflow-y: auto;
 }
 .navLabel {
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
   padding: 6px 10px 10px;
   text-transform: uppercase;
@@ -98,11 +102,12 @@
   text-align: left;
   padding: 10px 12px;
   border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-mute);
   transition: color var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease-out);
 }
-.navItem:hover { color: var(--ink); background: rgba(255, 255, 255, 0.03); transform: translateX(2px); }
+.navItem:hover { color: var(--ink); background: var(--bg-2); transform: translateX(2px); }
 .navItem__icon {
   display: flex; align-items: center; justify-content: center;
   width: 30px; height: 30px;
@@ -116,7 +121,7 @@
   display: block;
   font-size: 13.5px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   line-height: 1.15;
 }
 .navItem__label i {
@@ -124,7 +129,7 @@
   font-style: normal;
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-faint);
   margin-top: 3px;
@@ -138,26 +143,26 @@
   transition: opacity var(--t-fast);
 }
 
-/* 激活态：左侧红色斜条 + 底部斜切高亮块 */
+/* 激活态：左侧一枚圆头小条 + 淡粉底块（上一版是斜条 + 斜切高亮块） */
 .navItem::before {
   content: "";
   position: absolute;
-  left: 0; top: 20%; bottom: 20%;
+  left: 0; top: 22%; bottom: 22%;
   width: 4px;
+  border-radius: var(--radius-pill);
   background: var(--red);
-  transform: skewX(-18deg);
   opacity: 0;
   transition: opacity var(--t-fast), transform var(--t-mid) var(--ease-out);
+  transform: scaleY(0.4);
 }
 .navItem.isActive {
-  color: #fff;
-  background:
-    linear-gradient(90deg, rgba(255, 46, 67, 0.16), rgba(255, 46, 67, 0.02));
-  border-color: rgba(255, 46, 67, 0.28);
+  color: var(--red-deep);
+  background: linear-gradient(90deg, rgba(255, 77, 121, 0.14), rgba(123, 92, 255, 0.05));
+  border-color: rgba(255, 77, 121, 0.24);
 }
-.navItem.isActive::before { opacity: 1; transform: skewX(-18deg) scaleY(1); }
-.navItem.isActive .navItem__icon { color: var(--red); filter: drop-shadow(0 0 6px rgba(255,46,67,.6)); }
-.navItem.isActive .navItem__idx { opacity: 1; color: var(--red); }
+.navItem.isActive::before { opacity: 1; transform: scaleY(1); }
+.navItem.isActive .navItem__icon { color: var(--red-deep); filter: drop-shadow(0 3px 8px rgba(255, 77, 121, 0.4)); }
+.navItem.isActive .navItem__idx { opacity: 1; color: var(--red-deep); }
 
 /* 未读短信角标：压在行尾，选中态与未选中态都看得见 */
 .navBadge {
@@ -168,22 +173,22 @@
   min-width: 17px;
   height: 17px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-pill);
   background: var(--red);
-  color: #fff;
+  color: var(--on-accent);          /* 10px 的小字，白压在樱粉上只有 3.19:1 */
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
   line-height: 17px;
   text-align: center;
-  box-shadow: 0 0 0 2px var(--bg-deep, rgba(0, 0, 0, 0.4));
+  box-shadow: 0 0 0 2px var(--bg-1);
 }
 
 /* 锁定的视图：暗化 + 悬停露出锁提示 */
 .navItem.isLocked { opacity: 0.5; }
 .navItem.isLocked .navItem__icon { color: var(--ink-mute); }
 .navItem.isLocked:hover { opacity: 0.75; transform: none; }
-.navItem.isLocked .navItem__idx { opacity: 1; color: var(--amber); }
+.navItem.isLocked .navItem__idx { opacity: 1; color: var(--amber-deep); }
 
 .navItem__dot {
   position: absolute;
@@ -191,7 +196,7 @@
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--amber);
-  box-shadow: 0 0 8px var(--amber);
+  box-shadow: 0 0 0 3px rgba(255, 159, 46, 0.22);
   animation: blink 1.6s infinite;
 }
 
@@ -203,6 +208,7 @@
   gap: 10px;
   padding: 8px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
   transition: border-color var(--t-fast), background var(--t-fast);
 }
@@ -213,12 +219,12 @@
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono);
   font-weight: 800;
-  color: var(--red);
+  color: var(--red-deep);
   background: var(--red-soft);
-  border: 1px solid rgba(255, 46, 67, 0.4);
+  border: 1px solid rgba(255, 77, 121, 0.35);
+  border-radius: var(--radius-sm);
   font-size: 13px;
   letter-spacing: 0;
-  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 .opMeta { min-width: 0; flex: 1; }
 .opMeta b {
@@ -239,7 +245,8 @@
   width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
   border: 1px solid var(--line-2);
-  background: transparent; color: var(--ink-mute);
+  border-radius: 8px;
+  background: var(--bg-1); color: var(--ink-mute);
   font-size: 14px;
   transition: color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
 }
@@ -266,8 +273,8 @@
   align-items: center;
   gap: 16px;
   padding: 0 22px;
-  background: rgba(12, 12, 21, 0.72);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
   z-index: 4;
 }
@@ -276,20 +283,20 @@
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--red);
+  color: var(--red-deep);
 }
 .tbTitleCn {
   font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 .tbTitleSlash {
   width: 5px; height: 20px;
-  background: var(--red);
-  transform: skewX(-18deg);
+  background: linear-gradient(180deg, var(--red), var(--violet));
+  border-radius: var(--radius-pill);
   flex: 0 0 auto;
 }
 .tbRight { margin-left: auto; display: flex; align-items: center; gap: 10px; }
@@ -302,10 +309,11 @@
   padding: 0 12px;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.03em;
   color: var(--ink-dim);
-  background: var(--bg-2);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
   transition: border-color var(--t-fast), color var(--t-fast);
   white-space: nowrap;
 }
@@ -313,13 +321,13 @@
 .pill .pulseDot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--jade);
-  box-shadow: 0 0 8px var(--jade);
+  box-shadow: 0 0 0 3px rgba(22, 192, 138, 0.22);
 }
-.pill--danger { border-color: rgba(255, 46, 67, 0.5); color: #ffd7dd; background: var(--red-soft); }
-.pill--danger .pulseDot { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulseGlow 1.5s infinite; }
+.pill--danger { border-color: rgba(255, 77, 121, 0.45); color: var(--red-deep); background: var(--red-soft); }
+.pill--danger .pulseDot { background: var(--red); box-shadow: 0 0 0 3px rgba(255, 77, 121, 0.22); animation: pulseGlow 1.5s infinite; }
 
 .clock { min-width: 96px; justify-content: center; }
-.clock .num { font-size: 13px; color: var(--ink); letter-spacing: 0.06em; }
+.clock .num { font-size: 13px; color: var(--ink); letter-spacing: 0.04em; }
 
 /* ---------- 内容舞台 ---------- */
 .screen {
@@ -339,7 +347,7 @@
   min-height: 180px;
   color: var(--ink-faint);
   font-size: 12px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
 }
 
 /* ---------- 内联通知 ---------- */
@@ -363,39 +371,39 @@
   align-items: start;
   padding: 12px 12px 12px 14px;
   color: var(--ink);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 50%),
-    var(--bg-2);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
-  border-radius: 4px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
   animation: toastIn 340ms var(--ease-out) both;
+  overflow: hidden;
 }
 .toast::before {
   content: "";
   position: absolute;
-  left: -1px; top: 0; bottom: 0;
+  left: 0; top: 0; bottom: 0;
   width: 4px;
   background: var(--red);
 }
-.toast__ic { font-size: 20px; line-height: 1; color: var(--red); }
-.toast__txt b { display: block; font-size: 13.5px; font-weight: 800; letter-spacing: 0.02em; }
+.toast__ic { font-size: 20px; line-height: 1; color: var(--red-deep); }
+.toast__txt b { display: block; font-size: 13.5px; font-weight: 800; letter-spacing: 0.01em; }
 .toast__txt span { display: block; font-size: 12px; color: var(--ink-mute); margin-top: 2px; line-height: 1.5; }
 .toast__x {
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none;
+  border-radius: 8px;
   color: var(--ink-faint);
   font-size: 14px;
   transition: color var(--t-fast), background var(--t-fast);
 }
-.toast__x:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+.toast__x:hover { color: var(--ink); background: var(--bg-3); }
 
-.toast--info::before { background: var(--steel); } .toast--info .toast__ic { color: var(--steel); }
-.toast--warn::before { background: var(--amber); } .toast--warn .toast__ic { color: var(--amber); }
-.toast--success::before { background: var(--jade); } .toast--success .toast__ic { color: var(--jade); }
-.toast--danger::before { background: var(--red); } .toast--danger .toast__ic { color: var(--red); }
-.toast--decode::before { background: var(--violet); } .toast--decode .toast__ic { color: var(--violet); }
+.toast--info::before { background: var(--steel); } .toast--info .toast__ic { color: var(--steel-deep); }
+.toast--warn::before { background: var(--amber); } .toast--warn .toast__ic { color: var(--amber-deep); }
+.toast--success::before { background: var(--jade); } .toast--success .toast__ic { color: var(--jade-deep); }
+.toast--danger::before { background: var(--red); } .toast--danger .toast__ic { color: var(--red-deep); }
+.toast--decode::before { background: var(--violet); } .toast--decode .toast__ic { color: var(--violet-deep); }
 .toast--danger { animation: toastIn 340ms var(--ease-out) both, pulseGlow 2.4s infinite; }
 
 @keyframes toastIn {
@@ -414,11 +422,13 @@
 }
 
 /* ---------- 终端启动「弹出」进场 ---------- */
+/* 上一版那一下 brightness(2.7) 是给暗底准备的闪白；浅底上闪白等于闪了个空，
+   改成「从虚到实 + 轻微下沉」—— 落地那一下更轻，也不刺眼。 */
 .bootPop {
   animation: bootPop 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes bootPop {
-  0%   { opacity: 0; transform: scale(0.95) translateY(22px); filter: brightness(2.7); }
-  55%  { opacity: 1; filter: brightness(1.5); }
-  100% { opacity: 1; transform: scale(1) translateY(0); filter: brightness(1); }
+  0%   { opacity: 0; transform: scale(0.96) translateY(18px); filter: blur(6px); }
+  55%  { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
 }

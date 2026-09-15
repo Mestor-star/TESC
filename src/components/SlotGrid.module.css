@@ -13,8 +13,11 @@
   min-height: 132px;
   padding: 12px 13px 11px;
   border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  /* 顶上那层高光：旧版是压在暗底上的白薄片（浅底上等于没有），
+     换成「上白下底的软过渡」—— 白纸浮在浅紫上，同一件事的浅底写法 */
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 55%),
+    linear-gradient(180deg, var(--bg-1), transparent 55%),
     var(--bg-2);
   overflow: hidden;
   transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease-out);
@@ -37,14 +40,14 @@
   letter-spacing: 0.1em;
   color: var(--ink-faint);
 }
-.card.filled .no { color: var(--red); }
+.card.filled .no { color: var(--red-deep); }
 .stamp {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 10px;
   font-family: var(--font-mono);
-  color: var(--jade);
+  color: var(--jade-deep);
 }
 
 /* 已占用：名称 / 时间 / 记录数 */
@@ -104,6 +107,7 @@
   flex-direction: column;
   gap: 7px;
   border: 1px solid var(--line-3);
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
   padding: 8px;
   animation: editIn 180ms var(--ease-out) both;
@@ -120,12 +124,13 @@
 .editRow input.field { flex: 1; padding: 7px 9px; font-size: 12px; }
 .editWarn {
   font-size: 10.5px;
-  color: var(--amber);
+  /* 浅底上的小字压深一档，不然琥珀糊在白纸上 */
+  color: var(--amber-deep);
   line-height: 1.5;
 }
 .overwrite {
   font-size: 10.5px;
-  color: var(--red);
+  color: var(--red-deep);
   line-height: 1.5;
 }
 

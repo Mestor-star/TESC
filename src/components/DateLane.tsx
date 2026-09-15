@@ -50,6 +50,7 @@ import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../l
 import { clampBudget } from '../lib/budget'
 import { cgDirOf, cgIdOf, cgNoteOf, cgVariantId, cgVariantsOf } from '../lib/cg'
 import { clock } from '../lib/format'
+import { inkOf } from '../lib/hue'
 import type { ChatMsg } from '../data/types'
 import {
   applyDirective, dateDirective, extractLiveDisplay, parseDirectorReply, replyDisplayText,
@@ -576,7 +577,7 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                     key={p.id}
                     type="button"
                     className={`chip ${on ? 'chip--on' : ''}`}
-                    style={on ? { borderColor: `${p.hue}88`, color: p.hue } : undefined}
+                    style={on ? { borderColor: `${p.hue}88`, color: inkOf(p.hue) } : undefined}
                     onClick={() => setPick((prev) => (prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
                     data-date-party={p.id}
                     data-date-party-on={on ? '1' : '0'}

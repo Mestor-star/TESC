@@ -333,12 +333,12 @@ export function Dashboard() {
                 cy="100"
                 r="90"
                 fill="none"
-                stroke={sev.color}
+                stroke={sev.tone}
                 strokeWidth="10"
                 strokeLinecap="round"
                 strokeDasharray={CIRC}
                 strokeDashoffset={CIRC * (1 - f)}
-                style={{ filter: `drop-shadow(0 0 8px ${sev.color})` }}
+                style={{ filter: `drop-shadow(0 0 8px ${sev.tone})` }}
               />
             </svg>
             <div className={css.gaugeCenter}>
@@ -398,7 +398,7 @@ export function Dashboard() {
         <div className={css.threat} style={{ borderColor: 'rgba(63,224,160,0.4)', background: 'rgba(63,224,160,0.05)' }}>
           <div className={css.threatHazard} style={{ background: 'repeating-linear-gradient(-45deg, var(--jade) 0 10px, #0b0b13 10px 20px)' }} />
           <div className={css.threatBody}>
-            <b style={{ color: 'var(--jade)' }}>本区观测平稳 · {focusRegion.name}</b>
+            <b style={{ color: 'var(--jade-deep)' }}>本区观测平稳 · {focusRegion.name}</b>
             <p>
               R 值 {focusRegion.r.toFixed(3)} 落在正常区间内，未检出反现实干涉异常（{focusRegion.code}）。
               {focusRegion.threatStage > 0
@@ -407,7 +407,7 @@ export function Dashboard() {
             </p>
           </div>
           <div className={css.threatStage}>
-            <div className="num" style={{ color: 'var(--jade)' }}>{focusRegion.threatStage}</div>
+            <div className="num" style={{ color: 'var(--jade-deep)' }}>{focusRegion.threatStage}</div>
             <div className="tiny muted" style={{ letterSpacing: '0.2em' }}>STAGE</div>
           </div>
         </div>
@@ -507,7 +507,7 @@ export function Dashboard() {
                         data-on={on ? '1' : undefined}
                         data-here={here ? '1' : undefined}
                         data-next={isNext ? '1' : undefined}
-                        style={{ '--c': rs.color } as CSSProperties}
+                        style={{ '--c': rs.tone } as CSSProperties}
                         onClick={() => { setFocusId(reg.id); setPickerOpen(false) }}
                       >
                         <title>{`${reg.name}（${reg.code}）· R ${reg.r.toFixed(3)} · 危险度 S${reg.threatStage}\n${reg.note}`}</title>
@@ -556,7 +556,7 @@ export function Dashboard() {
                       className="meter__fill"
                       style={{
                         width: `${clamp((focusRegion.r - 0.8) / 0.3, 0, 1) * 100}%`,
-                        background: `linear-gradient(90deg, ${sev.color}55, ${sev.color})`,
+                        background: `linear-gradient(90deg, ${sev.tone}55, ${sev.tone})`,
                       }}
                     />
                   </div>
@@ -669,7 +669,7 @@ export function Dashboard() {
             <span className="panel__title">通讯中枢 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               {unreadTotal > 0
-                ? <span style={{ color: 'var(--red)' }}>{unreadTotal} 条未读</span>
+                ? <span style={{ color: 'var(--red-deep)' }}>{unreadTotal} 条未读</span>
                 : `${metCount} 位可联络`}
             </span>
           </PanelHead>
@@ -752,7 +752,7 @@ export function Dashboard() {
             <div className={css.kv}>
               <span className={css.kvKey}>终末点数</span>
               <span className={css.kvVal}>
-                <b style={{ color: 'var(--amber)' }}>{live.coin}</b>
+                <b style={{ color: 'var(--amber-deep)' }}>{live.coin}</b>
                 <span className="tiny muted"> · 出击与扫荡的结算货币</span>
               </span>
             </div>
@@ -845,9 +845,11 @@ export function Dashboard() {
           </PanelHead>
           <div className="panel__body" data-fold-body>
             {[
-              { k: '终末图鉴', n: codexDone, all: CODEX.length, go: 'codex' as const, c: 'var(--red)' },
-              { k: '角色档案', n: metCount, all: PERSON_IDS.length, go: 'archive' as const, c: 'var(--steel)' },
-              { k: '时间线', n: doneCount, all: TIMELINE.length, go: 'saga' as const, c: 'var(--amber)' },
+              /* 本色在这一行当字用（读数）又当底用（条）—— 两处都走 `-deep`：
+                 条深一档在浅底上反而更实，字则非深不可读 */
+              { k: '终末图鉴', n: codexDone, all: CODEX.length, go: 'codex' as const, c: 'var(--red-deep)' },
+              { k: '角色档案', n: metCount, all: PERSON_IDS.length, go: 'archive' as const, c: 'var(--steel-deep)' },
+              { k: '时间线', n: doneCount, all: TIMELINE.length, go: 'saga' as const, c: 'var(--amber-deep)' },
             ].map((row) => (
               <div key={row.k} className={css.pRow}>
                 <div className={css.pRowHead}>

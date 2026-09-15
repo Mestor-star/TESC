@@ -10,14 +10,14 @@
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.012);
+  background: var(--bg-2);
   color: inherit;
   font: inherit;
   text-align: left;
   padding: 10px 14px;
   cursor: pointer;
 }
-.headBtn:hover { background: rgba(255, 255, 255, 0.035); }
+.headBtn:hover { background: var(--bg-3); }
 .headBtn:focus-visible { outline: 1px solid var(--line-3); outline-offset: -1px; }
 
 /* 卡片式栏头（智库的手册那一节、图鉴的分类……）：
@@ -41,12 +41,12 @@
   padding: 3px 5px;
   background: none;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: inherit;
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out);
 }
-.iconBtn:hover { background: rgba(255, 255, 255, 0.06); }
+.iconBtn:hover { background: var(--bg-3); }
 .iconBtn:hover .chev { color: var(--ink); }
 .iconBtn:focus-visible { outline: 1px solid var(--line-3); outline-offset: -1px; }
 

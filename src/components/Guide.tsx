@@ -22,6 +22,7 @@ import { guideVoiceOf, markDone, nextTour, skipTutorial } from '../lib/guide'
 import type { GuideLine, GuideTour } from '../lib/guide'
 import { useTerminal } from '../terminal/Terminal'
 import { Portrait } from './Portrait'
+import { inkOf } from '../lib/hue'
 
 import css from './Guide.module.css'
 
@@ -285,7 +286,7 @@ export function Guide() {
               <div className={css.body}>
                 {v ? (
                   <div className={css.who}>
-                    <b style={{ color: v.hue }}>{v.name}</b>
+                    <b style={{ color: inkOf(v.hue) }}>{v.name}</b>
                   </div>
                 ) : null}
                 <ul className={css.lines}>

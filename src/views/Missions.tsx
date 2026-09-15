@@ -89,10 +89,10 @@ const PATROL_OPEN_AT = 'v1-5'
 const SQUAD_MAX = TUNING.squadMax
 
 const STATUS_META: Record<LocalStatus, { cls: string; color: string; label: string }> = {
-  待接取: { cls: 'chip', color: 'var(--steel)', label: '待接取' },
-  已派遣: { cls: 'chip chip--warn', color: 'var(--amber)', label: '已派遣' },
-  压制中: { cls: 'chip chip--danger', color: 'var(--red)', label: '压制中' },
-  完成: { cls: 'chip chip--on', color: 'var(--jade)', label: '已完成' },
+  待接取: { cls: 'chip', color: 'var(--steel-deep)', label: '待接取' },
+  已派遣: { cls: 'chip chip--warn', color: 'var(--amber-deep)', label: '已派遣' },
+  压制中: { cls: 'chip chip--danger', color: 'var(--red-deep)', label: '压制中' },
+  完成: { cls: 'chip chip--on', color: 'var(--jade-deep)', label: '已完成' },
   锁定: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '等待签署' },
 }
 
@@ -706,7 +706,7 @@ export function Missions() {
       {/* 巡逻任务未放行：先走正史，脏器公寓一案结清后才派单 */}
       {!patrolOpen ? (
         <div className={css.empty} data-patrol-locked>
-          <div style={{ fontSize: 15, letterSpacing: '0.14em', color: 'var(--amber)' }}>巡逻区尚未放行</div>
+          <div style={{ fontSize: 15, letterSpacing: '0.14em', color: 'var(--amber-deep)' }}>巡逻区尚未放行</div>
           <div className="mono tiny" style={{ letterSpacing: '0.2em', marginTop: 8 }}>
             可刷新任务将在主线「{patrolOpenTitle}」结清后开放 · 眼下只走主线
           </div>

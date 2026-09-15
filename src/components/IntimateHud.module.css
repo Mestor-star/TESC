@@ -1,10 +1,12 @@
-/* 色情状态栏 —— 摆在输入框上方的一行「此刻」。
-   颜色一律走 tokens（红＝情欲那一根读数，钢/琥珀＝衣物与湿润那两档）。 */
+/* 色情状态栏 —— 摆在输入框上方的一行「此刻」，也是约会右栏翻过来的那一面。
+   颜色一律走 tokens：这一栏是暖的那一半（玫瑰＝情欲那一根读数，紫＝档位词，
+   钢＝衣物与湿润那两档）。玫瑰与私密档案同一支 —— 翻到哪儿都是同一间房。 */
 
 .hud {
-  border: 1px solid var(--line-2);
-  border-left: 2px solid var(--red);
-  background: color-mix(in srgb, var(--red) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rose) 30%, var(--line-2));
+  border-left: 2px solid var(--rose);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--rose) 7%, transparent);
   padding: 8px 10px;
   margin-bottom: 8px;
 }
@@ -39,12 +41,12 @@
 }
 
 .lewdNum {
-  color: var(--red);
+  color: var(--rose-deep);
   font-size: 14px;
 }
 
 .lewdWord {
-  color: var(--amber);
+  color: var(--violet-deep);
   font-style: normal;
   font-size: 11px;
 }
@@ -75,7 +77,7 @@
 }
 
 .wet {
-  color: var(--steel);
+  color: var(--steel-deep);
 }
 
 /* 折叠态：窄屏下把动作那一句压成一行，别让它把输入框顶到屏幕外 */

@@ -6,12 +6,24 @@ export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v))
 }
 
+/* 严重度返的是**两支**色，对应 tokens.css 那两档（见那儿的长注释）：
+     `color` —— 当**字**用（读数、标签）：走 `-deep`，白底上读得清
+     `tone`  —— 当**底/线**用（描边、投影、进度条填充、状态点）：走原色，够艳
+   两样都带，是为了让调用处自己挑 —— 只给一支的话，要么字数看不清、要么圆环发闷。
+   带 `cls` 的那几处直接用类（`.sev-ok/.sev-warn/.sev-hi`），类里已经是 deep 档。 */
+export interface Severity {
+  cls: 'sev-ok' | 'sev-warn' | 'sev-hi'
+  color: string
+  tone: string
+  label: string
+}
+
 /** 终末 Stage 0-10 → 视觉严重度（低/中/高/极） */
-export function stageSeverity(stage: number): { cls: 'sev-ok' | 'sev-warn' | 'sev-hi'; color: string; label: string } {
-  if (stage <= 2) return { cls: 'sev-ok', color: 'var(--steel)', label: '低' }
-  if (stage <= 4) return { cls: 'sev-warn', color: 'var(--amber)', label: '中' }
-  if (stage <= 6) return { cls: 'sev-hi', color: 'var(--red)', label: '高' }
-  return { cls: 'sev-hi', color: '#ff5470', label: '极危' }
+export function stageSeverity(stage: number): Severity {
+  if (stage <= 2) return { cls: 'sev-ok', color: 'var(--steel-deep)', tone: 'var(--steel)', label: '低' }
+  if (stage <= 4) return { cls: 'sev-warn', color: 'var(--amber-deep)', tone: 'var(--amber)', label: '中' }
+  if (stage <= 6) return { cls: 'sev-hi', color: 'var(--red-deep)', tone: 'var(--red)', label: '高' }
+  return { cls: 'sev-hi', color: 'var(--red-deep)', tone: 'var(--red)', label: '极危' }
 }
 
 /**
@@ -20,11 +32,11 @@ export function stageSeverity(stage: number): { cls: 'sev-ok' | 'sev-warn' | 'se
  * 且偏离越远越重。早先只判偏低一侧，R 值偏高会掉进「中危」那一档被当成轻微 —— 那是不对的。
  * 区间取 data/types.ts 的 R_NORMAL_LO / R_NORMAL_HI，勿在此另写一份。
  */
-export function rSeverity(r: number): { cls: 'sev-ok' | 'sev-warn' | 'sev-hi'; color: string; label: string } {
+export function rSeverity(r: number): Severity {
   const out = rOutOf(r)
-  if (out === 0) return { cls: 'sev-ok', color: 'var(--steel)', label: '稳定' }
-  if (out <= R_SEVERE_OUT) return { cls: 'sev-warn', color: 'var(--amber)', label: '轻度异常' }
-  return { cls: 'sev-hi', color: 'var(--red)', label: '重度异常' }
+  if (out === 0) return { cls: 'sev-ok', color: 'var(--steel-deep)', tone: 'var(--steel)', label: '稳定' }
+  if (out <= R_SEVERE_OUT) return { cls: 'sev-warn', color: 'var(--amber-deep)', tone: 'var(--amber)', label: '轻度异常' }
+  return { cls: 'sev-hi', color: 'var(--red-deep)', tone: 'var(--red)', label: '重度异常' }
 }
 
 /** 羁绊目标角色的性别视角：女性高羁绊 → 恋爱类称谓；男性 → 友情类；缺省/未知 → 中性旧文案 */

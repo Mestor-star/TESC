@@ -9,9 +9,9 @@ import { LoreManager } from './lorebook/LoreManager'
 import css from './Lore.module.css'
 
 const CATS: { key: LoreCat; label: string; color: string }[] = [
-  { key: '世界观', label: '世界观 · 世界运行的规则', color: 'var(--steel)' },
-  { key: '势力', label: '势力 · 组织与机构', color: 'var(--amber)' },
-  { key: '概念', label: '概念 · 术语与法理', color: 'var(--violet)' },
+  { key: '世界观', label: '世界观 · 世界运行的规则', color: 'var(--steel-deep)' },
+  { key: '势力', label: '势力 · 组织与机构', color: 'var(--amber-deep)' },
+  { key: '概念', label: '概念 · 术语与法理', color: 'var(--violet-deep)' },
 ]
 
 const secHead: CSSProperties = {

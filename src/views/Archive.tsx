@@ -34,6 +34,7 @@ import { relTier as relTierOf } from '../data/rel'
 import { Portrait, useCharImg } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
 import { intimArtDir } from '../lib/rendezvous'
+import { inkOf } from '../lib/hue'
 
 import css from './Archive.module.css'
 
@@ -145,7 +146,9 @@ function buildRows(): Row[] {
           axis: AXIS_ORDER.map((k) => axisOf(c, k)),
           axisLimit: AXIS_ORDER.map((k) => c.stats.find((x) => x.key === k)?.limit ?? null),
           gender: personOf(c.id)?.gender ?? '?',
-          hue: c.hue,
+          /* 本色当装饰照旧、当文字要压深 —— 在**取色这一步**过一次 inkOf，
+             下游的铭牌 / 羁绊 / 关系档 / 进度条就都跟着对了（见 lib/hue.ts） */
+          hue: inkOf(c.hue),
           sigil: c.sigil,
           stationNote: c.stationNote,
         })
@@ -154,7 +157,7 @@ function buildRows(): Row[] {
       const e = side.get(id)
       if (e) {
         const idx = sideIndex.get(id) ?? 0
-        const hue = SIDE_PALETTE[idx % SIDE_PALETTE.length]
+        const hue = inkOf(SIDE_PALETTE[idx % SIDE_PALETTE.length])
         rows.push({
           kind: 'side',
           id: e.id,
@@ -918,7 +921,8 @@ export function Archive() {
   const opFace = useCharImg('operator', 'face')
   const opArt = useCharImg('operator', 'full')
   /** 全图查看器要看的那个人（没有 Row 可借，就地拼一个） */
-  const opTarget: ViewTarget = { id: 'operator', name, hue: '#ff2e43', sigil: '心' }
+  /* 操作员那一枚：本色取全站主调（与 tokens 的 `--red` 同源），照旧过一次 inkOf */
+  const opTarget: ViewTarget = { id: 'operator', name, hue: inkOf('#ff4d79'), sigil: '心' }
   const [opOpen, setOpOpen] = useState(false)
   /** 作战中装的装具：档案里的面板要把当前编成一并算上 */
   const [equip, setEquip] = useState<Record<string, string>>({})
@@ -1093,7 +1097,7 @@ export function Archive() {
           五轴标尺：10 ≈ 普通成年人的该轴水准；精锐约 45–80；超规格约 110–130；量表读数到 200 为止（那是档案给的格子，不是能力的天花板——越过基准的另标「超限」）；『∞』表示该轴已超出委员会可评定范围（无法测量），读数以满格示出。
           <br />
           每轴并记两值：<b style={{ color: 'var(--ink-dim)' }}>常态</b>（紫条 · 平常态可测体评）与
-          <b style={{ color: 'var(--red)' }}>极限</b>（红条 · 机制全开／变身／限时爆发下的最强表现），读数为「常态/极限」。
+          <b style={{ color: 'var(--red-deep)' }}>极限</b>（红条 · 机制全开／变身／限时爆发下的最强表现），读数为「常态/极限」。
           红条只在极限确实高于常态时露出——重合处仍读常态；两值皆不可测者记『∞/∞』。未登记极限的轴退回单值。
         </div>
 
@@ -1109,7 +1113,6 @@ export function Archive() {
               height={84}
               eager
               className={css.opFace}
-              style={{ borderRadius: 0 }}
             />
           ) : (
             <div className={css.opGlyph}>{name.slice(0, 1).toUpperCase()}</div>
@@ -1334,7 +1337,7 @@ export function Archive() {
                         </div>
 
                         <div className={css.bondRow}>
-                          <span className={css.bondName} style={{ color: r.hue, borderColor: `${r.hue}88`, background: `${r.hue}1e` }}>
+                          <span className={css.bondName} style={{ color: inkOf(r.hue), borderColor: `${r.hue}88`, background: `${r.hue}1e` }}>
                             当前羁绊 {bondName(bond, { gender: r.gender })} · {bond}
                           </span>
                         </div>
@@ -1393,7 +1396,7 @@ export function Archive() {
                       {focus.kicker} · {focus.groupLabel}
                     </small>
                     <h3>{focus.name}</h3>
-                    <div style={{ color: focus.hue, fontSize: 13, marginTop: 2 }}>{focus.epithet}</div>
+                    <div style={{ color: inkOf(focus.hue), fontSize: 13, marginTop: 2 }}>{focus.epithet}</div>
                   </div>
                   <button className={css.dialogClose} onClick={close} aria-label="关闭">
                     <X size={18} weight="bold" />
@@ -1477,7 +1480,7 @@ export function Archive() {
                     />
                   </div>
                   <div>
-                    <span className={css.bondName} style={{ color: focus.hue, borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }}>
+                    <span className={css.bondName} style={{ color: inkOf(focus.hue), borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }}>
                       {bondNow(focus.id)} · {bondName(bondNow(focus.id), { gender: focus.gender })}
                     </span>
                     {/* 关系档位与羁绊并列摆在这儿 —— 但它们是两回事：上面那条是读数
@@ -1486,7 +1489,7 @@ export function Archive() {
                     <span
                       className={css.relBadge}
                       style={focusRel
-                        ? { color: focus.hue, borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }
+                        ? { color: inkOf(focus.hue), borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }
                         : undefined}
                       data-archive-rel={focusRel?.id ?? ''}
                       title={REL_UNSET}
@@ -1502,7 +1505,7 @@ export function Archive() {
                   if (!c || bondNow(focus.id) < 100) return null
                   return (
                     <div className={css.bondConfirm} data-bond-confirm={focus.id} style={{ borderColor: `${focus.hue}55` }}>
-                      <b style={{ color: focus.hue }}>{c.title}</b>
+                      <b style={{ color: inkOf(focus.hue) }}>{c.title}</b>
                       <p>{c.body}</p>
                     </div>
                   )

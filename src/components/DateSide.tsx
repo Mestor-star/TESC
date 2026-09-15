@@ -35,6 +35,7 @@ import { hasIntimate } from '../data/intimate'
 import { relTier } from '../data/rel'
 import { bondName } from '../lib/format'
 import { dateWearId, rvAllIds } from '../lib/rendezvous'
+import { inkOf } from '../lib/hue'
 import type { Rendezvous } from '../lib/rendezvous'
 import { CgSlot } from './CgSlot'
 
@@ -109,7 +110,7 @@ export function DateSide({ rv }: { rv: Rendezvous }) {
             </div>
 
             <div className={css.meta}>
-              <b className={css.name} style={{ color: p.hue }}>
+              <b className={css.name} style={{ color: inkOf(p.hue) }}>
                 {p.name}
                 {p.main ? <i className={css.mainTag}>主位</i> : null}
               </b>
@@ -125,7 +126,7 @@ export function DateSide({ rv }: { rv: Rendezvous }) {
               <div className={css.tags}>
                 <span
                   className={css.bond}
-                  style={{ color: p.hue, borderColor: `${p.hue}88`, background: `${p.hue}1e` }}
+                  style={{ color: inkOf(p.hue), borderColor: `${p.hue}88`, background: `${p.hue}1e` }}
                 >
                   {p.bond} · {p.bondWord}
                 </span>
@@ -135,7 +136,7 @@ export function DateSide({ rv }: { rv: Rendezvous }) {
                   className={css.rel}
                   data-date-person-rel={p.tier?.id ?? ''}
                   title={REL_UNSET}
-                  style={p.tier ? { color: p.hue, borderColor: `${p.hue}88`, background: `${p.hue}1e` } : undefined}
+                  style={p.tier ? { color: inkOf(p.hue), borderColor: `${p.hue}88`, background: `${p.hue}1e` } : undefined}
                 >
                   关系 · {p.tier?.name ?? '尚未定下'}
                 </span>

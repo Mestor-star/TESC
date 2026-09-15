@@ -9,6 +9,7 @@ import { TIMELINE, CHAR_ORDER } from '../data/timeline'
 import { rosterRowOf, rosterRowsFor } from '../lib/cast'
 import { personOf } from '../data/castmeta'
 import { clock } from '../lib/format'
+import { inkOf } from '../lib/hue'
 import type { RecordMode } from '../data/types'
 
 import css from './Saga.module.css'
@@ -193,7 +194,8 @@ export function Saga() {
                             <div className="meter__fill" style={{ width: `${cur}%`, background: `linear-gradient(90deg, ${c.hue}55, ${c.hue})` }} />
                           </div>
                         </div>
-                        <span className={css.charVal} style={{ color: met ? c.hue : 'var(--ink-faint)' }}>
+                        {/* 与右下那一栏同一个写法：本色当字要先过 inkOf（见 lib/hue.ts） */}
+                        <span className={css.charVal} style={{ color: met ? inkOf(c.hue) : 'var(--ink-faint)' }}>
                           {met ? cur : '?'}
                           {met && off !== 0 ? (
                             <i className={css.miniOff} style={{ color: off > 0 ? 'var(--jade)' : 'var(--red)' }}>
@@ -302,7 +304,7 @@ export function Saga() {
                 const off = offsetOf(id)
                 return (
                   <div key={id} className={css.bondRow} style={{ opacity: met ? 1 : 0.45 }}>
-                    <span className={css.nm} style={{ color: met ? c.hue : 'var(--ink-faint)' }}>
+                    <span className={css.nm} style={{ color: met ? inkOf(c.hue) : 'var(--ink-faint)' }}>
                       {met ? c.name : '？？？'}
                     </span>
                     {met ? (
@@ -310,7 +312,7 @@ export function Saga() {
                         <div className="meter" style={{ height: 6 }}>
                           <div className="meter__fill" style={{ width: `${v}%`, background: `linear-gradient(90deg, ${c.hue}55, ${c.hue})` }} />
                         </div>
-                        <span className={css.val} style={{ color: c.hue }}>
+                        <span className={css.val} style={{ color: inkOf(c.hue) }}>
                           {v}
                           {off !== 0 ? (
                             <i className={css.miniOff} style={{ color: off > 0 ? 'var(--jade)' : 'var(--red)' }}>{off > 0 ? `+${off}` : off}</i>

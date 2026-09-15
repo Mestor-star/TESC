@@ -737,7 +737,9 @@ ${preset.post}` : '')
                       className={`${comm.contact} ${activeId === g.id ? comm.isActive : ''}`}
                       onClick={() => enter(g.id)}
                     >
-                      <span className="glyph" style={{ '--g': 205, width: 40, height: 40 }}>
+                      {/* `--g` 要的是**颜色**（.glyph 拿它掺白当底）。这里从前写的是裸数字
+                          `205`，color-mix 不认，背景当场失效 —— 群聊纹章一直是没底的 */}
+                      <span className="glyph" style={{ '--g': 'var(--violet)', width: 40, height: 40 }}>
                         <span>群</span>
                       </span>
                       <span className={comm.contactMain}>
@@ -865,7 +867,7 @@ ${preset.post}` : '')
               <div className={comm.chatHead}>
                 {/* 群聊没有一张脸可摆（成员各有各的），照旧用「群」字纹章 */}
                 {activeGroup ? (
-                  <span className="glyph" style={{ '--g': 205, width: 44, height: 44 }}>
+                  <span className="glyph" style={{ '--g': 'var(--violet)', width: 44, height: 44 }}>
                     <span>群</span>
                   </span>
                 ) : (

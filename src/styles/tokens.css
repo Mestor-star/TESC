@@ -1,51 +1,115 @@
 /* ============================================================
    终末停滞委员会 · 停滞观测终端 — 设计系统 / 全局样式
-   视觉语言：斜切排版 + 红黑撞色 + 明黄警戒 + 工业网格终端
-   参考：女神异闻录5 / 弹丸论破 / 明日方舟：终末地
+   视觉语言：晨光浅底 + 樱粉主调 × 次元紫 / 天青撞色 + 圆角块 + 错位重影
+   参考：青春校园日常 / 平行世界恋爱 / 异能折射光
+
+   —— 2026-09-15 整体改版（「次元错位恋人」那一版）——
+   上一版是「斜切排版 + 红黑撞色 + 工业网格终端」（女神异闻录5 / 终末地那一挂）。
+   这一版把**外形**整个换掉，**一个字文案都没动**（主人 2026-09-15 拍的口径）。
+
+   两条约定，改这一页的人先读：
+   1. **变量名与类名一律照旧** —— `--red` 仍叫 `--red`、`.slant` 仍叫 `.slant`，
+      哪怕名字在今天已经名不副实（樱粉不叫红、斜切早就不斜了）。
+      全仓三百多处引用靠这些名字活着，改名是另一件事，别顺手做。
+      名字与今天的含义对不上的，就地加一行注释说清「它此刻是什么」。
+   2. **新代码别再硬写颜色** —— 这一版把散在三十个 module 里的硬写色收回来一批，
+      剩下的也都有对应的变量可用（见下面「语义别名」一栏）。
    ============================================================ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* —— 基底 —— */
-  --bg-0: #07070c;
-  --bg-1: #0c0c15;
-  --bg-2: #12121f;
-  --bg-3: #191a2b;
-  --bg-4: #21233a;
-  --line: #232438;
-  --line-2: #343652;
-  --line-3: #484a6d;
+  /* —— 基底（晨光浅底：白里带一点紫，不是纯白 —— 纯白配彩字会刺） —— */
+  --bg-0: #fbfaff;
+  --bg-1: #ffffff;
+  --bg-2: #f5f3fc;
+  --bg-3: #ebe7f8;
+  --bg-4: #ded8f1;
+  --line: #e7e3f5;
+  --line-2: #d4ceec;
+  --line-3: #b6aedc;
 
-  /* —— 文本 —— */
-  --ink: #edebf6;
-  --ink-dim: #c2bfd2;
-  --ink-mute: #87859c;
-  --ink-faint: #5d5b70;
+  /* —— 文本（墨紫黑：比纯黑软，压得住粉与紫） —— */
+  --ink: #241f3a;
+  --ink-dim: #4b4468;
+  --ink-mute: #7a7295;
+  --ink-faint: #a49dbc;
 
-  /* —— 主题色 —— */
-  --red: #ff2e43;        /* 主警示红（P5） */
-  --red-deep: #cf1d31;
-  --red-soft: rgba(255, 46, 67, 0.14);
-  --amber: #ffb52e;      /* 明黄警戒（终末地） */
-  --amber-deep: #e08f00;
-  --steel: #58c6ff;      /* 信息蓝 / R值稳定 */
-  --jade: #3fe0a0;       /* 达成 / 收容 */
-  --violet: #9c86ff;     /* 低语者・心声解译（操作员个人能力色） */
+  /* —— 主题色 ——
+     每一支都有**两个档**，用法只有一条规矩：
 
-  /* 私密（翻页后的私密档案那一页）：绯红一系 —— 比 --red 软、比 --amber 沉。
-     只用在那一页：底光、抬头、分隔线、读数条。留给「屋里只开了一盏灯」的调子。 */
-  --rose: #e56b8a;
-  --rose-deep: #a8314f;
-  --rose-soft: rgba(229, 107, 138, 0.13);
+       原色（--red / --amber / --steel / --jade / --violet）
+         当**底**用：色块、渐变、边线、投影、meter 填充、图标描边。它们够艳，
+         压在晨光浅底上正是要的那个「刺一下」。
 
-  --glow-red: 0 0 22px rgba(255, 46, 67, 0.35);
-  --glow-amber: 0 0 22px rgba(255, 181, 46, 0.28);
-  --glow-steel: 0 0 20px rgba(88, 198, 255, 0.25);
+       -deep 档（下面那五支）
+         当**字**用。原色都是为了暗底挑的，直接拿来写白底上的小字会糊
+         （量过：--amber 2.05:1、--jade 2.35:1、--steel 2.86:1，连 --red 都只有 3.19:1）。
+         deep 档是**同色相朝 --ink 退到 4.6:1 以上**的那一档 —— 量法与取值的账
+         见 `src/lib/hue.ts` 的 inkOf()（运行时同一把尺）与
+         `scripts/mech/run.ts` §41（把「deep 档必须过线」钉成断言）。
+         底再深一档（--bg-2 / --bg-3）时会掉到 4.2 上下，仍高于粗体小字的 3:1 线。 */
+  --red: #ff4d79;        /* 主调：樱粉。名字里的「红」是旧账 —— 今天它是这套的主色，
+                            同时兼着「危险 / 高警戒」那一档（浅底上它一样扎眼） */
+  --red-deep: #cb426a;
+  --red-soft: rgba(255, 77, 121, 0.12);
+  --amber: #ff9f2e;      /* 放学后的暖阳 / 提醒 */
+  --amber-deep: #a06733;
+  --steel: #2f9ff0;      /* 天青：信息 / R值稳定 / 次元那一侧的光 */
+  --steel-deep: #2c78b9;
+  --jade: #16c08a;       /* 薄荷：达成 / 收容 */
+  --jade-deep: #1b836c;
+  --violet: #7b5cff;     /* 次元紫：异能 / 低语者 / 操作员个人能力色。
+                            与 --steel 配成一对「错位的两界」—— 重影、渐变、
+                            棱镜都从这两个色里取 */
+  --violet-deep: #7759f6;
+
+  /* —— 本色当底时，压在底上的字 ——
+     上面那条规矩说的是「本色当字」；这里是它的**镜面那一半**，同样是量出来的：
+     本色当**底**、白字压上去，在晨光浅底下几乎全线塌掉
+     （量过：--amber 上白字 2.05:1、--red 上白字 3.19:1、粉→紫渐变两头 3.19 / 4.36）。
+     旧版之所以配白字，是因为底本来是暗的 —— 换成浅底后这个搭配就作废了。
+
+     所以这一版：**本色一律走亮的那一头，压在上面的字走墨。**
+       · 单色底（--red / --amber）：`color: var(--on-accent)`
+       · 两头渐变：近墨的那一头换成下面两支「提亮档」，否则墨字在紫那头只有 3.62:1
+       · 本色是数据表里带来的（--crew / --g 这类，深浅不可知）：
+         掺白当底，**白要掺到 62% 以上** —— `color-mix(in srgb, var(--x) 30%, #fff)`。
+         这个数是量出来的，不是拍的：掺到 42% 时深色相只给到 3.9:1，
+         掺到 62% 连纯黑当底都有 5.9:1。要更浓的本色就得回到上面那两支固定档。
+     白字全站只剩一处：`.opGlyph`（84px 方块里 30px/800 的姓字）——
+     那是**大字**，线是 3:1，白字在它那两头 3.19 / 4.64 都过。 */
+  --on-accent: #241f3a;                        /* 亮底上的字色＝墨，与 --ink 同值但各管一段 */
+  --red-lift: color-mix(in srgb, var(--red) 88%, #fff);      /* 墨 5.89:1 */
+  --violet-lift: color-mix(in srgb, var(--violet) 80%, #fff); /* 墨 5.00:1 */
+
+  /* 私密（翻页后的私密档案那一页）：玫瑰一系 —— 比 --red 沉、比 --amber 冷。
+     只用在那一页：底光、抬头、分隔线、读数条。浅底上它是**一屋子粉色晨光**，
+     与全站的冷紫底色分开，翻过去就知道进了另一间房。 */
+  --rose: #e2547e;
+  --rose-deep: #b03a5f;
+  --rose-soft: rgba(226, 84, 126, 0.10);
+
+  /* —— 辉光 → 柔影（浅底的「发光」是彩色投影，不是暗底上的霓虹） —— */
+  --glow-red: 0 10px 28px rgba(255, 77, 121, 0.28);
+  --glow-amber: 0 10px 28px rgba(255, 159, 46, 0.26);
+  --glow-steel: 0 10px 26px rgba(47, 159, 240, 0.22);
+  --glow-violet: 0 10px 28px rgba(123, 92, 255, 0.26);
+
+  /* 通用投影 / 错位重影 —— 新代码优先用这几把，别再手写 rgba(0,0,0,…) */
+  --shadow-1: 0 2px 8px rgba(36, 31, 58, 0.06);
+  --shadow-2: 0 10px 28px rgba(36, 31, 58, 0.10);
+  --shadow-3: 0 18px 48px rgba(36, 31, 58, 0.14);
+  /* 「次元错位」的签名：一点淡青、一点淡粉，错开两像素叠在字上 */
+  --duo-shadow: -2px 0 0 rgba(47, 159, 240, 0.30), 2px 0 0 rgba(255, 77, 121, 0.30);
 
   /* —— 字体 —— */
   --font-sans: "Inter", "Inter Fallback", "Microsoft YaHei", "微软雅黑", "PingFang SC", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Consolas", "Microsoft YaHei", monospace;
+  /* 衬线那一支只给**纹章字**用（components/Portrait.tsx 的缺图占位：一个字撑满方格）。
+     从前那一句写的是 `var(--font-serif, serif)` —— 变量压根没声明过，一路走的是兜底，
+     摆在那儿像有得配、其实配不了。声明出来，那一句才名副其实。 */
+  --font-serif: "Songti SC", "宋体", "SimSun", "Georgia", serif;
 
   /* —— 运动 —— */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -56,7 +120,9 @@
   /* —— 版式 —— */
   --rail-w: 236px;
   --topbar-h: 56px;
-  --radius: 6px;
+  --radius: 14px;        /* 圆角是这一版最响的那一个信号：斜切全换成了它 */
+  --radius-sm: 10px;
+  --radius-pill: 999px;
 }
 
 /* ============ 基础 ============ */
@@ -66,9 +132,10 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
+  /* 晨光落进来：右上一点暖粉、左下一点青，底下托一层白 */
   background:
-    radial-gradient(1200px 700px at 78% -10%, rgba(255, 46, 67, 0.08), transparent 60%),
-    radial-gradient(900px 600px at -8% 108%, rgba(156, 134, 255, 0.06), transparent 55%),
+    radial-gradient(1100px 640px at 82% -12%, rgba(255, 77, 121, 0.10), transparent 62%),
+    radial-gradient(900px 620px at -6% 106%, rgba(47, 159, 240, 0.09), transparent 58%),
     var(--bg-0);
   color: var(--ink);
   font-family: var(--font-sans);
@@ -80,63 +147,67 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* 覆盖在整体上的工业网格 + 轻微扫描，营造“终端”质感 */
+/* 覆在整体上的**点阵**（笔记本纸那一层）——
+   上一版这里是工业网格 + 扫描线，压在暗底上像监视器；浅底上换成点阵，
+   是课桌与手账的调子。（mix-blend-mode 也一并去掉：浅底上没有它的用武之地。） */
 .app--stage::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 999;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px) 0 0 / 100% 44px,
-    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px) 0 0 / 44px 100%;
-  mix-blend-mode: screen;
+  background: radial-gradient(rgba(36, 31, 58, 0.055) 1px, transparent 1.2px) 0 0 / 22px 22px;
 }
 
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; }
 input, textarea, select { font-family: inherit; }
 
-::selection { background: var(--red); color: #fff; }
+::selection { background: var(--red); color: var(--on-accent); }
 
 /* 细滚动条 */
 * { scrollbar-width: thin; scrollbar-color: var(--line-3) transparent; }
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb { background: var(--line-3); border: 2px solid transparent; background-clip: padding-box; border-radius: 99px; }
-*::-webkit-scrollbar-thumb:hover { background: var(--red-deep); background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--red); background-clip: padding-box; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-:focus-visible { outline: 1px solid var(--steel); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
 
 /* ============ 字体工具 ============ */
 .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
 .mono { font-family: var(--font-mono); }
-.upperc { text-transform: uppercase; letter-spacing: 0.14em; }
-.tiny { font-size: 11px; letter-spacing: 0.1em; }
+.upperc { text-transform: uppercase; letter-spacing: 0.08em; }
+.tiny { font-size: 11px; letter-spacing: 0.04em; }
 .muted { color: var(--ink-mute); }
 
-/* 标题斜切块：杂志体大字 + 左下/右下斜角 */
+/* 「次元错位」的字：青粉各错开两像素叠一层，像两个世界没对齐 */
+.duo { text-shadow: var(--duo-shadow); }
+
+/* 标题：圆角小贴纸（上一版是左下右下的斜切块）。仍留一点点歪 ——
+   「错位」不是整齐，正着摆反而丢了这一版的味道。 */
 .block-tag {
   display: inline-block;
   font-family: var(--font-mono);
   font-weight: 800;
   font-size: 11px;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--red);
+  color: var(--red-deep);
   background: var(--red-soft);
-  padding: 3px 8px 3px 10px;
-  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  border: 1px solid rgba(255, 77, 121, 0.28);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  transform: rotate(-1.2deg);
 }
 
 /* ============ 通用面板 ============ */
 .panel {
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 40%),
-    var(--bg-1);
+  background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
   overflow: hidden;
 }
 /* 顶部一条主题细线 */
@@ -146,12 +217,12 @@ input, textarea, select { font-family: inherit; }
   gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.012);
+  background: var(--bg-2);
 }
 .panel__title {
   font-weight: 800;
   font-size: 13px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
@@ -171,7 +242,8 @@ input, textarea, select { font-family: inherit; }
   display: none;
 }
 
-/* 边框四角括号（终端 HUD） */
+/* 四角括号（终端 HUD）—— 上一版是直角硬括号，这一版收成圆角小角标，
+   颜色也从主调退到线色：留个「这是个框」的记号就够，不必再喊。 */
 .brc::before, .brc::after {
   content: "";
   position: absolute;
@@ -181,17 +253,19 @@ input, textarea, select { font-family: inherit; }
   z-index: 2;
   border-color: var(--red);
   border-style: solid;
+  opacity: 0.7;
 }
-.brc::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
-.brc::after { right: -1px; bottom: -1px; border-width: 0 2px 2px 0; }
+.brc::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; border-top-left-radius: var(--radius-sm); }
+.brc::after { right: -1px; bottom: -1px; border-width: 0 2px 2px 0; border-bottom-right-radius: var(--radius-sm); }
 .brc--steel::before, .brc--steel::after { border-color: var(--steel); }
 .brc--amber::before, .brc--amber::after { border-color: var(--amber); }
 
-/* ============ 斜切文本条（导航 / 徽标等） ============ */
+/* ============ 文本条（导航 / 徽标等） ============
+   名字里的「斜切」是旧账：当初它是平行四边形的一刀，这一版不再切了。
+   留着这个名字是因为各页都按它写，改名要动三十个文件 —— 不值当。 */
 .slant {
   display: inline-flex;
   align-items: center;
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
 }
 
 /* ============ 按钮 ============ */
@@ -203,41 +277,49 @@ input, textarea, select { font-family: inherit; }
   gap: 8px;
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 9px 16px 9px 20px;
+  letter-spacing: 0.02em;
+  padding: 9px 18px;
   color: var(--ink);
-  background: var(--bg-3);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
   transition: transform var(--t-fast) var(--ease-out), background var(--t-fast), color var(--t-fast),
     border-color var(--t-fast), box-shadow var(--t-fast);
   user-select: none;
 }
-.btn:hover { background: var(--bg-4); border-color: var(--line-3); transform: translateY(-1px); }
+.btn:hover { background: var(--bg-2); border-color: var(--line-3); transform: translateY(-1px); box-shadow: var(--shadow-2); }
 .btn:active { transform: translateY(0) scale(0.97); }
 
 .btn--primary {
-  background: linear-gradient(160deg, var(--red), var(--red-deep));
+  /* 主按钮就是这一版的名字：粉那一头是「恋人」，紫那一头是「次元」。
+     紫那头走提亮档 —— 原色上墨字只有 3.62:1（见 --on-accent 那段）。 */
+  background: linear-gradient(135deg, var(--red), var(--violet-lift));
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
+  box-shadow: 0 8px 22px rgba(255, 77, 121, 0.28);
 }
-.btn--primary:hover { box-shadow: var(--glow-red); filter: brightness(1.08); }
+.btn--primary:hover { box-shadow: 0 12px 30px rgba(123, 92, 255, 0.34); filter: brightness(1.05); }
 
 .btn--amber {
-  background: linear-gradient(160deg, var(--amber), var(--amber-deep));
+  /* 琥珀上是全站最差的一处（白字 2.05:1）—— 这一支从此只走墨字，
+     渐变也只在亮的这一头里走，不往 --amber-deep 那头沉 */
+  background: linear-gradient(135deg, var(--amber), color-mix(in srgb, var(--amber) 78%, #fff));
   border-color: transparent;
-  color: #150d00;
+  color: var(--on-accent);
+  box-shadow: 0 8px 22px rgba(255, 159, 46, 0.28);
 }
-.btn--amber:hover { box-shadow: var(--glow-amber); filter: brightness(1.06); }
+.btn--amber:hover { box-shadow: var(--glow-amber); filter: brightness(1.05); }
 
 .btn--ghost {
   background: transparent;
   border-color: var(--line-2);
+  box-shadow: none;
   color: var(--ink-dim);
 }
-.btn--ghost:hover { color: var(--ink); border-color: var(--line-3); }
+.btn--ghost:hover { color: var(--ink); border-color: var(--line-3); background: var(--bg-2); }
 
-.btn--icon { padding: 8px; clip-path: none; }
+.btn--icon { padding: 8px; border-radius: var(--radius-sm); }
 .btn[disabled] { opacity: 0.45; pointer-events: none; }
 
 /* ============ 徽标 / 芯片 / 阶段 ============ */
@@ -248,33 +330,34 @@ input, textarea, select { font-family: inherit; }
   white-space: nowrap;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.03em;
   line-height: 1;
-  padding: 5px 9px;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
 }
 .badge {
   font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   border: 1px solid currentColor;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.72);
 }
-.chip { background: var(--bg-3); border: 1px solid var(--line-2); border-radius: 999px; color: var(--ink-dim); }
+.chip { background: var(--bg-1); border: 1px solid var(--line-2); border-radius: var(--radius-pill); color: var(--ink-dim); }
 .tag { background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-mute); }
 
 .chip .chip__dot, .badge .badge__dot {
   width: 6px; height: 6px; border-radius: 50%; background: currentColor;
-  box-shadow: 0 0 8px currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
-.chip--on { color: var(--jade); border-color: rgba(63, 224, 160, 0.4); background: rgba(63, 224, 160, 0.08); }
+.chip--on { color: var(--jade-deep); border-color: rgba(22, 192, 138, 0.45); background: rgba(22, 192, 138, 0.10); }
 .chip--off { color: var(--ink-mute); }
-.chip--warn { color: var(--amber); border-color: rgba(255, 181, 46, 0.45); background: rgba(255, 181, 46, 0.08); }
-.chip--danger { color: var(--red); border-color: rgba(255, 46, 67, 0.5); background: var(--red-soft); animation: pulseGlow 1.6s infinite; }
+.chip--warn { color: var(--amber-deep); border-color: rgba(255, 159, 46, 0.5); background: rgba(255, 159, 46, 0.12); }
+.chip--danger { color: var(--red-deep); border-color: rgba(255, 77, 121, 0.45); background: var(--red-soft); animation: pulseGlow 1.6s infinite; }
 
-/* R值正常/异常着色 */
-.sev-ok { color: var(--steel); }
-.sev-warn { color: var(--amber); }
-.sev-hi { color: var(--red); }
+/* R值正常/异常着色（读数都是小字 → 一律走 -deep 档） */
+.sev-ok { color: var(--steel-deep); }
+.sev-warn { color: var(--amber-deep); }
+.sev-hi { color: var(--red-deep); }
 .sev-hi .pulse, .pulse { animation: pulseGlow 1.6s infinite; }
 
 /* ============ 条状仪表 ============ */
@@ -284,7 +367,7 @@ input, textarea, select { font-family: inherit; }
   height: 8px;
   background: var(--bg-3);
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .meter__fill {
@@ -295,7 +378,7 @@ input, textarea, select { font-family: inherit; }
 }
 .meter__fill.is-amber { background: linear-gradient(90deg, var(--amber-deep), var(--amber)); }
 .meter__fill.is-red { background: linear-gradient(90deg, var(--red-deep), var(--red)); }
-.meter__fill.is-jade { background: linear-gradient(90deg, #25c185, var(--jade)); }
+.meter__fill.is-jade { background: linear-gradient(90deg, var(--jade-deep), var(--jade)); }
 .meter--thick { height: 12px; }
 
 /* ============ 键值行 ============ */
@@ -304,39 +387,80 @@ input, textarea, select { font-family: inherit; }
 .kv__v { color: var(--ink); text-align: right; }
 
 /* ============ 危险 / 斜纹 ============ */
+/* 糖果斜条纹：上一版是「黄黑警戒带」压在暗底上。浅底上照旧是警戒，
+   但对手是一整块柔和的白，所以改成「主调 + 白」的糖纸纹，刺眼程度配得上这一版。 */
 .hazard {
-  background:
-    repeating-linear-gradient(-45deg, var(--amber) 0 10px, #101018 10px 20px);
+  background: repeating-linear-gradient(-45deg, var(--amber) 0 10px, #fff 10px 20px);
 }
 .hazard--red {
-  background:
-    repeating-linear-gradient(-45deg, var(--red) 0 10px, #101018 10px 20px);
+  background: repeating-linear-gradient(-45deg, var(--red) 0 10px, #fff 10px 20px);
 }
 .hazard--thin { height: 5px; background-size: 28px 100%; }
 
-/* 透明红斜纹（强调块底色） */
+/* 透明斜纹（强调块底色） */
 .diag-red {
-  background:
-    repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 46, 67, 0.06) 14px 28px);
+  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 77, 121, 0.07) 14px 28px);
 }
 .diag-amber {
-  background:
-    repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 181, 46, 0.07) 14px 28px);
+  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 159, 46, 0.08) 14px 28px);
 }
 
 /* ============ 表单 ============ */
 .field {
   width: 100%;
-  background: var(--bg-2);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
   color: var(--ink);
   padding: 10px 12px;
   font-size: 14px;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.field:focus { outline: none; border-color: var(--steel); box-shadow: 0 0 0 3px rgba(88, 198, 255, 0.12); }
+.field:focus { outline: none; border-color: var(--violet); box-shadow: 0 0 0 3px rgba(123, 92, 255, 0.14); }
 .field::placeholder { color: var(--ink-faint); }
 select.field { appearance: none; }
+
+/* 滑杆（设置页那两支温度与音量）—— 从前这块一个字没写，全交给浏览器默认，
+   而默认轨道是**给暗底挑的**深灰：换到晨光浅底上就是横在卡片里的一条黑棍。
+   这里显式画：轨道走淡紫，滑块跟着 `--slider`（缺省天青，调用处各给各的，
+   与原先的 `accent-color` 分工一样）。
+   不引「填过的那一半」那套 —— 滑块自己就报位置，少一处要跟状态同步的东西。 */
+input[type='range'] {
+  --slider: var(--steel);
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  box-sizing: border-box;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+}
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin-top: -3.5px;             /* (轨道 8px − 滑块 15px) / 2，摆正中心 */
+  border-radius: 50%;
+  background: var(--slider);
+  border: 2px solid var(--bg-1);
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--slider) 45%, transparent);
+}
+input[type='range']::-moz-range-track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+}
+input[type='range']::-moz-range-thumb {
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--slider);
+  border: 2px solid var(--bg-1);
+}
 
 /* ============ 角色文字纹章 ============ */
 .glyph {
@@ -350,23 +474,29 @@ select.field { appearance: none; }
   flex: 0 0 auto;
   font-family: var(--font-mono);
   font-weight: 800;
-  color: #fff;
-  background:
-    linear-gradient(150deg, color-mix(in srgb, var(--g) 38%, #101020), #0c0c18 62%);
-  border: 1px solid color-mix(in srgb, var(--g) 55%, transparent);
-  box-shadow: inset 0 0 18px rgba(0,0,0,.4);
-  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  /* 字是墨不是白：这一格只有 17px（`--lg` 也才 26px），够不上大字线 ——
+     而 `--g` 是名册里带来的，深浅不可知，掺白当底之后墨字对谁都过线（见 --on-accent） */
+  color: var(--on-accent);
+  /* 两头都掺到 62% 白以上 —— 这一条是量出来的：掺得不够时，深色相（名册外的
+     `--g` 是外部写进来的）会把墨字压到 3 字头。掺到 62% 白之后连纯黑当底都有 5.9:1 */
+  background: linear-gradient(140deg, color-mix(in srgb, var(--g) 22%, #fff), color-mix(in srgb, var(--g) 38%, #fff));
+  border: 1px solid color-mix(in srgb, var(--g) 42%, transparent);
+  border-radius: 18px;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--g) 22%, transparent);
+  overflow: hidden;
 }
+/* 右下那一道亮边 —— 上一版是斜切块右侧的硬条，这一版收成圆角块上的一抹高光 */
 .glyph::after {
   content: "";
   position: absolute;
-  right: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: color-mix(in srgb, var(--g) 80%, #fff);
+  right: -18%; bottom: -34%;
+  width: 78%; height: 78%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.75), transparent 68%);
   opacity: 0.85;
 }
 .glyph span { position: relative; z-index: 1; font-size: 17px; letter-spacing: -0.02em; }
-.glyph--lg { width: 76px; height: 76px; clip-path: polygon(0 0, 100% 0, calc(100% - 20px) 100%, 0 100%); }
+.glyph--lg { width: 76px; height: 76px; border-radius: 24px; }
 .glyph--lg span { font-size: 26px; }
 
 /* ============ 分隔条 ============ */
@@ -376,19 +506,19 @@ select.field { appearance: none; }
   margin: 14px 0;
   background: linear-gradient(90deg, transparent, var(--line-2) 18%, var(--line-2) 82%, transparent);
 }
-/* 强调斜杠 */
+/* 强调小竖条（名字里的「斜杠」是旧账：从前它 skew(-18deg)，这一版扶正了） */
 .slash {
   display: inline-block;
   width: 4px; height: 1.05em;
   background: var(--red);
-  transform: skewX(-18deg);
+  border-radius: var(--radius-pill);
   margin: 0 8px;
 }
 
 /* ============ 动画 ============ */
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 46, 67, 0); }
-  50% { box-shadow: 0 0 16px 2px rgba(255, 46, 67, 0.45); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 121, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 77, 121, 0.18); }
 }
 @keyframes blink {
   0%, 49% { opacity: 1; }
@@ -429,7 +559,7 @@ select.field { appearance: none; }
 .stagger > *:nth-child(7) { animation-delay: 0.21s; }
 .stagger > *:nth-child(8) { animation-delay: 0.24s; }
 
-/* 光标打字 */
+/* 光标打字（浅底上那一道下划线仍用主调 —— 它是「还在写」的记号） */
 .caret::after {
   content: "_";
   color: var(--red);
@@ -443,7 +573,7 @@ select.field { appearance: none; }
 .hoverable:hover {
   transform: translateY(-3px);
   border-color: var(--line-3);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
 }
 
 /* ============ 响应式 ============ */
@@ -477,12 +607,13 @@ select.field { appearance: none; }
   gap: 10px;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--red);
+  color: var(--red-deep);
 }
-.vhead__kicker::before { content: ""; width: 26px; height: 2px; background: var(--red); }
-.vhead h1 { margin: 6px 0 0; font-size: 30px; font-weight: 900; letter-spacing: 0.03em; line-height: 1.12; }
+.vhead__kicker::before { content: ""; width: 26px; height: 3px; background: var(--red); border-radius: var(--radius-pill); }
+/* 大标题带一层错位重影：青与粉各偏两像素 —— 「次元错位」在这一版里最显眼的一处 */
+.vhead h1 { margin: 6px 0 0; font-size: 32px; font-weight: 900; letter-spacing: 0.01em; line-height: 1.12; text-shadow: var(--duo-shadow); }
 .vhead .vhead__sub { margin-top: 8px; color: var(--ink-mute); font-size: 13.5px; max-width: 560px; }
 .vhead__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -509,9 +640,9 @@ select.field { appearance: none; }
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--steel);
+  color: var(--steel-deep);
   transition: color 0.2s ease, gap 0.2s ease;
 }
-.linkGo:hover { color: var(--red); gap: 10px; }
+.linkGo:hover { color: var(--red-deep); gap: 10px; }

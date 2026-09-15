@@ -54,7 +54,8 @@
 .ledeWho {
   font-size: 12px;
   font-weight: 600;
-  color: var(--amber);
+  /* 浅底上琥珀那一档要压深一档才读得出来 */
+  color: var(--amber-deep);
   letter-spacing: 0.02em;
 }
 .ledeMeta {

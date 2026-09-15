@@ -5,6 +5,7 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--bg-1);
   overflow: hidden;
   display: flex;
@@ -28,7 +29,8 @@
   height: 100%;
   display: block;
   object-fit: cover;
-  background: #0b0e14;
+  /* 图还没落地时透出来的那一层：旧版是暗底黑，浅底上换成软紫 */
+  background: var(--bg-3);
 }
 
 /* 缺图：**不占版位**，塌成一条细提示（缘由见 CgSlot.tsx 文件头）。
