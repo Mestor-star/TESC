@@ -631,7 +631,10 @@ input[type='range']::-moz-range-thumb {
   justify-content: space-between;
   gap: 18px;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
+  padding-bottom: 16px;
+  /* 细线收底 —— 与进门三段那两条「细线夹副标」同族 */
+  border-bottom: 1px solid var(--line);
 }
 .vhead__kicker {
   display: flex;
@@ -648,6 +651,48 @@ input[type='range']::-moz-range-thumb {
 .vhead h1 { margin: 6px 0 0; font-size: 32px; font-weight: 900; letter-spacing: 0.01em; line-height: 1.12; text-shadow: var(--duo-shadow); }
 .vhead .vhead__sub { margin-top: 8px; color: var(--ink-mute); font-size: 13.5px; max-width: 560px; }
 .vhead__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ---- 页头升到「进门三段」那一套话（2026-09-16）----
+   菱形夹标题 · 细线夹 kicker · 细线收底 —— 与开屏 / 标题页 / 顶栏同一枚记号。
+   ⚠️ 装饰**一律挂 `.vhead` 后代**，不写进 `.vhead__kicker` 本体：
+   那个类在 Archive 的立绘卡里还有三处**脱离页头**的小角标用法（`PORTRAIT / 全身`），
+   改本体就会让那三处也长出两条线来。 */
+.vhead .vhead__kicker {
+  gap: 12px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--ink-mute);
+}
+.vhead .vhead__kicker::before,
+.vhead .vhead__kicker::after {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: var(--line-3);
+  border-radius: 0;
+}
+.vhead h1 { position: relative; margin: 10px 0 0; padding: 0 26px; letter-spacing: 0.02em; }
+.vhead h1::before,
+.vhead h1::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  background: linear-gradient(140deg, var(--red), var(--violet-lift));
+  opacity: 0.75;
+  pointer-events: none;
+}
+.vhead h1::before { left: 0; }
+.vhead h1::after { right: 0; }
+.vhead .vhead__sub { margin-top: 9px; max-width: 640px; line-height: 1.75; }
+
+@media (max-width: 720px) {
+  .vhead h1 { font-size: 24px; padding: 0 18px; }
+  .vhead h1::before, .vhead h1::after { width: 7px; height: 7px; margin-top: -3px; }
+  .vhead .vhead__kicker::before, .vhead .vhead__kicker::after { width: 18px; }
+}
 
 .grid { display: grid; gap: 18px; }
 .grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }

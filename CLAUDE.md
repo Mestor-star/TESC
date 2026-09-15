@@ -138,4 +138,12 @@ node scripts/smoke/smoke.mjs   # 全链路冒烟
   才产出 —— 名字没人认领，**动画静默不跑、编译与 lint 都不报错**。2026-09-16 一次扫出
   9 处旧账（App / Boot / Comms / Dashboard / Title）。规矩与成因记在 `tokens.css`
   的「动画」那一节头上。
+- **各视图的统一页头是 `tokens.css` 里那一条 `.vhead`（全局类，不是模块）。** 11 屏里
+  10 屏共用它（`vhead__kicker` / `h1` / `vhead__sub` / `vhead__right`），**只有 Dashboard
+  例外**——它那张 `.hero` 卡自己就是页头，所以只把它的 `heroKicker` / `heroGreet` 对齐
+  成同一套话，没给它加 `.vhead`。2026-09-16 升到「进门三段」那一套：菱形夹标题 +
+  细线夹 kicker + 一条细线收底。
+  ⚠️ **装饰一律挂 `.vhead` 后代（`.vhead .vhead__kicker::before` / `.vhead h1::before`），
+  不许写进 `.vhead__kicker` 本体** —— 那个类在 `Archive.tsx` 的立绘卡里还有三处
+  **脱离页头**的小角标用法（`PORTRAIT / 全身`），改本体就会让那三处也长出两条线来。
 给露娜的webui生图想tag

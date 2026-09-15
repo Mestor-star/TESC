@@ -37,20 +37,49 @@
   user-select: none;
 }
 
+/* kicker 走「细线夹」—— 与各页统一页头（tokens.css 的 .vhead）那一支同一套话。
+   本屏没有 .vhead：这枚 hero 卡自己就是页头（kicker + 大标题 + 引文）。 */
 .heroKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font-size: 10px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--red-deep);
+  color: var(--ink-mute);
+}
+.heroKicker::before,
+.heroKicker::after {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: var(--line-3);
 }
 .heroGreet {
+  position: relative;
   margin: 12px 0 4px;
+  padding: 0 26px;
   font-size: 32px;
   font-weight: 900;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   line-height: 1.18;
 }
+/* 标题两侧各一枚菱形 —— 与 .vhead 的 h1、开屏、标题页同一枚记号 */
+.heroGreet::before,
+.heroGreet::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  background: linear-gradient(140deg, var(--red), var(--violet-lift));
+  opacity: 0.75;
+  pointer-events: none;
+}
+.heroGreet::before { left: 0; }
+.heroGreet::after { right: 0; }
 .heroGreet em {
   font-style: normal;
   color: var(--red-deep);
