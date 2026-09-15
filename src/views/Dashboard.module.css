@@ -132,7 +132,7 @@
   background:
     repeating-linear-gradient(115deg, transparent 0 30px, color-mix(in srgb, var(--red) 8%, transparent) 30px 60px),
     linear-gradient(180deg, color-mix(in srgb, var(--red) 12%, transparent), color-mix(in srgb, var(--red) 3%, transparent));
-  animation: flickerIn 600ms linear both;
+  animation: global(flickerIn) 600ms linear both;
 }
 /* 左侧那一块警戒纹：上一版是「主调 + 近黑」，压在晨光浅底上太沉，
    换成全站的糖纸纹（主调 + 白，见 tokens 的 .hazard）。 */

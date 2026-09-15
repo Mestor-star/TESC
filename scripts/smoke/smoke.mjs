@@ -1649,8 +1649,11 @@ try {
   await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'L title menu')
   await goto('终端连接')
   await poll(`document.body.innerText.includes('返回标题') && !document.querySelector('[data-title="1"]')`, 15000, 'L setup shell mounts')
-  const setupProbe = await ev(`(()=>{const t=document.body.innerText;return {settings:t.includes('终端设置'),back:t.includes('返回标题'),rail:t.includes('Main System'),top:t.includes('配置推演通道'),titleLeft:!!document.querySelector('[data-title="1"]')}})()`)
-  ok('L1 终端连接 → 仅设置一页（含返回标题 · 无侧边栏 Main System）', setupProbe.settings === true && setupProbe.back === true && setupProbe.rail === false && setupProbe.top === true && setupProbe.titleLeft === false, JSON.stringify(setupProbe))
+  /* 侧边栏在不在，认**结构**（`[data-guide="rail"]`），不认它标题那一行字 ——
+     从前这里断的是 `t.includes('Main System')`，2026-09-16 那行字换成中文之后
+     它就会变成一条**永远为真**的空断言（不含这个英文串了嘛），悄悄地不再守门。 */
+  const setupProbe = await ev(`(()=>{const t=document.body.innerText;return {settings:t.includes('终端设置'),back:t.includes('返回标题'),rail:!!document.querySelector('[data-guide="rail"]'),top:t.includes('配置推演通道'),titleLeft:!!document.querySelector('[data-title="1"]')}})()`)
+  ok('L1 终端连接 → 仅设置一页（含返回标题 · 无侧边栏［认 [data-guide="rail"]，不认那行字］）', setupProbe.settings === true && setupProbe.back === true && setupProbe.rail === false && setupProbe.top === true && setupProbe.titleLeft === false, JSON.stringify(setupProbe))
   await goto('返回标题')
   await poll(`!!document.querySelector('[data-title="1"]')`, 15000, 'L back to title')
   const backProbe = await ev(`(()=>{const t=document.body.innerText;return {title:!!document.querySelector('[data-title="1"]'),gone:!t.includes('SETUP / CHANNEL')}})()`)

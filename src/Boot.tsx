@@ -7,9 +7,14 @@ import { readAutosave } from './lib/slots'
 import css from './Boot.module.css'
 
 /**
- * 开屏 = 终端开机流程:
- *  指纹认证页(长按扫描) → 认证通过 → 转入黑底开机自检(逐行打字)
+ * 开屏 = 终端开机流程（2026-09-16 改成「游戏启动」那一路的语汇）:
+ *  认证页（长按指纹核心） → 认证通过 → 接入序列（逐行显现 + 进度条）
  *  → 提示符就绪 → onDone():终端界面以「启动弹出」方式挂载进场。
+ *
+ * 语汇与外壳、标题页同一套：四角小件、菱形夹标题、细线夹副标、✦ 装饰。
+ * **两处不能动**：`aria-label="认证开屏"` 与 `aria-label="长按指纹以完成认证"` ——
+ * 冒烟 `boot()` 与 Phase J / L / Q 全按这两个把手找这一屏。
+ * 长按那套手势（`onPointerDown/Up/Leave/Cancel` 与 `--p` 进度环）同样一字不动。
  */
 const SCAN_MS = 1500      // 指纹扫描时长
 const BOOT_START = 140    // 自检首行延时
@@ -17,10 +22,10 @@ const BOOT_STEP = 230     // 每行间隔
 const BOOT_READY_MS = 340 // 就绪行之后停留
 
 const SELF_CHECK = [
-  '停滞观测网 接入中 ……',
-  '弗尔克图斯 · 第12区 观测分区 坐标标定 ……',
-  '接入认证 ···· 言万心叶',
-  '秘钥载入 · 终端解锁',
+  '停滞观测网 · 握手 ……',
+  '观测分区 · 弗尔克图斯 第12区 标定 ……',
+  '委员身份校验 ···· 言万心叶',
+  '秘钥载入 · 终端解锁 ……',
 ]
 const READY_LINE = '停滞观测终端已启动 · 欢迎回来，言万心叶。'
 
@@ -54,7 +59,7 @@ export function Boot({ onDone }: { onDone: () => void }) {
       const pct = Math.min(100, (el / SCAN_MS) * 100)
       setProgress(pct)
       if (pct >= 100) {
-        // 认证通过 → 终端开机自检
+        // 认证通过 → 接入序列
         setPhase('boot')
         doneRef.current = true
         const total = SELF_CHECK.length + 1
@@ -89,20 +94,33 @@ export function Boot({ onDone }: { onDone: () => void }) {
   const booting = phase === 'boot'
 
   const hint = scanning
-    ? '正在读取指纹 …… 请不要松开'
+    ? '正在校验 ···· 请不要松开'
     : booting
       ? ''
-      : '长按指纹 · 完成认证'
+      : '长按核心 · 接入观测网'
 
   if (booting) {
-    // —— 开机自检:纯黑终端,逐行打字 ——
+    // —— 接入序列：逐行显现 + 一条进度（不再是「黑终端里刷日志」）——
+    const total = SELF_CHECK.length + 1
+    const pct = Math.min(100, Math.round((shown / total) * 100))
     return (
       <div className={`${css.boot} ${css.isBoot}`} role="log" aria-label="终端启动中">
-        <div className={css.term}>
-          <div className={css.termHead}>
-            <span>STAGNATION COMMITTEE · OBSERVER TERMINAL</span>
-            <span className={css.termHeadRight}>VER 4.2 // 委员制式配备</span>
+        <div className={css.corner}>
+          <span className={`${css.chip} ${css.chipTL}`}>
+            <i className={css.chipDot} />接入序列
+          </span>
+          <span className={`${css.chip} ${css.chipTR}`}>OBSERVER TERMINAL</span>
+        </div>
+
+        <div className={css.seq}>
+          <div className={css.seqKicker}>
+            <span>STAGNATION COMMITTEE</span>
           </div>
+          <h2 className={css.seqTitle}>接入序列</h2>
+          <div className={css.seqMeter} role="presentation">
+            <span style={{ width: `${pct}%` }} />
+          </div>
+
           <div className={css.termLines}>
             {SELF_CHECK.slice(0, shown).map((ln) => (
               <div key={ln} className={css.line}>
@@ -130,15 +148,24 @@ export function Boot({ onDone }: { onDone: () => void }) {
       role="dialog"
       aria-label="认证开屏"
     >
+      {/* 四角小件 —— 与标题页同一种：开机的时候屏幕上先摆好框 */}
+      <div className={css.corner}>
+        <span className={`${css.chip} ${css.chipTL}`}>
+          <i className={css.chipDot} />身份认证
+        </span>
+        <span className={`${css.chip} ${css.chipTR}`}>VER 4.2</span>
+        <span className={`${css.chip} ${css.chipBL}`}>弗尔克图斯 · 第 12 区</span>
+        <span className={`${css.chip} ${css.chipBR}`}>委员制式配备</span>
+      </div>
+
       <div className={css.bootInner}>
-        <div className={css.bootKicker}>STAGNATION COMMITTEE · IDENTITY GATE</div>
+        <div className={css.bootKicker}>STAGNATION COMMITTEE</div>
         <h1 className={css.bootTitle}>
           这里是，<em>终末停滞委员会</em>
         </h1>
-        <div className={css.bootSub}>—— 请认证信息 ——</div>
-        <div className={css.bootBrand}>
-          <b>{identity}</b> · 言万心叶
-        </div>
+        <div className={css.bootSub}>停滞观测终端</div>
+        <div className={css.bootTag}>观测 · 记录 · 压制 · 善后 —— 全部从这一台走</div>
+        <div className={css.orn}>✦</div>
 
         <button
           className={`${css.fp} ${scanning ? css.isScanning : ''}`}
@@ -166,6 +193,9 @@ export function Boot({ onDone }: { onDone: () => void }) {
         </button>
 
         <div className={`${css.fpHint} ${scanning ? css.isLive : ''}`}>{hint}</div>
+        <div className={css.bootBrand}>
+          <b>{identity}</b> · 言万心叶
+        </div>
       </div>
     </div>
   )

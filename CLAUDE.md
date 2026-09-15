@@ -126,4 +126,16 @@ node scripts/smoke/smoke.mjs   # 全链路冒烟
   触发一律走推演回执的 `"beat"` 字段（`dateDirective` 放行、`DateLane` 拿
   `isDateBeat` 筛一道才写进名册），**不新开界面、不加按钮**。
 - 变量名统一（`world.flags`）已落地，见 `src/lib/flagname.ts` 的 `snapFlagKey`。
+- **进门三段 + 终端外壳已按「游戏标题页」的格式重排（2026-09-16）。** 开屏（`Boot.tsx`
+  → 四角小件 / 菱形夹标题 / 细线夹副标 / ✦ / 「接入序列」进度）、标题页（`Title.tsx`
+  → 单列居中，8 格手动档收进「读取存档」那枚按钮后面的 `data-title-slots` 浮层）、
+  外壳（`App.tsx` → 品牌菱形、导航序号改菱形记号、顶栏分簇加分隔线）。
+  边界：**外壳文案只动了分组标签那一处**（`Main System` → 「终端模块」），
+  11 个视图的中英文名与 `const NAV` 的单行格式一个字没动。冒烟两条把手仍是结构性的
+  （`[data-guide="rail"]` / `[data-title="1"]`），不是认字。
+- **`*.module.css` 里引用 `tokens.css` 的全局 keyframes，必须写 `global(名字)`。**
+  否则 CSS Modules 会把 `animation` 里的名字改写成模块作用域，而定义只有模块自己写过
+  才产出 —— 名字没人认领，**动画静默不跑、编译与 lint 都不报错**。2026-09-16 一次扫出
+  9 处旧账（App / Boot / Comms / Dashboard / Title）。规矩与成因记在 `tokens.css`
+  的「动画」那一节头上。
 给露娜的webui生图想tag

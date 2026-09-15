@@ -1,5 +1,10 @@
-/* ===== 标题菜单（认证通过后 · 进游戏前） =====
-   2026-09-15 整体改版：晨光浅底 + 樱粉／次元紫，斜切与暗底玻璃一并换成圆角卡片。 */
+/* ===== 标题菜单（认证通过后 · 进游戏前）=====
+   2026-09-15 整体改版：晨光浅底 + 樱粉／次元紫，斜切与暗底玻璃一并换成圆角卡片。
+   2026-09-16 重排成**单列居中**的游戏标题页：四角小件、菱形夹大标题、细线夹副标、
+   标语 + ✦、竖排菜单（首枚渐变实心、其余细描边）、中缝一枚 ✦、底部版本行。
+   上一版的两栏（左菜单 270px + 右存档格）与那张「手动存档位」卡片一并撤走 ——
+   8 格挪进「读取存档」按钮后面的浮层（`data-title-slots`）；底部那条糖果斜纹也删了。
+   入场节拍与开屏同一路数，但更快更轻（这一屏是常驻菜单，不是一次性开屏）。 */
 
 .root {
   position: fixed;
@@ -22,17 +27,74 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1.2px) 0 0 / 22px 22px;
-}
-/* 底部一道糖纸斜纹（上一版是黄黑警戒带压在暗底上） */
-.root::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 5px;
-  background: repeating-linear-gradient(-45deg, var(--red) 0 12px, var(--bg-1) 12px 24px);
   opacity: 0.7;
+  background: radial-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1.2px) 0 0 / 22px 22px;
+  mask-image: radial-gradient(ellipse 84% 74% at 50% 46%, black 38%, transparent 100%);
 }
+
+/* ---- 四角小件：左上自动档 · 右上操作员 ----
+   注意 `pointer-events`：这一层罩在正文上，默认必须穿透，
+   只有那张带按钮的自动档卡自己开一个口子。 */
+.corner {
+  position: absolute;
+  inset: 22px;
+  z-index: 3;
+  pointer-events: none;
+}
+.cornerR {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 13px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--ink-mute);
+  background: color-mix(in srgb, var(--bg-1) 76%, transparent);
+  border: 1px solid var(--line-2);
+  white-space: nowrap;
+  animation: ttIn 480ms var(--ease-out) 200ms backwards;
+}
+.opDot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--jade);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--jade) 22%, transparent);
+  animation: global(pulseGlow) 2.2s infinite;
+}
+
+/* ---- 自动存档条（左上 · 冒烟 Phase J0b / L3 / L4 按 [data-autosave-card] 找它）---- */
+.autoCard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: auto;      /* 这一层默认穿透，卡片自己收回来才点得动 */
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  max-width: min(430px, 52vw);
+  padding: 7px 9px 7px 13px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--amber);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--amber) 14%, transparent), transparent 62%),
+    color-mix(in srgb, var(--bg-1) 84%, transparent);
+  box-shadow: var(--shadow-2);
+  animation: ttIn 480ms var(--ease-out) 120ms backwards;
+}
+.autoKicker {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.autoMain { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.autoName { font-size: 12.5px; font-weight: 800; overflow-wrap: anywhere; }
+.autoMeta { font-size: 10.5px; color: var(--ink-mute); white-space: nowrap; }
 
 .inner {
   position: relative;
@@ -41,19 +103,23 @@
   max-height: 94vh;
   overflow: auto;
   padding: 26px 4px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* —— 标题头 —— */
-.brand { text-align: center; animation: titleIn 620ms var(--ease-out) both; }
+.brand { text-align: center; }
 .kicker {
   display: inline-flex;
   align-items: center;
   gap: 12px;
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-mute);
+  animation: ttIn 520ms var(--ease-out) backwards;
 }
 .kicker::before, .kicker::after {
   content: "";
@@ -63,6 +129,7 @@
 .brand h1 {
   position: relative;
   margin: 16px 0 0;
+  padding: 4px 40px;            /* 两侧留出菱形的位置 */
   font-size: clamp(28px, 5vw, 48px);
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -70,6 +137,7 @@
   color: var(--ink);
   /* 「次元错位」：青与粉各偏两像素叠在字后（上一版是暗底上的红色辉光） */
   text-shadow: var(--duo-shadow);
+  animation: ttTitleIn 760ms var(--ease-out) 90ms backwards;
 }
 .brand h1 em {
   font-style: normal;
@@ -80,71 +148,107 @@
   color: transparent;
   text-shadow: none;
 }
+/* 标题两侧各一枚菱形 —— 与开屏、侧栏角标、顶栏那一枚同一个记号 */
+.brand h1::before,
+.brand h1::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  background: linear-gradient(140deg, var(--red), var(--violet));
+  opacity: 0.8;
+  pointer-events: none;
+  animation: ttDiaIn 520ms var(--ease-out) 300ms backwards;
+}
+.brand h1::before { left: 6px; }
+.brand h1::after { right: 6px; }
+
+/* 副标夹在两条细线中间 */
 .sub {
-  display: block;
-  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-faint);
+  animation: ttIn 520ms var(--ease-out) 240ms backwards;
 }
-.op {
+.sub::before, .sub::after {
+  content: "";
+  width: 44px; height: 1px;
+  background: var(--line-2);
+  transform-origin: center;
+  animation: ttRuleGrow 480ms var(--ease-out) 200ms backwards;
+}
+.tag {
   display: block;
-  margin-top: 14px;
+  margin-top: 12px;
   font-size: 12px;
   letter-spacing: 0.08em;
   color: var(--ink-mute);
+  animation: ttIn 520ms var(--ease-out) 320ms backwards;
 }
-.op b { color: var(--red-deep); font-weight: 800; }
-@keyframes titleIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* —— 双栏体 —— */
-.cols {
-  display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-  margin-top: 34px;
+.tag b { color: var(--red-deep); font-weight: 800; }
+.orn {
+  display: block;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--red-deep);
+  opacity: 0.75;
+  animation: ttOrnIn 620ms var(--ease-out) 400ms backwards;
 }
 
-/* —— 左栏：动作菜单 —— */
+/* —— 竖排菜单 —— */
 .menu {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-  box-shadow: var(--shadow-2);
-  padding: 14px;
-  animation: riseIn 600ms 120ms var(--ease-out) both;
+  gap: 9px;
+  width: min(430px, 88vw);
+  margin-top: 28px;
 }
 .menuBtn {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
   text-align: left;
-  padding: 12px 14px;
+  padding: 11px 14px 11px 16px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
   color: var(--ink-dim);
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
   transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out);
+  animation: ttIn 520ms var(--ease-out) backwards;
+}
+/* 首枚（行动继续）之外的项：悬停时左沿长出一枚小菱形 */
+.menuBtn::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: var(--red);
+  transform: translateY(-50%) rotate(45deg) scale(0.4);
+  opacity: 0;
+  transition: opacity var(--t-fast), transform var(--t-mid) var(--ease-out);
 }
 .menuBtn:hover:not(:disabled) {
-  background: var(--bg-3);
+  background: var(--bg-2);
   border-color: var(--line-3);
   color: var(--ink);
   transform: translateX(3px);
 }
+.menuBtn:hover:not(:disabled)::before { opacity: 0.7; transform: translateY(-50%) rotate(45deg) scale(1); }
 .menuBtn:disabled { opacity: 0.42; cursor: not-allowed; }
 .menuBtn .ic {
   flex: 0 0 auto;
@@ -156,17 +260,24 @@
   background: var(--red-soft);
   border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
   border-radius: var(--radius-sm);
+  transition: color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
 }
 /* 主按钮就是这一版的名字：粉那一头是「恋人」，紫那一头是「次元」。
    与 tokens 的 .btn--primary 同一套：紫那头走提亮档，字走墨（原色上墨字只有 3.62:1） */
 .menuBtn.menuPrimary {
-  background: linear-gradient(135deg, var(--red), var(--violet-lift));
   border-color: transparent;
+  background: linear-gradient(135deg, var(--red), var(--violet-lift));
   color: var(--on-accent);
+  box-shadow: var(--glow-violet);
 }
-.menuBtn.menuPrimary:disabled { background: var(--bg-3); border-color: var(--line-2); color: var(--ink-faint); }
-.menuBtn.menuPrimary:hover:not(:disabled) { box-shadow: var(--glow-violet); filter: brightness(1.05); transform: translateY(-1px); }
-.menuBtn.menuPrimary .ic { color: var(--on-accent); background: color-mix(in srgb, var(--on-accent) 12%, transparent); border-color: color-mix(in srgb, var(--on-accent) 26%, transparent); }
+.menuBtn.menuPrimary:disabled { background: var(--bg-3); border-color: var(--line-2); color: var(--ink-faint); box-shadow: none; }
+.menuBtn.menuPrimary:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
+.menuBtn.menuPrimary::before { display: none; }
+.menuBtn.menuPrimary .ic {
+  color: var(--on-accent);
+  background: color-mix(in srgb, var(--on-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--on-accent) 26%, transparent);
+}
 .menuTxt { min-width: 0; }
 .menuTxt i {
   display: block;
@@ -179,71 +290,189 @@
   line-height: 1.5;
   white-space: normal;
 }
-.menuPrimary .menuTxt i { color: color-mix(in srgb, white 78%, transparent); }
+.menuPrimary .menuTxt i { color: color-mix(in srgb, var(--on-accent) 76%, transparent); }
 
-.menuFoot {
-  margin-top: 2px;
-  padding: 10px 4px 2px;
-  border-top: 1px dashed var(--line-2);
-  font-size: 11px;
-  line-height: 1.8;
-  color: var(--ink-faint);
-}
-
-/* —— 右栏：存档槽 —— */
-.slots {
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-  box-shadow: var(--shadow-2);
-  padding: 14px;
-  animation: riseIn 600ms 220ms var(--ease-out) both;
-}
-.slotsHead {
+/* 菜单中缝那一枚 —— 把「进游戏」与「进设置 / 退出」两簇分开 */
+.menuRule {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin: 3px 0;
+  font-size: 10px;
+  color: var(--red-deep);
+  opacity: 0.7;
+  animation: ttIn 520ms var(--ease-out) backwards;
 }
-.slotsTitle {
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+.menuRule::before, .menuRule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }
-.slotsHead .muted { font-family: var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; font-size: 10px; }
-.slotsNote {
-  margin-top: 11px;
-  font-size: 11px;
-  line-height: 1.8;
+
+/* 逐枚落下：第 n 枚再晚 55ms */
+.menu > *:nth-child(1) { animation-delay: 470ms; }
+.menu > *:nth-child(2) { animation-delay: 525ms; }
+.menu > *:nth-child(3) { animation-delay: 580ms; }
+.menu > *:nth-child(4) { animation-delay: 635ms; }
+.menu > *:nth-child(5) { animation-delay: 690ms; }
+.menu > *:nth-child(6) { animation-delay: 745ms; }
+
+/* —— 底部：版本行 + 手动档计数 —— */
+.verse {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  animation: ttIn 520ms var(--ease-out) 900ms backwards;
+}
+.verLine {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   color: var(--ink-faint);
 }
-
-@media (max-width: 980px) {
-  .cols { grid-template-columns: 1fr; }
-  .root { overflow: auto; align-items: flex-start; }
-  .inner { padding: 30px 8px 40px; }
+.verNote {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
 }
+.verNote b { color: var(--red-deep); font-weight: 800; }
 
-/* —— 自动存档条（与手动槽位并列，可单独读取） —— */
-.autoCard {
+/* —— 读档浮层（`data-title-slots`）——
+   版式照 components/SaveDialog 的幕布 + 面板，但把手另起一个：
+   用 [data-savedialog] 会让冒烟 Phase J 的选择器一次抓到两个。 */
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: color-mix(in srgb, var(--ink) 62%, transparent);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: ttMaskIn 200ms var(--ease-out) both;
+}
+.panel {
+  width: min(900px, 96vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: ttPanelIn 300ms var(--ease-out) both;
+}
+.panelHead {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
-  padding: 12px 13px;
-  border: 1px solid var(--line-2);
-  border-left: 3px solid var(--amber);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--amber) 14%, transparent), transparent 60%),
-    var(--bg-1);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
 }
-.autoMain { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-.autoKicker {
+.panelKicker {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 9px;
+  letter-spacing: 0.12em;
   color: var(--ink-faint);
+  margin-bottom: 3px;
 }
-.autoName { font-size: 13px; font-weight: 800; overflow-wrap: anywhere; }
-.autoMeta { font-size: 11px; color: var(--ink-mute); }
+.panelTitle { font-size: 17px; color: var(--ink); }
+.panelX {
+  margin-left: auto;
+  width: 30px; height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.panelBody {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.panelHint {
+  border: 1px dashed var(--line-2);
+  background: var(--bg-2);
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+
+/* —— 入场 —— */
+@keyframes ttIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+/* 中缝向两侧揭开（与开屏同一手），但更快 */
+@keyframes ttTitleIn {
+  from { opacity: 0; clip-path: inset(-30% 50% -30% 50%); transform: scale(1.05); }
+  to { opacity: 1; clip-path: inset(-30% -10%); transform: none; }
+}
+@keyframes ttDiaIn {
+  from { opacity: 0; transform: rotate(0deg) scale(0.2); }
+  to { opacity: 0.8; transform: rotate(45deg) scale(1); }
+}
+@keyframes ttRuleGrow {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+@keyframes ttOrnIn {
+  from { opacity: 0; transform: rotate(-190deg) scale(0.25); }
+  to { opacity: 0.75; transform: rotate(0deg) scale(1); }
+}
+@keyframes ttMaskIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ttPanelIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* —— 窄屏：四角小件收进流里（窄屏没有角落可摆），标题的菱形也收进去 —— */
+@media (max-width: 980px) {
+  .root { overflow: auto; align-items: flex-start; }
+  .inner { padding: 92px 8px 40px; max-height: none; }
+  .corner { inset: 12px; }
+  .autoCard { max-width: calc(100vw - 120px); }
+  .autoName { display: none; }
+  .brand h1 { padding: 4px 26px; }
+  .brand h1::before { left: 0; }
+  .brand h1::after { right: 0; }
+  .sub::before, .sub::after { width: 24px; }
+  .menu { width: 100%; }
+}
+
+/* —— 减少动效：入场一律瞬时到位 ——
+   全局那条只压 duration、**不动 delay**，留着延迟会先白站一秒多。 */
+@media (prefers-reduced-motion: reduce) {
+  .cornerR,
+  .autoCard,
+  .kicker,
+  .brand h1,
+  .brand h1::before,
+  .brand h1::after,
+  .sub,
+  .sub::before,
+  .sub::after,
+  .tag,
+  .orn,
+  .menuBtn,
+  .menuRule,
+  .verse {
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}

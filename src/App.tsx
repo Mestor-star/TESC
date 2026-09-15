@@ -204,7 +204,7 @@ function NavRail() {
   return (
     <aside className={css.rail} data-guide="rail">
       <div className={css.brand}>
-        <div className={css.brandMark}>終</div>
+        <div className={css.brandMark}><span>終</span></div>
         <div className={css.brandText}>
           <b>终末停滞委员会</b>
           <i>STAGNATION COMMITTEE</i>
@@ -212,7 +212,7 @@ function NavRail() {
       </div>
 
       <div className={css.nav} data-guide="nav">
-        <div className={css.navLabel}>Main System</div>
+        <div className={css.navLabel}>终端模块</div>
         {NAV.map((n, i) => {
           const locked = LOCKED_VIEWS.includes(n.id) && !unlocked
           return (
@@ -285,9 +285,11 @@ function NavRail() {
             </button>
           </div>
         )}
+        {/* 操作员卡与底下这三枚之间的一道细线：上面是「你是谁」，下面是「动这台机器」 */}
+        <span className={css.footRule} />
         <button
           className="btn btn--ghost"
-          style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           data-guide="slot"
           onClick={() => setSlotsOpen(true)}
           title="手动存档 / 读档（独立于当前进度，重置不影响）"
@@ -296,7 +298,7 @@ function NavRail() {
         </button>
         <button
           className="btn btn--ghost"
-          style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           data-guide="vars"
           onClick={() => setVarsOpen(true)}
           title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
@@ -306,7 +308,7 @@ function NavRail() {
         <button
           data-guide="reset"
           className={confirmReset ? 'btn btn--amber' : 'btn btn--ghost'}
-          style={{ width: '100%', marginTop: 8, fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           onClick={handleReset}
         >
           {confirmReset ? '再次点击确认重置' : '重置世界进度'}
@@ -364,6 +366,9 @@ function TopStatus({ view }: { view: ViewId }) {
             本区观测平稳
           </button>
         )}
+        {/* 两簇之间那一道细线：左边三格是**读数**（区域 / R 值 / 异常），
+            右边三格是**机器**（时钟 / 信道 / 声音）。 */}
+        <span className={css.tbDiv} />
         <button className={`${css.pill} ${css.clock}`} title="弗尔克图斯本地时间">
           <span className="num">{clock(now)}</span>
         </button>

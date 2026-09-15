@@ -1,6 +1,9 @@
 /* ===== 终端外壳：布局 / 导航 / 顶栏 / 通知 =====
    2026-09-15 整体改版：暗底工业 → 晨光浅底。斜切全数换圆角，
-   字距从「宽得像编号」收回到正常读得下去的档。 */
+   字距从「宽得像编号」收回到正常读得下去的档。
+   2026-09-16 语汇重排：这一版改用**菱形**当记号 —— 角标、行尾序号、
+   激活态、顶栏标题前那一枚，全是同一颗菱形的不同用法；配色一律走 tokens
+   （从前有十一处把主题色拆成 rgba 硬写，见下面各处的 color-mix）。 */
 
 .root {
   position: relative;
@@ -19,42 +22,51 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(255, 77, 121, 0.07), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, var(--red) 7%, transparent), transparent 26%),
     var(--bg-1);
   border-right: 1px solid var(--line);
   overflow: hidden;
 }
 
-/* 底部一抹警戒斜纹（浅底上改成糖纸纹：主调 + 白） */
+/* 底部一抹主调渐变（上一版是糖果斜纹警戒带 —— 工业期的遗留，
+   换成这一版的签名渐变：粉→紫）。 */
 .rail::after {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 5px;
-  background: repeating-linear-gradient(-45deg, var(--red) 0 12px, #fff 12px 24px);
-  opacity: 0.75;
+  height: 4px;
+  background: linear-gradient(90deg, var(--red), var(--violet));
+  opacity: 0.85;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 18px 16px 16px;
+  gap: 14px;
+  padding: 20px 16px 18px;
   border-bottom: 1px solid var(--line);
 }
-/* 角标：粉→紫的渐变，是这一版「次元错位」最小的一处签名（圆角，不再切角）。
-   18px 的「终」是正文字号 —— 字走墨、紫那头走提亮档（见 tokens 的 --on-accent） */
+/* 角标：粉→紫的渐变，落在**旋转 45° 的圆角方块**上 —— 一颗菱形，
+   四角微圆，与这一版「斜切换圆角」的口径不打架。
+   字要转回来（转正的方块压在斜着的底上才是「错位」那一下）。
+   18px 的「終」是正文字号 —— 字走墨、紫那头走提亮档（见 tokens 的 --on-accent） */
 .brandMark {
   flex: 0 0 auto;
-  width: 42px; height: 42px;
+  width: 38px; height: 38px;
   display: flex; align-items: center; justify-content: center;
-  color: var(--on-accent);
   background: linear-gradient(140deg, var(--red), var(--violet-lift));
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 18px;
   border-radius: var(--radius-sm);
   box-shadow: var(--glow-red);
+  transform: rotate(45deg);
+}
+.brandMark > span {
+  display: block;
+  transform: rotate(-45deg);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1;
 }
 .brandText b {
   display: block;
@@ -62,6 +74,7 @@
   font-weight: 900;
   letter-spacing: 0.06em;
   white-space: nowrap;
+  text-shadow: var(--duo-shadow);   /* 「次元错位」的签名：天青与樱粉各错开两像素 */
 }
 .brandText i {
   display: block;
@@ -84,12 +97,22 @@
   overflow-y: auto;
 }
 .navLabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   color: var(--ink-faint);
   padding: 6px 10px 10px;
-  text-transform: uppercase;
+}
+/* 分组标签前那颗小菱形 —— 与行尾序号、激活态用的是同一个记号 */
+.navLabel::before {
+  content: "";
+  width: 5px; height: 5px;
+  background: currentColor;
+  transform: rotate(45deg);
+  opacity: 0.75;
 }
 
 .navItem {
@@ -100,7 +123,7 @@
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
+  padding: 10px 12px 10px 18px;   /* 左边多留 6px —— 给激活态那颗菱形让位 */
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -135,33 +158,49 @@
   margin-top: 3px;
 }
 
+/* 行尾序号：一颗小菱形 + 数字（上一版是光秃秃的 01–11）。
+   菱形用 ::before，数字仍由 React 那边按次序生成 —— 记号归 CSS 管。 */
 .navItem__idx {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--ink-faint);
   opacity: 0;
   transition: opacity var(--t-fast);
 }
+.navItem__idx::before {
+  content: "";
+  width: 5px; height: 5px;
+  background: currentColor;
+  transform: rotate(45deg);
+  opacity: 0.65;
+}
 
-/* 激活态：左侧一枚圆头小条 + 淡粉底块（上一版是斜条 + 斜切高亮块） */
+/* 激活态：左侧一颗菱形 + 淡粉底块（上一版是竖条；底块改用 --red-soft） */
 .navItem::before {
   content: "";
   position: absolute;
-  left: 0; top: 22%; bottom: 22%;
-  width: 4px;
-  border-radius: var(--radius-pill);
+  left: 5px; top: 50%;
+  width: 7px; height: 7px;
   background: var(--red);
+  transform: translateY(-50%) rotate(45deg) scale(0.4);
   opacity: 0;
   transition: opacity var(--t-fast), transform var(--t-mid) var(--ease-out);
-  transform: scaleY(0.4);
 }
 .navItem.isActive {
   color: var(--red-deep);
-  background: linear-gradient(90deg, rgba(255, 77, 121, 0.14), rgba(123, 92, 255, 0.05));
-  border-color: rgba(255, 77, 121, 0.24);
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--red) 14%, transparent),
+    color-mix(in srgb, var(--violet) 5%, transparent));
+  border-color: color-mix(in srgb, var(--red) 24%, transparent);
 }
-.navItem.isActive::before { opacity: 1; transform: scaleY(1); }
-.navItem.isActive .navItem__icon { color: var(--red-deep); filter: drop-shadow(0 3px 8px rgba(255, 77, 121, 0.4)); }
+.navItem.isActive::before { opacity: 1; transform: translateY(-50%) rotate(45deg) scale(1); }
+.navItem.isActive .navItem__icon {
+  color: var(--red-deep);
+  filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--red) 40%, transparent));
+}
 .navItem.isActive .navItem__idx { opacity: 1; color: var(--red-deep); }
 
 /* 未读短信角标：压在行尾，选中态与未选中态都看得见 */
@@ -196,12 +235,25 @@
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--amber);
-  box-shadow: 0 0 0 3px rgba(255, 159, 46, 0.22);
-  animation: blink 1.6s infinite;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 22%, transparent);
+  animation: global(blink) 1.6s infinite;
 }
 
 /* ---------- 轨道底部：操作员 ---------- */
-.railFoot { padding: 12px; border-top: 1px solid var(--line); }
+.railFoot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+/* 操作员卡与底下那三枚按钮之间的一道细线 —— 从前靠 marginTop 撑，
+   现在是同一条竖列里的一根分隔线。 */
+.footRule {
+  height: 1px;
+  background: var(--line);
+  margin: 2px 0 0;
+}
 .opCard {
   display: flex;
   align-items: center;
@@ -221,7 +273,7 @@
   font-weight: 800;
   color: var(--red-deep);
   background: var(--red-soft);
-  border: 1px solid rgba(255, 77, 121, 0.35);
+  border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
   border-radius: var(--radius-sm);
   font-size: 13px;
   letter-spacing: 0;
@@ -245,7 +297,7 @@
   width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
   border: 1px solid var(--line-2);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--bg-1); color: var(--ink-mute);
   font-size: 14px;
   transition: color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
@@ -271,9 +323,9 @@
   height: var(--topbar-h);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   padding: 0 22px;
-  background: rgba(255, 255, 255, 0.78);
+  background: color-mix(in srgb, var(--bg-1) 78%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
   z-index: 4;
@@ -292,14 +344,23 @@
   font-weight: 800;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  text-shadow: var(--duo-shadow);
 }
+/* 标题前那一枚：竖条 → 菱形（与角标、行尾记号同一颗） */
 .tbTitleSlash {
-  width: 5px; height: 20px;
-  background: linear-gradient(180deg, var(--red), var(--violet));
-  border-radius: var(--radius-pill);
+  width: 9px; height: 9px;
+  background: linear-gradient(140deg, var(--red), var(--violet));
+  transform: rotate(45deg);
   flex: 0 0 auto;
 }
 .tbRight { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* 两簇之间那一条细线：读数（区域 / R 值 / 异常）｜ 机器（时钟 / 信道 / 声音） */
+.tbDiv {
+  width: 1px;
+  height: 18px;
+  background: var(--line-2);
+  flex: 0 0 auto;
+}
 
 .pill {
   display: inline-flex;
@@ -321,10 +382,18 @@
 .pill .pulseDot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--jade);
-  box-shadow: 0 0 0 3px rgba(22, 192, 138, 0.22);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--jade) 22%, transparent);
 }
-.pill--danger { border-color: rgba(255, 77, 121, 0.45); color: var(--red-deep); background: var(--red-soft); }
-.pill--danger .pulseDot { background: var(--red); box-shadow: 0 0 0 3px rgba(255, 77, 121, 0.22); animation: pulseGlow 1.5s infinite; }
+.pill--danger {
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  color: var(--red-deep);
+  background: var(--red-soft);
+}
+.pill--danger .pulseDot {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent);
+  animation: global(pulseGlow) 1.5s infinite;
+}
 
 .clock { min-width: 96px; justify-content: center; }
 .clock .num { font-size: 13px; color: var(--ink); letter-spacing: 0.04em; }
@@ -392,7 +461,7 @@
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--ink-faint);
   font-size: 14px;
   transition: color var(--t-fast), background var(--t-fast);
@@ -404,7 +473,7 @@
 .toast--success::before { background: var(--jade); } .toast--success .toast__ic { color: var(--jade-deep); }
 .toast--danger::before { background: var(--red); } .toast--danger .toast__ic { color: var(--red-deep); }
 .toast--decode::before { background: var(--violet); } .toast--decode .toast__ic { color: var(--violet-deep); }
-.toast--danger { animation: toastIn 340ms var(--ease-out) both, pulseGlow 2.4s infinite; }
+.toast--danger { animation: toastIn 340ms var(--ease-out) both, global(pulseGlow) 2.4s infinite; }
 
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(24px) scale(0.98); }
@@ -417,8 +486,10 @@
   .brand { justify-content: center; padding: 16px 8px; }
   .nav { align-items: center; padding: 14px 6px; }
   .navItem { grid-template-columns: 1fr; justify-items: center; padding: 10px 6px; }
+  .navItem::before { left: 50%; top: 4px; transform: translateX(-50%) rotate(45deg) scale(0.4); }
+  .navItem.isActive::before { transform: translateX(-50%) rotate(45deg) scale(1); }
   .opCard { justify-content: center; padding: 8px 4px; }
-  .navItem::before { left: -6px; }
+  .navLabel { justify-content: center; letter-spacing: 0; }
 }
 
 /* ---------- 终端启动「弹出」进场 ---------- */
