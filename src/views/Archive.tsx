@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { X, ArrowUUpLeft, LockKey } from '@phosphor-icons/react'
+import { X, ArrowUUpLeft, LockKey, Sword } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { CHARACTERS } from '../data/chars'
@@ -727,6 +727,68 @@ function CombatPanel({ id, progress, gearId }: { id: string; progress: number; g
   )
 }
 
+/* ---------------- 战斗档案（下场时的那份面板 · 写在卡的第三面） ---------------- */
+/**
+ * 战斗档案的入口 —— 摆在正面档案最末，与私密档案那枚**同一款按钮**。
+ *
+ * 这一页也是**把整张卡翻过去**（见 Archive 里的 flip 状态），只是翻到的是第三面。
+ * 为什么不把面板内嵌在正面：
+ *   · 正面那一页是**档案卷宗**的口径（评定尺：五轴 10 ≈ 普通成年人，见 AXIS_REF）；
+ *   · 这一面是**下场时的那份数**（面板尺：见 tuning 的 AXIS_SCALE，敌我同乘的那个数）。
+ * 两套尺并排摆在同一页上，读的人分不清哪个数是哪个 —— 翻过去，一页只有一套。
+ * 门槛：**人人都翻得开**（这不是私密那一页）。
+ */
+function CombatGate({ onFlip }: { onFlip: () => void }) {
+  return (
+    <div className={css.dialogSection} data-combat="open" data-combat-ready>
+      <button type="button" className={css.intimEnter} data-combat-toggle onClick={onFlip}>
+        <Sword size={14} weight="bold" />
+        战斗档案
+      </button>
+    </div>
+  )
+}
+
+/**
+ * 卡的第三面 —— 战斗档案本体。
+ *
+ * 与私密档案同一个背面家族（同一套暖调外壳、同一枚翻回的按钮），
+ * 但**单栏**：这一面是数据页不是画页，技能表要一排排铺开，留一个立绘栏反而把数挤窄。
+ * 内容一字不新写 —— 照抄 `CombatPanel`（与作战中点开同一人看到的是同一组数字）。
+ */
+function CombatBack({ id, name, hue, progress, gearId, onBack }: {
+  id: string
+  name: string
+  hue: string
+  progress: number
+  gearId?: string
+  onBack: () => void
+}) {
+  return (
+    <div className={css.combatBack} data-combat-back={id}>
+      <div className={css.dialogHead}>
+        <Portrait avatarId={id} name={name} hue={hue} sigil="战" size={54} round />
+        <div className={css.dialogTitle}>
+          <small>COMBAT DOSSIER · 第三面</small>
+          <h3>{name}</h3>
+          <div style={{ color: hue, fontSize: 13, marginTop: 2 }}>战斗档案 · 下场时的那份面板</div>
+        </div>
+        <button className={css.dialogClose} onClick={onBack} aria-label="翻回正面" data-combat-back-close>
+          <ArrowUUpLeft size={18} weight="bold" />
+        </button>
+      </div>
+
+      <div className={css.dialogBody}>
+        <CombatPanel id={id} progress={progress} gearId={gearId} />
+        <div className="tiny muted" style={{ marginTop: 10 }}>
+          与作战中点开同一人看到的是同一组数字；面板里那件装具按当前编成计算 ——
+          回正面换完，这儿就是那套。
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** 装具改了哪几个数（直接读 GearDef.mods，不另写一份口径） */
 function gearModText(g: GearDef): string {
   const out: string[] = []
@@ -827,7 +889,8 @@ export function Archive() {
    * 中间那一拍（两张都立着、卡片正侧着身）才是换内容的时候，所以只看得到「翻过去」，
    * 看不到「跳一下」。两拍各占 FLIP_MS 的一半。
    */
-  const [side, setSide] = useState<'front' | 'back'>('front')
+  /** 这张卡有三个面：正面是档案卷宗，背面是私密档案，第三面是战斗档案 */
+  const [side, setSide] = useState<'front' | 'back' | 'combat'>('front')
   const [turn, setTurn] = useState<'' | 'out' | 'in'>('')
   const turnTimers = useRef<number[]>([])
   /** 翻面这道闸门（翻的过程中不接第二下）。用 ref：同一拍里连点两下时 state 还没落地 */
@@ -846,6 +909,11 @@ export function Archive() {
    * 门槛在翻之前就判 —— 翻到一半被人拦下会剩一张空白的背面。
    */
   const backOk = side === 'back' && !!focus && intimOf(focus.id) !== null
+  /**
+   * 第三面（战斗档案）：**人人都翻得开** —— 它不是私密那一页，没有「只对谁生效」。
+   * 与背面的门槛一样在翻之前就判 —— 翻到一半被拦下会剩一张空白的页面。
+   */
+  const combatOk = side === 'combat' && !!focus
   /** 此刻这位的关系档位（由剧情给过的那一档；没给过 → null，照实读作「尚未定下」） */
   const focusRel = focus ? relTierOf(relOf(focus.id)) : null
   const name = operatorName.trim() ? operatorName : '言万心叶'
@@ -923,7 +991,7 @@ export function Archive() {
    * 可这道闸门就此卡死，卡只出得去、回不来。排成两条平铺的定时器，归位那一拍
    * 无论如何都会到。（闸门用 ref 不用 state：同一拍里连点两下时，state 还没落地。）
    */
-  const flipTo = useCallback((to: 'front' | 'back') => {
+  const flipTo = useCallback((to: 'front' | 'back' | 'combat') => {
     if (turning.current) return
     turning.current = true
     setTurn('out')
@@ -1313,6 +1381,15 @@ export function Archive() {
           >
             {backOk ? (
               <IntimateBack charId={focus.id} hue={focus.hue} name={focus.name} onBack={() => flipTo('front')} />
+            ) : combatOk ? (
+              <CombatBack
+                id={focus.id}
+                name={focus.name}
+                hue={focus.hue}
+                progress={progress}
+                gearId={equip[focus.id]}
+                onBack={() => flipTo('front')}
+              />
             ) : (
             <div className={css.dossier}>
               {/* 左三分之一：立绘整身。右缘渐隐进档案底色，两张纸拼成一张 */}
@@ -1395,14 +1472,10 @@ export function Archive() {
                 />
               </div>
 
-              <div className={css.dialogSection}>
-                <h4>战斗数值（下场时的那份面板）</h4>
-                <CombatPanel id={focus.id} progress={progress} gearId={equip[focus.id]} />
-                <div className="tiny muted" style={{ marginTop: 8 }}>
-                  与作战中点开同一人看到的是同一组数字；面板里的那件装具按上面这份编成计算 ——
-                  在这里换完，出击时就是这套。
-                </div>
-              </div>
+              {/* 战斗档案：翻到第三面去看（见 CombatGate / CombatBack）。
+                  不内嵌在正面 —— 正面这一页是**评定尺**（五轴 10 ≈ 普通成年人），
+                  那一面是**面板尺**（下场时的那份数），两套尺并排摆会读混。 */}
+              <CombatGate onFlip={() => flipTo('combat')} />
 
               <div className={css.dialogSection}>
                 <h4>当前羁绊</h4>

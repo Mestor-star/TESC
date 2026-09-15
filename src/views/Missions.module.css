@@ -534,3 +534,93 @@
   cursor: help;
 }
 .rChip[data-r-known] { color: color-mix(in srgb, var(--amber) 80%, var(--ink)); }
+
+/* ---------- 作战档案：一条记录展开成一整屏 ----------
+   内容全部从记录自己身上现算（见 Missions.tsx 的 archRowsOf），
+   所以这一节只管排版，不引进任何新口径。 */
+.recActs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.archBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 4px;
+}
+.archSection > h4 {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--amber) 72%, var(--ink-mute));
+}
+/* 名册：一人一小格，窄屏自动折行 */
+.archRoster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.archUnit {
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid color-mix(in srgb, var(--amber) 46%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+}
+.archUnitTop { display: flex; align-items: baseline; gap: 8px; }
+.archUnitTop b { font-size: 13px; }
+.archUnitTop span { margin-left: auto; }
+.archNums {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--ink-dim);
+}
+.archNums b { color: var(--ink); }
+/* 五轴一行铺满：面板尺（见 tuning 的 AXIS_SCALE），所以照实读，不换算 */
+.archAxisLine {
+  display: flex; flex-wrap: wrap; gap: 3px 10px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed color-mix(in srgb, var(--line-2) 70%, transparent);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.archAxisLine b { color: color-mix(in srgb, var(--steel) 70%, var(--ink)); }
+/* 战果表：数字一列对齐，读起来才像账 */
+.archTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.archTable th {
+  text-align: left;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line-2);
+}
+.archTable td {
+  padding: 4px 8px;
+  color: var(--ink-dim);
+  border-bottom: 1px dashed color-mix(in srgb, var(--line-2) 55%, transparent);
+}
+.archTable td:first-child { color: var(--ink); }
+.archPre {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: color-mix(in srgb, #000 30%, var(--bg-1));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+}

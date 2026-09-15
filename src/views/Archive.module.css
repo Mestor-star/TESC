@@ -393,7 +393,8 @@
 /* 翻到背面（私密档案）时，卡片外圈也转暖、圆角放软 —— 与页内的红调私房同一套。
    正面那份档案不受影响（选择器带着 data-side='back'）。
    box-shadow 是一条整体属性，重写就得把基础阴影原样带上。 */
-.dialog[data-side='back'] {
+.dialog[data-side='back'],
+.dialog[data-side='combat'] {
   border-radius: 12px;
   border-color: color-mix(in srgb, var(--rose) 34%, var(--line-2));
   border-top-color: color-mix(in srgb, var(--c, var(--rose)) 52%, var(--rose));
@@ -877,6 +878,21 @@
 /* 状态句 / 正文左缘那条细线同样转暖（原本是冷的 --line-2） */
 .intimBack .intimState,
 .intimBack .intimAct { border-left-color: color-mix(in srgb, var(--rose) 40%, transparent); }
+
+/* ---- 第三面：战斗档案。与私密档案同一个背面家族（同一套暖调外壳），
+   但**单栏** —— 这一面是数据页而不是画页：技能表要一排排铺开，
+   留一个立绘栏反而把数挤窄了。留白交给 .dialogBody（与正面同值），这里不自带 padding。 */
+.combatBack {
+  min-height: min(84vh, 760px);
+  background:
+    radial-gradient(128% 52% at 50% 0%, var(--rose-soft), transparent 68%),
+    color-mix(in srgb, var(--bg-1) 90%, var(--rose-deep));
+}
+/* 抬头与分隔线一并转暖（与 .intimBack 同一套规矩） */
+.combatBack .dialogSection h4 { color: var(--rose); }
+.combatBack .dialogSection h4::after {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--rose) 52%, transparent), transparent);
+}
 
 /* 部位读数条：把角色色相往绯红里拉一半 —— 整页是红调私房，条不能还是原来那支冷色。
    JSX 只递进来 `--fill`（角色主题色），混色在这里做，免得组件里写死颜色。 */

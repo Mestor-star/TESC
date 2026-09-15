@@ -5,12 +5,13 @@ import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { OPERATOR_ID, OPERATOR_PERSON, PERSON_IDS, personOf } from '../data/castmeta'
-import { opPeriodAt, VOL1_END } from '../lib/operator-arc'
+import { AXIS_KEYS, opPeriodAt, VOL1_END } from '../lib/operator-arc'
 import type { Mission } from '../data/types'
 import { stageSeverity } from '../lib/format'
 import { Battle } from './Battle'
 import { Portrait } from '../components/Portrait'
-import { periodProgress, personIdOf, squadIdsFrom } from '../lib/battle/derive'
+import { combatantOf, periodProgress, personIdOf, squadIdsFrom } from '../lib/battle/derive'
+import { dutyOf } from '../lib/battle/duty'
 import { TUNING } from '../lib/battle/tuning'
 import {
   buyGear, buyItem, buyLevel, deleteRecord, effectiveGrowth, levelCostOf, listRecords,
@@ -31,6 +32,46 @@ type FilterKey = '全部' | '待接取' | '已派遣' | '压制中' | '完成' |
 type LocalStatus = Mission['status']
 
 const FILTERS: FilterKey[] = ['全部', '待接取', '已派遣', '压制中', '完成', '高威胁']
+
+/**
+ * 作战档案里的「战果」一行 —— 在场每人这一场干了什么。
+ *
+ * 全部从记录自己的 `turns` 现算，不另存一份：作战记录是唯一的事实来源。
+ * 只算**读得准**的那几栏：
+ *   · 出手 = 有几条以他为主语的手；
+ *   · 伤害 / 治疗 = 逐条那两栏相加（`dmg` / `heal` 由引擎直接落下）；
+ *   · 暴击 = `crit` 打勾的手数；
+ *   · 架盾 = `stance === 'on'`（选了防御指令的那一手）。
+ * 「盾被敲脱」(`stance === 'break'`) 不摆进表 —— 那一条记在**挨打者**头上，
+ * 与「谁敲的」不是同一个人，混成一栏会读成后者。
+ */
+interface ArchRow {
+  name: string
+  side: 'ally' | 'enemy'
+  acts: number
+  dmg: number
+  heal: number
+  crits: number
+  guards: number
+}
+
+function archRowsOf(rec: BattleRecord): ArchRow[] {
+  const per = new Map<string, ArchRow>()
+  for (const l of rec.turns) {
+    const row = per.get(l.actorId) ?? {
+      name: l.actor, side: l.side, acts: 0, dmg: 0, heal: 0, crits: 0, guards: 0,
+    }
+    row.acts += 1
+    row.dmg += l.dmg ?? 0
+    row.heal += l.heal ?? 0
+    if (l.crit) row.crits += 1
+    if (l.stance === 'on') row.guards += 1
+    per.set(l.actorId, row)
+  }
+  // 我方在前，两边各自按出手多寡排
+  return [...per.values()].sort((a, b) =>
+    a.side === b.side ? b.acts - a.acts : a.side === 'ally' ? -1 : 1)
+}
 
 /**
  * 巡逻任务的放行点：脏器公寓（第 4 话）一案结清之前，可刷新的看板一律不派单——
@@ -75,6 +116,8 @@ export function Missions() {
   /* 已领取归档的剧情战斗（事件 id）：牌面靠它翻页，所以要落盘 */
   const [mainClaimed, setMainClaimed] = useState<Record<string, true>>({})
   const [openRec, setOpenRec] = useState<string | null>(null)
+  /** 展开成一整屏的那份作战档案（非 null = 那一场的档案开着） */
+  const [openArch, setOpenArch] = useState<string | null>(null)
   /** 编队中的任务（非 null = 编队面板开着） */
   const [briefing, setBriefing] = useState<Mission | null>(null)
   const [picked, setPicked] = useState<string[]>([])
@@ -842,9 +885,19 @@ ${rb.f.word}`}
                       <summary className="tiny mono">逐手底稿</summary>
                       <pre className={css.recPre}>{r.digest}</pre>
                     </details>
-                    <button className="btn btn--ghost" style={{ fontSize: 11 }} onClick={() => deleteRec(r.id)}>
-                      <Trash size={12} /> 删除此条
-                    </button>
+                    <div className={css.recActs}>
+                      <button
+                        className="btn btn--ghost"
+                        style={{ fontSize: 11 }}
+                        data-battle-archive-open={r.id}
+                        onClick={() => setOpenArch(r.id)}
+                      >
+                        <Crosshair size={12} weight="bold" /> 展开作战档案
+                      </button>
+                      <button className="btn btn--ghost" style={{ fontSize: 11 }} onClick={() => deleteRec(r.id)}>
+                        <Trash size={12} /> 删除此条
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </article>
@@ -852,6 +905,101 @@ ${rb.f.word}`}
           </div>
         )}
       </section>
+
+      {/* 作战档案：一条记录展开成一整屏。
+          内容全部从记录自己身上现算（`turns` 是唯一的事实来源）；
+          「面板」那一栏按**当前练度**读 —— 记录里没存当时的面板快照，
+          这里也不假造一份出来冒充，抬头就写明是按当前练度。 */}
+      {(() => {
+        const rec = records.find((x) => x.id === openArch)
+        if (!rec) return null
+        const rows = archRowsOf(rec)
+        const prog = periodProgress(epDone)
+        return (
+          <div className={css.modal} data-battle-archive={rec.id} onClick={() => setOpenArch(null)}>
+            <div className={`${css.modalBox} ${css.modalBoxWide}`} onClick={(ev) => ev.stopPropagation()}>
+              <div className={css.modalHead}>
+                <Crosshair size={15} weight="bold" />
+                <b>作战档案 · {rec.no}「{rec.title}」</b>
+                <span className="tiny muted">
+                  {rec.place} · 危险度 S{rec.stage} · {rec.outcome} · {rec.rounds} 手 / {rec.ticks} 拍 · MVP {rec.mvp}
+                </span>
+                <button
+                  className="btn btn--ghost" style={{ fontSize: 11, marginLeft: 'auto' }}
+                  onClick={() => setOpenArch(null)} data-battle-archive-close
+                >
+                  <X size={12} weight="bold" />
+                </button>
+              </div>
+
+              <div className={css.archBody}>
+                <section className={css.archSection}>
+                  <h4>参战名册 · 面板（按当前练度）</h4>
+                  <div className={css.archRoster}>
+                    {rec.squad.map((id) => {
+                      const c = combatantOf(id, prog, 0)
+                      return (
+                        <div key={id} className={css.archUnit} data-arch-unit={id}>
+                          <div className={css.archUnitTop}>
+                            <b>{c.name}</b>
+                            <span className="tiny muted">{dutyOf(c.duty).name} · {c.cls}</span>
+                          </div>
+                          <div className={css.archNums}>
+                            <span>生命 <b className="mono">{c.hpMax}</b></span>
+                            <span>节拍 <b className="mono">{c.tempoMax}</b></span>
+                            <span>速度 <b className="mono">{Math.round(c.spd)}</b></span>
+                          </div>
+                          <div className={css.archAxisLine}>
+                            {AXIS_KEYS.map((k) => (
+                              <span key={k}>{k} <b className="mono">{c.axes[k]}</b></span>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                <section className={css.archSection}>
+                  <h4>战果 · 逐手摊开</h4>
+                  <table className={css.archTable} data-arch-tally>
+                    <thead>
+                      <tr>
+                        <th>出手者</th><th>阵</th><th>出手</th><th>伤害</th><th>治疗</th><th>暴击</th><th>架盾</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((a) => (
+                        <tr key={`${a.side}-${a.name}`} data-arch-row={a.name}>
+                          <td>{a.name}</td>
+                          <td>{a.side === 'ally' ? '我方' : '敌方'}</td>
+                          <td className="mono">{a.acts}</td>
+                          <td className="mono">{a.dmg || '—'}</td>
+                          <td className="mono">{a.heal || '—'}</td>
+                          <td className="mono">{a.crits || '—'}</td>
+                          <td className="mono">{a.guards || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+
+                <section className={css.archSection}>
+                  <h4>成文</h4>
+                  <div className={css.recNarr} data-arch-narrative={rec.mainline ? '1' : undefined}>
+                    {rec.narrative || '（未成文）'}
+                  </div>
+                </section>
+
+                <section className={css.archSection}>
+                  <h4>逐手底稿</h4>
+                  <pre className={css.archPre} data-arch-digest>{rec.digest}</pre>
+                </section>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 编队 */}
       {briefing ? (
