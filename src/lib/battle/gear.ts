@@ -8,6 +8,12 @@
      · 来源两条：军需处购买（终末点数）／交战后从敌人身上搜刮；
        其中「特殊装备」另加一道门 —— 须先完成对应的主线才上架
    道具是消耗品，出击时按补给池携带。
+
+   **价位**：这两张表与 `store.ts` 的终末等级、`tuning.ts` 的 coin 收入是**同一支笔** ——
+   2026-09-15 主人把整支终末点数 ×12.5（终末等级底价 80→1000、收入同步放大），
+   价格跟着同乘，所以数看着大，买起来的快慢与从前**一模一样**。
+   改价的人先看 `tuning.ts` 的 coin 那一段，别只动这里 ——
+   单边动一张表，等于把某一类东西悄悄变贵或变便宜。
    ============================================================ */
 
 import { OPERATOR_ID } from '../../data/castmeta'
@@ -21,7 +27,7 @@ export const ITEMS: ItemDef[] = [
     name: '观测口粮',
     desc: '委员会制式的压缩口粮。不美味，但能让人重新站起来。',
     target: 'one',
-    price: 40,
+    price: 500,
     effect: { heal: 0.35 },
   },
   {
@@ -29,7 +35,7 @@ export const ITEMS: ItemDef[] = [
     name: '镇静剂',
     desc: '小柴给心叶扎过的那种。扎进去，对方的动作会慢下来——行动条归零。',
     target: 'enemyOne',
-    price: 70,
+    price: 875,
     effect: { clearBar: true, mark: 0.2 },
   },
   {
@@ -37,7 +43,7 @@ export const ITEMS: ItemDef[] = [
     name: '现实稳定剂',
     desc: '把被反现实搅乱的五感按回原位：解除全队负面，并小幅回复。',
     target: 'allyAll',
-    price: 100,
+    price: 1250,
     effect: { cleanse: true, heal: 0.2 },
   },
   {
@@ -45,7 +51,7 @@ export const ITEMS: ItemDef[] = [
     name: '灵魂流动体 · 残液',
     desc: '从灵魂蓄积器TM 的残骸里回收的一管。谁也不知道它原本属于谁。',
     target: 'allyAll',
-    price: 180,
+    price: 2250,
     effect: { heal: 0.6, cleanse: true },
   },
 ]
@@ -77,7 +83,7 @@ export const GEARS: GearDef[] = [
     sub: 'OBSERVER SCOPE',
     desc: '委员会观测科的制式目镜。看得清，就打得准。',
     mods: { 破坏力: 6 },
-    price: 120,
+    price: 1500,
     rank: 1,
   },
   {
@@ -86,7 +92,7 @@ export const GEARS: GearDef[] = [
     sub: 'WARD PLATE',
     desc: '从被压制的反现实实体身上剥下的板片，重新铆成护胸。沉，但顶用。',
     mods: { 物理抗性: 12, shield: 0.06 },
-    price: 180,
+    price: 2250,
     rank: 1,
   },
   {
@@ -95,7 +101,7 @@ export const GEARS: GearDef[] = [
     sub: 'BOOSTER RIG',
     desc: '装在小腿外侧的干涉装置。它不管你怎么走，只负责让你更快到。',
     mods: { spd: 0.18, 敏捷度: 4 },
-    price: 220,
+    price: 2750,
     rank: 2,
   },
   {
@@ -104,7 +110,7 @@ export const GEARS: GearDef[] = [
     sub: 'SCRUBBER',
     desc: '异端审问室的随身滤芯。把灌进肺里的杂音滤掉。',
     mods: { 意志力: 8 },
-    price: 260,
+    price: 3250,
     rank: 2,
     skill: {
       name: '滤净',
@@ -119,7 +125,7 @@ export const GEARS: GearDef[] = [
     sub: 'ACCUMULATOR PART',
     desc: '灵魂蓄积器TM 被砸碎后的核心残件。委员会回收了它，装了条背带。',
     mods: { 意志力: 10, atk: 0.1 },
-    price: 300,
+    price: 3750,
     rank: 2,
   },
   {
@@ -128,7 +134,7 @@ export const GEARS: GearDef[] = [
     sub: 'INQUISITOR VISOR',
     desc: '异端审问室用的那一款。戴上它，对方的破绽会自己浮出来。',
     mods: { 反现实亲和: 12 },
-    price: 340,
+    price: 4250,
     rank: 2,
     skill: {
       name: '标记破绽',
@@ -143,7 +149,7 @@ export const GEARS: GearDef[] = [
     sub: 'GLIDE BOOTS',
     desc: '鞋底嵌了一层反现实薄膜。踩下去时，地面会先让开。',
     mods: { evade: 0.15, 敏捷度: 6 },
-    price: 380,
+    price: 4750,
     rank: 3,
     // 脏器公寓那一案的现场缴获被复刻成了制式件：正史走到那里才配发
     unlockMain: 'v1-5',
@@ -155,7 +161,7 @@ export const GEARS: GearDef[] = [
     sub: 'FIELD FABRICATOR',
     desc: '境界领域商会流出的小型打印机，比小柴琳那台差得远，但也能立起一堵墙。',
     mods: { 反现实亲和: 8 },
-    price: 560,
+    price: 7000,
     rank: 3,
     // 商会的制品：天空要塞一役之后，委员会才拿到可供拆解的同源件
     unlockMain: 'v2-8',
@@ -173,7 +179,7 @@ export const GEARS: GearDef[] = [
     sub: 'FEATHER FRAGMENT',
     desc: '不知从何处剥落的一小片翼羽，被仔细地包在树脂里。它不是天使给的——它只是从那儿掉下来的。',
     mods: { 破坏力: 12, atk: 0.22, 反现实亲和: 6 },
-    price: 620,
+    price: 7750,
     rank: 3,
     // 斩击的天使落下的那一片：直到戴上 a Session. 才有人看懂它是什么
     unlockMain: 'v4-5',

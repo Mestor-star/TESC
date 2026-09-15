@@ -162,13 +162,20 @@ export async function addGrowth(patch: Record<string, number>): Promise<Record<s
    口径：与任务成长走同一条路 —— 每级给本人加 LEVEL_STEP_PCT 个百分点，
    五轴按 (1 + 成长/100) 放大，生命按 growthHpWeight 那一份跟着涨（见 derive）。
    区别只有一条：任务成长封顶在 12%，买来的等级**不封顶**。
-   价格按级别指数上涨，所以第一级便宜、后面越推越贵。 */
+
+   2026-09-15 主人定的两条：
+     · **第一档 1000，之后指数**：LEVEL_BASE_COST 是这条曲线的起点，LEVEL_RATE 是
+       每一级在上一级上乘的倍率。底价原本 80，随整支货币 ×12.5 抬到 1000
+       （收入与军需价格同步放大，见 tuning 的 coin 与 gear 的「价位」）——
+       所以这条曲线买起来的快慢与从前一样，只是数字大了。
+     · **每级 +10%**：原本 5%，主人抬的。第 10 级就是 +100%。
+   价格按级别指数上涨，所以第一级便宜、后面越推越贵 —— 这是有意的。 */
 const LEVEL_KEY = 'level'
 
-/** 每一级给本人加的百分比 */
-export const LEVEL_STEP_PCT = 5
-/** 第 0 级（→ 第 1 级）的价格 */
-export const LEVEL_BASE_COST = 80
+/** 每一级给本人加的百分比（2026-09-15 主人从 5 抬到 10） */
+export const LEVEL_STEP_PCT = 10
+/** 第 0 级（→ 第 1 级）的价格 —— 整支货币 ×12.5 之后从 80 抬到这里 */
+export const LEVEL_BASE_COST = 1000
 /** 每一级在上一级价格上乘的倍率 —— 就是这条曲线的「指数」 */
 export const LEVEL_RATE = 1.6
 
