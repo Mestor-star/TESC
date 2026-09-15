@@ -11,7 +11,7 @@
         几个字，玩家根本看不出这一手是干什么用的。
    ============================================================ */
 
-import type { SkillSpec } from './types'
+import type { SkillSpec, TalentSpec } from './types'
 
 /** 倍率读数：实值 × 轴（有摇摆幅度的写成区间）。不造成伤害的手返回 null */
 export function mulTextOf(k: SkillSpec): string | null {
@@ -94,4 +94,53 @@ export function effectLineOf(k: SkillSpec): string {
   const eff = effectTextsOf(k)
   if (k.power <= 0) return eff.length ? eff.join(' · ') : '不造成伤害'
   return eff.join(' · ')
+}
+
+/* ============================================================
+   天赋读数 —— 四格制里第四格的那一行字
+   ------------------------------------------------------------
+   天赋**全是自动触发的，一格都不点**，所以它没有倍率、没有代价、没有冷却；
+   要读的只有三件事：**什么时候响、落在谁身上、这一场响几次**。
+   作战屏那一格（Battle.tsx）与档案里的被动那一块（roster 的 passiveText）
+   读的都是这里 —— 一处口径，两处用，省得两边各写一套翻法。
+   ============================================================ */
+
+/** 什么时候响（触发档翻成人话） */
+export function talentWhenText(t: TalentSpec): string {
+  const tr = t.trigger
+  switch (tr.on) {
+    case 'battleStart': return '开场'
+    case 'act': return '自己出手之后'
+    case 'hit': return '自己这一手打实'
+    case 'crit': return '自己打出暴击'
+    case 'critTaken': return '自己挨了暴击'
+    case 'foeDown': return '场上倒下一个敌人'
+    case 'allyDown': return '场上倒下一个同伴'
+    case 'hpBelow': return `自己跌破 ${Math.round(tr.ratio * 100)}% 血`
+    case 'round': return `每逢第 ${tr.every} 个回合`
+  }
+}
+
+/** 落在谁身上（缺省是自己 —— 那就没什么可念的） */
+export function talentToText(t: TalentSpec): string {
+  const to = t.to ?? 'self'
+  if (to === 'self') return ''
+  if (to === 'trigger') return '落在事发的那一位身上'
+  if (to === 'allyAll') return '落在全队'
+  if ('duty' in to) return `落在${to.duty}担当那一档`
+  return '落在节拍最紧的那一位'
+}
+
+/** 这一场响几次（缺省 1 —— 天赋是「响一次」的东西，不是光环） */
+export function talentUsesText(t: TalentSpec): string {
+  const n = t.uses ?? 1
+  if (n < 0) return '不限次'
+  return n === 1 ? '每场一次' : `每场 ${n} 次`
+}
+
+/** 一句话读完一条天赋：`天赋「换到别处」· 场上倒下一个敌人 · 每场 3 次` */
+export function talentLineOf(t: TalentSpec): string {
+  const to = talentToText(t)
+  const tail = [talentUsesText(t), to].filter(Boolean).join(' · ')
+  return `天赋「${t.name}」· ${talentWhenText(t)} · ${tail}`
 }

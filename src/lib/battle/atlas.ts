@@ -350,6 +350,34 @@ function tidyEffect(a: Arch, o: PlaceOpt, merged: SkillEffect): SkillEffect {
 }
 
 /**
+ * 天赋那一路的数夹法 —— **只过数字那一道闸**（全表 `EFF_BAND`，逐条夹回带内）。
+ *
+ * 天赋不走 `place()`：它不是「从技能表里挑的一手」，没有框架类可认，所以没有
+ * `Arch.allow` 那一道布尔白名单，也**不过行动条三键的认领** —— 那三键的闸是
+ * `duty.arch` 的事（「行动条归调度」），天赋是职能本身的本事，与那一栏正交
+ * （见 roster 里 mefisa 那一条的注释）。
+ *
+ * 但「数字有上界」这一条对它一样成立：`TalentSpec.effect` 从前一个数都不过闸，
+ * 谁在天赋里写 `shield: 1.5` 都照收。带上限是**全层**的规矩，不是只有技能那一格。
+ *
+ * 没带可夹的键一律**抛** —— 那是数据写错了，不是引擎该替它收拾。
+ */
+export function bandedEffect(e: SkillEffect): SkillEffect {
+  const out: SkillEffect = {}
+  for (const [key, v] of Object.entries(e)) {
+    if (v === undefined) continue
+    if (typeof v === 'boolean') {
+      ;(out as Record<string, unknown>)[key] = v
+      continue
+    }
+    const band = EFF_BAND[key as NumericEffectKey]
+    if (!band) throw new Error(`天赋的 effect 里有 ${key}，但它没有效果带`)
+    ;(out as Record<string, unknown>)[key] = Math.max(band[0], Math.min(band[1], v as number))
+  }
+  return out
+}
+
+/**
  * 把一个角色的一手技能**放进框架里**。
  * 数值先过本类的带：写超了会被夹回边界 —— 这样既保留了「谁比谁更重一点」，
  * 又不会出现某一手凭空比同类高出三倍的情况。

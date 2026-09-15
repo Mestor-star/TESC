@@ -108,14 +108,14 @@ import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
-import { passiveText, ROSTER } from '../../src/lib/battle/roster'
+import { assertDutySlots, passiveText, ROSTER } from '../../src/lib/battle/roster'
 import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { battleStoryBrief, templateStorylog } from '../../src/lib/battle/storylog'
 import type { BattleRecord } from '../../src/lib/battle/types'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import type { NumericEffectKey, SkillEffect } from '../../src/lib/battle/types'
 import { ARCH, place } from '../../src/lib/battle/atlas'
-import { DUTY, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
+import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
 import { GEARS } from '../../src/lib/battle/gear'
 import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
@@ -452,7 +452,9 @@ export function run(): MechReport {
     freezeFoes(s)
     s.actor = me.id
     s.phase = 'select'
-    act(s, { t: 'skill', skillId: 'phidra-stake', targetId: me.id })
+    // 赌注现在指向**对手**（原先是打自己身上的一手「增益」，二期归位成驱逐）：
+    // power 依然是 0 —— 它不造成伤害，只是当场押一笔。
+    act(s, { t: 'skill', skillId: 'phidra-stake', targetId: s.enemies[0]!.id })
     ok('蓄力：放下赌注后身上挂着那口气', me.charge > 1, `charge=${me.charge}`)
     ok('蓄力：赌注自身倍率为 0（不落进伤害那一支）', stake?.power === 0, `power=${stake?.power}`)
 
@@ -1471,6 +1473,54 @@ export function run(): MechReport {
       !!built && !!probe && built.duty === ROSTER[probe]!.duty
       && built.crit === critOf(built.duty) && built.critMul === critMulOf(built.duty),
       built ? `${probe} → ${built.duty}　暴击 ${built.crit}／×${built.critMul}` : '（没找到非主音的人）')
+
+    /* —— 白名单：本职 ＋ 一手通用（主人 2026-09-15 拍的口径）——
+       `assertDutySlots` 在 roster 里导入即跑，越界当场抛；这里再摊开念一遍读数，
+       并**造一个越界的假人来证明它真的会抛** —— 不然「一个都没抛」也可能只是它没在跑。 */
+    const slotBad = assertDutySlots()
+    ok('职能 · 二十四人战技格全落在「本职 ＋ 一手通用」里', slotBad.length === 0,
+      slotBad.length ? slotBad.join('；') : '没有越界的手')
+
+    const tally = ids.filter((id) => !ROSTER[id]!.dutyExempt).map((id) => {
+      const r = ROSTER[id]!
+      const d = dutyOf(r.duty)
+      const arts = r.skills.filter((k) => k.kind === '战技' && !k.gate)
+      const own = arts.filter((k) => d.arch.includes(k.arch ?? '')).length
+      const uni = arts.length - own
+      return `${id}(${r.duty} ${arts.length}/${d.arts} 手　本职 ${own} 通用 ${uni})`
+    })
+    info.push('战技格归位读数：\n    ' + tally.join('\n    '))
+
+    /* 每人至少一手本职 —— 全挑通用手的人等于没有职能（那一档的名字就白起了） */
+    const noOwn = ids.filter((id) => {
+      const r = ROSTER[id]!
+      if (r.dutyExempt) return false
+      const d = dutyOf(r.duty)
+      const arts = r.skills.filter((k) => k.kind === '战技' && !k.gate)
+      return arts.length > 0 && !arts.some((k) => d.arch.includes(k.arch ?? ''))
+    })
+    ok('职能 · 每人至少留一手本职（不许全挑通用手）', noOwn.length === 0,
+      noOwn.length ? noOwn.join('、') : '二十四人都留着本职')
+
+    /* 通用手的名额只有一手 —— 这一条要是松了，「一手通用」就变回「想挑几手挑几手」 */
+    ok('职能 · 通用手的名额只有一手（UNIVERSAL_MAX）', UNIVERSAL_MAX === 1,
+      `名额 ${UNIVERSAL_MAX}　通用名单：${UNIVERSAL_ARCH.join('／')}`)
+
+    /* 对照：把一只手改成框架不认的类别，`assertDutySlots` 必须当场指出是**谁**、
+       哪一手、按哪一类打的 —— 只说「有人越界了」的报错，等于把找人这活留给下一个人。 */
+    const guinea = ids.find((id) => !ROSTER[id]!.dutyExempt && ROSTER[id]!.skills.some((k) => k.kind === '战技' && !k.gate))
+    const kept = guinea ? [...ROSTER[guinea]!.skills] : []
+    if (guinea) {
+      ROSTER[guinea]!.skills = kept.map((k) =>
+        k.kind === '战技' && !k.gate ? { ...k, arch: '到达点' } : k)
+      const caught = assertDutySlots()
+      ok('职能 · 越界的那一手会被点名（谁 / 哪一手 / 按哪一类打的）',
+        caught.length > 0 && caught.some((m) => m.startsWith(guinea) && m.includes('到达点')),
+        caught[0] ?? '（一条都没报 —— 那道闸没在跑）')
+      ROSTER[guinea]!.skills = kept
+      ok('职能 · 复原之后读数回到零（对照的那一下没把名册留在脏状态上）',
+        assertDutySlots().length === 0, `${guinea} 复原后 ${assertDutySlots().length} 条`)
+    }
   } catch (e) {
     fail.push('职能段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
@@ -1605,7 +1655,9 @@ export function run(): MechReport {
     freezeFoes(w6)
     sureHit(ny6)
     ny6.cds = {}
-    ny6.tempo = 99
+    /* 让出手者站满（而不是写一个 99）：`gainTempo` 现在是个真夹子，
+       写在上限外面的数会被它拉回来 —— 这一条要的是「他怎么也轮不到」，满条就够了。 */
+    ny6.tempo = ny6.tempoMax
     ny6.skills = [{
       id: '_t-basic', name: '复核 · 普攻', kind: '普攻', desc: '',
       cost: 0, power: 1, axis: '破坏力', fx: 'blast', target: 'one',
@@ -1627,12 +1679,12 @@ export function run(): MechReport {
     const got6 = find(w6, 'hikari')!.tempo
     ok('天赋 · 恢复途径④：定向给某个职能回节拍（主音那一档拿得到）',
       got6 === 7, `hikari 节拍 ${got6}（2 + 补最缺的 5）`)
-    /* 「最缺的」认的是 hikari（她开局被掏到 0），不是出手者自己（nyau 揣着 99）。
+    /* 「最缺的」认的是 hikari（她开局被掏到 0），不是出手者自己（nyau 是满条）。
        两条天赋在同一个触发档上一次过：先「主音那一档各 +2」，再「最缺的 +5」——
        拿完 2 的她仍是全队最低，于是 2 + 5 = 7。 */
     ok('天赋 · 落点也认「最缺节拍的那一位」（不是出手者自己）',
-      got6 === 7 && ny6.tempo === 99,
-      `最缺的 hikari ${got6} ／ 出手者 nyau ${ny6.tempo}（没被挑中）`)
+      got6 === 7 && ny6.tempo === ny6.tempoMax,
+      `最缺的 hikari ${got6} ／ 出手者 nyau ${ny6.tempo}（没被挑中，仍是满条）`)
 
     /* ⑥ 重入闸：天赋自己那一下不再引爆别的天赋。
          今天的效果里没有能反过来触发天赋的路（它们是增益、标记、推条，不是又一次命中），

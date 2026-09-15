@@ -41,7 +41,7 @@ import { putRecord } from '../lib/battle/store'
 import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import type { GearDef } from '../lib/battle/types'
 import { passiveText } from '../lib/battle/roster'
-import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
+import { effectTextsOf, mulTextOf, talentToText, talentUsesText, talentWhenText } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
 import { enemyFormation } from '../lib/battle/derive'
@@ -964,6 +964,35 @@ ${siteR.f.word}`}>
                         </div>
                       )
                     })}
+                    {/* 第四格：天赋。**只读** —— 没有按钮、没有 data-cmd，
+                        它响不响全由引擎自己看着场上决定（见 talentWhenText）。 */}
+                    <div key="天赋" className={css.skillGroup} data-skill-group="天赋">
+                      <div className={css.groupCap} data-skill-group-cap="天赋">
+                        <b>天赋（Talent）</b>
+                        <span className={css.groupNote}>自动触发 · 一格都不点</span>
+                      </div>
+                      {actor.passive?.talents?.length ? actor.passive.talents.map((t) => (
+                        <div key={`${actor.id}-talent-${t.name}`} className={css.talentRow} data-talent={t.name}>
+                          <span className={css.rowName}>{t.name}</span>
+                          <span className={css.rowCost}>{talentWhenText(t)}</span>
+                          <span className={css.rowDesc} data-talent-desc>
+                            {t.desc}
+                            {talentToText(t) || (t.uses ?? 1) !== 1
+                              ? ` 〔${talentUsesText(t)}${talentToText(t) ? ` · ${talentToText(t)}` : ''}〕`
+                              : ''}
+                          </span>
+                        </div>
+                      )) : (
+                        <div className={css.talentRow} data-talent="（无）">
+                          <span className={css.rowName}>——</span>
+                          <span className={css.rowDesc} data-talent-desc>
+                            {actor.passive
+                              ? '这个人没有额外的天赋 —— 她全部的本事都在上面那几手里。'
+                              : '（这一位还没写上被动与天赋。）'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </SubPanel>
               ) : null}

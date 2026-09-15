@@ -512,12 +512,18 @@ function wearsByRound(k: BuffKey): boolean {
 }
 
 /**
- * 回节拍：封顶在本人上限，返回**真的**回了多少（日志要报这个数，不是报想回的数）。
- * 恢复途径②③④都从这里走 —— 一处封顶，别处就不用各自记得夹。
+ * 动节拍：夹在下限 0 与本人上限之间，返回**真的**动了几分（日志要报这个数，
+ * 不是报想动的数）。恢复途径②③④都从这里走 —— 一处夹，别处就不用各自记得夹。
+ *
+ * `n` 可以是**负数**：那是「抽一格」（`TalentSpec.tempo` 的注释写着正数=回、负数=抽）。
+ * 从前这里写的是 `if (got > 0)`，负数一路算得出来却被那一句吞掉 ——
+ * 于是「抽节拍」的天赋会静默地什么都不做。现在按实际差值落地（并夹在 0 以上）。
+ * 正数那一路一个字节没动：`tempo += got` 与 `tempo = next` 是同一件事。
  */
 function gainTempo(c: Combatant, n: number): number {
-  const got = Math.min(c.tempoMax, c.tempo + n) - c.tempo
-  if (got > 0) c.tempo += got
+  const next = Math.max(0, Math.min(c.tempoMax, c.tempo + n))
+  const got = next - c.tempo
+  if (got !== 0) c.tempo = next
   return got
 }
 

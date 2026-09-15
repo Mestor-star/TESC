@@ -1491,6 +1491,31 @@
 .skillGroup[data-skill-group='普攻'] .row { opacity: 0.82; }
 .skillGroup[data-skill-group='普攻'] .row:hover:not([disabled]) { opacity: 1; }
 
+/* 天赋那一格：**只有字，没有按钮**（自动触发，点不了）——
+   所以不借 `.row`（那是给可点的东西用的：有 hover、有 cursor），
+   改成一张压平的只读卡片：没有边框的高光，靠左侧一道竖线认它。 */
+.talentRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 7px;
+  padding: 5px 8px 5px 7px;
+  font-size: 11.5px;
+  color: var(--ink);
+  border-left: 2px solid color-mix(in srgb, var(--violet) 52%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in srgb, var(--violet) 5%, transparent);
+}
+.talentRow .rowName { color: color-mix(in srgb, var(--violet) 74%, var(--ink)); }
+.talentMeta {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
 .cmdChip {
   padding: 1px 7px;
   border: 1px solid var(--line-2);
