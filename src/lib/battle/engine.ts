@@ -460,10 +460,14 @@ function healAmount(src: Combatant, t: Combatant, ratio: number): number {
  * 出手类条目在这里把台词补上：先按「同一个技能多说几句」换一句，
  * 再看上一个出手的是不是熟人 —— 是的话改成两人之间才有的接话。
  * （台词只影响观感，不改任何数值；见 banter.ts）
+ *
+ * 换台词只对**我方**做：那一池是按名册写的，而敌阵里有几位与名册共用 id
+ * （见 bosses.ts）。不把闸放在这儿，对面那位一出手就会被换成「她平时说话的样子」，
+ * 而她这一手自己的那句反倒难得露面 —— 敌方的话，就让技能自带的那一句说完。
  */
 function pushLog(s: BattleState, e: LogEntry) {
   // 连携技有自己的那句（写在羁绊里），不参与日常台词轮换
-  if (!e.skillId.startsWith('link-') && e.kind !== '指令') {
+  if (e.side === 'ally' && !e.skillId.startsWith('link-') && e.kind !== '指令') {
     const base = poolFor(e.actorId, e.skillId, e.line ?? '')
     // 刚才出手的队友（同阵营、新的在前）：接话顺着的对象
     const recent: Array<{ id: string; skill: string }> = []
