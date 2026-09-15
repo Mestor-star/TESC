@@ -480,7 +480,7 @@ function pushLog(s: BattleState, e: LogEntry) {
       recent.push({ id: p.actorId, skill: p.skill })
     }
     e.line = lineFor(
-      { actorId: e.actorId, recent, dmg: e.dmg, down: e.down, miss: e.miss },
+      { actorId: e.actorId, skillId: e.skillId, recent, dmg: e.dmg, down: e.down, miss: e.miss },
       base,
     ) || undefined
   }

@@ -142,7 +142,7 @@ import { ARCH, place } from '../../src/lib/battle/atlas'
 import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
 import { GEARS, ITEMS } from '../../src/lib/battle/gear'
 import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
-import { CHAR_LINES, FOLLOW_LINES, LINE_POOL, familiar, poolFor } from '../../src/lib/battle/banter'
+import { CHAR_LINES, FOLLOW_LINES, LINE_POOL, PINNED_LINES, familiar, lineFor, poolFor } from '../../src/lib/battle/banter'
 import { NAMED_BOSSES, namedBossOf } from '../../src/lib/battle/bosses'
 import { SIDE_AXIS } from '../../src/data/roster'
 import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
@@ -3969,6 +3969,9 @@ export function run(): MechReport {
        ④ 联动的每一对**真的接得上**。`familiar` 认的是编制与羁绊，
           而操作员不在编制表上 —— 「心叶 ↔ 梅芙」那两条就是这么死掉的：
           写在表里，一次都不响。这条断言就是拿来抓这种死条的。
+       ⑤ 钉死的那几手（`PINNED_LINES`，见到达点）**真的钉住了** ——
+          抽多少次都是同一句，而且熟人刚出手也顶不掉。钉子只兑现一半
+          （池子一句、却忘了拦联动）时，日志大体看着是对的，最难发现。
      另配一则「认人不认边」：档案里的人两边都站（第二卷代表战的首领与名册共用 id、
      面具心叶唤来的异次元学生是 `rival-<档案 id>`），台词池按**档案身份**取。 */
   try {
@@ -3989,9 +3992,9 @@ export function run(): MechReport {
     for (const id of rosterIds) for (const k of ROSTER[id]?.skills ?? []) skillIds.add(k.id)
     /* 操作员的技能表跟着时期走（operator-arc），这里按名字表补上 ——
        它在名册之外，但语音池里确实登记着它那几手。 */
-    const deadKeys = Object.keys(LINE_POOL).filter((k) => !skillIds.has(k))
-    ok('战斗语音 · 对照：LINE_POOL 的每一个键都是名册里真在的技能 id（死键当场点名）',
-      deadKeys.length === 0, deadKeys.length ? `对不上：${deadKeys.join('、')}` : `${Object.keys(LINE_POOL).length} 组全部有主`)
+    const deadKeys = [...Object.keys(LINE_POOL), ...Object.keys(PINNED_LINES)].filter((k) => !skillIds.has(k))
+    ok('战斗语音 · 对照：LINE_POOL 与 PINNED_LINES 的每一个键都是名册里真在的技能 id（死键当场点名）',
+      deadKeys.length === 0, deadKeys.length ? `对不上：${deadKeys.join('、')}` : `${Object.keys(LINE_POOL).length} 组 + 钉死 ${Object.keys(PINNED_LINES).length} 手，全部有主`)
 
     /* ③ 短句 + 不点**别人的**名字。两张表都扫（常驻的 CHAR_LINES 与按手登记的 LINE_POOL）——
        这是「哪一场都用得上」里唯一能量出来的那一半：长句与点名台词一挪到别的仗里就突兀，
@@ -4021,6 +4024,7 @@ export function run(): MechReport {
     }
     for (const [id, lines] of Object.entries(CHAR_LINES)) scan(id, id, lines)
     for (const [k, lines] of Object.entries(LINE_POOL)) scan(k, ownerOf[k], lines)
+    for (const [k, l] of Object.entries(PINNED_LINES)) scan(k, ownerOf[k], [l])
     ok('战斗语音：两张表的每一句都是短句（≤30 字），且一个别人的名字都不点',
       tooLong.length === 0 && named.length === 0,
       tooLong.length || named.length
@@ -4042,6 +4046,43 @@ export function run(): MechReport {
     const wrongPair = familiar('phidra', 'reiya')
     ok('战斗语音（对照）：不同编制、又不在羁绊表上的一对，不认',
       wrongPair === false, `Corporations × 卡乌斯学院 → ${wrongPair ? '认了' : '不认'}`)
+
+    /* ⑤ 钉死的那几手**真的钉住了**。钉子有两半 —— 池子只放一句、且拦住联动 ——
+       兑现一半是最难发现的那种坏法：日志里看着大体是对的，只在「熟人刚出过手」
+       那几手偶尔改口。所以两头都量：抽 24 次是同一句，且熟人刚出手也顶不掉。 */
+    const pinIds = Object.keys(PINNED_LINES)
+    const pinBase = '「技能自带的那一句」'
+    const pinStray: string[] = []
+    const pinOverridden: string[] = []
+    for (const id of pinIds) {
+      const who = ownerOf[id] ?? OPERATOR_ID
+      for (let i = 0; i < 24; i++) {
+        const got = poolFor(who, id, pinBase)
+        if (got !== PINNED_LINES[id]) pinStray.push(`${id} → ${got}`)
+      }
+      const mate = rosterIds.find((o) => o !== who && familiar(who, o))
+      if (!mate) { pinOverridden.push(`${id}（${who} 没有熟人可作对照）`); continue }
+      const got = lineFor(
+        { actorId: who, skillId: id, recent: [{ id: mate, skill: 'ping' }], dmg: 99 },
+        PINNED_LINES[id],
+      )
+      if (got !== PINNED_LINES[id]) pinOverridden.push(`${id}：熟人 ${mate} 刚出手 → 改口「${got}」`)
+    }
+    ok('战斗语音：钉死的那几手永远只说那一句（抽 24 次同一句，且熟人刚出手也顶不掉）',
+      pinIds.length > 0 && pinStray.length === 0 && pinOverridden.length === 0,
+      pinStray.length || pinOverridden.length
+        ? [...pinStray.slice(0, 3), ...pinOverridden.slice(0, 3)].join('；')
+        : `${pinIds.join('、')} 全钉住`)
+
+    /* 对照：上面那条不是「怎么都顶不掉」蒙的 —— 没钉的一手，同样的熟人刚出手就会被接话改口。
+       拿恋兔光另一手（hikari-burst）+ 露娜当这一对：它在联动表里是有条目的。 */
+    const unPinnedBase = '「对照用的自带句」'
+    const unPinned = lineFor(
+      { actorId: 'hikari', skillId: 'hikari-burst', recent: [{ id: 'luna', skill: 'ping' }], dmg: 99 },
+      unPinnedBase,
+    )
+    ok('战斗语音（对照）：没钉的那一手，同样的熟人刚出手就会被接话改口',
+      unPinned !== unPinnedBase, `未钉的一手说：${unPinned}`)
 
     /* 认人不认边 · 异次元唤来的那一位。
        面具心叶唤出来的「异次元的卡乌斯学院学生」是 `rival-<档案 id>`，五轴与技能表照搬本人 ——
@@ -4075,7 +4116,7 @@ export function run(): MechReport {
       fromFoe.size === 1 && fromFoe.has(foeBase), `抽样结果：${[...fromFoe].join('／')}`)
 
     info.push(`战斗语音：「${Object.keys(CHAR_LINES).length}」组常驻 ·「${Object.keys(LINE_POOL).length}」组专写 · `
-      + `联动 ${FOLLOW_LINES.length} 条全可达 · 长句与点名台词 0 条`)
+      + `钉死 ${Object.keys(PINNED_LINES).length} 手 · 联动 ${FOLLOW_LINES.length} 条全可达 · 长句与点名台词 0 条`)
   } catch (e) {
     fail.push('战斗语音段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }

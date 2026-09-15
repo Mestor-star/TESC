@@ -53,6 +53,11 @@ function archiveIdOf(actorId: string): string {
 export interface BanterCtx {
   actorId: string
   /**
+   * 这一手的技能 id。只为一件事 —— 认出**钉死的那几手**（`PINNED_LINES`）：
+   * 钉子不吃联动，得先认得出来才拦得住。
+   */
+  skillId?: string
+  /**
    * 刚才出手的队友（同阵营，新的在前，不含自己）。
    * 看最近几手而不是只看上一手：接话是「顺着前一手说」，
    * 中间夹着敌方回合或第三人时，仍然接得上。
@@ -77,11 +82,12 @@ export interface BanterCtx {
  * 登记它的理由只有两条：① 这一手是这一位的招牌，值得单开一组；
  * ② 技能自带的那句只在某一幕成立（整段对白、某一场的指挥口令、对着某个人的话），
  * 一挪到别的仗里就不对了 —— 这一类必须补一组通用的。
+ *
+ * ⚠️ 还有第三类，**不写在这张表里**：这一手「永远只说这一句」的 —— 见 `PINNED_LINES`。
  */
 export const LINE_POOL: Record<string, string[]> = {
   /* —— 招牌那几手 —— */
   'hikari-burst': ['「要上了——解封。」', '「久违了，这种开放感。」', '「——只要我还活着，就不会让你伤害到大家——！」'],
-  'hikari-peer': ['「就此——结束吧！！」', '「——樱之残影。」', '「给我像星屑一样，灰飞烟灭吧！」'],
   'luna-blade': ['「你这家伙！恶心死了！去死！」', '「别挡路。」', '「线，收紧了。」'],
   'mefisa-cannon': ['「走吧，八脚马！」', '「……哼。在那里吗！」', '「吞噬我吧，我的爱马！」'],
   'nyau-void': ['「没问题！小柴对力量很有自信！」', '「是！小柴保证完成任务！」', '「那里没有声音哦。因为是真空。」'],
@@ -114,6 +120,26 @@ export const LINE_POOL: Record<string, string[]> = {
   'touyi-daily': ['「守住日常。就这一件事。」', '「大家都还好好的，那就够了。」'],
   'huda-end': ['「终局，我已经读完了。」', '「结束了。」'],
   'maria-end': ['「来吧——『天下无双的公主大人』！」', '「这是最后一曲。」'],
+}
+
+/**
+ * **钉死的那几手**：这一手永远说这一句，一句别的都没有。
+ *
+ * 与 `LINE_POOL` 的区别只有两条，都在这张表之外兑现（`poolFor` / `lineFor`）：
+ *   ① 池子里的句子是**轮换**的（`pick` 抽一句）；这里的不抽，就这一句。
+ *   ② 池子里的句子**会被联动台词顶掉**（熟人刚出过手就接话）；这里的不会 ——
+ *      钉子就是钉子，谁刚出手都改不了这一句。
+ *
+ * 什么该钉：一场只甩一次、那一刻就是全场顶点的那一手。到达点正是这一类的典型 ——
+ * 恋兔光甩下吉他前说的那句，要是被「不错嘛，小柴。」顶掉，那一击就没有了。
+ *
+ * 钉进来的句子照旧要过 mech §18b 那两关（≤30 字、不点别人的名字），
+ * 而且**从正文搬来的一律逐字** —— 下面这一句出自 v1 第12话『钢铁的新娘』，
+ * 对着自认「人类伤不到神」的死骸机关之神说完，才挥下吉他，一个标点都不许改。
+ * （同幕的 `「因为这个世界有这么美丽的我存在。」` 在她的常驻池里，也是这一句的来处。）
+ */
+export const PINNED_LINES: Record<string, string> = {
+  'hikari-peer': '「——给我像星屑一样，灰飞烟灭吧！」',
 }
 
 /**
@@ -396,7 +422,8 @@ function pick(pool: string[], key: string): string {
 
 /**
  * 这一手该说什么。
- * 优先联动台词（熟人接得上），其次技能自己的台词池，最后回落到原台词。
+ * 优先**钉死的**（`PINNED_LINES`，一个字都不换），其次联动台词（熟人接得上），
+ * 再其次技能自己的台词池，最后回落到原台词。
  * @param ctx 出手上下文
  * @param base 技能自带的台词（无池或池里为空时用它）
  */
@@ -404,7 +431,10 @@ function pick(pool: string[], key: string): string {
 const RECENT_LOOKBACK = 3
 
 export function lineFor(ctx: BanterCtx, base: string): string {
-  const { actorId, recent, dmg, miss } = ctx
+  const { actorId, skillId, recent, dmg, miss } = ctx
+  /* 钉死的那一手先出手 —— 联动那一层是给「随口接一句」用的，
+     到了到达点这种一场一次的顶点，接话反而是破坏（见 PINNED_LINES 头注）。 */
+  if (skillId && PINNED_LINES[skillId]) return PINNED_LINES[skillId]
   const outcome: 'hit' | 'miss' = miss || !dmg ? 'miss' : 'hit'
   const me = archiveIdOf(actorId)
 
@@ -433,8 +463,12 @@ export function lineFor(ctx: BanterCtx, base: string): string {
  *
  * `actorId` 先还原成**档案身份**（见 `archiveIdOf`）：站在对面的那一位
  * （第二卷代表战的首领、面具心叶唤来的异次元学生）说的一样是他自己的话。
+ *
+ * 钉死的那几手**不进抽签**：池子只有一句，抽出来永远是它（见 `PINNED_LINES`）。
  */
 export function poolFor(actorId: string, skillId: string, base: string): string {
+  const pinned = PINNED_LINES[skillId]
+  if (pinned) return pinned
   const who = archiveIdOf(actorId)
   const own = LINE_POOL[skillId]
   if (own?.length) return pick(own, skillId + who)
