@@ -50,7 +50,7 @@ import { dutyOf } from '../lib/battle/duty'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
 import { endOf, isDebuff } from '../lib/battle/types'
-import type { BattleRecord, BattleState, Combatant, EnemyIntent, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
+import type { BattleRecord, BattleState, Combatant, DutyId, EnemyIntent, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
@@ -99,6 +99,21 @@ interface FxView {
   down?: boolean
   /** 这一手是连携：参加者与招式名，右侧那张牌子照着它立起来 */
   link?: { id: string; name: string; members: string[] }
+  /* —— 下面是「这一手长什么样」的四样 ——
+     光有 kind + 色相还不够：十种动画配二十四个人，同一个 blast 谁都长得一样。
+     真正让一手认出自己的，是它**做了什么**（效果动机）、**是谁的哪一摊**（职能）、
+     有没有打实（暴击），以及**打得多重**（分量）。 */
+  /** 这一手堆了哪些效果动机（见 affixesOf）—— 副演出按它一层层长出来 */
+  affix?: string[]
+  /** 出手者的职能 —— 底纹按五档给形状（主音的放射、护卫的六边、调度的同心…） */
+  duty?: DutyId
+  /** 这一下是暴击：色散、会心标、数值放大 */
+  crit?: boolean
+  critMul?: number
+  /** 分量 = 伤害 ÷ 挨打者的最大生命（0~1+）—— 抖屏与数值分级都按它 */
+  weight?: number
+  /** 防御姿态的两件事：架起来那一拍（on）、被击溃那一下（break） */
+  stance?: 'on' | 'break'
 }
 
 /** 技能 id → 稳定的色相与变奏号（同一招永远同一副样子，不同招互不相同） */
@@ -110,6 +125,53 @@ function fxSeed(skillId: string): { hue: number; variant: number; dir: number } 
   }
   const u = Math.abs(h)
   return { hue: u % 360, variant: u % 4, dir: (u >> 3) % 2 === 0 ? 1 : -1 }
+}
+
+/**
+ * 这一手的**效果动机** —— 副演出按它长，最多两枚（再多就糊成一团，什么都认不出）。
+ *
+ * 一层基形（FxKind：斩 / 环 / 网 / 扫描…）说的是「怎么动」，动机说的是「做了什么」：
+ * 同样一圈光，削破绽该有碎屑、上沉默该断音、推条该有时环倒转。
+ * 所以它只认 effect 里的键，不看动画类别 —— 「治疗技被配上斩击动画」这种数据的毛病
+ * 也不会串到观感上（与 toneOf 同一个路数）。
+ */
+function affixesOf(k?: SkillSpec): string[] {
+  const e = k?.effect
+  if (!e) return []
+  const out: string[] = []
+  if (e.breakGuard || e.stanceBreak) out.push('break')   // 敲破绽 / 打脱手：碎屑
+  if (e.stall) out.push('stun')                          // 断拍：晕星
+  if (e.bleed) out.push('bleed')                         // 流血：血点往下坠
+  if (e.stasis) out.push('stasis')                       // 停滞：冰棱封条
+  if (e.silence || e.lockdown) out.push('silence')       // 沉默：断开的音弧
+  if (e.mark || e.taunt) out.push('mark')                // 标记 / 引仇：准星
+  if (e.pushBack || e.pushBar || e.clearBar || e.slow) out.push('wane')   // 动条：时环逆转
+  if (e.shield || e.ward) out.push('ward')               // 护盾 / 护持：六边护罩
+  if (e.charge) out.push('charge')                       // 蓄力：往里收的能环
+  if (e.cleanse || e.revive) out.push('cleanse')         // 解除 / 拉回：上升的光
+  return out.slice(0, 2)
+}
+
+/**
+ * 演出层里那几层**动机**。
+ *
+ * 基形（斩 / 环 / 网 / 扫描…）由 `.fx` / `.fxOn` / `.fxOnBig` 的伪元素出，
+ * 从头到尾只有两层；这一版往后加的是「这一手是什么」：
+ *   职能底纹（五档各一副几何，最底下一层）→ 效果动机（这一手做了什么，至多两层）
+ *   → 暴击色散（打实了才有的那一下）→ 会心标。
+ * 分开挂是为了它们能**各自活各自的**：副动机的动画节奏与基形不同步，
+ * 叠在一起才像一件事，而不是一张贴图晃了两下。
+ */
+function FxLayers({ fx }: { fx: FxView }) {
+  return (
+    <>
+      {fx.duty ? <i className={css.fxLayer} data-fx-duty={fx.duty} aria-hidden /> : null}
+      {(fx.affix ?? []).map((a) => <i key={a} className={css.fxLayer} data-fx-affix={a} aria-hidden />)}
+      {fx.crit ? <i className={css.fxLayer} data-fx-crit="1" aria-hidden /> : null}
+      {fx.stance === 'break' ? <i className={css.fxLayer} data-fx-shatter="1" aria-hidden /> : null}
+      {fx.crit ? <em className={css.fxCrit} data-crit-tag>会心</em> : null}
+    </>
+  )
 }
 
 /** 指令菜单 —— 顺序即固定顺序：攻击 / 技能 / 道具 / 防御 / 更换装备 / 战略撤退 */
@@ -372,12 +434,23 @@ export function Battle({
       return
     }
     const e = st.log[shown]
+    /* 一手的「长相」在这儿定下来：出手者是谁（职能读它）、用的是哪一手（效果动机读它）、
+       打的是谁（分量要挨打者的上限）。都在同一份账上查，查不到就照旧只有基形。 */
+    const who = [...st.allies, ...st.enemies].find((c) => c.id === e.actorId)
+    const tgt = e.targetId ? [...st.allies, ...st.enemies].find((c) => c.id === e.targetId) : undefined
     setFx({
       n: shown, kind: e.fx, tone: e.tone ?? 'strike', scope: e.scope ?? 'one',
       actorId: e.actorId, skillId: e.skillId, skill: e.skill,
       targetId: e.targetId, dmg: e.dmg, down: e.down, link: e.link,
+      affix: affixesOf(who?.skills.find((x) => x.id === e.skillId)),
+      duty: who?.duty,
+      crit: e.crit, critMul: e.critMul,
+      weight: e.dmg && tgt ? e.dmg / Math.max(1, tgt.hpMax) : 0,
+      stance: e.stance,
     })
-    if (e.down) sfx('down')
+    // 打实的那一下先响暴击 —— 同一个 FxKind 里，暴与不暴得听得出来
+    if (e.crit) sfx('crit')
+    else if (e.down) sfx('down')
     else if (e.miss) sfx('tick')
     else if (e.heal) sfx('heal')
     else if (e.gate) sfx('form')
@@ -495,7 +568,15 @@ export function Battle({
 
   // 观测频道挂在右栏，一栏高：多留几手，翻得到上一拍
   const recent = st.log.slice(Math.max(0, shown - 14), shown)
-  const shake = !!fx && (fx.kind === 'blast' || fx.kind === 'noise')
+  /* 抖屏按**分量**分级，不再按动画类别 ——
+     从前只有 blast / noise 抖，于是同一记爆裂，敲在小怪身上与敲在首领身上晃得一样狠，
+     而一记暴击斩击一点都不抖。weight 是「这一下打掉了对面几成血」：
+     暴击与倒下最重，其次按掉血量，最后才轮到那几个本来就该震的类别。 */
+  const shake = !fx ? 0
+    : fx.crit || fx.down ? 3
+      : (fx.weight ?? 0) >= 0.12 ? 2
+        : fx.kind === 'blast' || fx.kind === 'noise' ? 1
+          : (fx.weight ?? 0) >= 0.04 ? 1 : 0
   /* 这一手是冲敌阵去，还是冲自己人去的。
      道具看 target，技能也看 target —— 增益类（梅芙那种「鼓舞」）是给我方挑人的：
      光标要是打在敌阵上，点下去这一口就喂了对面。 */
@@ -517,7 +598,7 @@ export function Battle({
     挂到 body 之后它才是一块真正独占视图的界面：1920×1080 一屏装得下。
   */
   return createPortal(
-    <div className={css.root} data-battle="1" data-phase={st.phase} data-command={st.command} data-shake={shake ? '1' : undefined}>
+    <div className={css.root} data-battle="1" data-phase={st.phase} data-command={st.command} data-shake={shake ? String(shake) : undefined}>
       {/*
         全屏演出层 —— 只管「一手打一群」的那种（全体技 / 合击 / 终末系）。
         单体技不走这里：打在一个人身上的东西，就该出现在那个人身上
@@ -531,12 +612,14 @@ export function Battle({
           data-fx-tone={fx.tone}
           data-fx-var={fxSeed(fx.skillId).variant}
           data-fx-dir={fxSeed(fx.skillId).dir === 1 ? 'r' : 'l'}
+          data-crit={fx.crit ? '1' : undefined}
           style={{
             '--fx-hue': fxSeed(fx.skillId).hue,
             '--fx-rot': `${fxSeed(fx.skillId).variant * 45}deg`,
           } as CSSProperties}
           aria-hidden
         >
+          <FxLayers fx={fx} />
           <span className={css.fxTag} data-fx-tag={fx.skillId}>{fx.skill}</span>
         </div>
       ) : null}
@@ -1377,6 +1460,8 @@ function Unit({
       data-side={c.side}
       data-down={c.down ? '1' : undefined}
       data-gone={c.gone > 0 ? String(c.gone) : undefined}
+      data-stance={c.stance ? '1' : undefined}
+      data-stance-broken={c.stanceBroken ? '1' : undefined}
       style={{ '--u': c.hue } as CSSProperties}
       onClick={targetable ? onPick : undefined}
       role={targetable ? 'button' : undefined}
@@ -1442,6 +1527,22 @@ function Unit({
               〔{c.passive.name}〕
             </span>
           ) : null}
+          {/* 架盾是**这一拍**的状态，不是挂着的一条增益：界面上得看得见，
+              否则玩家只会觉得「我点了防御但什么都没发生」。 */}
+          {c.stance ? (
+            <span
+              className={css.stanceTag}
+              data-stance-tag={c.id}
+              title="架着盾：这一拍减伤、免暴击、充能快一半；代价是闪避归零 —— 挨到「击溃防御姿态」的那一手会被打脱手"
+            >
+              架盾
+            </span>
+          ) : null}
+          {c.stanceBroken ? (
+            <span className={css.stanceBrokenTag} data-stance-broken-tag={c.id} title="盾刚被打脱手：减伤、免暴击、加速三样这一拍都不在了">
+              盾脱手
+            </span>
+          ) : null}
           {c.gone > 0 ? <span className={css.goneMark}>合体中 · {c.gone} 拍</span> : null}
           {c.morph ? (
             <span className={css.morphMark} data-morph={c.morph.name}>
@@ -1462,14 +1563,20 @@ function Unit({
           data-fx={fx!.kind}
           data-fx-tone={fx!.tone}
           data-fx-var={fxSeed(fx!.skillId).variant}
+          data-crit={fx!.crit ? '1' : undefined}
           style={{ '--fx-hue': fxSeed(fx!.skillId).hue, '--u': c.hue } as CSSProperties}
           aria-hidden
         >
+          <FxLayers fx={fx!} />
           <em className={css.fxTagOn}>{fx!.skill}</em>
         </span>
       ) : null}
 
-      {hit && fx.dmg ? <span key={fx.n} className={css.dmgNum}>{fx.dmg}</span> : null}
+      {hit && fx.dmg ? (
+        <span key={fx.n} className={css.dmgNum} data-crit={fx.crit ? '1' : undefined}>
+          {fx.dmg}{fx.crit ? <i className={css.dmgCrit}>!</i> : null}
+        </span>
+      ) : null}
       {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
     </div>
   )
@@ -1508,6 +1615,8 @@ function Foe({
         className={`${css.foeBody} ${c.down ? css.unitDown : ''} ${active ? css.unitActive : ''} ${targetable ? css.unitAim : ''}`}
         style={{ '--u': c.hue } as CSSProperties}
         data-down={c.down ? '1' : undefined}
+        data-stance={c.stance ? '1' : undefined}
+        data-stance-broken={c.stanceBroken ? '1' : undefined}
         onClick={targetable ? onPick : undefined}
         role={targetable ? 'button' : undefined}
         tabIndex={targetable ? 0 : undefined}
@@ -1518,7 +1627,11 @@ function Foe({
         {/* 倒下的那一下：化开、收进去，人留在原位当个空壳 ——
             位置不能塌，一塌两翼就跟着挪，玩家刚记住的排面全乱。 */}
         {c.down ? <span className={css.vanish} data-foe-vanish={c.id} aria-hidden /> : null}
-        {hit && fx.dmg ? <span key={fx.n} className={css.dmgNumBig}>{fx.dmg}</span> : null}
+        {hit && fx.dmg ? (
+          <span key={fx.n} className={css.dmgNumBig} data-crit={fx.crit ? '1' : undefined}>
+            {fx.dmg}{fx.crit ? <i className={css.dmgCrit}>!</i> : null}
+          </span>
+        ) : null}
         {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
         {onMe ? (
           <span
@@ -1528,9 +1641,11 @@ function Foe({
             data-fx={fx!.kind}
             data-fx-tone={fx!.tone}
             data-fx-var={fxSeed(fx!.skillId).variant}
+            data-crit={fx!.crit ? '1' : undefined}
             style={{ '--fx-hue': fxSeed(fx!.skillId).hue } as CSSProperties}
             aria-hidden
           >
+            <FxLayers fx={fx!} />
             <em className={css.fxTagOn}>{fx!.skill}</em>
           </span>
         ) : null}

@@ -55,13 +55,25 @@
   to { opacity: 1; transform: none; }
 }
 
-/* 抖屏：只在爆破 / 终末系技能时抖 */
+/* 抖屏：按这一手的**分量**分级，不按动画类别 ——
+   会心 / 打倒最重，其次是削掉一大截血的，再次才是爆破系与蹭一下的。
+   分量的尺子是 `weight`（伤害 ÷ 挨打者最大生命），由回放那一步算好塞进 fx。
+   三级各自换一条位移曲线，不是把同一坨抖得更久：3 级会甩开再收回，看起来像被打得一晃。 */
 .root[data-shake='1'] { animation: shake 0.26s linear; }
+.root[data-shake='2'] { animation: shake 0.34s linear; }
+.root[data-shake='3'] { animation: shakeHard 0.44s cubic-bezier(0.2, 0.9, 0.2, 1); }
 @keyframes shake {
   0%, 100% { transform: none; }
   20% { transform: translate3d(-5px, 2px, 0); }
   45% { transform: translate3d(4px, -3px, 0); }
   70% { transform: translate3d(-2px, 1px, 0); }
+}
+@keyframes shakeHard {
+  0%, 100% { transform: none; }
+  12% { transform: translate3d(-9px, 4px, 0) scale(1.006); }
+  34% { transform: translate3d(7px, -5px, 0); }
+  58% { transform: translate3d(-4px, 2px, 0); }
+  78% { transform: translate3d(3px, -1px, 0); }
 }
 
 /* ---------- 全屏演出层 ---------- */
@@ -198,6 +210,308 @@
   0% { opacity: 0; transform: translateY(14px); }
   45% { opacity: 0.9; }
   100% { opacity: 0; transform: translateY(-22px); }
+}
+
+/* ============================================================
+   副演出 —— 「这一手是什么」的那几层
+   ------------------------------------------------------------
+   基形（斩 / 环 / 网 / 扫描…）由上面那几条出，从头到尾只有两层伪元素，
+   于是同一个 blast 在谁手里都长得一样。这一节往后加的是**一手自己的身份**，
+   一层叠一层：
+     职能底纹（五档各一副几何，最底下）→ 效果动机（这一手做了什么，至多两层）
+     → 暴击色散（打实了才有）→ 会心标。
+   每层各活各的节奏，叠起来才像一件事，而不是一张贴图晃了两下。
+
+   `--fx-h` 是共用的色相。贴身那两层本来就有（回复青 / 增益金 / 压制红 /
+   纯伤看技能自己的色相，见 toneOf），这里给全屏那层也补一份同名的，
+   好让下面这套规则两边都吃得下。
+   ============================================================ */
+
+.fx { --fx-h: var(--fx-hue, 210); }
+.fx[data-fx-tone='mend'] { --fx-h: 158; }
+.fx[data-fx-tone='ward'] { --fx-h: 42; }
+.fx[data-fx-tone='hex'] { --fx-h: 356; }
+
+/* 每一层都铺满这一格，谁也不占版式（指针一概穿透） */
+.fxLayer { position: absolute; inset: 0; pointer-events: none; }
+
+/* 全屏那层容器自己带一道 hue-rotate（那是由技能 id 定的「这一手是什么色」，
+   见下面「招招不同的演出」）。基形乐意被它转 —— 但这一节的层里写的是**实义色**：
+   流血是红的、停滞是冰的、断拍是黄的。被再转一次就全串味了（红流血转成绿的就荒唐）。
+   所以在这儿就地抵消掉，让两处挂点（.fx 与 .fxOn/.fxOnBig）出的颜色是同一套。 */
+.fx .fxLayer { filter: hue-rotate(calc(var(--fx-base, 0) * -1deg)); }
+
+/* ---------- 一、职能底纹：五档各一副几何 ---------- */
+
+/* 主音：放射的锐角 —— 一声轰开，往外炸的那种 */
+.fxLayer[data-fx-duty='主音'] {
+  background: conic-gradient(from 0deg,
+    hsl(var(--fx-h) 100% 84% / 0.4) 0 1.6deg, transparent 1.6deg 15deg);
+  animation: fxDutyBurst 0.46s cubic-bezier(0.2, 0.85, 0.25, 1) forwards;
+}
+@keyframes fxDutyBurst {
+  0% { opacity: 0; transform: scale(0.55) rotate(-8deg); }
+  26% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.3) rotate(6deg); }
+}
+
+/* 护卫：六边形网格 —— 顶上来的是一面墙，不是一记拳头 */
+.fxLayer[data-fx-duty='护卫'] {
+  background:
+    repeating-linear-gradient(60deg, hsl(200 95% 82% / 0.32) 0 1px, transparent 1px 20px),
+    repeating-linear-gradient(-60deg, hsl(200 95% 82% / 0.32) 0 1px, transparent 1px 20px);
+  animation: fxDutyHold 0.55s ease-out forwards;
+}
+@keyframes fxDutyHold {
+  0% { opacity: 0; transform: scaleY(0.82); }
+  30% { opacity: 0.95; }
+  100% { opacity: 0; transform: scaleY(1.06); }
+}
+
+/* 和音：三股往上的光点 —— 治的是人，光得往上走 */
+.fxLayer[data-fx-duty='和音'] {
+  background:
+    radial-gradient(closest-side at 22% 78%, hsl(158 95% 84% / 0.6), transparent 62%),
+    radial-gradient(closest-side at 50% 88%, hsl(158 95% 88% / 0.55), transparent 60%),
+    radial-gradient(closest-side at 78% 82%, hsl(158 95% 84% / 0.6), transparent 62%);
+  animation: fxDutyRise 0.62s ease-out forwards;
+}
+@keyframes fxDutyRise {
+  0% { opacity: 0; transform: translateY(16%); }
+  32% { opacity: 0.95; }
+  100% { opacity: 0; transform: translateY(-26%); }
+}
+
+/* 调度：同心时环 —— 改的是顺序，读数是环数 */
+.fxLayer[data-fx-duty='调度'] {
+  background: repeating-radial-gradient(circle at 50% 50%,
+    transparent 0 22px, hsl(45 100% 82% / 0.4) 22px 24px);
+  animation: fxDutyRing 0.56s ease-out forwards;
+}
+@keyframes fxDutyRing {
+  0% { opacity: 0; transform: scale(1.25); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+
+/* 取材：等距网格 + 准星线 —— 先看清这是什么，再决定敲哪儿 */
+.fxLayer[data-fx-duty='取材'] {
+  background:
+    repeating-linear-gradient(0deg, hsl(280 95% 86% / 0.22) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, hsl(280 95% 86% / 0.22) 0 1px, transparent 1px 28px),
+    linear-gradient(90deg, transparent 49.5%, hsl(280 95% 90% / 0.55) 49.5% 50.5%, transparent 50.5%),
+    linear-gradient(0deg, transparent 49.5%, hsl(280 95% 90% / 0.55) 49.5% 50.5%, transparent 50.5%);
+  animation: fxDutyScan 0.5s ease-out forwards;
+}
+@keyframes fxDutyScan {
+  0% { opacity: 0; transform: scale(1.1); }
+  24% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.98); }
+}
+
+/* ---------- 二、效果动机：这一手究竟做了什么 ---------- */
+
+/* 敲破绽 / 打脱手：碎屑往外散 */
+.fxLayer[data-fx-affix='break'] {
+  background: repeating-conic-gradient(from 12deg,
+    hsl(38 100% 82% / 0.7) 0 3deg, transparent 3deg 32deg);
+  animation: fxAffShard 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes fxAffShard {
+  0% { opacity: 1; transform: scale(0.5) rotate(0deg); }
+  100% { opacity: 0; transform: scale(1.4) rotate(16deg); }
+}
+
+/* 断拍：头顶转一圈的晕星（一条虚线环，中间挖空） */
+.fxLayer[data-fx-affix='stun'] {
+  background: repeating-conic-gradient(from 0deg at 50% 24%,
+    hsl(48 100% 88% / 0.95) 0 11deg, transparent 11deg 34deg);
+  -webkit-mask: radial-gradient(closest-side at 50% 24%, transparent 0 8px, #000 8px 13px, transparent 13px);
+  mask: radial-gradient(closest-side at 50% 24%, transparent 0 8px, #000 8px 13px, transparent 13px);
+  animation: fxAffSpin 0.62s linear forwards;
+}
+@keyframes fxAffSpin {
+  0% { opacity: 0; transform: rotate(-40deg) scale(0.7); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(220deg) scale(1); }
+}
+
+/* 流血：血点往下坠 */
+.fxLayer[data-fx-affix='bleed'] {
+  background:
+    radial-gradient(closest-side at 34% 30%, hsl(348 90% 60% / 0.8), transparent 70%),
+    radial-gradient(closest-side at 62% 24%, hsl(348 90% 56% / 0.7), transparent 70%),
+    radial-gradient(closest-side at 48% 44%, hsl(348 90% 52% / 0.6), transparent 70%);
+  animation: fxAffDrop 0.66s ease-in forwards;
+}
+@keyframes fxAffDrop {
+  0% { opacity: 0; transform: translateY(-8%) scale(0.8); }
+  26% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(24%) scale(1.05); }
+}
+
+/* 停滞：斜交的冰棱，收着不动 */
+.fxLayer[data-fx-affix='stasis'] {
+  background:
+    linear-gradient(74deg, transparent 44%, hsl(190 95% 88% / 0.6) 47% 53%, transparent 56%),
+    linear-gradient(-68deg, transparent 44%, hsl(190 95% 92% / 0.5) 47% 53%, transparent 56%);
+  animation: fxAffFreeze 0.6s ease-out forwards;
+}
+@keyframes fxAffFreeze {
+  0% { opacity: 0; transform: scale(1.3); filter: blur(2px); }
+  30% { opacity: 0.95; filter: blur(0); }
+  100% { opacity: 0; transform: scale(0.94); }
+}
+
+/* 沉默：断开的音弧（两半各走各的） */
+.fxLayer[data-fx-affix='silence'] {
+  background: repeating-radial-gradient(circle at 50% 50%,
+    transparent 0 16px, hsl(280 70% 86% / 0.5) 16px 18px, transparent 18px 40px);
+  -webkit-mask: conic-gradient(from 0deg, #000 0 140deg, transparent 140deg 180deg, #000 180deg 320deg, transparent 320deg 360deg);
+  mask: conic-gradient(from 0deg, #000 0 140deg, transparent 140deg 180deg, #000 180deg 320deg, transparent 320deg 360deg);
+  animation: fxAffBreak 0.6s ease-out forwards;
+}
+@keyframes fxAffBreak {
+  0% { opacity: 0; transform: scale(0.7); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.25) rotate(10deg); }
+}
+
+/* 标记 / 引仇：合拢的准星 */
+.fxLayer[data-fx-affix='mark'] {
+  background:
+    linear-gradient(90deg, transparent 46%, hsl(0 95% 78% / 0.85) 46% 54%, transparent 54%),
+    linear-gradient(0deg, transparent 46%, hsl(0 95% 78% / 0.85) 46% 54%, transparent 54%);
+  -webkit-mask: radial-gradient(closest-side, #000 0 46%, transparent 62%);
+  mask: radial-gradient(closest-side, #000 0 46%, transparent 62%);
+  animation: fxAffAim 0.52s ease-out forwards;
+}
+@keyframes fxAffAim {
+  0% { opacity: 0; transform: scale(1.5); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.72); }
+}
+
+/* 动条（推后 / 清空 / 减速）：时环逆转 —— 别人往前走的，这一手让它倒着走 */
+.fxLayer[data-fx-affix='wane'] {
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    transparent 0 14deg, hsl(45 100% 80% / 0.55) 14deg 20deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 0 26%, #000 34% 62%, transparent 72%);
+  mask: radial-gradient(closest-side, transparent 0 26%, #000 34% 62%, transparent 72%);
+  animation: fxAffRewind 0.6s ease-out forwards;
+}
+@keyframes fxAffRewind {
+  0% { opacity: 0; transform: rotate(26deg) scale(1.1); }
+  28% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(-34deg) scale(0.95); }
+}
+
+/* 护盾 / 护持：六边护罩往外撑 */
+.fxLayer[data-fx-affix='ward'] {
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    hsl(45 95% 78% / 0.6) 0 60deg, transparent 60deg 120deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 0 30%, #000 36% 60%, transparent 68%);
+  mask: radial-gradient(closest-side, transparent 0 30%, #000 36% 60%, transparent 68%);
+  animation: fxAffWard 0.62s ease-out forwards;
+}
+@keyframes fxAffWard {
+  0% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.15) rotate(30deg); }
+}
+
+/* 蓄力：往里收的能环 —— 是「把一拍存起来」，所以是收不是放 */
+.fxLayer[data-fx-affix='charge'] {
+  background: repeating-radial-gradient(circle at 50% 50%,
+    transparent 0 14px, hsl(var(--fx-h) 100% 84% / 0.55) 14px 17px);
+  animation: fxAffCharge 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes fxAffCharge {
+  0% { opacity: 0; transform: scale(1.6); }
+  34% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.42); }
+}
+
+/* 解除 / 拉回：上升的光粒 */
+.fxLayer[data-fx-affix='cleanse'] {
+  background:
+    radial-gradient(closest-side at 30% 70%, hsl(158 95% 90% / 0.7), transparent 66%),
+    radial-gradient(closest-side at 68% 78%, hsl(158 95% 86% / 0.6), transparent 66%);
+  animation: fxAffCleanse 0.6s ease-out forwards;
+}
+@keyframes fxAffCleanse {
+  0% { opacity: 0; transform: translateY(18%) scale(0.9); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-24%) scale(1.05); }
+}
+
+/* ---------- 三、暴击：色散 + 会心标 ---------- */
+
+/* 打实的那一下：红青错开一层（色散），只闪一瞬 ——
+   与基形叠在一起，看起来就是「这一下砸穿了」。 */
+.fxLayer[data-fx-crit='1'] {
+  background: linear-gradient(90deg,
+    hsl(0 100% 66% / 0.5) 0 48%, transparent 48% 52%, hsl(200 100% 70% / 0.5) 52% 100%);
+  mix-blend-mode: screen;
+  animation: fxCritSplit 0.34s ease-out forwards;
+}
+@keyframes fxCritSplit {
+  0% { opacity: 0; transform: scale(1.12); filter: blur(0); }
+  16% { opacity: 0.95; }
+  100% { opacity: 0; transform: scale(1.02); filter: blur(3px); }
+}
+
+/* 会心标：与招式名分开挂 —— 一个是「哪一手」，一个是「打实了没」 */
+.fxCrit {
+  position: absolute;
+  left: 50%;
+  top: 7%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 12px;
+  letter-spacing: 0.34em;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow: 0 0 12px hsl(45 100% 62%), 0 0 26px hsl(20 100% 58%);
+  animation: fxCritTag 0.86s ease-out forwards;
+}
+@keyframes fxCritTag {
+  0% { opacity: 0; transform: translate(-50%, 6px) scale(0.8); }
+  16% { opacity: 1; transform: translate(-50%, 0) scale(1.14); }
+  30% { transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -10px) scale(1); }
+}
+
+/* ---------- 四、防御姿态被打脱手 ---------- */
+
+.fxLayer[data-fx-shatter='1'] {
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    hsl(0 0% 96% / 0.6) 0 1.4deg, transparent 1.4deg 21deg);
+  animation: fxShatter 0.56s cubic-bezier(0.15, 0.85, 0.2, 1) forwards;
+}
+@keyframes fxShatter {
+  0% { opacity: 0; transform: scale(0.7); }
+  16% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+/* 抖屏的分级不在这儿 —— 它就在 `.root[data-shake]` 那三条旁边，
+   与基形住一起（见文件头「抖屏」那一段）。 */
+
+/* ---------- 六、关掉动效不等于关掉信息 ---------- */
+
+/* 这一节所有层都是 `forwards` 收尾的，直接 `animation: none` 会让它们**停在最后一帧挂着不走**
+   （层本身没有底色透明度，一留就是一层糊）。所以这一档要显式收到 `opacity: 0`：
+   动的是「这一手怎么打出去的」，留下来的静态读数照旧给 —— 会心标、架盾 / 盾脱手两枚牌子、
+   职能与效果的形状都还在，只是不晃了。 */
+@media (prefers-reduced-motion: reduce) {
+  .fxLayer { animation: none !important; opacity: 0 !important; }
+  .fxCrit { animation: none; opacity: 1; }
+  .dmgCrit { animation: none; opacity: 1; }
+  .root[data-shake] { animation: none !important; }
+  .unit[data-stance-broken='1'], .foeBody[data-stance-broken='1'] { animation: none !important; }
+  .stanceBrokenTag { animation: none; }
 }
 
 /* ---------- HUD ---------- */
@@ -402,6 +716,18 @@
    不像「没了」。这里补一段收场演出：先亮一下、再往里收、最后化成一枚空壳。
    位置留着不塌 —— 一塌两翼就跟着挪，玩家刚记住的排面全乱。
    ============================================================ */
+
+/* 敌方那半边也挂同一副姿态折光 —— 架盾不是玩家专利（敌我同一套骨架，
+   演出也得同一套），且击溃姿态的那一手常常砸在敌人身上。 */
+.foeBody[data-stance='1'] {
+  outline: 1px solid color-mix(in srgb, var(--steel) 62%, transparent);
+  outline-offset: -2px;
+}
+.foeBody[data-stance-broken='1'] {
+  outline: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+  outline-offset: -2px;
+  animation: stanceSnap 0.42s var(--ease-out);
+}
 
 .foeBody[data-down='1'] {
   animation: foeVanish 0.62s cubic-bezier(0.3, 0.7, 0.2, 1) both;
@@ -635,6 +961,26 @@
 }
 .unitDown { filter: saturate(0.1) brightness(0.6); }
 
+/* 姿态常驻折光：用 outline 不是 box-shadow —— 卡片本身在「选中的一拍」上已经占了
+   box-shadow（.unitActive 那道琥珀内光），换 outline 两样才叠得住，谁也不盖谁。 */
+.unit[data-stance='1'] {
+  outline: 1px solid color-mix(in srgb, var(--steel) 62%, transparent);
+  outline-offset: -2px;
+}
+.unit[data-stance-broken='1'] {
+  outline: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+  outline-offset: -2px;
+  animation: stanceSnap 0.42s var(--ease-out);
+}
+/* 盾被打脱手的那一下：卡片自己抖两下、褪一下色 —— 比只在标签栏换个字显眼 */
+@keyframes stanceSnap {
+  0% { transform: translateX(0); filter: brightness(1.6); }
+  22% { transform: translateX(-4px); }
+  48% { transform: translateX(3px); }
+  74% { transform: translateX(-2px); }
+  100% { transform: none; filter: none; }
+}
+
 .unitTop { display: flex; align-items: baseline; gap: 6px; min-width: 0; line-height: 1.25; }
 .unitName {
   flex: 1;
@@ -696,6 +1042,32 @@
   color: var(--violet);
 }
 
+/* 防御姿态两枚牌子。架着盾是钢蓝（信息蓝，别跟职能的和音绿 / 解封的紫混），
+   盾脱手是碎红 —— 一好一坏，隔着半屏也分得开。 */
+.stanceTag, .stanceBrokenTag {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+}
+.stanceTag {
+  border: 1px solid color-mix(in srgb, var(--steel) 52%, transparent);
+  color: var(--steel);
+  background: color-mix(in srgb, var(--steel) 10%, transparent);
+}
+.stanceBrokenTag {
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  animation: stanceBrokenFlicker 0.9s steps(2, end) 2;
+}
+@keyframes stanceBrokenFlicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .hpBar {
   height: 6px;
   border-radius: 4px;
@@ -739,6 +1111,31 @@
 }
 .dmgNum { top: 4px; right: 8px; font-size: 18px; }
 .dmgNumBig { left: 50%; top: 46%; font-size: 34px; animation-name: dmgFloat; }
+
+/* 打实了的那一下：数字比平时大一圈、白得发烫，尾巴上再挑一个「!」。
+   两处挂点同规矩 —— 贴身那处（.dmgNum）与全屏那处（.dmgNumBig）都得认得出来是同一回事。 */
+.dmgNum[data-crit='1'], .dmgNumBig[data-crit='1'] {
+  color: #fff;
+  text-shadow: 0 0 10px var(--amber), 0 0 24px color-mix(in srgb, var(--red) 60%, transparent),
+    0 2px 10px rgba(0, 0, 0, 0.9);
+}
+.dmgNum[data-crit='1'] { font-size: 24px; }
+.dmgNumBig[data-crit='1'] { font-size: 46px; }
+.dmgCrit {
+  font-style: normal;
+  font-size: 0.52em;
+  vertical-align: super;
+  margin-left: 1px;
+  color: var(--amber);
+  text-shadow: none;
+  animation: dmgCritPop 0.5s var(--ease-out) forwards;
+}
+@keyframes dmgCritPop {
+  0% { opacity: 0; transform: translateY(4px) scale(0.4); }
+  40% { opacity: 1; transform: translateY(0) scale(1.35); }
+  100% { opacity: 1; transform: none; }
+}
+
 @keyframes dmgFloat {
   0% { opacity: 0; transform: translate(-50%, 8px) scale(0.85); }
   25% { opacity: 1; transform: translate(-50%, -6px) scale(1.12); }
