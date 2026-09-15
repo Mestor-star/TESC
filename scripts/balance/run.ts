@@ -58,13 +58,13 @@ function policyOf(s: BattleState, me: Combatant): { t: 'skill'; skillId: string;
 
   /* 关键：legalSkills 不问冷却（界面上是用按钮上的读秒来表示的），
      所以要在这里自己剔掉还在转的那几手 —— 否则 act 会原样退回来，回合白转。 */
-  const mine = legalSkills(me, s).filter((k) => affordable(k, me.sp) && (me.cds[k.id] ?? 0) <= 0)
+  const mine = legalSkills(me, s).filter((k) => affordable(k, me.tempo) && (me.cds[k.id] ?? 0) <= 0)
   const roster = mine.filter((k) => k.kind !== '普攻')
 
   const pick = (k: SkillSpec) => ({ t: 'skill' as const, skillId: k.id, targetId: targetFor(k, s) })
 
   // 1）解封优先：启动技是第一手该做的事
-  const start = roster.find((k) => k.kind === '启动')
+  const start = roster.find((k) => k.gate)
   if (start) return pick(start)
 
   // 2）全队掉过半血，先回一口

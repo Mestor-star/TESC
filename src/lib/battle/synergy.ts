@@ -6,8 +6,9 @@
        凑够 3 人开档、满 5 人封顶（TUNING.traitMax），人越齐越强（同金铲铲的羁绊计数）。
        档位取「已达成的最高一档」，不叠加。
      · 连携技（人层）：双人（心叶 × 露娜／会长／黑之魔王）与整队（恋兔队全员）
-       各有一记合击。它**不由玩家主动点**：羁绊里每人各出一手，共鸣槽就会满 ——
-       满了自己就接上（见 BONDS 与 engine 的 chargeLinks / fireLinks）。
+       各有一记合击。它**不由玩家主动点**，统称「追击」：双人那条看**条件**
+       （搭档打穿破绽 / 对面在咏唱）自己接上，整队那条看**共鸣槽**
+       （每人攒自己那份，全员满才成立）—— 见文件尾「连携技 · 自动触发的口子」。
        所以「恋兔队全员才触发」不是一句 UI 提示，而是槽要满编的人一人添一笔才满。
    加成只落在既有的常驻字段上（gearAtk / gearSpd / axes / evade），
    不改引擎口径：羁绊只是「这几个人站在一起时，本来就该更强」。
@@ -351,15 +352,20 @@ export function synergiesOf(ids: string[]): ActiveSynergy[] {
 }
 
 /* ============================================================
-   连携技 · 自动触发的口子
+   连携技 · 自动触发的口子（这一套统称「追击」）
    ------------------------------------------------------------
-   不由玩家点，而是「出手自己接上」。两条口径分开（见 engine 的 chargeGauge / linkReady）：
-     · 双人羁绊 —— 一条共享的槽（共鸣），参加者谁出一手都添一笔（防御也算）；
-     · 整队连携（特殊连携，Bond.squad）—— 不看共享的槽，看**名单上每个人自己的能量**：
-       一人一条，别人替他攒不了，全员都满、且全员都还在场上，才成立。换来的不是
-       补一脚，是全队一起吃的那几拍巨量加成。
+   不由玩家点，而是「出手自己接上」。底下是**两套机制**，别混起来
+   （见 engine 的 chargeGauge / linkReady / followCondition / fireFollows / fireTeamLink）：
+     · 团队羁绊连携（Bond.squad，恋兔队 / 苍之学园 / 卡乌斯学院那一类）——
+       看**共鸣槽**：名单上每个人自己的能量，一人一条，别人替他攒不了
+       （谁出一手都给自己添一笔，防御也算），全员都满、且全员都还在场上才成立。
+       换来的不是补一脚，是全队一起吃的那几拍巨量加成；由当下出手的那一位带出去。
+     · 双人追击（Bond 不带 squad，心叶 × 哪一位）—— **没有槽**，看**条件**：
+       搭档这一手打穿了破绽、或对面正在咏唱，另一位就接一手。
+       限速全在冷却上（`Bond.cd`），所以羁绊缩短的也是它 ——
+       不这么收，「攒羁绊 = 配合更快」这条在双人这一路就断了。
    两条都要「全员到场」；某个人倒了、被归档收走了，这一手就凑不齐。
-   接完不清零：参加者按「他们也出了场」各添一笔（见 engine 里 fireLinks 末的补笔）——
+   团队那条接完不清零：参加者按「他们也出了场」各添一笔（见 engine 里 chargeGauge 的补笔）——
    否则连携就是一次性消耗，接得越勤越像白接。
    这笔账只在手册里讲（见 manual 的「作战现场」），不写进观测频道 ——
    战报是现场记录，不该混进机制说明。
@@ -405,16 +411,27 @@ export function bondAxes(v: number): Partial<AxisSheet> {
 }
 
 /**
- * 一条连携的共鸣槽要几拍 —— 由「跟你最生疏的那个参加者」的羁绊决定。
+ * 参加者里**跟你最生疏**的那一位的羁绊读数 —— 搭伙这件事，快慢由最生的那节说了算。
+ * 操作员本人不算数：他不是一段关系，他就是你。
+ * `linkNeed` / `followCdOf` / 引擎「谁先接上这一记追击」三处都用它 ——
+ * 必须是同一把尺，否则面板上写的和场上跑的对不上。
+ */
+export function bondFloorOf(members: string[], bond?: Record<string, number>): number {
+  if (!bond) return 0
+  const others = members.filter((id) => id !== OPERATOR_ID)
+  if (!others.length) return 0
+  return Math.min(...others.map((id) => bond[id] ?? 0))
+}
+
+/**
+ * 一条**团队**连携的共鸣槽要几拍 —— 由「跟你最生疏的那个参加者」的羁绊决定。
  * @param members 参加者 id（含操作员则自动略过）
  * @param bond    羁绊读数（0~100）
  */
 export function linkNeed(members: string[], base: number, bond?: Record<string, number>): number {
   if (!bond) return base
-  const others = members.filter((id) => id !== OPERATOR_ID)
-  if (!others.length) return base
-  const weakest = Math.min(...others.map((id) => bond[id] ?? 0))
-  return Math.max(2, base - bondCut(weakest))
+  if (!members.some((id) => id !== OPERATOR_ID)) return base
+  return Math.max(2, base - bondCut(bondFloorOf(members, bond)))
 }
 
 export interface BondLink {
@@ -435,32 +452,25 @@ export interface Bond {
   name: string
   /** 参加者（全员到齐才触发） */
   members: string[]
-  /** 共鸣槽要几拍才满 */
+  /** 共鸣槽要几拍才满（**只有整队那条读它**，见 `squad`） */
   need: number
-  /** 满槽后由谁执手（成员里第一个还在场上的人） */
+  /** 接完一手的冷却（拍）。**双人那条也读它** —— 条件是随时的，限速全靠冷却。 */
+  cd: number
+  /** 由谁执手（团队那条：出手者带出去；双人那条：由**另一位**接，见 engine 的 fireFollows） */
   link: BondLink
   /**
-   * 整队连携（特殊连携）。
-   * 与双人那条的分野在**槽记在谁头上**：
-   *   双人 —— 一条共享的槽，谁出手都添一笔，满了就接（见 engine 的 s.link）。
-   *   整队 —— 每人一条自己的能量，**全员都满**才成立（见 engine 的 s.gauge）。
-   * 所以整队那条不是「凑够拍数」，是「每个人都把自己那份攒满」。
+   * 整队连携（特殊连携）—— 触发机制与双人**不同**：
+   *   整队 —— 看**共鸣槽**：每人一条自己的能量（engine 的 `s.follow`），
+   *     全员都满、且全员都还在场上才成立。不是「凑够拍数」，是「各人把自己那份攒满」。
+   *   双人 —— 看**条件**（engine 的 `followCondition`）：搭档这一手打穿了破绽、
+   *     或对面正在咏唱，另一位就接一手。**它没有槽** —— `need` 对它没有意义。
    */
   squad?: boolean
 }
 
-/*
-  一对搭档的共鸣槽底数。
-  从 3 提到 4 是为了给羁绊留出「缩短」的余地：3 拍再缩就只剩 2 拍，
-  两档羁绊（45 / 75）会缩到同一个数上 —— 那这一档就是白设的。
-  底数 4 之下：没交情 4 拍、过命 3 拍、生死与共 2 拍，档档分得开。
-  （没交情比原先的 3 拍慢一拍：合击本来就是羁绊给的，不该是白送的。）
-*/
-const PAIR_NEED = 4
-
 /**
  * 本场在场的连携羁绊（双人 + 整队）。
- * @param bond 羁绊读数 —— 给了就按交情缩短共鸣槽（见 linkNeed）
+ * @param bond 羁绊读数 —— 给了就按交情缩短共振那一档（见 linkNeed / followCdOf）
  */
 export function bondsOf(ids: string[], bond?: Record<string, number>): Bond[] {
   const out: Bond[] = []
@@ -469,7 +479,12 @@ export function bondsOf(ids: string[], bond?: Record<string, number>): Bond[] {
     const members = [p.a, p.b].filter((x) => on.has(x))
     out.push({
       id: p.id, name: p.name, members,
-      need: linkNeed(members, PAIR_NEED, bond),
+      // 双人那条**没有槽**（走条件），`need` 对它没有意义 —— 写 0，
+      // 免得日后有人顺手读了它，又以为双人也有一根共鸣槽。
+      need: 0,
+      // 交情缩短的现在落在**冷却**上：槽没了，但「攒羁绊 = 配合更快」这条要留住，
+      // 否则双人这一路的羁绊就只剩五轴那一份，攒它变得没手感。
+      cd: followCdOf(p.link.cd, members, bond),
       link: { ...p.link, linkPow: p.link.linkPow },
     })
   }
@@ -483,6 +498,7 @@ export function bondsOf(ids: string[], bond?: Record<string, number>): Bond[] {
     out.push({
       id: `${t.trait.id}-full`, name: l.name, members: t.members,
       need: linkNeed(t.members, cap, bond),
+      cd: followCdOf(l.cd, t.members, bond),
       link: { ...l },
       squad: true,
     })
@@ -491,8 +507,19 @@ export function bondsOf(ids: string[], bond?: Record<string, number>): Bond[] {
 }
 
 /**
+ * 接完一手的冷却要几拍 —— 由「跟你最生疏的那个参加者」的羁绊决定（与 `linkNeed` 同一把尺）。
+ * 团队那条的原数写在连携上；双人那条槽没了，限速全在冷却上，所以羁绊缩短的也是它。
+ * 下限 1：再熟也不许缩成零冷却 —— 那就成了每手都接。
+ */
+export function followCdOf(base: number, members: string[], bond?: Record<string, number>): number {
+  if (!bond) return base
+  if (!members.some((id) => id !== OPERATOR_ID)) return base
+  return Math.max(1, base - bondCut(bondFloorOf(members, bond)))
+}
+
+/**
  * 把羁绊加成落到上阵者身上（只落常驻字段）。
- * 连携技不再进技能表 —— 它由共鸣槽自动触发（见 engine 的 chargeLinks / fireLinks）。
+ * 连携技不再进技能表 —— 它由共鸣槽 / 追击条件自动触发（见 engine 的 fireFollows / fireTeamLink）。
  * @param targets  要落加成的上阵者
  * @param squadIds 本场的队伍名单（换装重建单人时由调用方传全队，否则会算漏人）
  * @param bond     羁绊读数（0~100）—— 给了再叠一层「交情」的五轴加成（见 bondAxes）

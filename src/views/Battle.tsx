@@ -6,7 +6,7 @@ import {
 } from '@phosphor-icons/react'
 
 import {
-  act, bossUltOf, chargeOf, createBattle, digestOf, enemysTurn, legalSkills, lootOddsOf, pendingFoe, rewardOf,
+  act, bossUltOf, createBattle, digestOf, enemysTurn, etaOf, legalSkills, lootOddsOf, pendingFoe, rewardOf,
 } from '../lib/battle/engine'
 import type { Command } from '../lib/battle/engine'
 import { intentOf, requestEnemyIntent } from '../lib/battle/ai'
@@ -46,10 +46,11 @@ import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
 import { enemyFormation } from '../lib/battle/derive'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
+import { dutyOf } from '../lib/battle/duty'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
 import { endOf, isDebuff } from '../lib/battle/types'
-import type { BattleRecord, BattleState, Combatant, EnemyIntent, FxKind, FxTone, SkillKind, SkillSpec, StaminaState } from '../lib/battle/types'
+import type { BattleRecord, BattleState, Combatant, EnemyIntent, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
@@ -185,7 +186,11 @@ export function Battle({
      而且给一个**截止时间**：超过就用引擎自己的判断打，绝不为了等模型把仗卡住。
 
      提前问回来的那一手，落地前一律过 `intentOf` 按**此刻**的局面重校验 ——
-     存的是局面，局面会变（技能可能冷却、它瞄的人可能已经倒了）。 */
+     存的是局面，局面会变（技能可能冷却、它瞄的人可能已经倒了）。
+
+     ⚠ 依赖写整份 `st`（同 foeLine 那一节）：`st.enemies` 的引用一辈子不变，
+     写它就等于只问开局那几只 —— 首领半路喊来的召唤物没有提前问过，
+     轮到它时现问，白白多一次往返。 */
   useEffect(() => {
     if (st.phase !== 'select') return
     if (!cfg || !isReady(cfg)) return
@@ -198,7 +203,7 @@ export function Battle({
       const p = requestEnemyIntent(st, foe, cfg, { signal: ctl.signal }).catch(() => null)
       prefetch.current.set(foe.id, { p, ctl })
     }
-  }, [st.phase, st.enemies, cfg])
+  }, [st, cfg])
 
   /* ---- 轮到敌体：先吃提前问好的那一手，吃不到就现问，但有个硬截止 ---- */
   useEffect(() => {
@@ -263,10 +268,10 @@ export function Battle({
       // 整队连携（xxx-full）挂在同一条羁绊名下
       if (b.id.endsWith('-full')) bonds.set(b.id.slice(0, -5), b)
     }
-    // 名义拍数（不看羁绊）——用来算「交情省了几拍」
+    // 名义读数（不看羁绊）——用来算「交情省了几拍」
     const plain = new Map<string, number>()
     for (const b of bondsOf(ids)) {
-      plain.set(b.id, b.need)
+      plain.set(b.id, b.squad ? b.need : b.cd)
       if (b.id.endsWith('-full')) plain.set(b.id.slice(0, -5), b.need)
     }
     return synergiesOf(ids).map((s) => {
@@ -276,17 +281,22 @@ export function Battle({
         id: s.id, name: s.name, desc: s.desc, mark: s.mark,
         link: b && base !== undefined
           ? {
-            name: b.link.name, desc: b.link.desc, need: b.need, base,
-            // 双人看共享的槽；整队（特殊连携）看各人自己的能量 —— 取最落后的那一个，
-            // 因为「全员满」才算数，最慢的那个人就是这条连携的进度。
+            name: b.link.name, desc: b.link.desc, base,
+            /* 两套触发机制读的是两样东西（见 synergy 的 Bond），牌上就得分开读：
+               · 团队羁绊连携 —— 读**共鸣槽**「攒到几拍 / 要几拍」，
+                 取名单上最落后的那个人的能量：因为「全员满」才算数，
+                 最慢的那一位就是这条连携的进度。
+               · 双人追击 —— 没有槽，读**冷却**「走了几拍 / 冷却几拍」，
+                 走满了就是「条件一到就接」。 */
             cur: b.squad
-              ? Math.min(b.need, Math.min(...b.members.map((id) => st.gauge?.[id] ?? 0)))
-              : Math.min(b.need, st.link?.[b.id] ?? 0),
+              ? Math.min(b.need, Math.min(...b.members.map((id) => st.follow?.[id] ?? 0)))
+              : Math.max(0, b.cd - (st.followCd?.[b.id] ?? 0)),
+            max: b.squad ? b.need : b.cd,
             squad: !!b.squad,
             // 整队那条还要报「几个人已经满了」—— 只看最落后的那一个，
             // 玩家不知道是卡在谁身上。
             full: b.squad
-              ? b.members.filter((id) => (st.gauge?.[id] ?? 0) >= b.need).length
+              ? b.members.filter((id) => (st.follow?.[id] ?? 0) >= b.need).length
               : 0,
             members: b.members,
           }
@@ -302,7 +312,9 @@ export function Battle({
       .map((c) => {
         const pct = Math.min(100, (c.bar / TUNING.barMax) * 100)
         const ready = c.bar >= TUNING.barMax
-        const eta = ready ? 0 : Math.max(1, Math.ceil((TUNING.barMax - c.bar) / Math.max(0.5, chargeOf(c))))
+        /* 顺位读的是 windowGainOf —— 离散化之后「余量 ÷ 充能」不再是那把尺子（见 §3） */
+        const w = etaOf(c)
+        const eta = ready ? 0 : Number.isFinite(w) ? Math.max(1, Math.ceil(w)) : 99
         return { c, pct, ready, eta }
       })
       .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
@@ -310,14 +322,20 @@ export function Battle({
 
   /* ---- 敌阵的站位：头目档站正中、召唤物分列两翼（见 derive.enemyFormation）----
      分三列而不是排成一行：行内中位会随人数漂移，窄屏折行还会把折下去的那张裁掉半截，
-     点不中（挑目标点的是卡本体）。三列各自贴向中列，中列因此恒在正中。 */
-  const foeLine = useMemo(() => enemyFormation(st.enemies), [st.enemies])
+     点不中（挑目标点的是卡本体）。三列各自贴向中列，中列因此恒在正中。
+
+     ⚠ 依赖写**整份 `st`**，不许写 `[st.enemies]`：引擎是就地推进的，
+     `summonFoe` 直接 push 进同一个数组，那个数组的引用自开打起一辈子不变 ——
+     拿它当依赖等于「挂载时算一次，此后锁死」。首领这一场喊出来的召唤物于是
+     **永远不长卡**：日志里它在打你，敌阵里摸不到它，挑不着目标，这一仗就收不了场。 */
+  const foeLine = useMemo(() => enemyFormation(st.enemies), [st])
 
   /* 信息面板翻开的是哪一只 —— 手上只存 id，读数每次从当前这一局现取：
-     存下整只的话，面板一开着、场上它挨了一刀，那一页写的还是翻开时那份血。 */
+     存下整只的话，面板一开着、场上它挨了一刀，那一页写的还是翻开时那份血。
+     （依赖同样得是整份 `st` —— 理由见上面 foeLine 那一节。） */
   const infoFoe = useMemo(
     () => (foeInfo ? st.enemies.find((c) => c.id === foeInfo) ?? null : null),
-    [foeInfo, st.enemies],
+    [foeInfo, st],
   )
 
   /* ---- 「回手」的那一下 ----
@@ -362,7 +380,7 @@ export function Battle({
     if (e.down) sfx('down')
     else if (e.miss) sfx('tick')
     else if (e.heal) sfx('heal')
-    else if (e.kind === '启动') sfx('form')
+    else if (e.gate) sfx('form')
     else sfx(SFX_OF_FX[e.fx] ?? 'hit')
     // 连携要留够看清两张脸的时间：它后面还跟着一手伤害，380ms 会一闪而过
     const hold = e.link ? 1500 : e.dmg || e.down ? 620 : 380
@@ -556,7 +574,8 @@ ${siteR.f.word}`}>
           </span>
         </div>
         <div className={css.hudR}>
-          {/* 羁绊：谁跟谁一起上阵、连携的共鸣槽还差几拍（连携不由玩家点，槽满自己接上） */}
+          {/* 羁绊：谁跟谁一起上阵、这一记联动还差几拍
+              （两套触发各有各的读数：整队看共鸣槽、双人看追击冷却 —— 连携都不由玩家点） */}
           {synergyRow ? (
             <div className={css.traitRow} data-synergy-row>
               {synergyRow.map((t) => (
@@ -568,30 +587,32 @@ ${siteR.f.word}`}>
                     ? `　连携：${t.link.name} —— ${t.link.desc}`
                       + (t.link.squad
                         ? `　共鸣：整队连携 —— 名单上每个人各出一手（防御也算一手）把自己的能量蓄满，`
-                          + `一人 ${t.link.need} 拍，全员都满才成立`
-                          + (t.link.base > t.link.need ? `（交情够了，本要 ${t.link.base} 拍）` : '')
+                          + `一人 ${t.link.max} 拍，全员都满才成立`
+                          + (t.link.base > t.link.max ? `（交情够了，本要 ${t.link.base} 拍）` : '')
                           + '　接法：全员满能量的那一刻，由当下出手的那一位带出去，全队一起吃加成'
-                        : `　共鸣：每人各出一手（防御也算一手），蓄满 ${t.link.need} 拍等着接`
-                          + (t.link.base > t.link.need ? `（交情够了，本要 ${t.link.base} 拍）` : '')
-                          + `　接法：槽满后谁出手，这一手就跟着谁出去 —— 防御只蓄拍、不接招`)
+                        : `　追击：双人连携 —— 没有槽，看条件：搭档这一手打穿了破绽、或对面正在咏唱，`
+                          + `另一位就自己接上去（不占行动条、不占节拍）；冷却 ${t.link.max} 拍`
+                          + (t.link.base > t.link.max ? `（交情够了，本要 ${t.link.base} 拍）` : '')
+                          + '　接法：条件一到就接 —— 防御只是架着，不算出手，接不上')
                     : ''}`}
                 >
                   <b>{t.name}</b>
                   {t.link ? (
                     <>
-                      <i className={css.linkGauge} data-link-gauge={t.id} data-squad={t.link.squad ? '1' : undefined} data-full={t.link.cur >= t.link.need ? '1' : undefined} data-cut={t.link.base > t.link.need ? '1' : undefined}>
-                        {t.link.cur}/{t.link.need}
+                      <i className={css.linkGauge} data-link-gauge={t.id} data-squad={t.link.squad ? '1' : undefined} data-full={t.link.cur >= t.link.max ? '1' : undefined} data-cut={t.link.base > t.link.max ? '1' : undefined}>
+                        {t.link.cur}/{t.link.max}
                         {/* 整队那条的槽是「最落后的那个人」的读数 —— 再报一句几个人满了，
                             否则玩家只看得到一个卡住不动的数字，不知道是卡在谁身上 */}
                         {t.link.squad ? <em className={css.linkCut} data-link-full>{t.link.full}/{t.link.members.length} 人满</em> : null}
-                        {t.link.base > t.link.need ? <em className={css.linkCut}>羁绊</em> : null}
+                        {t.link.base > t.link.max ? <em className={css.linkCut}>羁绊</em> : null}
                       </i>
-                      {/* 槽满不等于接上了 —— 防御不算出手，光架盾是接不上的。这一格就是把话说明白 */}
-                      {t.link.cur >= t.link.need ? (
+                      {/* 走满了不等于接上了 —— 两套都是「出手才接」：整队那套得有人真打出去，
+                          双人那套还得凑上条件。这一格就是把话说明白，别让玩家以为挂着就自动来。 */}
+                      {t.link.cur >= t.link.max ? (
                         <em className={css.linkHint} data-link-hint={t.id} title={t.link.squad
                           ? '全员能量已满：谁出手，这一记整队连携就跟谁出去，全队一起吃加成'
-                          : '共鸣已蓄满：谁出手，这一手就跟谁出去；防御只蓄拍、不接招'}>
-                          {t.link.squad ? '全员满 · 出手即接' : '出手即接'}
+                          : '追击随时可接：搭档出手时打穿破绽、或对面正在咏唱，这一手就自己接上去'}>
+                          {t.link.squad ? '全员满 · 出手即接' : '冷却已过 · 见条件即接'}
                         </em>
                       ) : null}
                     </>
@@ -602,10 +623,13 @@ ${siteR.f.word}`}>
               ))}
             </div>
           ) : null}
+          {/* 「手」与「回合」是两本账（见 types 的 BattleState.acted）：
+              手数含敌我双方的出手，回合只由我方划边界 —— 标错一个字，
+              引导里那一段（梅芙讲「敌方不划这条线」）就与屏幕对不上了。 */}
           <span className={css.round} data-hand={st.hand}>
-            第 <b>{st.hand}</b> 手 <span className="tiny muted">/ {st.tick} 拍</span>
+            第 <b>{st.hand}</b> 手 <span className="tiny muted">/ {st.tick} 回合</span>
           </span>
-          <div className={css.spWrap} title="小队体力 · 只在出击时扣，随观测间隔回补；出手消耗的是各人自己的体力">
+          <div className={css.spWrap} title="小队体力 · 只在出击时扣，随观测间隔回补；出手消耗的是各人自己的节拍">
             <span className="tiny mono" style={{ letterSpacing: '0.14em' }}>小队体力</span>
             <div className={css.spBar}>
               <i style={{ width: `${(st.sp / st.spMax) * 100}%` }} data-low={st.sp <= 30 ? '1' : undefined} />
@@ -644,14 +668,14 @@ ${siteR.f.word}`}>
               data-surge={surge === c.id ? '1' : undefined}
               data-slot={i}
               style={{ '--u': c.hue, '--x': `${i * ORDER_STEP}px` } as CSSProperties}
-              title={`${named(c)} · 行动条 ${Math.round(pct)}%${ready ? ' · 已待命' : ` · 约 ${eta} 拍后出手`}`}
+              title={`${named(c)} · 行动条 ${Math.round(pct)}%${ready ? ' · 已待命' : ` · 约 ${eta} 窗口后出手`}`}
             >
               <i className={css.orderSigil}>{c.sigil}</i>
               <b>{named(c)}</b>
               <span className={css.orderBar}>
                 <i style={{ width: `${pct}%` }} />
               </span>
-              <em className="mono">{ready ? '待命' : `${eta} 拍`}</em>
+              <em className="mono">{ready ? '待命' : `${eta} 窗口`}</em>
             </span>
           ))}
         </div>
@@ -837,11 +861,11 @@ ${siteR.f.word}`}>
                 <SubPanel title="技能" onBack={() => setPanel('root')}>
                   <div className={css.list} data-skill-list data-actor={actor.id}>
                     {SKILL_GROUPS.map((g) => {
-                      const rows = legalSkills(actor, st).filter((k) => k.kind === g.kind)
+                      const rows = legalSkills(actor, st).filter(g.of)
                       if (!rows.length) return null
                       return (
-                        <div key={g.kind} className={css.skillGroup} data-skill-group={g.kind}>
-                          <div className={css.groupCap} data-skill-group-cap={g.kind}>
+                        <div key={g.key} className={css.skillGroup} data-skill-group={g.key}>
+                          <div className={css.groupCap} data-skill-group-cap={g.key}>
                             <b>{g.label}</b>
                             <span className={css.groupNote}>{g.note}</span>
                           </div>
@@ -849,7 +873,7 @@ ${siteR.f.word}`}>
                             <SkillBtn
                               key={k.id}
                               k={k}
-                              sp={actor.sp}
+                              sp={actor.tempo}
                               cd={actor.cds[k.id] ?? 0}
                               onClick={() => issue({ t: 'skill', skillId: k.id })}
                             />
@@ -866,14 +890,21 @@ ${siteR.f.word}`}>
                   <div className={css.list} data-item-list>
                     {ITEMS.map((it) => {
                       const n = st.bag[it.id] ?? 0
+                      /* 两道限：存量是背包里还剩几剂，额度是本回合还能丢几次
+                         （TUNING.freePerBeat —— 道具不消耗回合，所以每回合各限一次）。
+                         少了后一道，按钮按下去是**静默无反应**，玩家只会以为卡了。 */
+                      const free = TUNING.freePerBeat.item - (st.freeUsed.item ?? 0)
+                      const out = n <= 0 || free <= 0
                       return (
                         <button
                           key={it.id}
                           type="button"
                           data-item={it.id}
-                          className={`${css.row} ${n <= 0 ? css.rowPoor : ''}`}
-                          disabled={n <= 0}
-                          title={it.desc}
+                          className={`${css.row} ${out ? css.rowPoor : ''}`}
+                          disabled={out}
+                          title={free <= 0
+                            ? `${it.name}：本回合那一剂的额度已经用掉了 —— 等这一回合收掉再来。`
+                            : it.desc}
                           onClick={() => issue({ t: 'item', itemId: it.id })}
                         >
                           <SkillIcon id={`item-${it.id}`} />
@@ -894,6 +925,8 @@ ${siteR.f.word}`}>
                       type="button"
                       data-gear="__none"
                       className={`${css.row} ${!actor.gear ? css.rowOn : ''}`}
+                      disabled={TUNING.freePerBeat.gear - (st.freeUsed.gear ?? 0) <= 0}
+                      title="卸下装具 —— 同样不消耗回合，每回合一次"
                       onClick={() => doEquip(null)}
                     >
                       <span className={css.rowName}>不装配</span>
@@ -907,6 +940,8 @@ ${siteR.f.word}`}>
                         // 专属件认人：它认的是系丝线的那只手，不是背包里有没有位置
                         // 再一条：一件装具只有一副，队伍里谁先系上就是谁的 —— 别人那格按不动
                         const holder = Object.keys(equipMap).find((pid) => pid !== actor.id && equipMap[pid] === gid)
+                        // 换装也不消耗回合，于是同样每回合各限一次（见上面道具那一段）
+                        const spent = TUNING.freePerBeat.gear - (st.freeUsed.gear ?? 0) <= 0
                         const ok = canEquip(actor.id, gid) && !holder
                         return (
                           <button
@@ -915,9 +950,11 @@ ${siteR.f.word}`}>
                             data-gear={gid}
                             data-gear-only-for={!canEquip(actor.id, gid) ? g.onlyFor?.join(',') : undefined}
                             data-gear-held-by={holder || undefined}
-                            disabled={!ok}
+                            disabled={!ok || spent}
                             className={`${css.row} ${on ? css.rowOn : ''}`}
-                            title={ok ? g.desc
+                            title={spent
+                              ? `${g.name}：本回合换装的额度已经用掉了 —— 等这一回合收掉再来。`
+                              : ok ? g.desc
                               : holder ? `${g.name} 正系在 ${personOf(holder)?.name ?? holder} 身上 —— 一件装具只有一副。`
                               : `${g.name} 只认 ${g.onlyFor?.map((id) => personOf(id)?.name ?? id).join('、')} —— 别人系上也只是一条普通的线。`}
                             onClick={() => ok && doEquip(gid)}
@@ -1011,7 +1048,7 @@ ${siteR.f.word}`}>
           )}
         </div>
 
-        {/* 小队列 —— 谁的血还剩几成、体力还剩几口，出招前就在手边 */}
+        {/* 小队列 —— 谁的血还剩几成、节拍还剩几口，出招前就在手边 */}
         <div className={css.party} data-party-field>
           <div className={css.partyCap}>
             小队
@@ -1093,10 +1130,22 @@ function stackText(c: Combatant): string {
 }
 
 /** 技能面板分组：普攻不是技能，不该和技能混在同一张表里 */
-const SKILL_GROUPS: Array<{ kind: SkillKind; label: string; note: string }> = [
-  { kind: '到达点', label: '到达点（End）', note: '每个人的终结技 · 蓄满印记才列得出来' },
-  { kind: '启动', label: '启动', note: '解封印的前置手 · 打满才算起手完毕' },
-  { kind: '技能', label: '技能', note: '本命的那几手 · 各有代价与冷却' },
+const SKILL_GROUPS: Array<{ key: string; label: string; note: string; of: (k: SkillSpec) => boolean }> = [
+  {
+    key: '到达点', label: '终结技（End）',
+    note: '每个人的终结技 · 蓄满印记才列得出来',
+    of: (k) => k.kind === '终结技',
+  },
+  {
+    key: '启动', label: '解封',
+    note: '解封印的前置手 · 打满才算起手完毕',
+    of: (k) => k.gate === true,
+  },
+  {
+    key: '技能', label: '战技',
+    note: '本命的那几手 · 各有代价与冷却',
+    of: (k) => k.kind === '战技' && !k.gate,
+  },
 ]
 
 function notesOf(k: SkillSpec): string[] {
@@ -1107,7 +1156,7 @@ function notesOf(k: SkillSpec): string[] {
   const mul = mulTextOf(k)
   if (mul) out.push(mul)
   out.push(TARGET_LABEL[k.target] ?? k.target)
-  if (k.cost) out.push(`耗 ${k.cost} 体力`)
+  if (k.cost) out.push(`耗 ${k.cost} 节拍`)
   if (k.cd) out.push(`冷却 ${k.cd} 拍`)
 
   const eff = effectTextsOf(k)
@@ -1125,7 +1174,7 @@ function notesOf(k: SkillSpec): string[] {
     out.push('变身期间整份技能表换成那副面目的打法')
   }
   if (k.ult) out.push(`终结技 · 蓄 ${k.ult} 拍`)
-  if (k.kind === '启动') out.push('启动技 · 解封普攻与技能')
+  if (k.gate) out.push('解封手 · 解封之后普攻与战技才放得出来')
   // 解封是一层一层拧开的：把每一层的台词也摊开，免得玩家以为五下是同一句
   if (k.startLines?.length) out.push(`逐层台词 · ${k.startLines.join(' → ')}`)
   return out
@@ -1152,16 +1201,17 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
   const poor = k.cost > sp
   const cooling = cd > 0
   const notes = notesOf(k)
-  const state = cooling ? `冷却中 · 还需 ${cd} 拍` : poor ? '体力不足' : ''
+  const state = cooling ? `冷却中 · 还需 ${cd} 拍` : poor ? '节拍不足' : ''
   return (
     <button
       type="button"
       data-skill={k.id}
       data-kind={k.kind}
+      data-gate={k.gate ? '1' : undefined}
       data-power={k.power}
       data-cd={cooling ? cd : undefined}
       data-cdmax={k.cd ?? 0}
-      className={`${css.row} ${k.kind === '启动' ? css.rowStart : ''} ${k.kind === '到达点' ? css.rowEnd : ''} ${poor || cooling ? css.rowPoor : ''}`}
+      className={`${css.row} ${k.gate ? css.rowStart : ''} ${k.kind === '终结技' ? css.rowEnd : ''} ${poor || cooling ? css.rowPoor : ''}`}
       disabled={poor || cooling}
       title={`${k.name}｜${k.desc}${state ? `（${state}）` : ''}`}
       onClick={onClick}
@@ -1172,7 +1222,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
         {k.kind !== '普攻' ? <i className={css.rowSub}>{k.kind}</i> : null}
       </span>
       <span className={css.rowCost}>
-        {cooling ? `冷却 ${cd}` : k.cost ? `${k.cost} 体力` : '无耗'}
+        {cooling ? `冷却 ${cd}` : k.cost ? `${k.cost} 节拍` : '无耗'}
         {!cooling && k.cd ? <i className={css.rowSub}>CD {k.cd}</i> : null}
       </span>
       <span className={css.rowDesc} data-skill-desc>{k.desc}</span>
@@ -1304,7 +1354,7 @@ function LinkPop({ link }: { link: { id: string; name: string; members: string[]
   )
 }
 
-/* ---------- 单位卡：我方（小队列里的一行 —— 血、体力、行动条一眼看全） ---------- */
+/* ---------- 单位卡：我方（小队列里的一行 —— 血、节拍、行动条一眼看全） ---------- */
 
 function Unit({
   c, fx, active, targetable, onPick,
@@ -1367,14 +1417,21 @@ function Unit({
 
         <div className={css.unitFootRow}>
           <Bar c={c} />
-          <span className={css.chSpBar} data-chsp={c.id} title={`自身体力 ${c.sp}/${c.spMax} · 出手从这里扣`}>
-            <i style={{ width: `${(c.sp / c.spMax) * 100}%` }} data-low={c.sp <= c.spMax * 0.25 ? '1' : undefined} />
+          <span className={css.chSpBar} data-chsp={c.id} title={`自身节拍 ${c.tempo}/${c.tempoMax} · 出手从这里扣`}>
+            <i style={{ width: `${(c.tempo / c.tempoMax) * 100}%` }} data-low={c.tempo <= c.tempoMax * 0.25 ? '1' : undefined} />
           </span>
-          <span className={`${css.spNum} mono`}>体力 {c.sp}</span>
+          <span className={`${css.spNum} mono`}>节拍 {c.tempo}</span>
         </div>
 
         <div className={css.unitTags}>
           <span className={css.unitCls}>{c.cls}</span>
+          {/* 职能与定位叠着，不顶替：定位是身份，职能是活计（见 duty.ts）。
+              敌方不带职能 —— 五档是给我方那 24 个人定的。 */}
+          {c.side === 'ally' ? (
+            <span className={css.unitDuty} data-unit-duty={c.id} title={`${dutyOf(c.duty).desc}　主攻轴：${dutyOf(c.duty).axis}`}>
+              {dutyOf(c.duty).name}
+            </span>
+          ) : null}
           {c.passive ? (
             /* 说明写它从原文哪儿来，读数写它这一场究竟加减多少 —— 两样都得有 */
             <span
@@ -1549,7 +1606,7 @@ function FoeInfoPanel({ c, onClose }: { c: Combatant; onClose: () => void }) {
     ['来历', nb
       ? nb.from
       : `观测体 · 按这一场的地点 R 值与危险度现推的通用件${c.note ? `（${c.note}）` : ''}`],
-    ['当前', `${c.hp} / ${c.hpMax} 生命　·　体力 ${c.sp} / ${c.spMax}　·　${tier}`],
+    ['当前', `${c.hp} / ${c.hpMax} 生命　·　节拍 ${c.tempo} / ${c.tempoMax}　·　${tier}`],
   ]
   if (c.trait) rows.push(['机制', c.trait])
   rows.push(['破绽', c.guardMax > 0 && c.guardAxis

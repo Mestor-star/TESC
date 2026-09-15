@@ -673,6 +673,19 @@
 }
 .unitCls { font-style: normal; font-size: 10px; color: var(--ink-mute); letter-spacing: 0.06em; }
 
+/* 职能挂牌（主音 / 护卫 / 和音 / 调度 / 取材）—— 与「定位」并排，一眼分得开：
+   定位是灰的字，职能是描边的牌子（它是真管机制的那一栏）。 */
+.unitDuty {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--jade) 45%, transparent);
+  color: var(--jade);
+  letter-spacing: 0.04em;
+}
+
 .unitGate {
   flex-shrink: 0;
   font-family: var(--font-mono);

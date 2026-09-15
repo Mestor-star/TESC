@@ -59,7 +59,17 @@ export function effectTextsOf(k: SkillSpec): string[] {
   if (e.charge) out.push(`蓄力：本手不出手，下一手伤害 ×${e.charge}（挨到最大生命 10% 即中断）`)
   if (e.taunt) out.push(`引仇 ${k.turns ?? 2} 拍`)
   if (e.selfToo) out.push('增益同时及于自身')
+  /* 暴击那几笔写的是**出手者自己**（见 types 的 SkillEffect.crit）——
+     不是给目标上的状态，所以既不进 buff 表、也不挨「解除负面」。
+     必暴与绝不暴互斥，合并成一句写，免得面板上同时挂着两条自相矛盾的话。 */
+  if (e.sureCrit) out.push('必定暴击')
+  else if (e.noCrit) out.push('绝不暴击（求稳不求重）')
+  if (e.crit) out.push(`暴击率 +${pct(e.crit)}`)
+  if (e.critMul) out.push(`暴击伤害 +${pct(e.critMul)}`)
   if (e.pierce) out.push('无视闪避与减伤')
+  /* 架着盾的目标：一个专门打它（加成），一个把盾打脱手（击溃） */
+  if (e.stanceAmp) out.push(`打「架着盾」的目标 +${pct(e.stanceAmp)}`)
+  if (e.stanceBreak) out.push('击溃防御姿态（架着的盾当场脱手）')
   if (e.mark) out.push(`目标受伤 +${pct(e.mark)}`)
   if (e.slow) out.push(`敌方充能 −${pct(e.slow)}`)
   if (e.pushBack) out.push(`击退行动条 ${pct(e.pushBack)}`)

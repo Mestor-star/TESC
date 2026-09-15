@@ -39,7 +39,8 @@ export function toneOf(k: SkillSpec): FxTone {
   if (!e) return 'strike'
   if (e.heal || e.cleanse || e.revive) return 'mend'
   if (e.mark || e.slow || e.pushBack || e.silence || e.bleed || e.frail
-    || e.stasis || e.archive || e.lockdown || e.stall || e.breakGuard) return 'hex'
+    || e.stasis || e.archive || e.lockdown || e.stall || e.breakGuard
+    || e.stanceBreak) return 'hex'
   if (e.atkUp || e.spdUp || e.shield || e.evade || e.accUp || e.pushBar || e.taunt
     || e.ward || e.charge) return 'ward'
   return 'strike'
@@ -51,15 +52,30 @@ export function toneOf(k: SkillSpec): FxTone {
  * 门槛写在到达点自己身上（arch 的 needsStack），所以从这里取，不另设常量。
  */
 export function endOf(c: { skills: SkillSpec[] }): SkillSpec | undefined {
-  return c.skills.find((k) => k.kind === '到达点')
+  return c.skills.find((k) => k.kind === '终结技')
 }
 
 export type AxisKey = '破坏力' | '敏捷度' | '物理抗性' | '反现实亲和' | '意志力'
 
 export type AxisSheet = Record<AxisKey, number>
 
-/** 技能类别。防御 / 道具 / 更换装备 / 战略撤退 是「指令」而非技能，不在技能表内。 */
-export type SkillKind = '普攻' | '技能' | '启动' | '到达点'
+/**
+ * 技能类别（四格制）：普攻 / 战技 / 终结技 / 天赋。
+ * ------------------------------------------------------------
+ * 前三格是**手上点得出来的**（`legalSkills` 只吐这三个）；第四格「天赋」永远不出按钮 ——
+ * 它的数据源在 `PassiveSpec.talents`，不在技能表里，所以 `SkillSpec.kind` 只可能是前三个值。
+ * 「四格看得到、底下只有三格是按钮」就是这个意思（主人 2026-09-14 定：「全部自动，一格都不能点」）。
+ *
+ * 旧三值是怎么挪过来的：
+ *   · `'技能'` → `'战技'`（战技格可以有多枚，每人 2~3 手，各不相同 —— 从武器技能里挑）；
+ *   · `'到达点'` → `'终结技'`（**id 与名字一个字节不改**，`place('到达点', …)` 照旧）；
+ *   · `'启动'` **不再是一格** —— 降成性质 `SkillSpec.gate`，那些手归进「战技」格。
+ *     拆开是因为原先 `kind === '启动'` 同时表达两件事：「这一手是解封门」与
+ *     「它排菜单第一格」。这两件事并不总是一起发生，混在一格里的写法既读不出、也改不动。
+ *
+ * 防御 / 道具 / 更换装备 / 战略撤退 是「指令」而非技能，不在技能表内。
+ */
+export type SkillKind = '普攻' | '战技' | '终结技' | '天赋'
 
 export type Target = 'one' | 'all' | 'self' | 'allyOne' | 'allyAll'
 
@@ -75,10 +91,13 @@ export interface PassiveSpec {
   name: string
   /** 一句话说明它从原文哪儿来 */
   desc: string
-  /** 每节拍回复的最大生命比例（丝线之躯自己往回长） */
+  /** 每拍回复的最大生命比例（丝线之躯自己往回长） */
   regen?: number
-  /** 每节拍回复的体力（角色自身体力，不是终端那一池） */
-  spRegen?: number
+  /**
+   * 每拍回复的节拍（角色自己那一份，不是终端那一池）—— 节拍的恢复途径②。
+   * 按**拍**算（本人每次出手结算时加一笔），不是按回合。
+   */
+  tempoRegen?: number
   /**
    * 战斗续行：致命伤只留 1 点，每场可触发几次（-1 = 不限次）。
    * 原文里心脏破了也照样站着的那些人走这条。
@@ -102,8 +121,8 @@ export interface PassiveSpec {
   atk?: number
   /** 常驻充能加成（比例） */
   spd?: number
-  /** 体力上限加成（绝对值） */
-  spMax?: number
+  /** 节拍上限加成（绝对值） */
+  tempoMaxUp?: number
   /** 开场行动条领先（0..1，占一整条的比例） */
   headStart?: number
   /** 冷却缩短：每次自身行动多减几拍 */
@@ -112,7 +131,72 @@ export interface PassiveSpec {
   lowHpAtk?: number
   /** 普攻倍率提升（比例）——「这门东西打起来比别人重」 */
   basicMul?: number
+  /**
+   * 天赋（四格制里的第四格）—— 全是**自动触发**的，一格都不点。
+   * 不进 SkillSpec、不进 legalSkills、不加 Command 变体：
+   * 界面上它是一行只读的字（名字 + 说明），底下的触发交给引擎（见 fireTalents）。
+   * 上面那些字段是「一直在生效」的被动；这一栏是「满足条件才响一次」的那部分。
+   */
+  talents?: TalentSpec[]
 }
+
+/* ============================================================
+   职能（五档）与天赋
+   ------------------------------------------------------------
+   职能框的是「这个人靠哪条轴吃饭」：主攻轴、战技格许挑哪几类框架、
+   节拍怎么花 / 每拍回多少、暴击的底子。名字全用原文名词（〜担当体例）。
+   `RoleDef.cls`（独奏者 / 织线者 / 骑手 / 黑锤 / 王子殿下…）一个字不动 ——
+   那说的是这个人在原文里是谁；职能说的是他在队里干哪一摊。两层叠着，不互相顶替。
+   ============================================================ */
+
+export type DutyId = '主音' | '护卫' | '和音' | '调度' | '取材'
+
+/** 天赋的触发条件。全是**引擎自己看得见的事**，不轮流问玩家。 */
+export type TalentTrigger =
+  /** 开场那一下 */
+  | { on: 'battleStart' }
+  /** 本人出手（结算完这一手之后） */
+  | { on: 'act' }
+  /** 本人这一手打实了（被闪开 / 被护持挡掉不算） */
+  | { on: 'hit' }
+  /** 本人打出暴击 */
+  | { on: 'crit' }
+  /** 本人挨了一记暴击 */
+  | { on: 'critTaken' }
+  /** 场上倒下一个敌人 */
+  | { on: 'foeDown' }
+  /** 场上倒下一个同伴 */
+  | { on: 'allyDown' }
+  /** 本人生命跌破这条线（0..1）。只在**跌穿的那一下**响一次，不每拍重复响 */
+  | { on: 'hpBelow'; ratio: number }
+  /** 每逢每 N 个回合（回合 = 我方全员各出手一次，见 BattleState.acted） */
+  | { on: 'round'; every: number }
+
+export interface TalentSpec {
+  /** 天赋名（原文措辞；没有原文专名的照 SIDE_TRAIT 那条规矩 —— 只记类别，不臆造） */
+  name: string
+  desc: string
+  trigger: TalentTrigger
+  /**
+   * 落在谁身上 —— 缺省 self（本人）。
+   * **必须能指向某个职能**：节拍的恢复途径④「天赋定向给某个职能回」就落在这里
+   * （例：和音在同伴出手时给主音递一节拍）。
+   */
+  to?: 'self' | 'trigger' | 'allyAll' | { duty: DutyId } | { lowestTempo: true }
+  /** 附带的技能效果（数按 place 那一套夹进效果带） */
+  effect?: SkillEffect
+  /** 直接加减节拍（正数=回，负数=抽）—— 恢复途径④的落点 */
+  tempo?: number
+  /**
+   * 附带的增益 / 减益。
+   * ⚠️ `rounds` 数的是**回合**，不是拍（主人 2026-09-14：「增益是回合计算，不是拍数计算」）。
+   * 引擎把它接到 Buff 的 rt 那一栏，在 endBeat 里减。
+   */
+  buffs?: Array<{ k: BuffKey; v: number; rounds: number }>
+  /** 每场最多响几次；-1 = 不限。缺省 1 —— 天赋是「响一次」的东西，不是光环 */
+  uses?: number
+}
+/* 这里没有 manual 一栏，也永远不会有：天赋全部自动触发，一格都不能点（主人 2026-09-14 定） */
 
 /** 一手技能除伤害之外能做的事（全部由 roster.ts 的数据驱动） */
 export interface SkillEffect {
@@ -169,6 +253,28 @@ export interface SkillEffect {
   /** 增益同时及于自己（载具一类「带上我」的技能） */
   selfToo?: boolean
 
+  /* —— 暴击与防御姿态（Black Souls 2 那一套的落点，见引擎的 rollCrit 与 Combatant.stance） —— */
+  /**
+   * 暴击率 +（绝对值，0.15 = +15%）。
+   * 这条加的是**出手者**自己的暴击率，不是给目标上的；所以它既不进 buff 表、
+   * 也不算负面 —— 它是这一手自带的性质，与 power 同一个层次。
+   */
+  crit?: number
+  /** 暴击伤害倍数 +（绝对值，0.5 = 该次暴击多打 50%） */
+  critMul?: number
+  /** 这一手必暴（终结技一类「必定打实」的手用） */
+  sureCrit?: boolean
+  /**
+   * 这一手绝不暴 —— 稳扎稳打的多段连打用。
+   * 它也是**复核脚本的把手**：求伤害均值那几段靠 noCrit 把随机性按住，
+   * 与 sureHit / TUNING.critOn 是同一路数。
+   */
+  noCrit?: boolean
+  /** 打散目标的防御姿态：架着的盾当场被打脱手（姿态失效，且这一拍里不再免暴） */
+  stanceBreak?: boolean
+  /** 打「架着盾」的目标时受伤 +（比例）—— 专克防御的手 */
+  stanceAmp?: number
+
   /* —— 敌方向我方施加的负面（持续拍数取 turns） —— */
   /** 沉默：这段时间里出不了技能，只剩普攻与防御 */
   silence?: boolean
@@ -200,6 +306,22 @@ export interface SkillEffect {
   /* 回响不在这一层：它是「这一手整手照抄」，是技能自己的性质，写在 SkillSpec 上 */
 }
 
+/**
+ * `SkillEffect` 里**值为数字**的那些键。
+ *
+ * 效果带（见 atlas 的 `Arch.effBand` 与 tuning 的 `EFF_BAND`）只夹这一批：
+ * 布尔键没有「多大」可言，它们走白名单（`Arch.allow`）—— 不在名单里就直接丢掉并报错。
+ * 分这两条路是有意的：能夹的量夹住，不能夹的量**根本不放行**。
+ */
+export type NumericEffectKey = {
+  [K in keyof SkillEffect]-?: SkillEffect[K] extends number | undefined ? K : never
+}[keyof SkillEffect]
+
+/** `SkillEffect` 里值为布尔的那些键（白名单认它） */
+export type FlagEffectKey = {
+  [K in keyof SkillEffect]-?: SkillEffect[K] extends boolean | undefined ? K : never
+}[keyof SkillEffect]
+
 /** 变身后的那副面目（黄金狮子一类：出手者当场换一副样子，连打法一起换） */
 export interface SkillForm {
   /** 变身后顶上来的名字 */
@@ -207,10 +329,10 @@ export interface SkillForm {
   /** 名字底下的注（本体是谁、这份力从哪来） */
   note?: string
   /**
-   * 持续拍数：数满自行还原本相。
-   * 口径是**全局拍**（`advance` 里全员都不满条、整轮一起充能的那一拍），
-   * 不是「自身出场次数」—— 与增益的 buffTurnsCap 不是一回事，别照那个改。
-   * 它数的是场上过了多久，不是他出手几回。验收时推 `advance` 的 tick，别数自己的回合。
+   * 持续**回合数**：数满自行还原本相。
+   * 口径是**回合**（我方全员各出手一次，见 BattleState.acted / endBeat），
+   * 不是「本人出手几回」—— 所以它数的是场上过了多久。
+   * 验收时推 `advance` 的 tick（那是回合数），别数自己的出手。
    */
   ticks: number
   /** 解除之后这一手的冷却 */
@@ -236,8 +358,15 @@ export interface SkillSpec {
   id: string
   name: string
   kind: SkillKind
+  /**
+   * 「解封门 / 铺垫手」这个**性质**（原先的 `kind: '启动'`）。
+   * 由 atlas 的 `Arch.gate` 自动置位，档案里不手写。
+   * 这些手归在「战技」格里 —— 于是它既点得出来（`legalSkills` 吐它），
+   * 又带着「解封一层」的机制。引擎里一律读 `k.gate`，不再读 `k.kind`。
+   */
+  gate?: boolean
   desc: string
-  /** 体力消耗 */
+  /** 节拍消耗（吃本人的 `Combatant.tempo`，不是终端那一池） */
   cost: number
   /** 倍率（× 对应轴）；0 = 本手不造成伤害 */
   power: number
@@ -247,7 +376,11 @@ export interface SkillSpec {
   line: string
   target: Target
   effect?: SkillEffect
-  /** 增益持续（以自身行动次数计） */
+  /**
+   * 增益持续 —— 数的是**回合**（我方全员各出手一次，见 endBeat），不是拍。
+   * 落进 Buff 的 rt 那一栏，上限 TUNING.buffRoundsCap。
+   * （主人 2026-09-14：「增益是回合计算哦，不是拍数计算。」）
+   */
   turns?: number
   /** 「到达点」：需先蓄到 N 层印记才可发动 */
   needsStack?: number
@@ -360,6 +493,13 @@ export type BuffKey =
    * 所以单独占一个键，也**不算负面**（不是 DEBUFF_KEYS 的成员）。
    */
   | 'skillMul'
+  /**
+   * 暴击率 +（绝对值，0.15 = +15%）。
+   * **不算负面** —— 它是增益，进不了 DEBUFF_KEYS：于是它不削 boss 的终结技
+   * （ultDebuffCut）、也不会被「解除负面」顺手洗掉。裁法写在这一句里，
+   * 与下面 DEBUFF_KEYS 那道必答题对得上。
+   */
+  | 'crit'
   /* —— boss 的看家机制 —— */
   /** 停滞：行动条原地冻结，一格都不涨（终末停滞委员会这个名字，指的是这东西） */
   | 'stasis'
@@ -376,8 +516,9 @@ export type BuffKey =
  *     （ultDebuffCut），玩家的「解除负面」也能洗掉它；
  *   · 不算就别进 —— 但那就等于给了双方一样「boss 化解不掉」的免费压制。
  * 两种裁法都成立，要的是**显式裁一次**，不能顺手漏掉：漏掉的那些键会安静地
- * 变成平衡之外的东西。既有的两种先例：`skillMul` 乘算但刻意不算负面（它是规格，
- * 不是压制）；`stall` 算（它确确实实是取消对方出手）。
+ * 变成平衡之外的东西。既有的三种先例：`skillMul` 乘算但刻意不算负面（它是规格，
+ * 不是压制）；`stall` 算（它确确实实是取消对方出手）；`crit` 不算（它是增益 ——
+ * 加暴击率是给自己长本事，与「压住对方」是两回事）。
  */
 export const DEBUFF_KEYS: BuffKey[] = [
   'mark', 'slow', 'silence', 'bleed', 'frail', 'stasis', 'lockdown', 'stall',
@@ -404,12 +545,19 @@ export function isSpec(k: BuffKey): boolean {
 export interface Buff {
   k: BuffKey
   v: number
-  /** 还能顶几次**自身出场**（beginAction 里扣） */
+  /**
+   * 还能顶几次**本人出手**（`beginAction` 里扣；断拍 / 破绽那一路也照扣）。
+   * ⚠️ 这一栏数的是**拍**，不是回合。而**增益的时限以回合为准** —— 见 `rt`。
+   * （主人 2026-09-14：「增益是回合计算哦，不是拍数计算。」）
+   * 所以对增益来说 t 只是个兜底：本人一直不出手时，别让一条增益挂到天荒地老。
+   * 真正管寿命的是 rt。负面（`DEBUFF_KEYS`）不吃 rt，那一边就靠 t 数「本人几次出手」。
+   */
   t: number
   /**
-   * 还能顶几**拍**（全局回合，见 TUNING.buffRoundsCap）。与 t 是两条并行的时限，谁先到零算谁。
-   * 只留 t 是不够的：它数的是「自身出场几次」，于是同一条增益挂在快的人身上两三拍就没了，
-   * 挂在慢的人身上却能撑十几拍 —— 同一个效果两种寿命，读不出来也说不通。
+   * 还能顶几**回合**（我方全员各出手一次，见 `endBeat`）—— **增益的时限就是它**，
+   * 上限是 TUNING.buffRoundsCap。只挂在增益上（见 `wearsByRound`）：
+   * 负面与「规格」类（旧吉他的解封）都不吃这道闸。
+   * 与 t 两条并行，谁先到零算谁；但按主人 2026-09-14 那条，算寿命的是这一条。
    */
   rt?: number
 }
@@ -421,8 +569,15 @@ export interface Combatant {
   sigil: string
   hue: string
   avatarId?: string
-  /** 战斗定位（职业）——取自原文意象；敌军为「反现实实体」等 */
+  /** 战斗定位（职业）——取自原文意象；敌军为「反现实实体」等。**一个字不动** */
   cls: string
+  /**
+   * 职能（五档：主音 / 护卫 / 和音 / 调度 / 取材）—— 说他在队里干哪一摊。
+   * 与 cls 是叠着的两层：cls 说的是「原文里他是谁」，这一栏说的是「队里这摊谁管」。
+   * 主攻轴、战技格许挑哪几类框架、节拍怎么花 / 每拍回多少、暴击的底子，全由它定
+   * （见 duty.ts 的 DUTY）。恋兔光是**唯一**可以不听这一栏的人（RoleDef.dutyExempt）。
+   */
+  duty: DutyId
   /** 专属机制（被动）一句话 */
   trait?: string
   /** 敌阵里的头目档：每场至少一个 —— 低危是精英，危险度到顶换成首领（Boss）。
@@ -443,15 +598,33 @@ export interface Combatant {
   rated: boolean
   /** 行动条：0 → barMax（可溢出，出手后扣除一整条并保留余量） */
   bar: number
-  /** 每节拍充能量（由敏捷度导出，可被 spd 增益改变） */
+  /** 每**窗口**充能量（由敏捷度导出，可被 spd 增益改变）—— 窗口是行动条那一层，见 engine 的 windowGainOf */
   spd: number
   /** 基础闪避率 */
   evade: number
+  /** 基础暴击率（绝对值，0.1 = 10%）。职能 + 天赋 + 装具合出来的底子，收口在 duty 的 critOf */
+  crit: number
+  /** 暴击倍数（1.5 = 暴击打 1.5 倍）。收口在 duty 的 critMulOf */
+  critMul: number
   buffs: Buff[]
   /** 本段减伤（持续到自身下次行动前） */
   shield: number
   /** 引仇剩余行动次数 */
   taunt: number
+  /**
+   * 防御姿态（架着盾）：这一手选了「防御」，本人下次出手之前一直架着。
+   * 好处是充能 ×TUNING.stanceSpdMul、免暴击、吃掉 TUNING.stanceImmune 里那几样硬直；
+   * 代价是闪避归零（架着盾就是必挨打），而且这层盾自己会被 `effect.stanceBreak` 打脱手。
+   * 本人下次出手时自动撤（见 beginAction）。
+   */
+  stance: boolean
+  /**
+   * 姿态被打散过（这一手带着 `stanceBreak` 打中了架盾的人）。
+   * 与 stance 分开是两件事都要读得出来：盾已经没了（stance = false），
+   * 但「是被打脱手的」这件事本身还在身上 —— 演出与日志要靠它把这一下念出来。
+   * 与 stance 一起在本人下次出手时清。
+   */
+  stanceBroken: boolean
   down: boolean
   /** 被动技能（本人常驻；缺省 = 无名录条目） */
   passive?: PassiveSpec
@@ -491,7 +664,7 @@ export interface Combatant {
     ticks: number
     skillId: string
     cd: number
-    /** 每过一拍，普攻倍率往上加这么多（见 SkillForm.basicRamp；本体走 `other` 时为 0） */
+    /** 每过一回合，普攻倍率往上加这么多（见 SkillForm.basicRamp；本体走 `other` 时为 0） */
     ramp: number
   } | null
   /** 本场生效的羁绊名（队伍羁绊与双人羁绊；供界面挂牌，不改数值） */
@@ -502,9 +675,18 @@ export interface Combatant {
   startNeed: number
   /** 解封发生在第几拍（s.hand）；没解封过是 0。带 openAfter 的手按它算解禁时间 */
   unsealedAt: number
-  /** 本人这一场的体力（与终端上的小队体力是两回事：出手从这里扣） */
-  sp: number
-  spMax: number
+  /**
+   * 本人这一场的**节拍**（与终端上的小队出击体力 `BattleState.sp` 是两回事：出手从这里扣）。
+   * 一人一份，**不设全队共享池** —— 池一共享，谁还看自己这一份，现有的消耗系统就废了。
+   * 花在技能的 `cost` 上；回的路上有四条：
+   *   ① 普攻回一点（`DutyDef.basicTempo`）
+   *   ② 被动 / 天赋每拍回（`PassiveSpec.tempoRegen`）
+   *   ③ 道具 / 打穿破绽回
+   *   ④ 天赋定向给某个职能递（`TalentSpec.to` + `TalentSpec.tempo`）
+   * 外加防御 / 休整自己回的那一口（一直都有）。
+   */
+  tempo: number
+  tempoMax: number
   /** 已蓄印记层数（弹痕持有者 = 樱印） */
   stack: number
   /** 终结技能的咏唱进度（大招技能 id → 已蓄拍数）；蓄满即当手放出 */
@@ -553,6 +735,18 @@ export interface LogEntry {
    * 不由视图拿 skillId 去反查：作战记录是唯一的事实来源，回放时也得独立成立。
    */
   link?: { id: string; name: string; members: string[] }
+  /** 这一手是「解封手」（战技格里的一层性质，不是单独一格 —— 见 SkillSpec.gate） */
+  gate?: boolean
+  /** 这一手打出了暴击 */
+  crit?: boolean
+  /** 这一手暴击的倍数（crit 为真时才有意义；演出按它分级） */
+  critMul?: number
+  /**
+   * 防御姿态的两笔账：
+   *   'on'    = 这一手是「架盾」（选了防御指令）；
+   *   'break' = 架着的盾被打脱手了（吃了带 stanceBreak 的一手）。
+   */
+  stance?: 'on' | 'break'
 }
 
 /**
@@ -590,22 +784,40 @@ export interface BattleState {
    */
   summoned: number
   /**
-   * 拍数 —— **一拍 = 一个轮回**：场上还站着的每个人各出过一手（含敌方）。
-   * 不是「充能脉冲」：脉冲是行动条还没满时的空转，一轮里空转几格取决于
-   * 双方速度差，拿它当拍子的尺子，读出来的数跟玩家眼里的回合对不上。
-   * 结算在 endBeat()：变身时长、停滞、流血、增益的按拍时限都挂在这上面。
+   * **回合数** —— 一回合 = **我方存活者各出手一次**（满编 6 人 = 6 拍，TUNING.squadMax）。
+   * 边界由我方出手划：敌方的每一手照常打、照常记（见 hand），也算在当前这一回合里，
+   * 只是**不单独给敌人开一回合**
+   * （主人 2026-09-14：「不是不数敌人的，在下次我方角色出手之前都为当前回合」）。
+   * 拉条 / 回手给的那一次不计入（见 acted）。
+   * 不是「充能脉冲」：脉冲是行动条还没满时的空转，一轮里空转几格取决于双方速度差，
+   * 拿它当回合的尺子，读出来的数跟玩家眼里的回合对不上。
+   * 结算在 endBeat()：变身时长、停滞、流血、**增益的按回合时限**都挂在这上面。
+   * ⚠️ 口径与措辞都换了，代码名 `tick` / `beatActs` / `endBeat` 一律不动。
    */
   tick: number
-  /** 本拍已经出了几手；够 `场上还站着的` 那么多就收一拍（见 endBeat） */
+  /**
+   * ⚠️ **已废弃**（收拍口径改成 acted 之后不再有它的份，见 endBeat）。
+   * 留着是因为「代码名 beatActs / tick / endBeat 一律不动」这条约定，
+   * 且它进了 `BattleState` 的形状、旧存档里带着这一栏；新代码一律读 acted。
+   */
   beatActs: number
+  /**
+   * 本回合已出过手的我方 id（endBeat 清空）—— **收拍的判据就是它**。
+   * 用名单而不是拿 beatActs 去凑：速度差摆在那儿，快的人一回合里会出手两回，
+   * 数手数要么提前收、要么永远凑不齐；而名单去重之后，每个活人迟早都会进名单。
+   * 拉条 / 回手（s.again === c.id）给的那一次**不入名单**（主人：「拉条不计入」）。
+   */
+  acted: string[]
   /** 已经打出的手数（含敌方；log 里标为 T1 / T2 …） */
   hand: number
   /** 当前满条可行动者 id（null = 无人待命 / 已收场） */
   actor: string | null
   /**
    * 「回手」：下一手仍旧是这一位，不看行动条先后（用完即清）。
-   * 只有一处会写它 —— 解封尽解的那一拍（见 engine 的 k.kind === '启动' 分支）：
+   * 只有一处会写它 —— 解封尽解的那一拍（见 engine 的 `k.gate` 分支）：
    * 五下启动把回合全让出去了，尽解不给一手回手的话，解封本身就是白亏五拍。
+   * ⚠️ 回手给的那一次**不登记进 acted**：它不是「本回合的一次出手」，
+   * 是本人这一拍多打的一下（主人：「拉条不计入」）。
    */
   again: string | null
   allies: Combatant[]
@@ -626,6 +838,11 @@ export interface BattleState {
   lastSkill?: SkillSpec
   /** 过载出击（体力不足仍上阵）：全场我方输出打折 */
   overdrive: boolean
+  /**
+   * 小队出击**体力** —— 终端上那一池，跨场结算的那条。
+   * ⚠️ 与各人手里的**节拍**（`Combatant.tempo`）是两回事：节拍一人一份、按本人出手花、
+   * 按拍回；这一池是整队出击的油量表。改名那一轮里，**这两个名字一个字节不动**。
+   */
   sp: number
   spMax: number
   /** 本场携带的道具余量（id → 个数） */
@@ -639,36 +856,65 @@ export interface BattleState {
   /** 变身可借的档案池（已解锁、且不在本场队伍里的角色 id） */
   morphPool: string[]
   /**
-   * 连携共鸣槽（羁绊 id → 已蓄拍数）：羁绊里每有人出一手 +1，
-   * 满槽且全员在场即自动接一记连携技，打完清零（见 engine 的 chargeLinks / fireLinks）。
-   * 不由玩家主动点 —— 打熟了自然接得上。
+   * 暴击总开关。**只作复核开关，不作平衡钮** —— 伤害均值那几段断言（500 次求均值）
+   * 必须能从外面把随机性按住（`CreateOpts.crit` 一路传进来；复核里有与 `sureHit` 同款的助手）。
+   * 正式对局是开的，而且**双向**：敌我也暴击（「敌我同一套骨架」的直接推论）。
    */
-  link: Record<string, number>
+  critOn: boolean
   /**
-   * 各人自己的共鸣能量（角色 id → 已蓄拍数）。**只有整队连携（特殊连携）读它**。
-   * 双人连携看的是 s.link 那条共享的槽；整队那条不一样 ——
-   * 名单上每个人都得把自己的能量攒满，一手都不许少，这才凑得出「全员到齐」。
-   * 见 engine 的 chargeLinks / fireLinks、synergy 的 Bond.squad。
+   * 本回合两条「不消耗回合」的指令各用掉几次（endBeat 清零，上限 TUNING.freePerBeat）。
+   * 道具与换装**不走 beginAction**：不扣条、不减冷却、不扣增益时限、不记手数、不蓄追击槽。
+   * 少了最后那一条，全队轮流甩道具就能把追击刷出来。
    */
-  gauge: Record<string, number>
+  freeUsed: Record<'item' | 'gear', number>
+  /* ---- 追击与连携 ----
+     两套东西触发机制不同（见 engine 的 fireFollows / fireTeamLink）：
+       · **追击**（含双人连携）：看**条件** —— 搭档这一手打穿了破绽、或对面正在咏唱，
+         另一位就自己接一手。没有槽可攒，只有冷却。
+       · **团队羁绊连携**（synergy 的 Bond.squad，恋兔队那条）：看**共鸣槽** ——
+         名单上每个人都得把自己那份能量攒满。 */
   /**
-   * 连携冷却（羁绊 id → 还剩几拍）：每条连携自带 cd（见 synergy 的 BondLink.cd），
-   * 接完一手就进冷却，我方每出一手减一。槽满不等于能接 —— 冷却没走完也接不上。
-   */
-  linkCd: Record<string, number>
-  /**
-   * 对面那一记连携的冷却（还剩几手）。单开一格，因为它数的不是「我方出手」——
-   * 节拍器挂在**敌方**自己的出手上：对面每出一手减一格（见 engine 的 fireRivalLink），
-   * 与我方的 linkCd「按我方出手统一减」正好对称。
-   * 混进 linkCd 是不行的：那张表由 tickLinkCd 按我方出手统一减，
-   * 减的却是敌方那一记的冷却，读起来就说不通了。
+   * 追击槽（**角色 id** → 已蓄拍数）。只有团队羁绊连携读它 ——
+   * 一人一条自己的能量，别人替他攒不了；全员都满、且全员都还在场上，才成立。
    *
-   * 这一格是**数敌人头**的：军团站满时对面一轮出六手，cd 3 的连携因此转得比
+   * ⚠️ 键是**人的 id**，不是羁绊 id ——「全员到齐」这件事只能一人一笔地记。
+   * 双人那些不在这儿：它们走条件（见引擎的 followCondition）。
+   */
+  follow: Record<string, number>
+  /**
+   * 追击 / 连携的冷却（羁绊 id → 还剩几拍）。每条自带 cd（见 synergy 的 BondLink.cd），
+   * 接完一手就进冷却。**我方**那些（团队连携 `xxx-full`、双人各条）由 `tickFollowCd`
+   * 按我方出手统一减；**对面**那一记（`rival-vow`）按敌方出手减、走 `fireRivalLink` 自己那一格。
+   * 两本账共用一张表，但各减各的 —— 混着减就说不通了。
+   *
+   * 对面那一格是**数敌人头**的：军团站满时对面一轮出六手，cd 3 的连携因此转得比
    * 单人场上快得多（定点复核里每个首领回合都接得上）。这是有意的 ——
    * 它打的是我方**血最少**的那一个，是压制不是斩首；
    * 真要它稀下来，该调的是 synergy 的 RIVAL_LINK.cd，不是这里的记法。
    */
-  rivalCd?: number
+  followCd: Record<string, number>
+  /**
+   * 这一手打穿了谁的破绽（敌体 id，可能是多个：多段手连着削穿）。
+   * **每手开头由 act 清空** —— 追击的条件①读的就是「搭档这一手」打穿的，
+   * 不清的话上一手打穿过的那一笔会一直挂着，后来每一手都白接一记追击。
+   */
+  lastBreak: string[]
+  /**
+   * 天赋响过几次（键 `${角色 id}:${天赋在这人 PassiveSpec.talents 里的下标}`）。
+   *
+   * 键里带下标而不是只带名字：同一个人挂两条同名天赋是允许的（一条管开场、一条管残血），
+   * 用名字当键的话第二条会被第一条的名额吃掉。`uses` 一栏由它核（缺省 1 = 响一次）。
+   * 换装整块重建面板不会清它 —— 名额是按**这一场**算的，不是按这副装备算的。
+   */
+  talentUsed: Record<string, number>
+  /**
+   * 天赋的重入深度（>0 = 正有一条天赋在结算）。
+   *
+   * 天赋自己那一下**不再引爆别的天赋** —— 少了这道闸，两条互补的天赋
+   * （A 响 → 触 B → 再触 A）会在同一帧里对着转起来，日志一屏刷满、当场卡死。
+   * 这一条与 `TUNING.critOn` 同路数：不是平衡钮，是**不许递归**的护栏。
+   */
+  talentDepth: number
   /**
    * 第二阶段顶上来的那一位（档案 id）。开局由任务挂的 bossId 解析出来（见 engine 的
    * createBattle），第一阶段收场时消费掉一次（见 engine 的 phaseTwo）。
@@ -698,7 +944,7 @@ export interface BattleRecord {
   /** 只有胜仗会被归档；败 / 撤不写记录、不推进剧情 */
   outcome: '胜' | '败' | '撤'
   rounds: number
-  /** 战斗历时（节拍数） */
+  /** 战斗历时（回合数） */
   ticks: number
   at: number
   /** 参战角色 id */

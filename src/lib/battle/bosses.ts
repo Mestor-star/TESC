@@ -119,6 +119,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         fx: 'slash',
         desc: '从身后那道门里出来的一击：不是正面接下的，是背后递到的。',
         effect: { pushBack: 0.25 },
+        bar: true,
         line: '「呜哇，偏偏被最不想碰上的人搭话了。」',
       }),
       place('连打', {
@@ -220,6 +221,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         desc: '「亚历克斯将翅膀的所有体积压缩进右拳……那只拳头的大小——足足超过了10米」'
           + '「那一击，劈开了大海」〔v2 第8话〕。这一手不吃任何减伤。',
         effect: { pierce: true, pushBack: 0.3 },
+        bar: true,
         line: '「——退开。」',
       }),
       asUlt(place('到达点', {
@@ -415,6 +417,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         desc: '太平洋货船那一夜，她从船的影子里拉出一个能把大海切开的巨人。'
           + '那一击打的是全场。',
         effect: { pushBack: 0.45, mark: 0.2 },
+        bar: true,
         line: '「这种程度，是挡不住的。」',
       }),
       place('重压', {

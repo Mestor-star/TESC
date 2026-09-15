@@ -19,6 +19,7 @@ import { passiveText } from '../lib/battle/roster'
 import { effectTextsOf, mulTextOf } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { combatantOf, periodProgress } from '../lib/battle/derive'
+import { dutyOf } from '../lib/battle/duty'
 import { readEquip, readGearBag, writeEquip } from '../lib/battle/store'
 import { AXIS_REF } from '../data/types'
 import type { GearDef } from '../lib/battle/types'
@@ -663,9 +664,14 @@ function CombatPanel({ id, progress, gearId }: { id: string; progress: number; g
     <div className={css.combat} data-archive-combat={id}>
       <div className={css.combatNums}>
         <div className={css.combatNum}><small>生命</small><b className="mono">{c.hpMax}</b></div>
-        <div className={css.combatNum}><small>体力</small><b className="mono">{c.spMax}</b></div>
+        <div className={css.combatNum}><small>节拍</small><b className="mono">{c.tempoMax}</b></div>
         <div className={css.combatNum}><small>出手速度</small><b className="mono">{Math.round(c.spd)}</b></div>
         <div className={css.combatNum}><small>定位</small><b>{c.cls}</b></div>
+        {/* 职能与定位叠着，不顶替：「定位」说的是原文里他是谁，「职能」说的是他在队里干哪一摊 */}
+        <div className={css.combatNum} data-archive-duty={id}>
+          <small>职能</small>
+          <b title={`${dutyOf(c.duty).desc}　主攻轴：${dutyOf(c.duty).axis}`}>{dutyOf(c.duty).name}</b>
+        </div>
       </div>
 
       <div className={css.combatAxes}>
@@ -700,7 +706,7 @@ function CombatPanel({ id, progress, gearId }: { id: string; progress: number; g
           <div key={k.id} className={css.combatSkill} data-kind={k.kind}>
             <div className={css.combatSkillTop}>
               <b>{k.name}</b>
-              <span className={css.combatKind}>{k.kind === '到达点' ? 'End' : k.kind}</span>
+              <span className={css.combatKind}>{k.kind === '终结技' ? 'End' : k.kind}</span>
               {/* 这一手按框架里的哪一类打的：同类的两个人可以对着看 */}
               {k.arch ? <span className={css.combatArch}>{archNameOf(k.arch) ?? k.arch}</span> : null}
               <span className="mono tiny">

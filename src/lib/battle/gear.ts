@@ -208,9 +208,10 @@ export function rollLoot(stage: number, rnd: () => number = Math.random): GearDe
   return pool[Math.floor(rnd() * pool.length)] ?? GEARS[0]
 }
 
-/** 装具附带技能 → 统一成一手可入菜单的技能（由 derive.ts 组装） */
+/** 装具附带技能 → 统一成一手可入菜单的技能（由 derive.ts 组装）。
+    落在四格制的「战技」格里 —— 换装不消耗回合，所以它不占普攻那格。 */
 export function gearSkillOf(gearId: string, _charId?: string): {
-  id: string; name: string; kind: '技能'; desc: string; cost: number; power: number
+  id: string; name: string; kind: '战技'; desc: string; cost: number; power: number
   axis: AxisKey; fx: FxKind; line: string; target: 'one' | 'allyAll'; effect?: SkillEffect; turns?: number
 } | null {
   const g = GEAR_OF[gearId]
@@ -221,7 +222,7 @@ export function gearSkillOf(gearId: string, _charId?: string): {
   return {
     id: `gear-${gearId}`,
     name: s.name,
-    kind: '技能',
+    kind: '战技',
     desc: s.desc,
     cost: s.cost,
     power: s.power,

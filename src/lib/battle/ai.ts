@@ -79,7 +79,7 @@ function briefOf(s: BattleState, foe: Combatant) {
       类型: foe.cls,
       性质: foe.trait,
       生命: `${foe.hp}/${foe.hpMax}`,
-      体力: `${foe.sp}/${foe.spMax}`,
+      体力: `${foe.tempo}/${foe.tempoMax}`,
       减伤: Number(shieldOf(foe).toFixed(2)),
       身上的减益层数: debuffCount(foe),
       ...(u
@@ -96,13 +96,13 @@ function briefOf(s: BattleState, foe: Combatant) {
         名: a.name,
         定位: a.cls,
         生命: `${a.hp}/${a.hpMax}`,
-        体力: `${a.sp}/${a.spMax}`,
+        体力: `${a.tempo}/${a.tempoMax}`,
         闪避: Number(evadeOf(a).toFixed(2)),
         引仇中: a.taunt > 0,
       })),
     // 大招不在这张表里：它不占常规出手，也不由指挥决定（见 engine 的 ultStep）
     skills: legalSkills(foe, s)
-      .filter((k) => !k.ult && affordable(k, foe.sp))
+      .filter((k) => !k.ult && affordable(k, foe.tempo))
       .map((k) => skillLine(k, foe.cds[k.id] ?? 0)),
   }
 }
@@ -173,7 +173,7 @@ export function intentOf(s: BattleState, foe: Combatant, raw: RawIntent | null |
   if (!raw) return null
   const skillId = raw.skill
   const targetId = raw.target
-  const legal = legalSkills(foe, s).some((k) => k.id === skillId && !k.ult && affordable(k, foe.sp))
+  const legal = legalSkills(foe, s).some((k) => k.id === skillId && !k.ult && affordable(k, foe.tempo))
   if (!legal) return null
   const t = targetId ? find(s, targetId) : undefined
   if (targetId && (!t || t.down || t.side !== 'ally')) return null

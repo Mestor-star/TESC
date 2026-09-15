@@ -6,7 +6,7 @@
    想改手感就改这里，不必碰引擎与视图。
    ============================================================ */
 
-import type { AxisKey } from './types'
+import type { AxisKey, NumericEffectKey } from './types'
 
 export const TUNING = {
   /* —— 敌方指挥（AI 那条腿）——
@@ -45,6 +45,15 @@ export const TUNING = {
   affinityWeight: 0.55,  // 反现实亲和每满 200 提供的加成
   downWillSave: true,    // 意志力高者被打倒时有一次「不倒」
 
+  /* —— 暴击（Black Souls 2 四条之一）——
+     面板 = 这里的常数项 ＋ 职能那一份（duty.ts 的 DUTY），造人时由 duty 的
+     critOf / critMulOf 算好、写进 Combatant.crit / critMul（见 derive）；
+     临场再叠 `crit` 增益（引擎的 critChanceOf）。
+     **敌我同一套** —— 敌人也是 Combatant，也吃这一份（见 derive 的 buildFoe）。 */
+  critBase: 0.05,        // 面板底子（谁都有一个基础暴击率，职能在这上面加）
+  critMul: 1.5,          // 暴击倍数（职能可以再加一点，见 DUTY.critMul）
+  critCap: 0.75,         // 暴击率上限 —— 再高也留四分之一不暴，免得变成必暴
+
   /* —— 整队连携（特殊连携）——
      触发口径与双人连携不同：双人那条看一条共享的槽，整队这条看**每个人自己的能量**——
      全员都蓄满了才成立。所以它给的不是「再补一脚」，是全队一起吃的那一份巨量加成。 */
@@ -54,26 +63,37 @@ export const TUNING = {
   squadLinkShield: 0.3,  // 减伤 30%
   squadLinkEvade: 0.12,  // 闪避 +12%
 
-  /* —— 行动条（ATB） —— */
+  /* —— 行动条（ATB）· 窗口制 —— */
   barMax: 100,           // 满 100% 才能行动；出手后扣除一整条，余量保留
-  spdBase: 4.2,          // 每节拍的基础充能量
+  /* 一「窗口」里涨多少条 = windowBase + 充能速度（见 engine 的 windowGainOf）。
+     windowBase 是**常数项**，它的唯一作用是把速度差压进同一格：Black Souls 2 里
+     「快一点点」和「快很多」的人落在同一档里抢手，快的人靠常数摊薄才不至于一回合动三次。
+     这个数由 balance 定案，不许手填 —— 见 §3 行动条离散化。 */
+  windowBase: 10,
+  /** 单次空转最多推几窗口（防呆：停滞 / 全场涨不动时别空转） */
+  windowCap: 12,
+  spdBase: 4.2,          // 每次充能的基础量（充能脉冲不是拍，见 §3 行动条离散化）
   spdPerAgi: 0.155,      // 每点敏捷度追加的充能量 → 快的人一回合能多打好几手
   spdFloor: 2.5,         // 充能下限（再慢也不会卡死）
+  /** 防御姿态（架盾）的充能倍率 —— 只乘在 windowGainOf 里，chargeOf 本身一个字节没动 */
+  stanceSpdMul: 1.5,
+  /** 防御姿态吃掉的硬直（**不含停滞** —— 停滞是首领战三条反制链之一，免疫掉等于替玩家解一关） */
+  stanceImmune: ['stall', 'silence'] as const,
   evadeBase: 0.05,       // 基础闪避
   evadeMax: 0.75,        // 闪避上限（再高也留一成命中）
   shieldCap: 0.8,        // 减伤上限
-  buffTurnsCap: 5,       // 增益最长持续（以自身行动次数计）
-  /* 增益的第二条时限：按**全局拍**算的上限。只有 buffTurnsCap 那条不够 ——
-     它数的是「自身出场几次」，于是同一条增益挂在快的人身上两三拍就散了，
-     挂在慢的人身上却能撑十几拍。同一个效果两种寿命，读不出来也说不通。
-     现在两条并行，谁先到零算谁：撑不过 5 次自身出场，也撑不过这么多拍。
+  buffTurnsCap: 5,       // 增益「本人出手几次」的兜底上限（这一栏数的是**拍**）
+  /* 增益的时限 —— **按回合算**（我方全员各出手一次，见 endBeat）。
+     主人 2026-09-14 定的口径：「增益是回合计算哦，不是拍数计算。」
+     所以算寿命的是这一条；buffTurnsCap 只是兜底：本人一直不出手时，
+     别让一条增益挂到天荒地老。
 
-     定在 6 而不是更小，是「不能咬到 buffTurnsCap 自己」：一个人大致一拍出一手，
-     5 次自身出场本来就摊在 5 拍上下。定 4 的话，它会在原时限之前就先把人剪掉，
-     等于把 buffTurnsCap 偷偷改成 4（复核里立刻现形：敌方一手挂上去的「标记」，
-     在 advance 把条充回来的那几拍里就自己散了，玩家根本见不到）。
-     6 拍只咬得到「出手比平均慢」的那些人 —— 那正是这条要管的：同一条增益
-     挂在慢的人身上不该比挂在快的人身上久那么多。 */
+     两条并行、谁先到零算谁。只有 buffRoundsCap 也不行：一回合走完要经过多少次
+     充能脉冲，取决于双方速度差 —— 拿脉冲当尺子，慢队与快队差出好几倍。
+
+     ⚠️ 收拍口径改成「我方全员各出手一次」之后，这个数要按**新回合**重标（见 §3b）：
+     回合从「我方 n 手 + 敌方 m 手」缩到「我方 n 手」，同样写 6，
+     覆盖到的**敌方出手次数变少**，天平会往我方偏。由 balance 三档跑出来定案。 */
   buffRoundsCap: 6,
 
   /* —— 技能 —— */
@@ -81,12 +101,12 @@ export const TUNING = {
   atkCost: 1,
   skillPower: 1.55,
   skillCost: 4,
-  burstPower: 2.6,       // 「到达点」
+  burstPower: 2.6,       // 终结技（「到达点」这一类）
   burstCost: 8,
-  burstStack: 3,         // 发动到达点所需的印记层数
-  startPower: 0,         // 启动技（解封）——不造成伤害，纯粹是解封的代价
+  burstStack: 3,         // 发动终结技所需的印记层数
+  startPower: 0,         // 解封门（原先的「启动技」）——不造成伤害，纯粹是解封的代价
   startCost: 2,
-  guardCost: 0,          // 防御指令不额外耗体力
+  guardCost: 0,          // 防御指令不额外耗节拍
 
   /* —— 战略撤退 —— */
   fleeBase: 0.45,        // 基础成功率
@@ -106,13 +126,27 @@ export const TUNING = {
   reviveHp: 0.35,        // 复活类道具拉回时的生命比例
   bagDefault: { ration: 3, sedative: 2, stabilizer: 2, soulcell: 1 } as Record<string, number>,
 
-  /* —— 角色体力（各人自带，出手从这里扣；防御回一点，但不多） —— */
-  chSpBase: 22,          // 底子
-  chSpPerWill: 0.55,     // 每点意志力的追加
+  /* —— 节拍（各人自带那一份；出手从本人这里扣，防御回一点，但不多） ——
+     与下面那条「小队出击体力」是两回事：这一份一人一条，那一池整队共用。 */
+  chTempoBase: 22,       // 底子
+  chTempoPerWill: 0.55,  // 每点意志力的追加
   guardRecover: 3,       // 防御每手回复
   guardRecoverPerWill: 0.06,
+  /* 恢复途径①③（②在 PassiveSpec.tempoRegen 与 DutyDef.tempoRegen、④在 TalentSpec.tempo）。
+     ① 的「普攻回几点」由**职能**给（DutyDef.basicTempo：主音回得最少，他最缺节拍）。 */
+  itemTempo: 2,          // 用一次道具回多少节拍
+  breakTempo: 1,         // 打穿一次破绽，给**出手者**回多少节拍
+  /* 两条「不消耗回合」的指令各有几次额度（每回合清零，见 endBeat 的 freeUsed）。
+     额度是第一道限、存量是第二道 —— 道具数量本来就有限，装具则是「一次换到位」。 */
+  freePerBeat: { item: 1, gear: 1 } as Record<'item' | 'gear', number>,
 
-  /* —— 体力（小队共用，只在出击时消耗；出手另算各人自己的） —— */
+  /* —— 天赋（四格制第四格）——
+     全是自动触发的，没有一处要玩家点（见 engine 的 fireTalents）。
+     这一条只管**效果类的时限**：天赋自己带的增益写在 TalentSpec.buffs 的 rounds 上，
+     这一条是给 `TalentSpec.effect`（标记 / 削防那类要吃 turns 的）用的。 */
+  talentTurns: 2,
+
+  /* —— 出击体力（小队共用一条，只在出击时消耗；各人出手花的是**节拍**，不是它） —— */
   spMax: 100,
   spPerSortie: 5,        // 每次出击的固定消耗
   spRegenPerEvent: 2.5,  // 每收束一段剧情补回
@@ -120,7 +154,7 @@ export const TUNING = {
   overdrivePenalty: 0.8, // 过载全场我方输出打折
 
   /* —— 敌方的负面机制（沉默 / 流血 / 减攻） ——
-     持续拍数沿用上面的 buffTurnsCap；frailFloor 是减攻的底，
+     持续沿用上面的 buffTurnsCap；frailFloor 是减攻的底，
      免得几层「磨蚀」叠起来把我方打成零输出。 */
   frailFloor: 0.35,
   stasisCap: 2,          // 停滞最长几拍（冻太久会变成干等，不是紧张）
@@ -186,7 +220,7 @@ export const TUNING = {
        也是一次打断大招的机会）。抬快了会变成「被手数淹没」，所以只抬一档。
      · 物理抗性：一头管生命（hpPerResist），一头管每次挨打的固定削减（resistCut）。
        抬它等于同时抬血与减伤，所以斜率小步走。
-     · 意志力：一头管生命（hpPerWill），一头管它这一场能出几手（chSpMax），
+     · 意志力：一头管生命（hpPerWill），一头管它这一场能出几手（chTempoMax），
        再被 bossWillMul / eliteWillMul 各乘一次 —— 三处都吃，斜率不动，
        靠档位倍数与下面的亲和一起把顶端垫起来。
      · 反现实亲和：敌方大半技能（各型别的看家手与机制包）都打这条轴，
@@ -329,6 +363,58 @@ export function enemyAxesAt(stage: number, o: {
     反现实亲和: Math.round((TUNING.enemyAffBase + stage * TUNING.enemyAffPerStage) * (o.rMul ?? 1)),
     意志力: Math.round((TUNING.enemyWillBase + stage * TUNING.enemyWillPerStage) * (o.willMul ?? 1)),
   }
+}
+
+/* ============================================================
+   效果带 —— 一手技能「附带的那几笔」也有上下界
+   ------------------------------------------------------------
+   在这之前，`atlas.place()` 只夹得住**倍率**（`Arch.band`），
+   `effect` 里的数一个都不夹：于是「一记把全队推后四成」和
+   「一记把自己这边推后八成五」都能原样写进档案，
+   二十四个人各写各的，谁也说不清多大才算大。
+
+   这张表给每个数字键一对上下界，`place()` 逐条夹回带内。
+   分层是两档：**本类自己的 `Arch.effBand` 优先，其次才是这张全表** ——
+   于是「同一类里各有各的档位」这条规矩也管到了效果上。
+
+   ⚠️ 下界一律写 0（`hits` / `ward` / `stall` 这种**数个数**的除外）：
+   写 0 = 明说这一笔没有，不许被带的下界顶出一个莫名其妙的小数目来。
+   管的是**上限** —— 「太强了」才是这一轮要收拾的事。
+   ============================================================ */
+export const EFF_BAND: Partial<Record<NumericEffectKey, [number, number]>> = {
+  /* —— 行动条三键：认领了才写得出来，且一手最多推这么多 ——
+     （认领见 atlas 的 `Arch.bar` / `PlaceOpt.bar`；没认领的手写了这三键，place 当场抛） */
+  pushBar: [0, 0.5],       // 把自己这边往前推
+  pushBack: [0, 0.35],     // 把对手往后推 —— 会长那条原先的 0.4 就压在这儿
+  /* —— 节奏 —— */
+  spdUp: [0, 0.8],         // 充能速度 +
+  slow: [0, 0.6],          // 敌方充能 −
+  /* —— 攻防 —— */
+  atkUp: [0, 0.7],
+  skillMul: [1.2, 2],      // 「规格」是乘算，1.2 以下等于没解封
+  shield: [0, 0.7],
+  frail: [0, 0.5],
+  mark: [0, 0.6],
+  stanceAmp: [0, 0.5],     // 打「架着盾」的目标加成
+  /* —— 命中与闪避 —— */
+  evade: [0, 0.6],
+  accUp: [0, 0.5],
+  /* —— 回复与护持 —— */
+  heal: [0, 1],            // × 意志力
+  ward: [1, 4],            // 挡几次负面
+  charge: [1.2, 3],        // 蓄力：下一手 ×N
+  /* —— 段数与削点 —— */
+  hits: [1, 4],
+  breakGuard: [1, 3],
+  /* —— 压制 —— */
+  stall: [1, 2],           // 断拍：划掉几手
+  stasis: [1, 3],          // 停滞：冻几条
+  lockdown: [0, 0.4],
+  archive: [1, 3],
+  bleed: [0, 0.12],
+  /* —— 暴击（S4 接上） —— */
+  crit: [0, 0.5],
+  critMul: [0, 1],
 }
 
 /**

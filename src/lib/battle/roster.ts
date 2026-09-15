@@ -22,11 +22,26 @@
 
 import { OPERATOR_ID, personOf } from '../../data/castmeta'
 import { place } from './atlas'
-import type { PassiveSpec } from './types'
+import type { DutyId, PassiveSpec } from './types'
 
 export interface RoleDef {
-  /** 战斗定位（职业名，取自原文意象） */
+  /** 战斗定位（职业名，取自原文意象）。**一个字不动** —— 它说的是「原文里他是谁」 */
   cls: string
+  /**
+   * 职能（五档：主音 / 护卫 / 和音 / 调度 / 取材）—— 说他在队里干哪一摊。
+   * 与 cls 叠着：cls 是身份，这一栏是活计。
+   * 主攻轴、战技格许挑哪几类框架、节拍怎么花、暴击的底子，全看它（见 duty.ts）。
+   * **必填** —— 少一个就编译不过（这是好事：漏配职能的人在面板上就是个哑的，
+   * 与其等玩家发现，不如 tsc 当场说出来）。
+   */
+  duty: DutyId
+  /**
+   * 白名单豁免：本人整个不听 `duty.arch` 那道闸，六手原样挂着。
+   * **只有恋兔光一人为 true**（主人 2026-09-14 定的破例）—— 她是「主音兼多手」，
+   * 像星铁的主角：归主音，但技能组不按主音那几类收。
+   * 数值与手感一个数不改，只是不让她被职能框架卡住。
+   */
+  dutyExempt?: boolean
   /** 定位一句话 */
   sub: string
   /** 专属机制（被动），一句话 */
@@ -47,9 +62,30 @@ export const POWER_SCALE = 2
    苍之学园 · 弹痕（枪）
    ============================================================ */
 
+/* ============================================================
+   职能分派（2026-09-15 · 主人定的五档，见 duty.ts）
+   ------------------------------------------------------------
+   逐条看过每个人的技能表与被动之后定的，不是按 cls 硬翻的。
+   一个人最多只担一摊：队里那几摊事（轰开 / 承住 / 拉回来 / 改顺序 / 敲破绽）
+   总得有人站，谁站哪一摊看**他本来就在干什么**：
+
+     主音  恋兔光（兼多手，唯一豁免）· 吴诗涵（四大凶兽，全凭手气）· 达娜厄（黑锤砸开）
+           蕾雅（热沃当的锯）· 凯特琳（英雄不灭的拳）· 黑之魔王（风与沙）
+           伊=雷格（龙花开尽）· 勇鱼义人（顺从本能扑上去）
+     护卫  小柴琳（现场造木墙）· 神流奈奈（增重减重，扛得住）· 亚历克斯（「午夜降临」的盾）
+     和音  玛丽娅（公主的独唱）· 东夷草次郎（守住日常：今天的晚饭）
+     调度  梅芙莉莎（八脚马的引擎从不熄火，开场先走半条条）· 小柴喵呜（沙姆希尔换位）
+           艾莉芙（弹痕「如散文般」—— **行动条归她**）· 艾梅（佩剑号令）
+           梅尔文（愚者的足迹）· 胡道乃梦（预读、算死）
+     取材  露娜（解体·重组：先拆开看，再决定怎么织）· 弗恩（黑档库：摊开对手的底数）
+           伊西斯（独家取材）· 菲德拉（交涉：先看对方要什么）· 艾美莉亚（注视·定）
+   ============================================================ */
+
 export const ROSTER: Record<string, RoleDef> = {
   hikari: {
     cls: '独奏者',
+    duty: '主音',
+    dutyExempt: true,
     sub: '把整座天空都市当作舞台弹主音的人 · 队伍的火力在她手上收束',
     trait: '樱色奇迹：一门同时司掌治愈、屏障与光束的机关——按需要拨到哪一档，就是哪一手的形状。',
     /* 【抄不来的一整列】
@@ -125,6 +161,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   luna: {
     cls: '织线者',
+    duty: '取材',
     sub: '把身体拆成丝线、再在别处织回来的支援位',
     trait: '解体—重组：丝线之躯没有要害。行动条的推进与回撤，都只是「移动了多少身体」而已。',
     skills: [
@@ -161,6 +198,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   mefisa: {
     cls: '骑手',
+    duty: '调度',
     sub: '以八脚马变形支援全队 · 决定谁先抵达战场',
     trait: '八脚马：为了「无论何处都能抵达」的弹痕。它会变成枪、变成装甲、变成载具——副官要什么，它就长成什么。',
     skills: [
@@ -204,6 +242,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   nyau: {
     cls: '掷换手',
+    duty: '调度',
     sub: '用换位打乱坐标的护卫 · 队里最小的那只手',
     trait: '沙姆希尔：子弹不追求命中——弹匣里的子弹与「目标」的位置会被互换。小柴的小是小狗的小。',
     skills: [
@@ -238,6 +277,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   youshihan: {
     cls: '赌徒',
+    duty: '主音',
     sub: '效果随机、性能极端的前辈 · 你永远押不准她抽到哪一张',
     trait: '四大凶兽：四张牌里总有一张是极端的，可惜不知是哪张。',
     skills: [
@@ -275,6 +315,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'alive-anatolia': {
     cls: '撰史者',
+    duty: '调度',
     sub: '以「散文」撰写委员会的未来 · 会长席上的那一笔',
     // 「行动条」这一条的两位主人之一（另一位是梅芙）：她动的不是伤害，是顺位。
     // 「贯穿过去」把对面的条从起因上抹掉，「撰写」把全队的条按她写下的一段往前挪。
@@ -337,6 +378,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'vern-simon': {
     cls: '情报官',
+    duty: '取材',
     sub: '信息处理的极致 · 他休息五天，学园就会崩溃',
     trait: '调度：战场上没有他不知道的数。看一眼，就把对手的底数摊在桌面上。',
     skills: [
@@ -369,6 +411,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'xiaochai-lin': {
     cls: '工造师',
+    duty: '护卫',
     sub: '随身带着一台悬浮 3D 打印机 · 需要什么就当场造出来',
     trait: '爪：能用激光把照射到的物质塑造成任意形状——墙、乐器、通行证，皆可当场造出。',
     skills: [
@@ -402,6 +445,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'danae-whitmore': {
     cls: '黑锤',
+    duty: '主音',
     sub: '平时怯生生的朋克少女 · 一变身就高逾一米九',
     trait: '认真模式SSS：越是怯场，越要变成那个够得着的人。',
     skills: [
@@ -429,6 +473,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'nana-kamiru': {
     cls: '称量者',
+    duty: '护卫',
     sub: '能把重量自由增减的球棒 · 连终末都要先掂量掂量自己有多重',
     trait: '大麻烦：击中对象的重量任意增减。增物重至三倍，或把对方自重提至数十倍——寸步难行。',
     skills: [
@@ -464,6 +509,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   reiya: {
     cls: '斩伐者',
+    duty: '主音',
     sub: '形如巨型电锯的斩击 · 轰鸣着切开一切低 R 值的幻想',
     trait: '热沃当的少女：被诅咒的巨兽之名。这把锯子最初为狩猎而转，直到有人教会它守护。',
     skills: [
@@ -502,6 +548,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   emei: {
     cls: '统率者',
+    duty: '调度',
     sub: '被称为「王子殿下」的评议会副议长 · 完美的领队',
     trait: '号令：只要她还站着，队伍就不会先垮。',
     skills: [
@@ -535,6 +582,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'isis-halid': {
     cls: '取材者',
+    duty: '取材',
     sub: '卡乌斯的记者 · 追独家新闻时寸步不让',
     trait: '取材：她先记下来，队伍再打。被记录的目标没有秘密。',
     skills: [
@@ -573,6 +621,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   katherine: {
     cls: '英雄',
+    duty: '主音',
     sub: '受到的伤害越重就越强 · 濒死即是她的完全体',
     trait: '英雄不灭：血越薄，拳头越重。她是凡人之躯正面迎战大将的那种人。',
     skills: [
@@ -604,6 +653,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'alex-cave': {
     cls: '盾',
+    duty: '护卫',
     sub: '午夜降临时化为现世最坚硬的物质 · 企业联合的盾',
     trait: '午夜降临：任何攻击都无法在他身上留下划痕。他站着，后面的人就不必挨打。',
     skills: [
@@ -634,6 +684,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   phidra: {
     cls: '交涉者',
+    duty: '取材',
     sub: '被视为下一任会长的那种人 · 认识他的无不折服',
     trait: '好比赛：他从不逼人交手，只是让人自愿走进规则里。',
     skills: [
@@ -670,6 +721,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   maria: {
     cls: '偶像',
+    duty: '和音',
     sub: '把感情唱成现实的舞台公主 · 也是第 6 区的镇痛剂',
     trait: '天下无双的公主大人：台下的欢呼、观众的心跳，都会在旋律中成真。',
     skills: [
@@ -705,6 +757,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'merwen-gray': {
     cls: '瞬步者',
+    duty: '调度',
     sub: '外表文静的文学少女 · 实则狠辣的武斗派',
     trait: '愚者的足迹：只在想逃的地方留下脚印——她从不逃跑，只换坐标。',
     skills: [
@@ -735,6 +788,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   ameria: {
     cls: '守望者',
+    duty: '取材',
     sub: '以亡者的形态注视着第 6 区 · 无处不在的目光',
     trait: '注视着你：意识量子化、无限增殖——城市中的每一双眼、每一扇窗都是她的目光。',
     skills: [
@@ -770,6 +824,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'kuro-no-maou': {
     cls: '魔王',
+    duty: '主音',
     sub: 'Stage5 的人型终末 · 与心叶同船相识的那位少女',
     trait: '漆黑之影：她的力量不属于三大学园任何一尊天使——反现实性对她不构成克制，也不构成弱点。'
       + '「风与沙」是同一门力量的两支：风先到，沙随后。',
@@ -807,6 +862,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   yiregel: {
     cls: '龙骑士',
+    duty: '主音',
     sub: '出身异界「龙之国」的心腹 · 持有名为「龙花」的加护',
     trait: '龙花：一种既非弹痕亦非斩击的加护。龙之国的东西，不按这边的规矩运转。',
     skills: [
@@ -838,6 +894,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'touyi-caojiro': {
     cls: '浪人',
+    duty: '和音',
     sub: '总是开着玩笑、嬉皮笑脸 · 让人看不懂真意的少年',
     trait: '与世无争：他珍爱日常，所以出手时从不用尽全力——敌人也因此总摸不准他。',
     skills: [
@@ -869,6 +926,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'huda-nayume': {
     cls: '领队',
+    duty: '调度',
     sub: '提前算好未来几步 · 深不可测的少女',
     trait: '预读：对内像姐姐，对外毫不留情。她已经在想第三步了。',
     skills: [
@@ -900,6 +958,7 @@ export const ROSTER: Record<string, RoleDef> = {
 
   'yuina-yoshito': {
     cls: '斗士',
+    duty: '主音',
     sub: '宁可不吃饭，也要打上一架 · 顺从本能的野性派',
     trait: '本能：想都没想就已经冲出去了。抢得越早，打得越狠。',
     skills: [
@@ -956,11 +1015,39 @@ const PASSIVE: Record<string, PassiveSpec> = {
       + '也没有心脏可破，血一直在往回长；只是织回一具散掉的身子很费丝线，'
       + '一场里她只织得回一次；小主人言万心叶在场上时，那一次之外还能再撑一次。',
     regen: 0.09, endure: 1, endurePlus: { with: OPERATOR_ID, extra: 1 },
+    /* 天赋（四格制第四格 · 自动触发，一格都不点）：她一记打穿对手的那一刻，
+       丝线就把那一处记了下来 —— 全队跟着那道痕打。
+       落点写 `trigger`：**挨了她这一下的那个敌人**（不是她自己）。
+       `uses: -1` 是「每打出一记暴击就记一次」；缺省那 1 次是给「只响一回」的天赋留的。 */
+    talents: [
+      {
+        name: '丝线记事',
+        desc: '丝线记下了打穿的那一处 —— 挨了她暴击的目标身上留一道痕，全队照着痕打。',
+        trigger: { on: 'crit' },
+        to: 'trigger',
+        effect: { mark: 0.15 },
+        uses: -1,
+      },
+    ],
   },
   mefisa: {
     name: '无论何处都能抵达',
     desc: '八脚马的引擎从不熄火：开场她就已经先走了半条行动条——副官决定谁先抵达战场。',
     headStart: 0.5,
+    /* 天赋：她管的是**顺序**（调度这一档，行动条归她 —— 动条那三键的闸在 duty.arch 上，
+       天赋不走那一栏：它是职能本身的本事，不是从技能表里挑的一手）。
+       开场给整队各推一截行动条 —— 与她自己那半条领先是一个来路。
+       ⚠️ 这里**不能写 `tempo`**：开局每个人的节拍本来就是满的（见 derive），
+       回节拍那一类天赋最先撞到的就是「已经满了，回了等于没回」。 */
+    talents: [
+      {
+        name: '先到一步',
+        desc: '八脚马先到了 —— 开场她把全队的行动条各往前推一截，谁都早一步动得起来。',
+        trigger: { on: 'battleStart' },
+        to: 'allyAll',
+        effect: { pushBar: 0.12 },
+      },
+    ],
   },
   nyau: {
     name: '位置互换',
@@ -993,6 +1080,18 @@ const PASSIVE: Record<string, PassiveSpec> = {
     name: '认真模式',
     desc: '平时怯生生的朋克少女，越是怯场，越要变成那个高逾一米九、够得着的人。',
     atk: 0.1, lowHpAtk: 0.4,
+    /* 天赋：跌破半条命的那一下换成「那个自己」—— 一场只换一次（`uses` 缺省 1）。
+       与上面的 lowHpAtk 叠着：那个是**常驻**的「血越薄越重」，
+       这一条是跌穿半血的那一下再添一把，三回合后收回去。 */
+    talents: [
+      {
+        name: '够得着的人',
+        desc: '被打到还剩半条命的那一刻，她换成了那个高逾一米九的自己 —— 这一场只换一次。',
+        trigger: { on: 'hpBelow', ratio: 0.5 },
+        to: 'self',
+        buffs: [{ k: 'atk', v: 0.2, rounds: 3 }],
+      },
+    ],
   },
   'nana-kamiru': {
     name: '掂量',
@@ -1032,7 +1131,7 @@ const PASSIVE: Record<string, PassiveSpec> = {
   maria: {
     name: '镇痛剂',
     desc: '台下的欢呼、观众的心跳都会在旋律中成真：第 6 区的镇痛剂，也在给自己镇痛。',
-    regen: 0.05, spRegen: 2,
+    regen: 0.05, tempoRegen: 2,
   },
   'merwen-gray': {
     name: '愚者的足迹',
@@ -1093,9 +1192,11 @@ const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`
 export function passiveText(p?: PassiveSpec): string[] {
   if (!p) return []
   const out: string[] = []
-  if (p.regen) out.push(`每拍回复最大生命 ${pct(p.regen)}`)
-  if (p.spRegen) out.push(`每拍回体 ${p.spRegen}`)
-  if (p.spMax) out.push(`体力上限 ${p.spMax > 0 ? '+' : ''}${p.spMax}`)
+  /* 这两条走的是**空转那一格**（`advance` 里逐格推的那一圈），不是「每一拍」：
+     一回合里要空转好几格，写成「每拍」会让人把这个数读小好几倍（见 engine 的恢复途径②）。 */
+  if (p.regen) out.push(`充能每格回血 ${pct(p.regen)}`)
+  if (p.tempoRegen) out.push(`充能每格回节拍 ${p.tempoRegen}`)
+  if (p.tempoMaxUp) out.push(`节拍上限 ${p.tempoMaxUp > 0 ? '+' : ''}${p.tempoMaxUp}`)
   if (p.shield) out.push(`常驻减伤 ${pct(p.shield)}`)
   if (p.atk) out.push(`常驻攻击 ${pct(p.atk)}`)
   if (p.lowHpAtk) out.push(`残血时攻击再 ${pct(p.lowHpAtk)}`)

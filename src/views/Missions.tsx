@@ -292,8 +292,9 @@ export function Missions() {
       const deep = b.squad ? 0 : Math.min(...b.members.map((id) => bondVals[id] ?? 0))
       return {
         id: b.id, name: b.name, members: b.members,
-        need: b.need, squad: !!b.squad,
-        axis: b.link.axis, cd: b.link.cd,
+        // 两套机制各读各的那一栏：整队看共鸣槽（need），双人看追击冷却（cd，已按交情缩短）
+        need: b.need, cd: b.cd, squad: !!b.squad,
+        axis: b.link.axis,
         deep, cut: b.squad ? 0 : bondCut(deep),
         next: b.squad ? null : bondNext(deep),
       }
@@ -948,15 +949,15 @@ ${rb.f.word}`}
                     </div>
                     <span className={css.bondLine}>
                       {b.squad
-                        ? `名单 ${b.members.length} 人各蓄满 ${b.need} 拍才成立 · 由出手的那位带出去`
-                        : `共鸣 ${b.need} 拍满 · 参加者各出一手都添一笔`}
+                        ? `共鸣槽：名单 ${b.members.length} 人各蓄满 ${b.need} 拍才成立 · 由出手的那位带出去`
+                        : `追击条件：搭档这一手打穿破绽、或对面正在咏唱 —— 另一位就自己接上（不占出手）`}
                     </span>
                     <span className={css.bondLine}>出口成伤：各按 {b.axis} 出力 · 冷却 {b.cd} 拍</span>
                     {!b.squad
                       ? <span className={css.bondLine}>
-                          交情 {Math.round(b.deep)} · 槽缩到 {b.need} 拍
+                          交情 {Math.round(b.deep)} · 追击冷却缩到 {b.cd} 拍
                           {b.cut ? `（已减 ${b.cut} 拍）` : ''}
-                          {b.next ? ` · 离「${b.next.name}」还差 ${b.next.left}，槽再缩一拍` : ' · 交情已到顶'}
+                          {b.next ? ` · 离「${b.next.name}」还差 ${b.next.left}，冷却再缩一拍` : ' · 交情已到顶'}
                         </span>
                       : null}
                   </div>

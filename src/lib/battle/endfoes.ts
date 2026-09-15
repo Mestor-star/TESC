@@ -319,6 +319,11 @@ interface Hand {
   turns?: number
   target?: Target
   fx?: FxKind
+  /**
+   * 这一手认领行动条（pushBar / pushBack / clearBar）。
+   * 只给**本来打法就靠推条**的那几手写 —— 起手技里极少见，见一处标一处。
+   */
+  bar?: boolean
 }
 
 interface EndSpec {
@@ -373,6 +378,7 @@ function handSkill(s: EndSpec, h: Hand, slot: string, arch: string, ult: boolean
     target: h.target,
     effect: h.effect,
     turns: h.turns,
+    bar: h.bar,
   })
   return ult ? { ...k, ult: TUNING.ultCharge, ultBreak: TUNING.ultBreak } : k
 }
@@ -574,7 +580,7 @@ const SPECS: EndSpec[] = [
       desc: '「深海 20 万米异界中沉睡的旧人类巨型机械生命体」——'
         + '在它的场子里，它比谁都不急。',
       shield: 0.15,
-      spMax: 8,
+      tempoMaxUp: 8,
     },
     next: 'death-god',
   },
@@ -756,6 +762,7 @@ const SPECS: EndSpec[] = [
       name: '巨口 · 吸', power: 1.4, axis: '反现实亲和',
       desc: '「看似巨口的深洞，通往『另一个世界』」——它的每一次「吸」都是那道口在张。',
       effect: { pushBack: 0.25 },
+      bar: true,
       line: '「——」底下的风是往上来的。',
     },
     ult: {
@@ -880,6 +887,7 @@ const SPECS: EndSpec[] = [
       desc: '「全长仅 100 米，却自原初宇宙（直径约 30 公里）横渡星河而来」——'
         + '它撞过来的那一下，是很多年的路。',
       effect: { pushBack: 0.3 },
+      bar: true,
       line: '「——」它没有减速。',
     },
     ult: {

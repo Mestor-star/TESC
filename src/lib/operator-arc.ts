@@ -11,7 +11,9 @@
 
 import { TIMELINE } from '../data/timeline'
 import { furthestDone } from './operator'
-import type { AxisKey, AxisSheet, FxKind, PassiveSpec, SkillEffect, SkillKind, Target } from './battle/types'
+import type {
+  AxisKey, AxisSheet, DutyId, FxKind, PassiveSpec, SkillEffect, SkillKind, Target,
+} from './battle/types'
 import { OPERATOR_ID } from '../data/castmeta'
 /** 与名册同一口径：power 以「对应轴的百分之多少」计（见 roster.ts 的 POWER_SCALE） */
 import { POWER_SCALE } from './battle/roster'
@@ -32,6 +34,11 @@ export interface OpForm {
 export interface OpAbility {
   name: string
   kind: SkillKind
+  /**
+   * 「解封门」性质（原先的 `kind: '启动'`）—— 归在「战技」格里，不单占一格。
+   * 见 battle/types.ts 的 `SkillSpec.gate`。带这一条的手默认打自己（解封是拧自己的封印）。
+   */
+  gate?: boolean
   desc: string
   pow: number
   axis: AxisKey
@@ -74,6 +81,10 @@ export interface OpPeriod {
   title: string
   /** 战斗定位（职业） */
   cls: string
+  /** 职能（五档）—— 与名册同一口径，见 battle/roster.ts 的 RoleDef.duty */
+  duty?: DutyId
+  /** 职能白名单豁免（只有恋兔光一人为 true，见 RoleDef.dutyExempt） */
+  dutyExempt?: boolean
   /** 此刻的处境一句话 */
   note: string
   axes: AxisSheet
@@ -109,7 +120,7 @@ const ab = (
   o: Omit<OpAbility, 'name' | 'kind' | 'desc' | 'pow' | 'axis' | 'fx'> = {},
 ) : OpAbility => ({
   name, kind, desc, pow: pow * POWER_SCALE, axis, fx,
-  target: kind === '启动' ? 'self' : 'one', ...o,
+  target: o.gate ? 'self' : 'one', ...o,
 })
 
 /**
@@ -126,23 +137,23 @@ const lionSkills = (sc: number) => [
   ab('黄金狮子 · 獠牙', '普攻',
     '牙齿不是金属——是她一根一根织出来的线，咬进去之后自己会收紧。',
     1.9 * sc, '破坏力', 'slash', { line: '「——咬住了。别挣，会断的。」' }),
-  ab('黄金狮子 · 咆哮', '技能',
+  ab('黄金狮子 · 咆哮', '战技',
     '本源终末的一声。敌方全体的蓄势一并塌下去，破绽也一起震出来。',
     1.1 * sc, '反现实亲和', 'noise',
     // 这一声是「震」不是「推」：行动条那一档只有梅芙与会长能动（见 battle/atlas.ts 的头注）。
     { target: 'all', cost: 4, effect: { slow: 0.6, mark: 0.25 },
       line: '「这一次，它选择守护人类。」' }),
-  ab('丝线 · 千手', '技能',
+  ab('丝线 · 千手', '战技',
     '千万根丝同时收紧，从各个关节的缝里切进去——无视闪避与减伤，多段贯穿。',
     1.3 * sc, '破坏力', 'slash',
     { cost: 5, cd: 2, effect: { pierce: true, hits: 3 },
       line: '「你甩得动，我就接得住。」' }),
-  ab('黄金的护佑', '技能',
+  ab('黄金的护佑', '战技',
     '狮身横在队伍前面。这份契约的正文本来就是「守护」，不是「歼灭」。',
     0, '意志力', 'guard',
     { target: 'allyAll', cost: 3, turns: 2, cd: 3, effect: { taunt: true, shield: 0.4 },
       line: '「这一次，我不会再让它一个人站着。」' }),
-  ab('本源终末 · 歼灭', '技能',
+  ab('本源终末 · 歼灭', '战技',
     '到达点：把「终末」这个词本身按下去——这一记连着守护者群一起抹掉。',
     3.8 * sc, '反现实亲和', 'noise',
     { target: 'all', cost: 9, cd: 4, line: '「——「可以哦」。你说的。那我就不松手了。」' }),
@@ -162,7 +173,7 @@ const lionSkills = (sc: number) => [
  * 这几行不许改成「比本体高多少的倍数」：那是另一套口径，会让档案页与打起来对不上。
  */
 const GOLDEN_LION = (sc: number): OpAbility => ab(
-  '黄金狮子', '技能',
+  '黄金狮子', '战技',
   '第一卷最后一节立下的契约：她把自己交给了他。此后他可以不靠她站在旁边——'
   + '当面化成那头丝线织成的狮，换一套打法出手。这幅面目撑不住多久：'
   + '三拍之后丝线就散了，他得变回自己。变身期间用不了拳法。（需露娜在场）',
@@ -195,6 +206,7 @@ export const OP_PERIODS: OpPeriod[] = [
     vol: '第 1—2 卷 · 从落海到「低语者」',
     title: '言万心叶 · 低语者',
     cls: '低语者',
+    duty: '主音',
     note: '他不会游泳、也不穿武装，一身本事都长在一双拳头与那台关不掉的收音机上。'
       + '低语者不是武器，是一种反现实体质——听得见别人心里最响的那一句，'
       + '所以他的拳总比对方先到半步，也总先挪开半步。',
@@ -218,15 +230,15 @@ export const OP_PERIODS: OpPeriod[] = [
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
         2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
-      ab('低语 · 读心', '技能', '他把听见的东西念给全队听——对方的「往左躲」不再是秘密。'
+      ab('低语 · 读心', '战技', '他把听见的东西念给全队听——对方的「往左躲」不再是秘密。'
         + '自身回避率上升，全队命中率一并上升。',
         0, '反现实亲和', 'seal',
         { target: 'allyAll', cost: 3, turns: 3, effect: { evade: 0.3, accUp: 0.35 } }),
-      ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
+      ab('先救别人', '战技', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
       GOLDEN_LION(1),
       /* 到达点：委员会的执行权在他手上 —— 全场宣读一次「停滞观测」 */
-      ab('停滞观测 · 宣告', '到达点',
+      ab('停滞观测 · 宣告', '终结技',
         '以低语者把整片战场的心声一次读完，再反向灌回去：这份观测记录当场成立，'
         + '场上所有东西都被按在原地。',
         2.4, '意志力', 'noise',
@@ -238,6 +250,7 @@ export const OP_PERIODS: OpPeriod[] = [
     vol: '第 2—3 卷 · 弹痕「noapusa」',
     title: '言万心叶 · noapusa · 化身之枪',
     cls: '化身之枪',
+    duty: '主音',
     note: '夜梦之后枕边多了一把手枪。它能让他变成任何人——曾被指为「会化作怪物的能力」。'
       + '使用期间，他本人的意志不会反映出来；而借来的东西总要还，还得缓一缓。',
     axes: A(44, 58, 41, 105, 119),
@@ -258,12 +271,12 @@ export const OP_PERIODS: OpPeriod[] = [
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
         2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
-      ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
+      ab('低语 · 读心', '战技', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
         + '他要喊的东西总在出手之前就到。',
         0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
-      ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
+      ab('先救别人', '战技', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
-      ab('变成他人', '技能',
+      ab('变成他人', '战技',
         '照着一份已解锁的档案变成对方：外貌、声音到能力（五轴与技能表）全部借来用。'
         + '队伍里的人复制不了——那是他还不肯弄丢的东西。'
         + '解除之后的三拍里手感发虚，出力与充能略降。',
@@ -271,7 +284,7 @@ export const OP_PERIODS: OpPeriod[] = [
         // 出手当时不上冷却：冷却从「变身解除」那一刻才起算（见 engine 的拍子循环）
         { cost: 3, cd: 0, target: 'one', morph: true, morphTicks: 3, morphCd: 3 }),
       GOLDEN_LION(1.2),
-      ab('noapusa · 万物皆我', '到达点',
+      ab('noapusa · 万物皆我', '终结技',
         '化身之枪的极限：同时借来在场所有东西的形状，一次打出去。'
         + '借来的东西打出去之后是要还的 —— 这一手不带任何后手。',
         2.6, '反现实亲和', 'noise',
@@ -283,6 +296,7 @@ export const OP_PERIODS: OpPeriod[] = [
     vol: '第 4 卷起 · 斩击之戒「a Session.」',
     title: '言万心叶 · a Session. · 灵魂共奏',
     cls: '灵魂共奏',
+    duty: '主音',
     note: '篝火之国坠落后那一夜，他梦见满身伤痕的「斩击的天使」；醒来枕边多了一枚极其简朴的白金戒指。'
       + '「变成他人」已经随 noapusa 一起碎掉了——现在他要做的是合而为一，不是变成别人。',
     axes: A(82, 78, 75, 143, 163),
@@ -303,15 +317,15 @@ export const OP_PERIODS: OpPeriod[] = [
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
         2.2, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
-      ab('低语 · 读心', '技能', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
+      ab('低语 · 读心', '战技', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
         + '他要喊的东西总在出手之前就到。',
         0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
-      ab('先救别人', '技能', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
+      ab('先救别人', '战技', '落海时反手把不会游泳的人捞上来——代全队承下一次伤害。',
         0, '意志力', 'guard', { target: 'allyAll', turns: 1, effect: { taunt: true, shield: 0.3 } }),
-      ab('a Session. · 合而为一', '技能', '与同伴灵魂共奏：全队攻击与充能一并上扬。',
+      ab('a Session. · 合而为一', '战技', '与同伴灵魂共奏：全队攻击与充能一并上扬。',
         0, '意志力', 'slash', { target: 'allyAll', turns: 3, effect: { atkUp: 0.35, spdUp: 0.3 } }),
       GOLDEN_LION(1.5),
-      ab('a Session. · 终章', '到达点',
+      ab('a Session. · 终章', '终结技',
         '两枚戒指相互共鸣到极限的那一拍：把同行者的灵魂一并拉进这一拳里。'
         + '打完这一手，他还要站在原地 —— 那是他学会的最后一件事。',
         3.0, '意志力', 'slash',

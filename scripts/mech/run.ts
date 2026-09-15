@@ -30,6 +30,7 @@
       5  破绽归属    —— 破绽长在**该长的人**身上（不是随手挂）
       6  旧吉他解封   —— 「规格翻倍」翻到了哪些量，逐项对上
       7  面板与负面键 —— 面板读数与 DEBUFF_KEYS 的分工不重叠
+     7b  效果带与认领 —— 数越界夹回来；布尔与行动条没认领就抛
       8  敌阵       —— 血量压制 · 首领≥精英 · 随时期变强
       9  会长天花板   —— 数值有顶，且不许回涨（回涨 = 平衡返工）
      10  五轴不封顶   —— 基准 AXIS_REF 不是上限，越过它也得算得出来
@@ -92,8 +93,9 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import {
-  act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, createBattle,
-  endureCap, enemysTurn, find, guardLeft, legalSkills, pendingFoe, skipOf, standingOf, summonFoe,
+  act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, chargeOf, createBattle,
+  endureCap, enemysTurn, etaOf, evadeOf, find, guardLeft, legalSkills, pendingFoe, skipOf,
+  standingOf, summonFoe,
 } from '../../src/lib/battle/engine'
 import { combatantOf, enemiesOf, enemyFormation, minionOf } from '../../src/lib/battle/derive'
 import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
@@ -101,7 +103,7 @@ import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
 import { TIMELINE } from '../../src/data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
-import { TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
+import { EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
@@ -111,7 +113,11 @@ import { effectLineOf, mulTextOf } from '../../src/lib/battle/skilltext'
 import { battleStoryBrief, templateStorylog } from '../../src/lib/battle/storylog'
 import type { BattleRecord } from '../../src/lib/battle/types'
 import { DEBUFF_KEYS } from '../../src/lib/battle/types'
-import { LION_PAIR_ID } from '../../src/lib/battle/synergy'
+import type { NumericEffectKey, SkillEffect } from '../../src/lib/battle/types'
+import { ARCH, place } from '../../src/lib/battle/atlas'
+import { DUTY, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
+import { GEARS } from '../../src/lib/battle/gear'
+import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
 import { namedBossOf } from '../../src/lib/battle/bosses'
 import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
 import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
@@ -226,8 +232,13 @@ export function run(): MechReport {
   const byStage = MISSIONS.slice().sort((a, b) => a.stage - b.stage)
   const mission = byStage[0]
   const SQUAD = ['isis', 'phidra', 'maria', 'mefisa']
+  /* 复核一律把**暴击**关掉：这里验的是机制（阈值 / 均值对照 / 计数），不是运气 ——
+     开着暴击的话「轻碰一下不掉」那种贴着门槛的断言会被一发暴击顶过线，
+     偶发地红一次，读起来像真 bug。要暴击的那几条自己开（见 §7c）。
+     与 sureHit / freezeFoes 同一路数：把随机性按在场地这一层。 */
+  const NO_CRIT = { crit: false } as const
   const mk = (cmd?: 'offline' | 'ai') => createBattle({
-    mission, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, command: cmd,
+    mission, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, command: cmd, ...NO_CRIT,
   })
   info.push(`靶场：stage ${mission.stage}「${mission.title ?? ''}」`)
 
@@ -367,7 +378,7 @@ export function run(): MechReport {
     const victim = s.allies[0]!
     victim.ward = 2
     const debuff: SkillSpec = {
-      id: 'mech-test-debuff', name: '测试 · 压制', kind: '技能', desc: '',
+      id: 'mech-test-debuff', name: '测试 · 压制', kind: '战技', desc: '',
       cost: 0, power: 0, axis: '反现实亲和', fx: 'seal', line: '（复核用）', target: 'one',
       effect: { mark: 0.4, slow: 0.3 },
     }
@@ -437,7 +448,7 @@ export function run(): MechReport {
     const stake = me.skills.find((k) => k.id === 'phidra-stake')
     ok('蓄力：赌注这一手在表上', !!stake)
     me.cds = {}
-    me.sp = 999
+    me.tempo = 999
     freezeFoes(s)
     s.actor = me.id
     s.phase = 'select'
@@ -448,7 +459,7 @@ export function run(): MechReport {
     s.actor = me.id
     s.phase = 'select'
     me.bar = TUNING.barMax
-    me.sp = 999
+    me.tempo = 999
     me.cds = {}
     freezeFoes(s)
     act(s, { t: 'atk', targetId: s.enemies[0]!.id })
@@ -465,7 +476,7 @@ export function run(): MechReport {
       victim.hpMax = 5000
       victim.hp = 5000
       foe.skills = [{
-        id: 'mech-test-hit', name: '测试 · 一击', kind: '技能', desc: '',
+        id: 'mech-test-hit', name: '测试 · 一击', kind: '战技', desc: '',
         cost: 0, power, axis: '破坏力', fx: 'blast', line: '（复核用）', target: 'one',
       }]
       foe.axes['破坏力'] = axis
@@ -530,8 +541,9 @@ export function run(): MechReport {
        她的表里没有 isis-scoop（上一版就是照 id 猜人，四条断言全落空）。
        编队上限 6，正好把要用的都带上。 */
     const S2 = ['isis-halid', 'youshihan', 'maria', 'phidra', 'nana-kamiru', 'mefisa']
+    // 两处求均值（hitSum(500) / afterChain(160)）都在这个场地里 —— 照例关暴击
     const mk2 = () => createBattle({
-      mission, squad: S2, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+      mission, squad: S2, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, ...NO_CRIT,
     })
     const burst = ROSTER.hikari?.skills.find((k) => k.id === 'hikari-burst')
     ok('解封：旧吉他·解封这一手在表上', !!burst)
@@ -544,7 +556,7 @@ export function run(): MechReport {
     const unlock = (c: Combatant) => { c.buffs.push({ k: 'skillMul', v: 1, t: 3 }) }
     const castAs = (s: ReturnType<typeof mk2>, who: string, skillId: string, targetId?: string) => {
       const c = find(s, who)!
-      c.sp = 999
+      c.tempo = 999
       c.cds = {}
       freezeFoes(s)
       s.actor = c.id
@@ -655,12 +667,12 @@ export function run(): MechReport {
        甩出来之后她自己下一手真的按新规格走。 */
     const chain = (useBurst: boolean) => {
       const s = createBattle({
-        mission, squad: ['hikari', 'mefisa'], progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+        mission, squad: ['hikari', 'mefisa'], progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, ...NO_CRIT,
       })
       const h = find(s, 'hikari')!
       const other = find(s, 'mefisa')!
       const step = (who: Combatant, cmd: Parameters<typeof act>[1]) => {
-        who.sp = 999
+        who.tempo = 999
         who.cds = {}
         freezeFoes(s)
         s.actor = who.id
@@ -768,6 +780,870 @@ export function run(): MechReport {
       missing.length ? missing.join('、') : `${HOSTILE_BUFF_KEYS.length} 个`)
   } catch (e) {
     fail.push('读数段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7b) 效果带与行动条认领：能夹的量夹住，不能夹的量不放行 ----------
+     主人抱怨的那句「会长一手把别人推后 40% 也太多」，根子不在数值上 ——
+     `place()` 原先只夹**倍率**，effect 里的数一个都不夹，于是谁都能写 0.85。
+     这一节钉的就是补上的那两道闸：数字走**效果带**（越界夹回），
+     布尔与行动条走**白名单 / 认领**（没认的一律抛，不悄悄丢）。
+     两份名单都是给数据立规矩的，所以断言也照数据来：每一笔用出去的数都得有带。 */
+  try {
+    const threw = (fn: () => unknown): string => {
+      try { fn(); return '' } catch (e) { return e instanceof Error ? e.message : String(e) }
+    }
+    const t = (id: string) => ({ id, name: '复核用', desc: '复核用' })
+
+    /* ① 数字：越界的夹回带内；带内的一个不动 */
+    const over = place('强袭', { ...t('_t-over'), effect: { mark: 0.9, shield: 5 } })
+    ok('效果带 · 越界的数夹回带内',
+      over.effect?.mark === EFF_BAND.mark![1] && over.effect?.shield === EFF_BAND.shield![1],
+      `mark 0.9 → ${over.effect?.mark} · shield 5 → ${over.effect?.shield}`)
+    const within = place('强袭', { ...t('_t-in'), effect: { mark: 0.2 } })
+    ok('效果带（对照）· 带内的数一个不动', within.effect?.mark === 0.2, `mark 0.2 → ${within.effect?.mark}`)
+
+    /* ② 布尔：不在这一类的白名单里 → 抛（不是悄悄丢掉） */
+    const m1 = threw(() => place('强袭', { ...t('_t-flag'), effect: { cleanse: true } }))
+    ok('白名单 · 这一类不带的那一笔 → place 抛', m1.includes('不许带') && m1.includes('cleanse'),
+      m1 ? m1.slice(0, 34) : '（没抛 —— 悄悄放过了）')
+
+    /* ③ 行动条：类没认、这一手也没认 → 抛；任一处认了 → 过 */
+    const m2 = threw(() => place('强袭', { ...t('_t-bar'), effect: { pushBar: 0.2 } }))
+    ok('行动条 · 没认领的手带三键 → place 抛', m2.includes('行动条'),
+      m2 ? m2.slice(0, 34) : '（没抛 —— 谁都能白拿）')
+    const claimHand = place('强袭', { ...t('_t-bar2'), bar: true, effect: { pushBar: 0.2 } })
+    ok('行动条（对照）· 这一手自己认了就放得过', claimHand.effect?.pushBar === 0.2)
+    const claimArch = place('提速', { ...t('_t-bar3'), effect: { pushBar: 0.2 } })
+    ok('行动条（对照）· 一整类以动条为打法的，不用逐手写', claimArch.effect?.pushBar === 0.2)
+
+    /* ④ 每一笔用出去的数字都得有带 —— 漏一个，place 会在数据里当场抛。
+       扫的是**落地之后**的技能表（roster 的那份），所以它量的是真数据不是框架。 */
+    const noBand: string[] = []
+    const scan = (id: string, e?: SkillEffect) => {
+      for (const [k, v] of Object.entries(e ?? {})) {
+        if (typeof v === 'number' && !EFF_BAND[k as NumericEffectKey]) noBand.push(`${id}.${k}`)
+      }
+    }
+    for (const def of Object.values(ROSTER)) for (const k of def.skills) scan(k.id, k.effect)
+    for (const a of Object.values(ARCH)) scan(a.id, a.effect)
+    ok('效果带 · 数据里用到的每一个数字键都有带', noBand.length === 0,
+      noBand.length ? noBand.slice(0, 6).join('、') : `${Object.keys(EFF_BAND).length} 条带`)
+
+    /* ⑤ 越界的那两笔真的被夹回来了（不是只在测试里夹得住） */
+    const byId = new Map<string, SkillEffect>()
+    for (const def of Object.values(ROSTER)) for (const k of def.skills) if (k.effect) byId.set(k.id, k.effect)
+    const burst = byId.get('mefisa-burst')
+    const past = byId.get('alive-past')
+    ok('数据回夹 · 越界的手落在带上（0.85 → 0.5 / 0.4 → 0.35）',
+      burst?.pushBar === EFF_BAND.pushBar![1] && past?.pushBack === EFF_BAND.pushBack![1],
+      `mefisa-burst pushBar=${burst?.pushBar} · alive-past pushBack=${past?.pushBack}`)
+  } catch (e) {
+    fail.push('效果带段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7c) 暴击：面板从职能来，掷骰按得住 ----------
+     Black Souls 2 四条里的第二条。四道闸在 rollCrit 里排好了序
+     （总开关 → 本手 noCrit → 目标架盾 → 本手 sureCrit），这一节一条一条钉：
+     面板对得上、关得掉、必暴就是必暴、倍数真乘在伤害上、敌我也一样掷。
+     场地**不关暴击**（上面那条 NO_CRIT 是给别的节用的）——
+     但每一处的「不暴」都用能定死的方式验，不留偶发。 */
+  try {
+    const on = () => createBattle({
+      mission, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    /** 复核用的那一手：两条对照臂拿的是**同一个**倍率与轴，比出来的只可能是暴击 */
+    const STRIKE = (e: SkillEffect = {}): SkillSpec => ({
+      id: '_t-crit-strike', name: '复核 · 一击', kind: '战技', desc: '',
+      cost: 0, power: 2, axis: '破坏力', fx: 'blast', target: 'one', effect: e,
+    })
+    /** 让我方某人用这一手打头一个敌体；血抬到打不死，免得中途收场 */
+    const swing = (s: ReturnType<typeof on>, who: string, e: SkillEffect = {}, stance = false) => {
+      const c = find(s, who)!
+      const foe = s.enemies[0]!
+      foe.hpMax = 1e9
+      foe.hp = 1e9
+      foe.stance = stance
+      foe.buffs = foe.buffs.filter((b) => b.k !== 'mark')
+      c.skills = [STRIKE(e)]
+      c.tempo = 999
+      c.cds = {}
+      sureHit(c)
+      freezeFoes(s)
+      s.actor = c.id
+      s.phase = 'select'
+      const before = s.log.length
+      act(s, { t: 'skill', skillId: '_t-crit-strike', targetId: foe.id })
+      const last = s.log.slice(before).find((x) => x.skillId === '_t-crit-strike' && x.side === 'ally')
+      return { c, foe, last, took: foe.hpMax - foe.hp }
+    }
+    /** 一个人连打 n 手，数其中暴了几次 */
+    const critsIn = (s: ReturnType<typeof on>, who: string, n: number, e: SkillEffect = {}) => {
+      let n2 = 0
+      for (let i = 0; i < n; i++) if (swing(s, who, e).last?.crit) n2 += 1
+      return n2
+    }
+
+    /* ① 面板：造人的时候由职能算好，写死在 crit / critMul 上 */
+    const s0 = on()
+    const bad = [...s0.allies, ...s0.enemies].filter((c) => (
+      c.side === 'ally'
+        ? c.crit !== critOf(c.duty) || c.critMul !== critMulOf(c.duty)
+        : c.crit !== TUNING.critBase || c.critMul !== TUNING.critMul
+    ))
+    ok('暴击 · 面板 = 常数项 + 职能那一份（造人时算死）', bad.length === 0,
+      bad.length ? bad.map((c) => `${c.name}(${c.duty}) ${c.crit}`).join('、') : (() => {
+        const one = s0.allies[0]!
+        return `${one.name} · ${one.duty} → ${(one.crit * 100).toFixed(0)}% ×${one.critMul.toFixed(2)}`
+      })())
+    /* 五档各给各的底子 —— 不是一刀切：取材（敲破绽的）最高、护卫（顶在前面的）最低 */
+    ok('暴击 · 五档各给各的底子（取材 > 主音 > 护卫）',
+      critOf('取材') > critOf('主音') && critOf('主音') > critOf('护卫')
+      && critMulOf('取材') > critMulOf('护卫'),
+      `取材 ${(critOf('取材') * 100).toFixed(0)}% ×${critMulOf('取材')} ／ `
+      + `主音 ${(critOf('主音') * 100).toFixed(0)}% ×${critMulOf('主音')} ／ `
+      + `护卫 ${(critOf('护卫') * 100).toFixed(0)}% ×${critMulOf('护卫')} ／ `
+      + `和音 ${(critOf('和音') * 100).toFixed(0)}% ／ 调度 ${(critOf('调度') * 100).toFixed(0)}%`)
+    ok('暴击 · 名册上没写职能的都落在主音上（缺省那一档）',
+      s0.allies.every((c) => dutyOf(c.duty).id === c.duty && !!DUTY[c.duty]),
+      `本场：${s0.allies.map((c) => `${c.name} ${c.duty}`).join('／')}`)
+    ok('暴击 · 敌方只拿常数项（职能还没归位，先别白送）',
+      s0.enemies.every((c) => c.crit === TUNING.critBase && c.critMul === TUNING.critMul),
+      `${s0.enemies.length} 具 · ${(TUNING.critBase * 100).toFixed(0)}% ×${TUNING.critMul}`)
+
+    /* ② 总开关：关掉就是一次都不暴（复核脚本靠它按随机性） */
+    const sOff = on()
+    sOff.critOn = false
+    const offCrits = critsIn(sOff, 'isis', 60)
+    const sOn = on()
+    const onCrits = critsIn(sOn, 'isis', 60)
+    ok('暴击 · critOn = false 一手都不暴（对照的那一场是暴的）', offCrits === 0 && onCrits > 0,
+      `关 ${offCrits} 次 ／ 开 ${onCrits} 次（60 手，面板 ${(find(sOn, 'isis')!.crit * 100).toFixed(0)}%）`)
+
+    /* ③ 本手明写 noCrit：面板顶到天也不暴 */
+    const sNo = on()
+    find(sNo, 'isis')!.crit = 1   // 顶格 → critChanceOf 夹到 critCap
+    const noCrits = critsIn(sNo, 'isis', 60, { noCrit: true })
+    const sCap = on()
+    find(sCap, 'isis')!.crit = 1
+    const capCrits = critsIn(sCap, 'isis', 60)
+    ok('暴击 · noCrit 那一手一次都不暴（面板 100% 也一样）', noCrits === 0 && capCrits > 0,
+      `noCrit ${noCrits} ／ 面板顶格 ${capCrits}（上限 ${TUNING.critCap}）`)
+
+    /* ④ 本手明写 sureCrit：条件凑齐了，就是必暴，且倍数是他自己那一份 */
+    const sSure = on()
+    const sure = swing(sSure, 'isis', { sureCrit: true })
+    ok('暴击 · sureCrit 必暴，倍数按本人面板走',
+      sure.last?.crit === true && sure.last.critMul === sure.c.critMul,
+      `crit=${sure.last?.crit} ×${sure.last?.critMul}（面板 ×${sure.c.critMul}）`)
+
+    /* ⑤ 倍数**真乘在伤害上**：两臂只差 sureCrit 这一个开关，各 300 手把抖动平均掉 */
+    const N_CRIT = 300
+    const meanOf = (sure2: boolean) => {
+      let sum = 0
+      for (let i = 0; i < N_CRIT; i++) {
+        const sc = on()
+        sc.critOn = sure2   // 对照臂整场关掉，免得它自己也偶发暴几下把分母顶上去
+        sum += swing(sc, 'isis', sure2 ? { sureCrit: true } : {}, false).took
+      }
+      return sum / N_CRIT
+    }
+    const plainDmg = meanOf(false)
+    const critDmg = meanOf(true)
+    const mulRatio = plainDmg > 0 ? critDmg / plainDmg : 0
+    const ref = find(on(), 'isis')!
+    info.push(`暴击倍数实测：${plainDmg.toFixed(1)} → ${critDmg.toFixed(1)}（×${mulRatio.toFixed(3)}，面板 ×${ref.critMul}）`)
+    ok('暴击 · 倍数确实乘在伤害上', plainDmg > 0 && Math.abs(mulRatio - ref.critMul) < 0.05,
+      `×${mulRatio.toFixed(3)}（面板 ×${ref.critMul}）`)
+
+    /* ⑥ 架着盾的目标免暴击 —— 架盾的代价是闪避归零（见 S5），回报就是挨不暴 */
+    const sGuard = on()
+    const vsGuard = swing(sGuard, 'isis', { sureCrit: true }, true)
+    ok('暴击 · 目标架着盾就不挨暴（连 sureCrit 也免）', vsGuard.last?.crit !== true,
+      `stance=true 时 crit=${vsGuard.last?.crit}`)
+
+    /* ⑦ 本手自带的那两份也算进去（面板 + 本手；见 types 的 SkillEffect.crit） */
+    const sEff = on()
+    find(sEff, 'isis')!.crit = 0
+    const effCrits = critsIn(sEff, 'isis', 60, { crit: 1 })
+    const sBare = on()
+    find(sBare, 'isis')!.crit = 0
+    const bareCrits = critsIn(sBare, 'isis', 60)
+    ok('暴击 · 本手自带的 crit 加在面板之上（面板 0 也一样掷得出）',
+      effCrits > 0 && bareCrits === 0, `本手 +100%：${effCrits} 次 ／ 面板 0：${bareCrits} 次`)
+    const sMul = on()
+    const mulLog = swing(sMul, 'isis', { sureCrit: true, critMul: 0.5 })
+    ok('暴击 · 本手自带的 critMul 叠在面板上',
+      mulLog.last?.critMul === mulLog.c.critMul + 0.5,
+      `×${mulLog.last?.critMul}（面板 ×${mulLog.c.critMul} + 0.5）`)
+
+    /* ⑧ 敌我也掷（同一套骨架）：让敌方自己出一手 */
+    const sFoe = on()
+    const foeC = sFoe.enemies[0]!
+    foeC.hpMax = 1e9
+    foeC.hp = 1e9
+    foeC.skills = [STRIKE({ sureCrit: true })]
+    for (const a of sFoe.allies) a.bar = -1e6
+    for (const f of sFoe.enemies) f.bar = -1e6
+    foeC.bar = TUNING.barMax
+    sFoe.phase = 'select'
+    sFoe.actor = null
+    advance(sFoe)
+    const foeHit = [...sFoe.log].reverse().find((x) => x.side === 'enemy' && x.skillId === '_t-crit-strike')
+    ok('暴击 · 敌方也掷（敌我同一套骨架）', foeHit?.crit === true,
+      foeHit ? `${foeHit.actor} crit=${foeHit.crit} ×${foeHit.critMul}` : '（敌方那一手没打出来）')
+  } catch (e) {
+    fail.push('暴击段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7d) 防御姿态：架盾换的是什么 ----------
+     BS2 那条「攻防转换」：防御不是「少挨一点」那么简单，是一整套买卖 ——
+     减伤 / 免暴击 / 吃掉硬直 / 攒条更快，代价是闪避归零，而且会被一手击溃。
+     这一节按「买卖」逐条钉，最后钉「击溃那一下把好处一次全收走」。 */
+  try {
+    const STRIKE = (e: SkillEffect = {}): SkillSpec => ({
+      id: '_t-crit-strike', name: '复核 · 一击', kind: '战技', desc: '',
+      cost: 0, power: 2, axis: '破坏力', fx: 'blast', target: 'one', effect: e,
+    })
+    /** 让某人架起盾（走真正的防御指令，不是直接摆字段） */
+    const shieldUp = (s: ReturnType<typeof mk>, who: string) => {
+      const c = find(s, who)!
+      c.tempo = 999
+      c.cds = {}
+      freezeFoes(s)
+      s.actor = c.id
+      s.phase = 'select'
+      act(s, { t: 'guard' })
+      return c
+    }
+    /** 让敌方用这一手打我方某人，返回挨了多少 */
+    const foeStrike = (s: ReturnType<typeof mk>, who: string, e: SkillEffect = {}, onFoe = false) => {
+      const victim = find(s, who)!
+      const foe = s.enemies[0]!
+      victim.hpMax = 1e9
+      victim.hp = 1e9
+      foe.hpMax = 1e9
+      foe.hp = 1e9
+      foe.skills = [STRIKE(e)]
+      foe.axes['破坏力'] = 200
+      sureHit(foe)
+      for (const a of s.allies) a.bar = -1e6
+      for (const f of s.enemies) f.bar = -1e6
+      if (onFoe) foe.stance = true
+      foe.bar = TUNING.barMax
+      s.phase = 'select'
+      s.actor = null
+      advance(s)
+      return 1e9 - victim.hp
+    }
+
+    /* ① 架起来：姿态立在身上、日志认得出、闪避整个交出去 */
+    const sUp = mk()
+    const stancer = find(sUp, 'phidra')!
+    const evadeBefore = evadeOf(stancer)
+    const upLog = (() => {
+      shieldUp(sUp, 'phidra')
+      return [...sUp.log].reverse().find((x) => x.skill === '防御')
+    })()
+    ok('防御姿态 · 架起来立在身上（日志也认得出）',
+      stancer.stance === true && upLog?.stance === 'on',
+      `stance=${stancer.stance} log=${upLog?.stance}`)
+    ok('防御姿态 · 代价一：闪避归零（架着盾就是必挨打）',
+      evadeBefore > 0 && evadeOf(stancer) === 0,
+      `架盾前 ${(evadeBefore * 100).toFixed(0)}% → 架盾后 ${evadeOf(stancer)}`)
+
+    /* ② 攒条更快：windowGainOf 上的 ×1.5 只加在这一处 */
+    const sEta = mk()
+    const etaC = find(sEta, 'isis')!
+    etaC.bar = 0
+    const etaPlain = etaOf(etaC)
+    etaC.stance = true
+    const etaUp = etaOf(etaC)
+    const etaWant = (TUNING.windowBase + chargeOf(etaC) * TUNING.stanceSpdMul)
+      / (TUNING.windowBase + chargeOf(etaC))
+    ok('防御姿态 · 攒条 ×1.5（只乘在充能那一项上，见 windowGainOf）',
+      Math.abs(etaPlain / etaUp - etaWant) < 0.01,
+      `还差 ${etaPlain.toFixed(2)} → ${etaUp.toFixed(2)} 格（×${(etaPlain / etaUp).toFixed(3)}，应 ×${etaWant.toFixed(3)}）`)
+
+    /* ③ 减伤：两臂只差姿态这一个开关；第三臂再验「克防御的手」乘在哪一层 */
+    const N_GUARD = 300
+    const AMP = 0.4
+    let plainSum = 0
+    let stanceSum = 0
+    let ampSum = 0
+    for (let i = 0; i < N_GUARD; i++) {
+      plainSum += foeStrike(mk(), 'phidra')
+      const sA = mk()
+      find(sA, 'phidra')!.stance = true
+      stanceSum += foeStrike(sA, 'phidra')
+      const sB = mk()
+      find(sB, 'phidra')!.stance = true
+      ampSum += foeStrike(sB, 'phidra', { stanceAmp: AMP })
+    }
+    const plainTook = plainSum / N_GUARD
+    const stanceTook = stanceSum / N_GUARD
+    const ampTook = ampSum / N_GUARD
+    const cutRatio = plainTook > 0 ? stanceTook / plainTook : 0
+    const ampRatio = plainTook > 0 ? ampTook / plainTook : 0
+    info.push(`防御姿态实测：裸挨 ${plainTook.toFixed(1)} → 架盾 ${stanceTook.toFixed(1)}`
+      + `（×${cutRatio.toFixed(3)}，表上 ×${(1 - TUNING.guardCut).toFixed(2)}）·`
+      + ` 克防御的手 ×${ampRatio.toFixed(3)}（应 ×${((1 - TUNING.guardCut) * (1 + AMP)).toFixed(3)}）`)
+    ok('防御姿态 · 减伤真乘上去了', plainTook > 0 && Math.abs(cutRatio - (1 - TUNING.guardCut)) < 0.03,
+      `×${cutRatio.toFixed(3)}`)
+    ok('防御姿态 · 克防御的手（stanceAmp）乘在减伤**之前**',
+      Math.abs(ampRatio - (1 - TUNING.guardCut) * (1 + AMP)) < 0.04, `×${ampRatio.toFixed(3)}`)
+
+    /* ④ 硬吃：架着盾不吃沉默 / 断拍；**停滞照吃**（那是首领战的反制链，不免疫） */
+    const debuffLand = (k: SkillEffect, stance: boolean) => {
+      const s = mk()
+      const me = find(s, 'isis')!
+      const foe = s.enemies[0]!
+      foe.hpMax = 1e9
+      foe.hp = 1e9
+      foe.stance = stance
+      me.skills = [STRIKE(k)]
+      me.tempo = 999
+      me.cds = {}
+      sureHit(me)
+      freezeFoes(s)
+      s.actor = me.id
+      s.phase = 'select'
+      const before = s.log.length
+      act(s, { t: 'skill', skillId: '_t-crit-strike', targetId: foe.id })
+      const line = s.log.slice(before).find((x) => x.skillId === 'stance-hold')
+      return { foe, hold: !!line, buffs: foe.buffs.map((b) => b.k) }
+    }
+    const silUp = debuffLand({ silence: true }, true)
+    const silDown = debuffLand({ silence: true }, false)
+    ok('防御姿态 · 沉默硬吃下来（对照：没架盾就中招）',
+      !silUp.buffs.includes('silence') && silUp.hold && silDown.buffs.includes('silence'),
+      `架盾 ${silUp.hold ? '硬吃' : '中招'} ／ 对照 ${silDown.buffs.includes('silence') ? '中招' : '没中'}`)
+    const stallUp = debuffLand({ stall: 1 }, true)
+    const stallDown = debuffLand({ stall: 1 }, false)
+    ok('防御姿态 · 断拍也硬吃（对照：没架盾就中招）',
+      !stallUp.buffs.includes('stall') && stallDown.buffs.includes('stall'),
+      `架盾 ${stallUp.buffs.includes('stall') ? '中招' : '硬吃'} ／ 对照 ${stallDown.buffs.includes('stall') ? '中招' : '没中'}`)
+    const staUp = debuffLand({ stasis: 1 }, true)
+    ok('防御姿态（对照）· 停滞**不**免疫（首领战的反制链，不能替玩家解掉）',
+      staUp.buffs.includes('stasis'),
+      `架盾后身上：${staUp.buffs.join('、') || '（空）'}`)
+
+    /* ⑤ 击溃：一手打中架盾的人，姿态没了、痕迹留下、日志给得出 break */
+    const bRes = debuffLand({ stanceBreak: true }, true)
+    const keep = debuffLand({}, true)
+    ok('防御姿态 · 击溃：姿态脱手、留痕、日志给得出 break',
+      !bRes.foe.stance && bRes.foe.stanceBroken && bRes.hold === false
+      && keep.foe.stance && !keep.foe.stanceBroken,
+      `击溃后 stance=${bRes.foe.stance} broken=${bRes.foe.stanceBroken} ／ 对照 stance=${keep.foe.stance}`)
+
+    /* ⑥ 本人下次出手时自动撤（被击溃过的痕迹也一起清） */
+    const sStep = mk()
+    const stepper = shieldUp(sStep, 'phidra')
+    stepper.stanceBroken = true
+    const wasUp = stepper.stance
+    stepper.tempo = 999
+    stepper.cds = {}
+    freezeFoes(sStep)
+    sStep.actor = stepper.id
+    sStep.phase = 'select'
+    act(sStep, { t: 'atk', targetId: sStep.enemies[0]!.id })
+    ok('防御姿态 · 轮到自己出手时自动撤（痕迹一起清）',
+      wasUp === true && stepper.stance === false && stepper.stanceBroken === false,
+      `架着=${wasUp} → 出手后 stance=${stepper.stance} broken=${stepper.stanceBroken}`)
+  } catch (e) {
+    fail.push('防御姿态段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7e) 节拍：恢复途径①③ / ②，与两条不耗回合的指令 ----------
+     主人原话：「道具与换装都不消耗回合」。不消耗回合不只是「不扣条」——
+     它得**真的不进那一拍的账簿**：不记手数、不登记本回合已出手、不蓄连携槽。
+     少了后两条，全队轮流甩道具就能把合击刷出来（见 act 那一段的注释）。
+     恢复途径②（被动/天赋每拍回）与④（天赋定向给某个职能回）——
+     ④ 要等天赋那一节（S9），这里先把 ①②③ 三条钉死。 */
+  try {
+    /* ① 普攻回节拍：回多少**由职能给**，不是一刀切 ——
+       主音回得最少，他才最缺节拍；这一条就是「一直普攻」不变成最优解的闸。 */
+    ok('节拍 · 普攻回几点由职能定（主音最少，调度最多）',
+      dutyOf('主音').basicTempo < dutyOf('调度').basicTempo
+      && Object.values(DUTY).every((d) => d.basicTempo >= 1),
+      Object.entries(DUTY).map(([k, d]) => `${k} ${d.basicTempo}`).join('／'))
+
+    const sA = mk()
+    const striker = find(sA, 'isis')!
+    striker.passive = undefined
+    striker.duty = '主音'
+    striker.cds = {}
+    striker.tempo = 0
+    freezeFoes(sA)
+    sA.actor = striker.id
+    sA.phase = 'select'
+    act(sA, { t: 'atk', targetId: sA.enemies[0]!.id })
+    ok('节拍 · 途径①普攻回节拍（见底了也回得来，回的是该职能那份）',
+      striker.tempo === dutyOf('主音').basicTempo,
+      `0 → ${striker.tempo}（主音该回 ${dutyOf('主音').basicTempo}）`)
+
+    /* ③ 打穿破绽给**出手者**回节拍 —— 走的是 skill 那条路，与 ① 互不掩盖 */
+    const sB = mk()
+    const knocker = find(sB, 'isis')!
+    const foeB = sB.enemies[0]!
+    knocker.passive = undefined
+    knocker.tempo = 0
+    knocker.cds = {}
+    sureHit(knocker)
+    /* 用一手明写 breakGuard 的战技（不吃轴），免得「对不对得上轴」跟着一起验 */
+    knocker.skills = [{
+      id: '_t-break', name: '复核 · 敲', kind: '战技', desc: '',
+      cost: 0, power: 1, axis: '破坏力', fx: 'blast', target: 'one',
+      effect: { breakGuard: 9 },
+    }]
+    foeB.hp = 1e9
+    foeB.hpMax = 1e9
+    foeB.guardAxis = '破坏力'
+    foeB.guardPts = 1
+    foeB.guardMax = 3
+    foeB.broken = 0
+    freezeFoes(sB)
+    sB.actor = knocker.id
+    sB.phase = 'select'
+    act(sB, { t: 'skill', skillId: '_t-break', targetId: foeB.id })
+    ok('节拍 · 途径③打穿破绽给**出手者**回节拍',
+      foeB.broken > 0 && knocker.tempo === TUNING.breakTempo,
+      `破绽成立=${foeB.broken > 0}　节拍 0 → ${knocker.tempo}（该回 ${TUNING.breakTempo}）`)
+
+    /* ② 每空转一格回节拍：职能那一份（护卫/和音/调度各 1，主音 0） */
+    ok('节拍 · 职能各给各的每拍自回（主音 0，护卫/和音/调度 ≥1）',
+      dutyOf('主音').tempoRegen === 0 && dutyOf('取材').tempoRegen === 0
+      && dutyOf('护卫').tempoRegen > 0 && dutyOf('和音').tempoRegen > 0
+      && dutyOf('调度').tempoRegen > 0,
+      Object.entries(DUTY).map(([k, d]) => `${k} ${d.tempoRegen}`).join('／'))
+
+    const sC = mk()
+    const guarder = find(sC, 'isis')!
+    const lead = find(sC, 'phidra')!
+    for (const c of [...sC.allies, ...sC.enemies]) {
+      c.passive = undefined
+      c.tempo = 0
+      c.bar = 0
+    }
+    guarder.duty = '护卫'
+    lead.duty = '主音'
+    advance(sC)
+    ok('节拍 · 途径②每空转一格回一拍（按职能）',
+      guarder.tempo > 0 && lead.tempo === 0,
+      `护卫 ${guarder.tempo} / 主音 ${lead.tempo}（护卫该回 ${dutyOf('护卫').tempoRegen}）`)
+
+    /* 两条不耗回合：额度、不记账、不进出手簿 */
+    const sF = mk()
+    const user = find(sF, 'isis')!
+    user.tempo = 10
+    user.cds = {}
+    freezeFoes(sF)
+    sF.actor = user.id
+    sF.phase = 'select'
+    const barBefore = user.bar
+    const handBefore = sF.hand
+    const bagBefore = sF.bag.ration ?? 0
+    const healTarget = find(sF, 'phidra')!
+    healTarget.hp = Math.round(healTarget.hpMax * 0.2)
+    const hurt = healTarget.hp
+    act(sF, { t: 'item', itemId: 'ration', targetId: healTarget.id })
+    ok('不耗回合 · 道具：条不动、手数不涨、不登记本回合已出手',
+      user.bar === barBefore && sF.hand === handBefore && !sF.acted.includes(user.id),
+      `条 ${barBefore}→${user.bar}　手数 ${handBefore}→${sF.hand}　acted=${sF.acted.length}`)
+    ok('不耗回合 · 道具照旧落地，且顺路回节拍',
+      healTarget.hp > hurt && sF.bag.ration === bagBefore - 1
+      && user.tempo === 10 + TUNING.itemTempo,
+      `回血 ${hurt}→${healTarget.hp}　余量 ${bagBefore}→${sF.bag.ration}　节拍 10→${user.tempo}`)
+    /* 用完额度再丢一剂 —— 这一下要被吞掉（存量也不能白扣） */
+    const bagAfter1 = sF.bag.ration ?? 0
+    act(sF, { t: 'item', itemId: 'ration', targetId: healTarget.id })
+    ok('不耗回合 · 额度用尽就吞掉（本回合那一剂是白废的，存量不扣）',
+      sF.freeUsed.item >= TUNING.freePerBeat.item && sF.bag.ration === bagAfter1
+      && user.bar === barBefore,
+      `额度 ${sF.freeUsed.item}/${TUNING.freePerBeat.item}　余量 ${bagAfter1}→${sF.bag.ration}`)
+
+    /* 换装：同样不耗回合，且**绝不碰冷却**（A→B→A 就能刷掉装具技冷却） */
+    const gearSlot = GEARS.find((g) => !!g.skill)!.id
+    user.cds = { 'gear-probe': 2 }
+    act(sF, { t: 'equip', gearId: gearSlot })
+    ok('不耗回合 · 换装：条不动、手数不涨、**冷却原样**（换装只重建面板）',
+      user.bar === barBefore && sF.hand === handBefore && user.cds['gear-probe'] === 2
+      && user.skills.some((k) => k.id === `gear-${gearSlot}` && k.kind === '战技'),
+      `条 ${user.bar}　手数 ${sF.hand}　cds=${JSON.stringify(user.cds)}`)
+    act(sF, { t: 'equip', gearId: gearSlot })
+    ok('不耗回合 · 换装的额度也是每回合一次',
+      sF.freeUsed.gear >= TUNING.freePerBeat.gear && sF.hand === handBefore,
+      `额度 ${sF.freeUsed.gear}/${TUNING.freePerBeat.gear}`)
+
+    /* 额度按**回合**清：把这一回合打完（我方全员各出一手），额度回满 */
+    const tickBefore = sF.tick
+    let swings = 0
+    while (sF.tick === tickBefore && swings < 60) {
+      swings += 1
+      if (sF.phase !== 'select') break
+      const who = sF.actor ? find(sF, sF.actor) : undefined
+      if (!who || who.side !== 'ally') break
+      act(sF, { t: 'atk', targetId: sF.enemies[0]!.id })
+    }
+    ok('不耗回合 · 额度按回合清（两条免费指令不算出手，回合照旧由我方划）',
+      sF.tick === tickBefore + 1 && sF.freeUsed.item === 0 && sF.freeUsed.gear === 0,
+      `回合 ${tickBefore}→${sF.tick}（我方出手 ${swings} 次）　额度 ${sF.freeUsed.item}/${sF.freeUsed.gear}`)
+  } catch (e) {
+    fail.push('节拍段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7f) 追击与连携：**两套机制**，不是一个槽 ----------
+     主人 2026-09-15 定：「共鸣槽触发团队羁绊连携（恋兔队、苍之学院、卡乌斯学院等），
+     追击包含连携」。落在这里就是两条：
+       · 团队羁绊连携（Bond.squad）—— 看共鸣槽：名单上每个人各攒自己那份，全员满才成立；
+       · 双人追击 —— **没有槽**，看条件（打穿破绽 / 对面在咏唱），另一位接一手。
+     钉子有三处，缺一条这套就会塌回「一手接六拳」：
+       ① 双人那条的 `need` 必须是 0（没有槽）—— 有人在界面上照着 need 画槽就露馅；
+       ② 一手**至多接一记**（操作员同时挂在六条双人羁绊上，一个破绽六条全满足）；
+       ③ 双人那条接不接**与共鸣槽无关**，团队那条接不接**与条件无关**。 */
+  try {
+    /* 台子：操作员 + 光 + 喵呜 + 露娜 —— 一次性把
+       樱之残影 / 沙姆希尔 / 黄金狮子 三条双人都摆上场（外加恋兔队那一条整队）。
+       黄金狮子是形态那条，条件追击里**明确不收**（见 fireFollows），拿它当对照。 */
+    const PAIR_SQUAD = [OPERATOR_ID, 'hikari', 'nyau', 'luna']
+    const mkPair = () => createBattle({
+      mission, squad: PAIR_SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const onBoard = bondsOf(PAIR_SQUAD)
+    const pairBonds = onBoard.filter((b) => !b.squad)
+    ok('追击 · 双人那几条**没有共鸣槽**（need 写 0，免得有人照着它画一根槽）',
+      pairBonds.length >= 3 && pairBonds.every((b) => b.need === 0 && b.cd > 0),
+      pairBonds.map((b) => `${b.id} need=${b.need} cd=${b.cd}`).join('／'))
+
+    /** 打穿一个敌体的破绽 —— 条件①的扳机（照 §7e 那份配方） */
+    const trigger = (w: ReturnType<typeof mkPair>, who: Combatant, tag: string) => {
+      const foe = w.enemies[0]!
+      foe.hp = 1e9
+      foe.hpMax = 1e9
+      foe.guardAxis = '破坏力'
+      foe.guardPts = 1
+      foe.guardMax = 3
+      foe.broken = 0
+      for (const f of w.enemies) f.bar = -1e6
+      who.passive = undefined
+      who.tempo = 99
+      who.cds = {}
+      sureHit(who)
+      who.skills = [{
+        id: tag, name: `复核 · 敲 ${tag}`, kind: '战技', desc: '',
+        cost: 0, power: 1, axis: '破坏力', fx: 'blast', target: 'one',
+        effect: { breakGuard: 9 },
+      }]
+      w.actor = who.id
+      w.phase = 'select'
+      act(w, { t: 'skill', skillId: tag, targetId: foe.id })
+    }
+    /* 一记连携落**两条**日志：一条是「接上了」的通告（带 link 载荷、没有伤害），
+       一条是这一下真的打出去（带 dmg）。两条同 id —— 所以「接了几记」按 dmg 数
+       （与 §11 同一把尺），牌面那两样从通告那条读。 */
+    const linksOf = (w: ReturnType<typeof mkPair>) =>
+      w.log.filter((l) => /^link-/.test(l.skillId ?? ''))
+    const hitsOf = (w: ReturnType<typeof mkPair>) => linksOf(w).filter((l) => l.dmg != null)
+
+    /* ① 条件满足 → 接一记，且**只接一记** */
+    const s1 = mkPair()
+    const op1 = find(s1, OPERATOR_ID)!
+    trigger(s1, op1, '_t-b1')
+    const h1 = hitsOf(s1)
+    const n1 = linksOf(s1).find((l) => l.link)
+    ok('追击 · 打穿破绽 → 双人那条自己接一手（不等任何人点）',
+      h1.length === 1, `接上 ${h1.length} 记：${h1.map((l) => l.skillId).join('、') || '（一记也没有）'}`)
+    ok('追击 · 一手**至多接一记**（操作员同时挂着三条双人羁绊，不能一次全接）',
+      h1.length === 1 && !h1.some((l) => l.skillId === `link-${LION_PAIR_ID}`),
+      `场上双人 ${pairBonds.length} 条 → 接上 ${h1.length} 记`)
+    ok('追击 · 接的是**另一位**（这一手是搭档打的，接招的是搭档的对家）',
+      !!n1 && n1.actor !== op1.name && n1.link!.members.includes(OPERATOR_ID),
+      n1 ? `出手 ${op1.name} → 接招 ${n1.actor}（${n1.link!.name}，名单 ${n1.link!.members.join('、')}）` : '（没接上）')
+    ok('追击 · 载荷照旧带着牌面要的那两样（id 与人）—— 上层钉的就是它们',
+      !!n1 && n1.link!.id === n1.skillId!.replace(/^link-/, '') && n1.link!.members.length === 2,
+      n1 ? `id=${n1.link!.id}　members=${n1.link!.members.join('、')}` : '')
+
+    /* ② 冷却是**每条羁绊各自**的限速：刚接过的那条不许再接，别人可以补上 ——
+         但一手仍然只接一记（这才是 S7 那道闸，见 fireFollows 的取舍）。 */
+    const before2 = hitsOf(s1).length
+    trigger(s1, op1, '_t-b2')
+    const h2 = hitsOf(s1).slice(before2)
+    ok('追击 · 冷却按每一条羁绊算（刚接过的那条接不上），且一手仍只接一记',
+      h2.length <= 1 && !h2.some((l) => l.skillId === h1[0]!.skillId),
+      `第二手接上 ${h2.length} 记（${h2.map((l) => l.skillId).join('、') || '没有'}）　`
+      + `第一手接的是 ${h1[0]!.skillId}　冷却 ${JSON.stringify(s1.followCd)}`)
+
+    /* ③ 条件不成立就不接 —— 同一张台子，只把破绽与咏唱都按住 */
+    const s3 = mkPair()
+    const op3 = find(s3, OPERATOR_ID)!
+    for (const f of s3.enemies) { f.bar = -1e6; f.chant = {} }
+    for (const c of s3.allies) c.bar = -1e6
+    op3.passive = undefined
+    op3.tempo = 99
+    op3.cds = {}
+    sureHit(op3)
+    op3.bar = TUNING.barMax
+    s3.actor = op3.id
+    s3.phase = 'select'
+    act(s3, { t: 'atk', targetId: s3.enemies[0]!.id })
+    ok('追击（对照）· 没打穿破绽、对面也没在咏唱 → 一条都不接',
+      hitsOf(s3).length === 0 && s3.lastBreak.length === 0,
+      `接上 ${hitsOf(s3).length} 记　破绽 ${s3.lastBreak.length} 个`)
+
+    /* ④ 团队那条**不看条件、看槽**：同一个破绽，双人接了、整队没接（槽没满）。
+       把恋兔队凑满（操作员 + 光 + 梅芙 + 喵呜 + 小琳 = 5，正好到档位天花板）。 */
+    const SQUAD_FULL = [OPERATOR_ID, 'hikari', 'mefisa', 'nyau', 'xiaochai-lin']
+    const s4 = createBattle({
+      mission, squad: SQUAD_FULL, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+    const squadBond = bondsOf(SQUAD_FULL).find((b) => b.squad)
+    const op4 = find(s4, OPERATOR_ID)!
+    trigger(s4, op4, '_t-b3')
+    const l4 = hitsOf(s4)
+    ok('连携 · 整队那条没满槽就是接不上（哪怕这一手真打穿了破绽）',
+      !!squadBond && !l4.some((l) => l.skillId === `link-${squadBond.id}`),
+      squadBond
+        ? `${squadBond.id} 名单 ${squadBond.members.length} 人 · 每人要 ${squadBond.need} 拍　`
+          + `当前 ${squadBond.members.map((id) => s4.follow[id] ?? 0).join('/')}`
+        : '（台上没有整队连携）')
+    ok('连携 · 两套机制各读各的：这一手接上的是双人那条（槽/条件互不干涉）',
+      l4.length > 0 && l4.every((l) => l.skillId !== `link-${squadBond?.id}`),
+      `接上 ${l4.map((l) => l.skillId).join('、') || '（一记也没有）'}`)
+
+    /* ⑤ 槽满就接得上 —— 把每个人的共鸣直接填满，再出一手 */
+    if (squadBond) {
+      for (const id of squadBond.members) s4.follow[id] = squadBond.need
+      s4.followCd[squadBond.id] = 0
+      // 台上得有人真打出去才接得上（槽满不等于自动来）
+      const n0 = hitsOf(s4).length
+      trigger(s4, op4, '_t-b4')
+      const team = hitsOf(s4).slice(n0).filter((l) => l.skillId === `link-${squadBond.id}`)
+      ok('连携 · 共鸣槽满了，由出手的那一位带出去（全队一起吃加成）',
+        team.length === 1 && team[0]!.actor === op4.name,
+        team.length === 1
+          ? `执手 ${team[0]!.actor}　名单 ${(team[0]!.link?.members ?? []).join('、')}`
+          : `槽满之后接上 ${team.length} 记`)
+      ok('连携 · 接完槽清零、进冷却（不是一手接一手地连着放）',
+        squadBond.members.every((id) => (s4.follow[id] ?? 0) < squadBond.need)
+        && (s4.followCd[squadBond.id] ?? 0) > 0,
+        `槽 ${squadBond.members.map((id) => s4.follow[id] ?? 0).join('/')}　`
+        + `冷却 ${s4.followCd[squadBond.id] ?? 0}`)
+    }
+  } catch (e) {
+    fail.push('追击段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7g) 职能：五档都站得住、每个档案角色都归了档 ----------
+     职能不是挂牌子：主攻轴、战技格许挑哪几类框架、节拍怎么回来、暴击的底子全看它
+     （见 duty.ts）。所以「谁归哪一档」得有人管 —— tsc 那道（RoleDef.duty 必填）
+     管的是「一个都不许漏」，这里管的是「归得对不对、五档是不是都有人在」。 */
+  try {
+    const ids = Object.keys(ROSTER)
+    const bad = ids.filter((id) => !DUTY[ROSTER[id]!.duty])
+    ok('职能 · 每个档案角色都归了档（漏一个 tsc 先红，这里再兜一道）',
+      bad.length === 0 && ids.length >= 20,
+      bad.length ? `没归上档的：${bad.join('、')}` : `${ids.length} 人全部归了档`)
+
+    /* 恋兔光是**唯一**的破例（主人 2026-09-14 定）—— 多一个少一个都不行：
+       多一个就是有人偷偷把白名单关了，少一个就是她那六手要被框架卡住。 */
+    const exempt = ids.filter((id) => ROSTER[id]!.dutyExempt)
+    ok('职能 · 白名单豁免只有恋兔光一人（多一个少一个都是改错了）',
+      exempt.length === 1 && exempt[0] === 'hikari'
+      && ROSTER.hikari!.duty === '主音',
+      `豁免 ${exempt.join('、') || '（没有）'}（${ROSTER.hikari?.duty}）`)
+
+    /* 五档都有人在 —— 空掉的那一档在编队界面就是个永远点不亮的筛子 */
+    const filled = (Object.keys(DUTY) as Array<keyof typeof DUTY>)
+      .map((d) => [d, ids.filter((id) => ROSTER[id]!.duty === d).length] as const)
+    ok('职能 · 五档每一档都站着人（没有空档）',
+      filled.every(([, n]) => n > 0),
+      filled.map(([d, n]) => `${d} ${n}`).join('／'))
+
+    /* 挂到面板上的是「〜担当」那个名字，不是简写 —— 界面读的就是 dutyOf(...).name */
+    ok('职能 · 面板读到的是「〜担当」体例的名字（不是简写那一档）',
+      Object.values(DUTY).every((d) => d.name.endsWith('担当') && d.name.startsWith(d.id)),
+      Object.values(DUTY).map((d) => d.name).join('／'))
+
+    /* 职能真的落到了人身上（derive 造人那两处各补了一行）——
+       挑一个非缺省档的验证，免得「全都回落到主音」这种静默失效溜过去 */
+    const probe = ids.find((id) => ROSTER[id]!.duty !== '主音')
+    const built = probe ? combatantOf(probe, 1, 0) : undefined
+    ok('职能 · derive 造人时把职能带进 Combatant（不是造完就丢）',
+      !!built && !!probe && built.duty === ROSTER[probe]!.duty
+      && built.crit === critOf(built.duty) && built.critMul === critMulOf(built.duty),
+      built ? `${probe} → ${built.duty}　暴击 ${built.crit}／×${built.critMul}` : '（没找到非主音的人）')
+  } catch (e) {
+    fail.push('职能段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 7h) 天赋：四格制的第四格，**全是自动触发的，一格都不点** ----------
+     名册上那三条样板各钉一个触发档（数据源在 PassiveSpec.talents）：
+       · mefisa          battleStart —— 开场给整队推一截行动条
+       · danae-whitmore  hpBelow 0.5 —— 跌破半血那一下响，**且只响一次**
+       · luna            crit        —— 落点是**挨打的那一个**，且 uses: -1 每记都记
+     再加两条机制：恢复途径④（天赋定向给某个职能回节拍 —— 名册上的样板不走这一路，
+     用**注入的合成天赋**量）与重入闸（天赋自己不引爆天赋）。
+     一律关暴击，除了「必暴」那一条自己开 `sureCrit` —— 掷骰子出来的绿是假绿。 */
+  try {
+    /* 这台机器不吃 NO_CRIT：要验的就是暴击那一档。其余每条自己摆平局面。 */
+    const mkT = (squad: string[], crit = false) => createBattle({
+      mission, squad, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, crit,
+    })
+    const ids = Object.keys(ROSTER)
+
+    /* ① 天赋**不进技能表**：全名册扫一遍，legalSkills 里一条「天赋」都不许吐出来。
+         数据源在 PassiveSpec.talents —— 溜进 SkillSpec 就等于多了一格可点的按钮，
+         而第四格是**只读**的（主人 2026-09-14 定：天赋全部自动）。 */
+    const leaked = ids.flatMap((id) => legalSkills(combatantOf(id, 1, 0))
+      .filter((k) => k.kind === '天赋' || k.id.startsWith('talent-'))
+      .map((k) => `${id}/${k.id}`))
+    ok('天赋 · 一条都不进技能表（SkillSpec.kind 到不了第四格，也没人偷加按钮）',
+      leaked.length === 0 && ids.length >= 20,
+      leaked.length ? leaked.slice(0, 4).join('／') : `${ids.length} 人全扫过，一条都没有`)
+
+    const trigOf = (id: string) => ROSTER[id]?.passive?.talents?.[0]?.trigger.on
+    ok('天赋 · 三条样板各钉一个触发档（开场 / 跌破线 / 暴击）',
+      trigOf('mefisa') === 'battleStart' && trigOf('danae-whitmore') === 'hpBelow'
+      && trigOf('luna') === 'crit',
+      `mefisa=${trigOf('mefisa')}　danae-whitmore=${trigOf('danae-whitmore')}　luna=${trigOf('luna')}`)
+
+    /* ② 开场那一下：A/B 两台**只差她那一条天赋**的机器，比操作员的行动条。
+         摘天赋动的是名册这一份数据本身 —— 造完立刻还回去（跑完这一节它就是原样）。 */
+    const dropTalent = <T>(id: string, f: () => T): T => {
+      const p = ROSTER[id]!.passive!
+      const saved = p.talents
+      p.talents = undefined
+      try { return f() } finally { p.talents = saved }
+    }
+    const sA = mkT([OPERATOR_ID, 'mefisa'])
+    const sB = dropTalent('mefisa', () => mkT([OPERATOR_ID, 'mefisa']))
+    const barA = find(sA, OPERATOR_ID)!.bar
+    const barB = find(sB, OPERATOR_ID)!.bar
+    ok('天赋 · 开场那一下（battleStart）真的响了，名额记在「人:下标」上',
+      (sA.talentUsed['mefisa:0'] ?? 0) === 1
+      && sA.log.some((l) => l.skillId === 'talent-mefisa:0'),
+      `名额 ${JSON.stringify(sA.talentUsed)}`)
+    ok('天赋 · 开场那一手真的落到整队身上（摘掉它，操作员的条就短一截）',
+      barA > barB && (sB.talentUsed['mefisa:0'] ?? 0) === 0,
+      `有天赋 ${barA} / 摘掉 ${barB}（barMax ${TUNING.barMax}）`)
+
+    /* ③ 跌破线（hpBelow）：让她**打自己**（resolve 的 `target: 'self'` 就是
+         「这一手落在出手者身上」），于是 hit 的 def 就是她自己，天赋问的正是她。
+         血量上限摆到一百万，是为了「打得下去、但打不死」——
+         单纯压 power 的话，一次伤害在百万血上读不出差别，一压又可能直接打死。 */
+    const w3 = mkT([OPERATOR_ID, 'danae-whitmore'])
+    const dn = find(w3, 'danae-whitmore')!
+    freezeFoes(w3)
+    sureHit(dn)
+    dn.cds = {}
+    dn.tempo = 99
+    dn.hpMax = 1_000_000
+    dn.skills = [{
+      id: '_t-self', name: '复核 · 自伤', kind: '普攻', desc: '',
+      cost: 0, power: 1, axis: '破坏力', fx: 'blast', target: 'self',
+    }]
+    const selfHit = () => {
+      dn.bar = TUNING.barMax
+      w3.actor = dn.id
+      w3.phase = 'select'
+      act(w3, { t: 'atk', targetId: dn.id })
+    }
+    dn.hp = 900_000
+    selfHit()
+    const aboveLine = w3.talentUsed['danae-whitmore:0'] ?? 0
+    dn.hp = Math.ceil(1_000_000 * 0.5) + 10   // 刚好在线上，再挨一下就过去
+    selfHit()
+    const belowLine = w3.talentUsed['danae-whitmore:0'] ?? 0
+    selfHit()
+    const twice = w3.talentUsed['danae-whitmore:0'] ?? 0
+    ok('天赋 · 跌破那条线才响（没破线就不响）', aboveLine === 0 && belowLine === 1,
+      `六成时 ${aboveLine} 次 → 破线后 ${belowLine} 次`)
+    ok('天赋 · 名额缺省 1：响过一次就不再响（不是每挨一下就喊一次）',
+      twice === 1 && dn.buffs.some((b) => b.k === 'atk'),
+      `累计 ${twice} 次　身上 ${dn.buffs.map((b) => b.k).join('、') || '（空）'}`)
+
+    /* ④ 暴击那一条（crit）：落点是**挨打的那一个**（`to: 'trigger'`），不是她自己。
+         用 `sureCrit` 明写必暴 —— 靠骰子的话这条要么偶发地红、要么偶发地假绿。
+         这里是唯一开着暴击的一台。 */
+    const w5 = mkT([OPERATOR_ID, 'luna'], true)
+    const lu = find(w5, 'luna')!
+    const foe5 = w5.enemies[0]!
+    freezeFoes(w5)
+    sureHit(lu)
+    lu.cds = {}
+    lu.tempo = 99
+    foe5.hp = 1e9
+    foe5.hpMax = 1e9
+    lu.skills = [{
+      id: '_t-crit', name: '复核 · 必暴', kind: '普攻', desc: '',
+      cost: 0, power: 1, axis: '破坏力', fx: 'blast', target: 'one',
+      effect: { sureCrit: true },
+    }]
+    const critHit = () => {
+      lu.bar = TUNING.barMax
+      w5.actor = lu.id
+      w5.phase = 'select'
+      act(w5, { t: 'atk', targetId: foe5.id })
+    }
+    critHit()
+    critHit()
+    const tl = w5.log.filter((l) => /^talent-/.test(l.skillId ?? ''))
+    ok('天赋 · 暴击那一条落在**挨打的那一个**身上（不是出手者自己）',
+      tl.length === 2 && tl.every((l) => l.targetId === foe5.id)
+      && foe5.buffs.some((b) => b.k === 'mark'),
+      `${tl.length} 条　落点 ${tl.map((l) => l.target ?? '—').join('、')}　`
+      + `目标身上 ${foe5.buffs.map((b) => b.k).join('、') || '（空）'}`)
+    ok('天赋 · `uses: -1` 是「每响一次记一次」（两记必暴 → 两次）',
+      (w5.talentUsed['luna:0'] ?? 0) === 2,
+      `名额 ${w5.talentUsed['luna:0'] ?? 0}（用的是 -1，不限次）`)
+
+    /* ⑤ 恢复途径④：天赋**定向给某个职能**回节拍 —— 名册上那三条样板不走这一路
+         （主音开局节拍是满的，回了等于没回），所以这一档得自己注入一条合成天赋才验得到。
+         一并把 `{lowestTempo: true}` 也量了：它挑的是**最缺节拍**的那一位。 */
+    const w6 = mkT([OPERATOR_ID, 'hikari', 'nyau'])
+    const ny6 = find(w6, 'nyau')!
+    const hi6 = find(w6, 'hikari')!
+    freezeFoes(w6)
+    sureHit(ny6)
+    ny6.cds = {}
+    ny6.tempo = 99
+    ny6.skills = [{
+      id: '_t-basic', name: '复核 · 普攻', kind: '普攻', desc: '',
+      cost: 0, power: 1, axis: '破坏力', fx: 'blast', target: 'one',
+    }]
+    hi6.tempo = 0
+    ny6.passive = {
+      ...(ny6.passive ?? { name: '复核', desc: '' }),
+      talents: [
+        { name: '复核 · 递节拍', desc: '', trigger: { on: 'act' }, to: { duty: '主音' }, tempo: 2 },
+        { name: '复核 · 补最缺的', desc: '', trigger: { on: 'act' }, to: { lowestTempo: true }, tempo: 5 },
+      ],
+    }
+    ny6.bar = TUNING.barMax
+    w6.actor = ny6.id
+    w6.phase = 'select'
+    act(w6, { t: 'atk', targetId: w6.enemies[0]!.id })
+    /* 两条一起响：主音那一档各得 2，随后「最缺的」再补 5 —— 拿完 2 的主音仍是全队最低
+       （操作员同属主音，一起拿；nyau 自己是 99，怎么也轮不到） */
+    const got6 = find(w6, 'hikari')!.tempo
+    ok('天赋 · 恢复途径④：定向给某个职能回节拍（主音那一档拿得到）',
+      got6 === 7, `hikari 节拍 ${got6}（2 + 补最缺的 5）`)
+    /* 「最缺的」认的是 hikari（她开局被掏到 0），不是出手者自己（nyau 揣着 99）。
+       两条天赋在同一个触发档上一次过：先「主音那一档各 +2」，再「最缺的 +5」——
+       拿完 2 的她仍是全队最低，于是 2 + 5 = 7。 */
+    ok('天赋 · 落点也认「最缺节拍的那一位」（不是出手者自己）',
+      got6 === 7 && ny6.tempo === 99,
+      `最缺的 hikari ${got6} ／ 出手者 nyau ${ny6.tempo}（没被挑中）`)
+
+    /* ⑥ 重入闸：天赋自己那一下不再引爆别的天赋。
+         今天的效果里没有能反过来触发天赋的路（它们是增益、标记、推条，不是又一次命中），
+         所以这条量的是**闸的状态**：一场跑下来深度必须收回 0 ——
+         漏一次，这一整场后来所有的天赋都会静悄悄地不响，而那是最难查的一种。 */
+    ok('天赋 · 重入闸结算完就放下（一场跑下来深度必须是 0）',
+      sA.talentDepth === 0 && w3.talentDepth === 0 && w5.talentDepth === 0
+      && w6.talentDepth === 0,
+      `${[sA, w3, w5, w6].map((w) => w.talentDepth).join('／')}`)
+  } catch (e) {
+    fail.push('天赋段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   /* ---------- 8) 敌阵：血量远高于我方 · 首领不弱于精英 · 随时期变强 ----------
@@ -936,7 +1812,7 @@ export function run(): MechReport {
     const mate = find(s, 'mefisa')!
     const freeze = () => { for (const f of s.enemies) f.bar = -1e6 }
     const turnOf = (who: Combatant, skillId: string) => {
-      who.sp = 999
+      who.tempo = 999
       freeze()
       s.actor = who.id
       s.phase = 'select'
@@ -944,7 +1820,7 @@ export function run(): MechReport {
     }
     turnOf(her, 'alive-edit')
     const afterCast = her.cds['alive-edit'] ?? 0
-    const mateSkill = mate.skills.find((k) => k.kind === '技能' && k.cost <= 8) ?? mate.skills[0]!
+    const mateSkill = mate.skills.find((k) => k.kind === '战技' && k.cost <= 8) ?? mate.skills[0]!
     for (let i = 0; i < 3; i++) turnOf(mate, mateSkill.id)
     const afterMate = her.cds['alive-edit'] ?? 0
     ok('会长：冷却只在「她自己出场」时递减（别人的出手不算数）',
@@ -983,7 +1859,7 @@ export function run(): MechReport {
       far.axes.破坏力 > AXIS_REF * 4, `AXIS_REF=${AXIS_REF}，实测破坏力 ${far.axes.破坏力}`)
 
     // (b) 伤害跟着轴走，中间没有夹子
-    const k = bare.skills.find((x) => x.power > 0 && x.kind !== '启动')!
+    const k = bare.skills.find((x) => x.power > 0 && !x.gate)!
     const hit = (c: Combatant) => c.axes[k.axis] * k.power * atkMulOf(c)
     const hitRatio = hit(far) / hit(bare)
     ok('伤害不封顶：同一手的裸出力与轴同倍（中间没有夹子）',
@@ -1055,7 +1931,7 @@ export function run(): MechReport {
     /** 把场面按住：敌人行动条压死，让「谁出手」完全由我们说了算 */
     const drive = (s: BattleState, who: Combatant, cmd: Parameters<typeof act>[1]) => {
       for (const f of s.enemies) f.bar = -1e6
-      who.sp = 999
+      who.tempo = 999
       s.actor = who.id
       s.phase = 'select'
       act(s, cmd)
@@ -1122,7 +1998,7 @@ export function run(): MechReport {
       })
       const who = find(b, OPERATOR_ID)!
       const raw = (c: Combatant) => {
-        const best = [...c.skills].filter((k) => k.power > 0 && k.kind !== '启动')
+        const best = [...c.skills].filter((k) => k.power > 0 && !k.gate)
           .sort((x, y) => y.power - x.power)[0]!
         return c.axes[best.axis] * best.power * atkMulOf(c)
       }
@@ -1155,17 +2031,19 @@ export function run(): MechReport {
     // 期满：这里推的是**拍**，不是自己的回合数 —— 变身按场上过了多久算，
     // 与增益按自身出场数算不是一回事（见 SkillForm.ticks）。
     //
-    // 一拍 = 一个轮回：场上还站着的每人各出一手，**敌方也算**（见 engine 的 endBeat）。
-    // 所以不能像早先那样把敌方按死在 -1e6 再推 advance —— 那样的出手配额永远差着敌方
-    // 那几手，拍子根本收不了，变身长度也就一直不往下走。这里让露娜把配额走满：
-    // 她一律「防御」，既不出手打人（靶子够硬，也不想在这一段顺手把敌人清了），
-    // 也不碰他自己那份出场数。
-    const luna = find(s, 'luna')!
-    /** 走满这一拍的出手配额；返回 tick 是否真的往前走了一拍 */
+    // 一拍 = **我方存活者各出过一手**（见 engine 的 beginAction / BattleState.acted）。
+    // 敌方不划边界了，所以「把敌方按死在 -1e6 再推 advance」那套仍然不行 ——
+    // 现在卡住拍子的是**我方**里还没出手的那几位，得挨个推满配额。
+    // 一律「防御」：不出手打人（靶子够硬，也不想在这一段顺手把敌人清了）。
+    /** 走满这一拍的出手配额（我方存活者一位一位来）；返回 tick 是否真的往前走了一拍 */
     const closeBeat = (): boolean => {
       const t0 = s.tick
       let guard = 0
-      while (s.tick === t0 && guard++ < 24) drive(s, luna, { t: 'guard' })
+      while (s.tick === t0 && guard++ < 40) {
+        const next = s.allies.find((c) => !c.down && c.gone <= 0 && !s.acted.includes(c.id))
+        if (!next) break
+        drive(s, next, { t: 'guard' })
+      }
       return s.tick > t0
     }
     let pushed = 0
@@ -1205,7 +2083,7 @@ export function run(): MechReport {
     const her = find(s, 'alive-anatolia')!
     const edit = her.skills.find((k) => k.id === 'alive-edit')!
     for (const f of s.enemies) f.bar = -1e6
-    her.sp = 999
+    her.tempo = 999
     s.actor = her.id
     s.phase = 'select'
     act(s, { t: 'skill', skillId: edit.id, targetId: her.id })
@@ -1214,30 +2092,33 @@ export function run(): MechReport {
       !!b && b.rt === TUNING.buffRoundsCap,
       `atk.rt=${b?.rt}（表上 ${TUNING.buffRoundsCap}）t=${b?.t}`)
 
-    /* 一拍一拍地推。这里让**梅菲莎代劳**把出手配额走满，把亚纳托利亚整个晾在一边：
-       一拍只有在场上每人（含敌方）都出过一手时才收（见 engine 的 endBeat），
-       所以让谁推不出拍子来是有讲究的 —— 让她推，亚纳托利亚就一次手都没出，
-       「自身出场次数」那条时限一动不动，散掉只可能是回合闸干的。 */
+    /* 一拍一拍地推。收拍现在要**我方存活者各出过一手**（见 BattleState.acted），
+       所以这一场里两位都得走满配额 —— 让她也「防御」，只占配额、不出手打人。
+       另一条时限（自身出场次数）因此也会往下走，于是把它按到 99 让到一边：
+       这一段要证明的是**回合闸自己在响**，所以只许它到零。 */
+    b.t = 99
     const other = find(s, 'mefisa')!
     const oneTick = () => {
       const t0 = s.tick
       let guard = 0
-      while (s.tick === t0 && guard++ < 24) {
+      while (s.tick === t0 && guard++ < 40) {
+        const next = s.allies.find((c) => !c.down && c.gone <= 0 && !s.acted.includes(c.id))
+        if (!next) break
+        // 「防御」：占掉一手的配额，却不出手打人（这一段不该顺手把敌人清了）
         for (const f of s.enemies) f.bar = -1e6
-        other.sp = 999
-        s.actor = other.id
+        next.tempo = 999
+        s.actor = next.id
         s.phase = 'select'
-        // 「防御」：占掉一手的配额，却不出手打人，也不动她自己以外的任何人。
         act(s, { t: 'guard' })
       }
     }
     let ticks = 0
     while (buffOf(her, 'atk') > 0 && ticks < 20) { oneTick(); ticks += 1 }
-    ok('增益回合闸：走满就自己散掉（本人一次都没出手，所以不是另一条时限干的）',
+    ok('增益回合闸：走满就自己散掉（另一条时限按到 99 让开了，所以是它干的）',
       buffOf(her, 'atk') === 0 && ticks === TUNING.buffRoundsCap,
       `第 ${ticks} 拍散尽（表上 ${TUNING.buffRoundsCap}）`)
     info.push(`增益回合闸：会长「撰写」挂上的攻击增益在第 ${ticks} 拍散尽；`
-      + `另一条时限（自身出场）全程没动过`)
+      + `另一条时限（自身出场）按到 99 让开了，到零的只可能是回合闸`)
 
     // 「规格」类（旧吉他解封）不吃这道闸 —— 它改的是底子。
     // 这条不另搭台子：解封那一段（第 6 节）走完链子还能按新规格算，本身就在证明它没散。
@@ -1298,7 +2179,7 @@ export function run(): MechReport {
     // 反复喊：到顶就该停，且停得很干脆
     const s2 = mkTop()
     const caller = s2.enemies[0]!
-    caller.sp = 9999
+    caller.tempo = 9999
     const base = s2.enemies.length
     let calls = 0
     while (calls < 40 && summonFoe(s2, caller)) {
@@ -1312,7 +2193,7 @@ export function run(): MechReport {
     ok('召唤：冷却也在拦（连喊两次之间走得动）', (() => {
       const s4 = mkTop()
       const f = s4.enemies[0]!
-      f.sp = 9999
+      f.tempo = 9999
       const first = summonFoe(s4, f)
       const again = summonFoe(s4, f)
       return first && !again && Object.values(f.cds).some((v) => v > 0)
@@ -1585,11 +2466,11 @@ export function run(): MechReport {
         if (!me || me.side !== 'ally' || me.down) break
         const foe = standingOf(w.enemies)[0]
         if (!foe) break
-        const usable = legalSkills(me, w).filter((k) => affordable(k, me.sp))
+        const usable = legalSkills(me, w).filter((k) => affordable(k, me.tempo))
         const heavy = usable
-          .filter((k) => k.kind !== '启动' && k.power > 0)
+          .filter((k) => !k.gate && k.power > 0)
           .sort((a, b) => b.power - a.power)[0]
-        const start = usable.find((k) => k.kind === '启动')
+        const start = usable.find((k) => k.gate)
         const before = w.hand
         if (heavy) act(w, { t: 'skill', skillId: heavy.id, targetId: foe.id })
         // 解封期的人普攻是关着的（START_GATE）—— 退到启动那一手，再退到防御。
@@ -4061,11 +4942,11 @@ export function run(): MechReport {
       squad: ['luna', 'hikari'], mvp: '露娜',
       digest: '任务：OBS-001「灵魂蓄积器」（集市外环 · 危险度 S4）\nT1 露娜 → 白银之刃：灵魂蓄积器 · 14 伤害\n结算：胜利',
       turns: [
-        { round: 1, actorId: 'luna', actor: '露娜', skillId: 'silver-blade', skill: '白银之刃', side: 'ally', kind: '技能',
+        { round: 1, actorId: 'luna', actor: '露娜', skillId: 'silver-blade', skill: '白银之刃', side: 'ally', kind: '战技',
           line: '……碍事。', target: '灵魂蓄积器', dmg: 14 },
-        { round: 2, actorId: 'hikari', actor: '恋兔', skillId: 'kick', skill: '回旋踢', side: 'ally', kind: '技能',
+        { round: 2, actorId: 'hikari', actor: '恋兔', skillId: 'kick', skill: '回旋踢', side: 'ally', kind: '战技',
           target: '灵魂蓄积器', dmg: 9, note: '命中要害' },
-        { round: 3, actorId: 'foe', actor: '灵魂蓄积器', skillId: 'drain', skill: '抽取', side: 'enemy', kind: '技能',
+        { round: 3, actorId: 'foe', actor: '灵魂蓄积器', skillId: 'drain', skill: '抽取', side: 'enemy', kind: '战技',
           target: '恋兔', miss: true },
       ],
       narrative: '', narrativeBy: '模板', loot: ['观测棱镜'], coin: 12, mainline: true, tier: 'elite',
@@ -5150,9 +6031,16 @@ export function run(): MechReport {
     ok('约会 CG · 露娜在场、又到了私密那一档 → 那张进候选',
       ids(base).includes(LUNA), ids(base).join(' / '))
 
-    ok('约会 CG（对照）· 同一档同一场、换了人 → 那张不进候选（只少它一张，别的照在）',
-      !ids(other).includes(LUNA) && ids(other).length === ALL - 1,
-      `${other.charId}：${ids(other).length} / ${ALL} 张`)
+    /* 「只少它一张」这句话在数据里已经不成立了：露娜这一档现在**一个戏码一个槽位**
+       （正常位 / 侧入式 / 后入式…，见 rendezvous 的 DATE_CG_INTIMATE），
+       带 `cast: ['luna']` 的是一整批。所以这里按**真正属于她的那几张**数，
+       别把张数写死 —— 写死的话，下一次加一张画这条就假红一次。 */
+    const ownedByLuna = [...DATE_CG, ...DATE_CG_INTIMATE]
+      .filter((c) => typeof c !== 'string' && (c.cast ?? []).includes('luna')).length
+    ok('约会 CG（对照）· 同一档同一场、换了人 → 属于她的那几张全不进候选（别的照在）',
+      !ids(other).includes(LUNA) && ownedByLuna >= 1
+      && ids(other).length === ALL - ownedByLuna,
+      `${other.charId}：${ids(other).length} / ${ALL} 张（她的 ${ownedByLuna} 张被筛掉）`)
 
     /* 认人是**加在档位之上**的一道，不是替掉它：同一个人、档位没到 → 照样不进 */
     ok('约会 CG（对照）· 露娜在场、但只是普通见面（kind: date）→ 那张也不进候选',

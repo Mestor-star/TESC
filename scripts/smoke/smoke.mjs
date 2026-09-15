@@ -2048,15 +2048,17 @@ try {
   ok('N3b 六号指令序固定：攻击·技能·道具·防御·更换装备·战略撤退',
     seq === 'atk,skill,item,guard,gear,flee', String(seq))
 
-  // 行动顺位：一条横排把所有人的行动条摊开，还差几拍写在牌上
+  // 行动顺位：一条横排把所有人的行动条摊开，还差几窗口写在牌上
+  // （单位是**窗口**，不是「拍」：一拍是「我方一名角色出过一次手」，
+  //   而条是逐窗口涨的 —— 一回合里要空转好几格。见 tuning 的 windowBase 与 guide 的顺位那一步）
   const nOrder = await ev(`(()=>{const strip=document.querySelector('[data-order-strip]');
     const cards=[...document.querySelectorAll('[data-order]')];
     const units=[...document.querySelectorAll('[data-unit]:not([data-down])')].length;
     return {strip:!!strip,cards:cards.length,units:units,
       eta:cards.map(c=>c.innerText.replace(/\\s+/g,' ').trim())}})()`)
-  ok('N3c 行动顺位：每人一张牌（行动条 + 还差几拍），牌数 = 场上unit数',
+  ok('N3c 行动顺位：每人一张牌（行动条 + 还差几窗口），牌数 = 场上unit数',
     nOrder.strip === true && nOrder.cards >= 2 && nOrder.cards === nOrder.units
-    && nOrder.eta.every((t) => /待命|\d+ 拍/.test(t)), JSON.stringify(nOrder.eta).slice(0, 160))
+    && nOrder.eta.every((t) => /待命|\d+ 窗口/.test(t)), JSON.stringify(nOrder.eta).slice(0, 160))
 
   // 羁绊挂牌：本场成立的羁绊 + 连携共鸣槽
   const nSyn = await ev(`(()=>{const row=document.querySelector('[data-synergy-row]');
@@ -2101,6 +2103,30 @@ try {
   // 600 场 × 三档时期里「卡死 0 场」）。
   // 于是：手数封顶 90 手（一场看板任务足够走完），步数只当防呆的上限。
   let handNow = 0
+  /* 上一次「手数真的变了」是在第几步 —— 看门狗用它判停摆（见下面那一段） */
+  let handStep = steps
+  /* 作战屏这一刻的全貌：停摆的时候要能一眼看出停在哪一相、哪个子面板 */
+  const dbgN = async (tag) => {
+    const dbg = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
+      const h=document.querySelector('[data-hand]');const c=document.querySelector('[data-battle-cmd]');
+      const foes=[...document.querySelectorAll('[data-foe-card]')].map(x=>{const f=x.querySelector('[data-foe-hp]');
+        const b=x.querySelector('[data-foe-body]');
+        return (b&&b.hasAttribute('data-down')?'×':'')+(f?Number(f.getAttribute('data-foe-hp')):'?')});
+      const party=[...document.querySelectorAll('[data-party-field] [data-unit]')];
+      const mine={n:party.length,down:party.filter(x=>x.hasAttribute('data-down')).length};
+      /* phase 与「面板停在哪个子页」两样一起报：只报 actor 的话，
+         「赢了但卡在成文」「还停在 aim 面板上」两种停摆看起来一模一样
+         （都是 actor 还在、结果面板不出现）。 */
+      const root=document.querySelector('[data-battle]');
+      const sub=document.querySelector('[data-sub-back]');
+      const cmds=[...document.querySelectorAll('[data-command-menu] [data-cmd]')]
+        .map(b=>b.getAttribute('data-cmd')+(b.disabled?'(灰)':''));
+      return {phase:root?root.getAttribute('data-phase'):'?',hand:h?h.getAttribute('data-hand'):'',
+        actor:c?c.getAttribute('data-actor'):null,menu:!!document.querySelector('[data-command-menu]'),
+        sub:sub?'1':'0',aim:!!document.querySelector('[data-battle-aim]'),
+        cmds,foes,mine,tail:t.slice(-300)}})()`)
+    console.log(`  DBG N-${tag} steps=${steps} hand=${handNow} ` + JSON.stringify(dbg))
+  }
   while (steps++ < 3000 && handNow < 90) {
     const snap = await ev(`(()=>{const c=document.querySelector('[data-battle-cmd]');
       if(document.querySelector('[data-battle-result]'))return {r:1};
@@ -2110,6 +2136,14 @@ try {
         aim:!!document.querySelector('[data-battle-aim]'),hand:handEl?handEl.getAttribute('data-hand'):'',
         ready:ready?ready.getAttribute('data-atb'):'',
         link:!!document.querySelector('[data-battle-log] [data-log-link]'),
+        // 连携**不由玩家点**：技能表里一旦长出 link- 那一格，它就成了玩家能点的普通技能。
+        // 整场逐帧盯一次，只在见到时置位（见下面 N5f2）。
+        linkBtn:(window.__smokeLinkBtn=window.__smokeLinkBtn||!!document.querySelector('[data-skill-list] [data-skill^="link-"]')),
+        // 接上了那一记的日志原文 —— 条件触发，接上了才核形状（见 N5f2）
+        linkTxt:(()=>{const L=window.__smokeLinkTxt=window.__smokeLinkTxt||[];
+          const x=document.querySelector('[data-battle-log] [data-log-link]');
+          const t=x?x.innerText.replace(/\\s+/g,' ').trim():'';
+          if(t&&!L.includes(t))L.push(t);return L.length})(),
         // 共鸣槽：这一瞬满没满，以及整场见过的最大蓄拍数（诊断 N5f2 用）
         full:!!document.querySelector('[data-link-gauge][data-full="1"]'),
         hint:[...document.querySelectorAll('[data-link-gauge][data-full="1"]')]
@@ -2150,7 +2184,17 @@ try {
           return 1})(),
         kinds:[...document.querySelectorAll('[data-skill-list] [data-skill]')].map(b=>b.getAttribute('data-kind'))}})()`)
     if (!snap || snap.r) break
+    if (snap.hand && Number(snap.hand) !== handNow) handStep = steps
     if (snap.hand) handNow = Math.max(handNow, Number(snap.hand) || 0)
+    /* 停摆看门狗：正常一手只摊二十来步（日志回放慢），连着五百步手数不动
+       就不是「慢」而是「停了」—— 当场把状态打出来，别等到步数用尽
+       （从前只在循环出口打一次，于是「停在第 30 手」与「第 30 手还没跑完」
+       看起来一模一样，白等半小时）。 */
+    if (steps - handStep > 500) {
+      console.log(`  DBG N-stall（看门狗·第 ${steps} 步手数仍停在 ${handNow}）`)
+      await dbgN('stall')
+      break
+    }
     if (snap.ready) atbGate = true
     if (snap.link) sawLink = true
     if (snap.full) sawGaugeFull = true
@@ -2236,12 +2280,16 @@ try {
           if(cdMax.some(v=>v>0)&&cdMax.some(v=>v===0))window.__smokeMix=true;
           if(l.querySelector('[data-skill][data-cd]'))window.__smokeCd=true;
           const t=l.querySelector('[data-skill][data-kind="'+k+'"]:not([disabled])');if(t){t.click();return true}return false};
+        /* 解封手不再是单独一格（主人 2026-09-14 的四格制）：
+           它是「战技」格里的一条性质，认 [data-gate]。 */
+        const pickGate=()=>{const l=document.querySelector('[data-skill-list]');if(!l)return false;
+          const t=l.querySelector('[data-skill][data-gate]:not([disabled])');if(t){t.click();return true}return false};
         // 优先出「能造成伤害」的那一手：纯辅助技能会互相顶着用、全场空转
         const hit=(k)=>{const l2=document.querySelector('[data-skill-list]');if(!l2)return null;
           return [...l2.querySelectorAll('[data-skill][data-kind="'+k+'"]:not([disabled])')]
             .find(b=>Number(b.getAttribute('data-power'))>0)||null};
-        if(pick('启动'))return true;
-        if(hit('技能')){hit('技能').click();return true}
+        if(pickGate())return true;
+        if(hit('战技')){hit('战技').click();return true}
         // 出得起伤害技能的**没有**了（体力见底 / 全在冷却）：先退出去走「攻击」——
         // 普攻免费、必定出伤，在「攻击」这条指令上（不在技能表里）。
         // 早先这里先去点一手「不带伤害的技能」，于是体力一空，机器人就整场
@@ -2254,7 +2302,7 @@ try {
         // 门没开的时候，表里本来也只有「启动」那一类。
         const b3=document.querySelector('[data-command-menu] [data-cmd="skill"]');if(b3)b3.click();
         await new Promise(r=>setTimeout(r,150));
-        if(pick('技能'))return true;
+        if(pick('战技'))return true;
         return 'noop'})()`)
       if (clicked === 'noop') {
         usedGuard = true
@@ -2281,7 +2329,7 @@ try {
   ok('N5c「更换装备」不消耗回合（手数不变）', gearFree === true, String(gearFree))
   const chSpNow = await ev(`(()=>[...document.querySelectorAll('[data-party-field] [data-chsp]')].map(e=>e.querySelector('i').style.width))()`)
   const spent = (chSpW0 || []).filter((w, i) => chSpNow && Number.parseFloat(chSpNow[i] || '0') < Number.parseFloat(w || '0')).length
-  ok('N5d 每人各有自己的体力条（与终端那一池分开）', (chSpW0 || []).length >= 2 && spent >= 1,
+  ok('N5d 每人各有自己的节拍条（与终端那一池分开）', (chSpW0 || []).length >= 2 && spent >= 1,
     JSON.stringify({ n: (chSpW0 || []).length, spent }))
   sawCd = await ev(`!!window.__smokeCd`)
   const sawMix = await ev(`!!window.__smokeMix`)
@@ -2291,9 +2339,25 @@ try {
     sawMix === true && sawCdHint === true,
     `mix=${sawMix} cdHint=${sawCdHint} cdMax见到的=${cdmSet} 冷却窗口曾被观测=${sawCd}`)
   const guardLog = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
-    return {guard:t.includes('防御'),rec:t.includes('体力 +')}})()`)
-  ok('N5f2 连携技不由玩家点：共鸣槽蓄满后自动接上（日志出现「连携 · …」）',
-    sawLink === true, `link=${sawLink} gaugeFull=${sawGaugeFull} 槽最高蓄到=${gmax}`)
+    return {guard:t.includes('防御'),rec:t.includes('节拍 +')}})()`)
+  /* 一期把双人那条从「共享共鸣槽蓄满即接」改成了**条件触发**（主人 2026-09-15 定的口径：
+     槽只换团队羁绊连携，双人追击看条件 —— 打穿破绽 / 对面正在咏唱，见 engine.followCondition）。
+     这一场是四人队，恋兔队那条要 TUNING.traitMax（5）人，**压根没成立**；
+     于是能不能接上，全看这一场有没有打穿破绽、对面有没有在咏唱 ——
+     拿它当断言等于拿运气当断言（引擎探针：危险度 5 只有 23% 的场次凑得上条件）。
+     所以这一条按两半核：
+       · **不由玩家点**（确定，整场逐帧盯）：技能表里从来没长过 link- 那一格。
+       · **接上了就核形状**（条件）：日志里那条「连携 · …」得到了才算数；
+         没接上就记一笔，不判红 —— 条件触发本来就不该每场都出。
+     引擎那一侧的确定性证明在 scripts/mech/run.ts §7f：打穿破绽必接、没条件必不接、
+     共鸣槽满了由出手的那位带出去、一手至多接一记 —— 那几条不靠运气。 */
+  const linkSeen = await ev(`({btn:!!window.__smokeLinkBtn, txt:(window.__smokeLinkTxt||[]).join(' ｜ ')})`)
+  const linkShape = /连携 · /.test(linkSeen.txt)
+  ok('N5f2 连携技不由玩家点：技能表里不长这一格，条件一到自己接上',
+    linkSeen.btn === false && (sawLink === false || linkShape === true),
+    `菜单里长过连携=${linkSeen.btn} 整场接上过=${sawLink}`
+      + (linkSeen.txt ? ` 日志原文=${linkSeen.txt.slice(0, 180)}` : '')
+      + (sawLink ? '' : ` · 这一场没凑上条件，不判红（gaugeFull=${sawGaugeFull} 槽最高蓄到=${gmax}）`))
   // 敌方的每一手都带名字与出手话：日志里敌方那一行不该比小队那一行秃
   ok('N5f3 敌方出手也带技能名与出手话（观测频道里敌我两行一样齐全）',
     sawFoeLine === true, `foeLine=${sawFoeLine}`)
@@ -2346,23 +2410,12 @@ try {
             why:t.includes('只是架着')&&t.includes('才接得上')}})()`)
   ok('N5f2c 槽满仍防御时，日志写明「防御只蓄拍不接招」',
     waitLog.said === false || waitLog.why === true, JSON.stringify(waitLog))
-  ok('N5f 防御回复自身体力（回得不多，且入日志）', usedGuard === false || (guardLog.guard === true && guardLog.rec === true),
+  ok('N5f 防御回复自身节拍（回得不多，且入日志）', usedGuard === false || (guardLog.guard === true && guardLog.rec === true),
     JSON.stringify({ usedGuard, ...guardLog }))
 
-  if (!(await ev(`!!document.querySelector('[data-battle-result]')`))) {
-    // 走不完时要能一眼看出是「血没在掉」还是「手数没在走」：
-    // 敌方血量、我方血量、手数、当前是谁，四样一起打出来。
-    const dbg = await ev(`(()=>{const l=document.querySelector('[data-battle-log]');const t=l?l.innerText:'';
-      const h=document.querySelector('[data-hand]');const c=document.querySelector('[data-battle-cmd]');
-      const foes=[...document.querySelectorAll('[data-foe-card]')].map(x=>{const f=x.querySelector('[data-foe-hp]');
-        const b=x.querySelector('[data-foe-body]');
-        return (b&&b.hasAttribute('data-down')?'×':'')+(f?Number(f.getAttribute('data-foe-hp')):'?')});
-      const party=[...document.querySelectorAll('[data-party-field] [data-unit]')];
-      const mine={n:party.length,down:party.filter(x=>x.hasAttribute('data-down')).length};
-      return {hand:h?h.getAttribute('data-hand'):'',actor:c?c.getAttribute('data-actor'):null,
-        foes,mine,tail:t.slice(-300)}})()`)
-    console.log('  DBG N-stall steps=' + steps + ' hand=' + handNow + ' ' + JSON.stringify(dbg))
-  }
+  // 走不完时要能一眼看出是「血没在掉」还是「手数没在走」：
+  // 敌方血量、我方血量、手数、当前是谁，四样一起打出来。
+  if (!(await ev(`!!document.querySelector('[data-battle-result]')`))) await dbgN('stall')
   await until(`!!document.querySelector('[data-battle-result]')`, 25000)
   const nRes = await ev(`(()=>{const b=document.querySelector('[data-battle-result]');if(!b)return null;
     const n=document.querySelector('[data-battle-narrative]');const t=n?n.textContent:'';

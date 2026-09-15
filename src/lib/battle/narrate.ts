@@ -81,7 +81,7 @@ export function templateNarrative(rec: BattleRecord): string {
       const tail: string[] = []
       if (t.target) tail.push(`目标 ${t.target}`)
       else tail.push('目标 自身')
-      tail.push(t.miss ? '未命中' : t.kind === '普攻' || t.kind === '技能' ? '命中' : '—')
+      tail.push(t.miss ? '未命中' : t.kind === '普攻' || t.kind === '战技' ? '命中' : '—')
       if (t.dmg) tail.push(`伤害 ${t.dmg}`)
       if (t.heal) tail.push(`回复 ${t.heal}`)
       if (t.down) tail.push('目标就此失能')

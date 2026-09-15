@@ -21,6 +21,7 @@ import { furthestDone } from '../operator'
 import { POWER_SCALE, ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
+import { critMulOf, critOf } from './duty'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
 import { rFactor, rOfPlace } from './rvalue'
@@ -60,9 +61,9 @@ export function squadIdsFrom(names: string[]): string[] {
   return out
 }
 
-/** 本人的体力上限：意志力越高越耐打（防御时按同一根轴回复，回得不多） */
-export function chSpMax(will: number): number {
-  return Math.round(TUNING.chSpBase + will * TUNING.chSpPerWill)
+/** 本人的**节拍上限**：意志力越高越耐打（防御时按同一根轴回复，回得不多） */
+export function chTempoMax(will: number): number {
+  return Math.round(TUNING.chTempoBase + will * TUNING.chTempoPerWill)
 }
 
 /**
@@ -177,14 +178,14 @@ function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
       arch: 'basic',
     },
     {
-      id: `${id}-skill`, name: armName ? `${base}解放` : '协同压制', kind: '技能',
+      id: `${id}-skill`, name: armName ? `${base}解放` : '协同压制', kind: '战技',
       desc: '把观测到的弱点一次打穿。',
       cost: TUNING.skillCost, power: TUNING.skillPower * POWER_SCALE, axis: '破坏力', fx,
       line: '「让开——」', target: 'one',
       arch: '强袭',
     },
     {
-      id: `${id}-end`, name: armName ? `${base}全开` : '全力协同', kind: '到达点',
+      id: `${id}-end`, name: armName ? `${base}全开` : '全力协同', kind: '终结技',
       desc: '攒够印记之后的那一手：把这一仗交了结。',
       cost: 8, power: 2.6 * POWER_SCALE, axis: '破坏力', fx,
       line: '「——到此为止。」', target: 'one', cd: 4, needsStack: 3,
@@ -195,7 +196,7 @@ function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
 
 /**
  * 技能表 = 该角色的专属技能（roster.ts）+ 装具附带的一手。
- * 慢启动门（START_GATE）由引擎按 kind === '启动' 的次数把关，此处只负责出表。
+ * 慢启动门（START_GATE）由引擎按 `k.gate` 的次数把关，此处只负责出表。
  */
 /** 言万心叶的技能表 = 该时期的「所能做的事」（原文原名） */
 function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
@@ -212,19 +213,21 @@ function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
     name: a.name,
     kind: a.kind,
     desc: a.desc,
-    cost: a.cost ?? (a.kind === '普攻' ? 1 : a.kind === '启动' ? 2 : a.kind === '到达点' ? 8 : 4),
+    cost: a.cost ?? (a.kind === '普攻' ? 1 : a.gate ? 2 : a.kind === '终结技' ? 8 : 4),
     power: a.pow,
     axis: a.axis,
     fx: a.fx,
     line: a.line ?? '',
-    target: a.target ?? (a.kind === '启动' ? 'self' : 'one'),
+    target: a.target ?? (a.gate ? 'self' : 'one'),
     effect: a.effect,
     turns: a.turns,
     needsStack: a.needsStack,
-    // 冷却与名册同一口径：普攻 / 启动无冷却，到达点 4 拍，其余 2 拍
-    cd: a.cd ?? (a.kind === '普攻' || a.kind === '启动' ? 0 : a.needsStack ? 4 : 2),
+    // 冷却与名册同一口径：普攻 / 解封门无冷却，终结技 4 拍，其余 2 拍
+    cd: a.cd ?? (a.kind === '普攻' || a.gate ? 0 : a.needsStack ? 4 : 2),
     // 框架：这一手按哪一类打的（operator-arc 的 OpAbility 也可以自己标注）
     arch: a.arch,
+    // 解封门：归在「战技」格里，只是多一个性质
+    gate: a.gate,
     openAfter: a.openAfter,
     // 「合体」类：需同伴在场才可出，出手时把人请下场、若干拍后归位
     requireAlly: a.requireAlly,
@@ -258,9 +261,9 @@ export function skillsOf(id: string, gearId?: string): SkillSpec[] {
 
   // 名册里没写启动技却设了门 → 补一手通用启动（防呆）
   const gate = START_GATE[id] ?? 0
-  if (gate > 0 && !list.some((s) => s.kind === '启动')) {
+  if (gate > 0 && !list.some((s) => s.gate)) {
     list.push({
-      id: `${id}-start`, name: '镇封起手', kind: '启动',
+      id: `${id}-start`, name: '镇封起手', kind: '战技', gate: true,
       desc: `解开武装上的一重封印。需先后打出 ${gate} 次，普攻与技能才会解禁。`,
       cost: TUNING.startCost, power: 0, axis: '破坏力', fx, line: '「先按住它。」', target: 'one',
     })
@@ -273,7 +276,7 @@ export function skillsOf(id: string, gearId?: string): SkillSpec[] {
 
 /* ---------- 角色 → 战斗单位 ---------- */
 
-/** 行动条充能：由敏捷度导出（每节拍能攒多少） */
+/** 行动条充能：由敏捷度导出（每**窗口**能攒多少，见 engine 的 windowGainOf） */
 export function speedOf(axes: AxisSheet): number {
   return Math.max(TUNING.spdFloor, TUNING.spdBase + axes.敏捷度 * TUNING.spdPerAgi)
 }
@@ -304,6 +307,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       hue: p?.hue ?? '#c8a24e',
       avatarId: avatarIdOf(id),
       cls: per.cls,
+      // 职能：档案上写了就是它，没写按主音算（duty.ts 的 dutyOf）
+      duty: per.duty ?? '主音',
       trait: per.title,
       hp: hpMax,
       hpMax,
@@ -314,9 +319,15 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       bar: 0,
       spd: speedOf(axes),
       evade: TUNING.evadeBase + (gear?.mods.evade ?? 0),
+      // 暴击的面板：造人时算一次（常数项 + 职能那一份），临场再叠 `crit` 增益
+      crit: critOf(per.duty),
+      critMul: critMulOf(per.duty),
       buffs: [],
       shield: gear?.mods.shield ?? 0,
       taunt: 0,
+      // 防御姿态：这一手选了「防御」才架起来（见 engine 的 guard 分支）
+      stance: false,
+      stanceBroken: false,
       down: false,
       passive: per.passive,
       endured: 0,
@@ -328,8 +339,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       ward: 0,
       charge: 0,
       morph: null,
-      sp: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
-      spMax: chSpMax(axes.意志力) + (per.passive?.spMax ?? 0),
+      tempo: chTempoMax(axes.意志力) + (per.passive?.tempoMaxUp ?? 0),
+      tempoMax: chTempoMax(axes.意志力) + (per.passive?.tempoMaxUp ?? 0),
       startUsed: 0,
       unsealedAt: 0,
       startNeed: START_GATE[id] ?? 0,
@@ -363,6 +374,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     hue: p?.hue ?? '#8d8d99',
     avatarId: avatarIdOf(id),
     cls: role?.cls ?? '见习',
+    // 职能：名册上写了就是它，没写按主音算（duty.ts 的 dutyOf）
+    duty: role?.duty ?? '主音',
     trait: role?.trait,
     hp: hpMax,
     hpMax,
@@ -373,9 +386,15 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     bar: 0,
     spd: speedOf(axes),
     evade: TUNING.evadeBase + (gear?.mods.evade ?? 0),
+    // 暴击的面板：造人时算一次（常数项 + 职能那一份），临场再叠 `crit` 增益
+    crit: critOf(role?.duty),
+    critMul: critMulOf(role?.duty),
     buffs: [],
     shield: gear?.mods.shield ?? 0,
     taunt: 0,
+    // 防御姿态：同上
+    stance: false,
+    stanceBroken: false,
     down: false,
     passive: role?.passive,
     endured: 0,
@@ -387,8 +406,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     ward: 0,
     charge: 0,
     morph: null,
-    sp: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
-    spMax: chSpMax(axes.意志力) + (role?.passive?.spMax ?? 0),
+    tempo: chTempoMax(axes.意志力) + (role?.passive?.tempoMaxUp ?? 0),
+    tempoMax: chTempoMax(axes.意志力) + (role?.passive?.tempoMaxUp ?? 0),
     startUsed: 0,
     unsealedAt: 0,
     startNeed: START_GATE[id] ?? 0,
@@ -415,7 +434,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
 interface FoeSkill {
   id: string
   name: string
-  kind: '普攻' | '技能'
+  kind: '普攻' | '战技'
   desc: string
   cost: number
   power: number
@@ -479,35 +498,35 @@ const foeAtk = (id: string, name: string, desc: string, axis: AxisKey, power: nu
  */
 const BOSS_MOVES: FoeSkill[] = [
   {
-    id: 'foe-boss-stasis', name: '停滞 · 观测冻结', kind: '技能',
+    id: 'foe-boss-stasis', name: '停滞 · 观测冻结', kind: '战技',
     desc: '把一个人按在原地：行动条冻结两拍，这段时间他一步也走不动。',
     cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 4,
     line: '「——」它把谁从记录里按住了，那个人就动不了。',
     effect: { stasis: 2 }, turns: 2,
   },
   {
-    id: 'foe-boss-stall', name: '断拍 · 观测中止', kind: '技能',
+    id: 'foe-boss-stall', name: '断拍 · 观测中止', kind: '战技',
     desc: '把某个人这一拍从记录里划掉：轮到他了也打不出来，条照样扣掉。',
     cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 4,
     line: '「——」它把那一拍划掉了。轮到你了，可你打不出来。',
     effect: { stall: 1 },
   },
   {
-    id: 'foe-boss-archive', name: '归档 · 静默收容', kind: '技能',
+    id: 'foe-boss-archive', name: '归档 · 静默收容', kind: '战技',
     desc: '把一名我方从战场上收走两拍：这段时间他不算在场，回来时行动条从零起。',
     cost: 4, power: 0, axis: '反现实亲和', target: 'one', cd: 5,
     line: '「——」不打了。有人被收进档案，场上少了一个。',
     effect: { archive: 2 }, turns: 2,
   },
   {
-    id: 'foe-boss-lockdown', name: '观测封锁', kind: '技能',
+    id: 'foe-boss-lockdown', name: '观测封锁', kind: '战技',
     desc: '把这一带从观测记录里抹掉：我方全体命中下降 —— 不在记录里的东西，打不准东西。',
     cost: 4, power: 0, axis: '反现实亲和', target: 'all', cd: 4,
     line: '「——」这一带被从记录里抹掉了。不在记录里的东西，打不准东西。',
     effect: { lockdown: 0.25 }, turns: 3,
   },
   {
-    id: 'foe-boss-echo', name: '回响 · 复写', kind: '技能',
+    id: 'foe-boss-echo', name: '回响 · 复写', kind: '战技',
     desc: '它把小队方才用过的那一手原样念回来，照着同样的分量落回小队自己人身上。',
     cost: 3, power: 0, axis: '反现实亲和', target: 'one', cd: 3, echo: true,
     line: '「——」它把小队方才那一手，原样念了回来。',
@@ -524,13 +543,13 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-maou-bite', '狮子 · 咬碎', '终末化之后仍在咬的那张嘴。', '破坏力', 1.1,
         '「——」那张嘴合上的动静，比咬本身迟一步才到。'),
       {
-        id: 'foe-maou-roar', name: '终末化 · 咆哮', kind: '技能',
+        id: 'foe-maou-roar', name: '终末化 · 咆哮', kind: '战技',
         desc: '把这一带的现实密度整体压下去：全场受伤，且所有人的行动条被推后。',
         cost: 4, power: 1.4, axis: '反现实亲和', target: 'all', cd: 3,
         effect: { pushBack: 0.35, mark: 0.2 }, turns: 2,
       },
       {
-        id: 'foe-maou-crown', name: '黑金的重量', kind: '技能',
+        id: 'foe-maou-crown', name: '黑金的重量', kind: '战技',
         desc: '黑金化的躯体砸落：单体重击，且这个人此后更容易被咬。',
         cost: 3, power: 2.2, axis: '破坏力', target: 'one', cd: 2,
         effect: { mark: 0.35, pushBack: 0.5, bleed: 0.05 }, turns: 2,
@@ -546,13 +565,13 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-hetan-hold', '触须 · 掼', '不成形的手抡过来。', '破坏力', 1,
         '「——」那条没有形状的手抡下来，风比它先到。'),
       {
-        id: 'foe-hetan-gaze', name: '异端的注视', kind: '技能',
+        id: 'foe-hetan-gaze', name: '异端的注视', kind: '战技',
         desc: '被它盯上的人会一直被盯着：标记一名我方，并让其充能变慢。',
         cost: 3, power: 0.9, axis: '反现实亲和', target: 'one', cd: 3,
         effect: { mark: 0.4, slow: 0.3 }, turns: 2,
       },
       {
-        id: 'foe-hetan-swarm', name: '显形 · 增殖', kind: '技能',
+        id: 'foe-hetan-swarm', name: '显形 · 增殖', kind: '战技',
         desc: '越打越多：它自己的攻击与充能一并抬高。',
         cost: 4, power: 0, axis: '反现实亲和', target: 'self', cd: 4,
         effect: { atkUp: 0.4, spdUp: 0.35 }, turns: 3,
@@ -568,13 +587,13 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-mech-arm', '机械臂 · 碾压', '工学制品的标准出力。', '破坏力', 1.05,
         '「——」机械臂按着同一个角度落下来。一次，再一次。'),
       {
-        id: 'foe-mech-drain', name: '灵魂保存 · 抽离', kind: '技能',
+        id: 'foe-mech-drain', name: '灵魂保存 · 抽离', kind: '战技',
         desc: '工学装置对着人抽一口：单体高伤并直接抹掉一部分行动条。',
         cost: 4, power: 1.8, axis: '反现实亲和', target: 'one', cd: 3,
         effect: { clearBar: true, pierce: true },
       },
       {
-        id: 'foe-mech-overload', name: '工学 · 过载放电', kind: '技能',
+        id: 'foe-mech-overload', name: '工学 · 过载放电', kind: '战技',
         desc: '过载一瞬，全场吃电。',
         cost: 4, power: 1.5, axis: '破坏力', target: 'all', cd: 4,
       },
@@ -589,19 +608,19 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-dregs-wear', '残渣 · 磨蚀', '蹭上来的一下，不重，但一直在。', '破坏力', 0.9,
         '「——」蹭上来的一下不重。难办的是它一直在。'),
       {
-        id: 'foe-dregs-regather', name: '再聚拢', kind: '技能',
+        id: 'foe-dregs-regather', name: '再聚拢', kind: '战技',
         desc: '被打散的部分重新聚回来：它给自己回一口气，并架起一重减伤。',
         cost: 3, power: 0, axis: '意志力', target: 'self', cd: 3,
         effect: { heal: 0.5, shield: 0.35 }, turns: 2,
       },
       {
-        id: 'foe-dregs-wear-down', name: '磨蚀 · 积', kind: '技能',
+        id: 'foe-dregs-wear-down', name: '磨蚀 · 积', kind: '战技',
         desc: '黏上来的东西越积越厚：一名我方被磨软，打不出原来的分量。',
         cost: 3, power: 0.5, axis: '破坏力', target: 'one', cd: 3,
         effect: { frail: 0.3 }, turns: 3,
       },
       {
-        id: 'foe-dregs-crush', name: '高密度 · 压覆', kind: '技能',
+        id: 'foe-dregs-crush', name: '高密度 · 压覆', kind: '战技',
         desc: '密度堆到一定程度就会压下来：全场受伤并减速。',
         cost: 4, power: 1.4, axis: '反现实亲和', target: 'all', cd: 3,
         effect: { slow: 0.3 }, turns: 2,
@@ -617,19 +636,19 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-whisper-din', '低语 · 灌耳', '把杂音直接倒进脑子里。', '反现实亲和', 1,
         '「——」几十句话同时钻进同一只耳朵。'),
       {
-        id: 'foe-whisper-chorus', name: '杂音 · 共鸣', kind: '技能',
+        id: 'foe-whisper-chorus', name: '杂音 · 共鸣', kind: '战技',
         desc: '全场一起响：我方全体充能变慢，且更容易被听见（易伤）。',
         cost: 4, power: 0.8, axis: '反现实亲和', target: 'all', cd: 3,
         effect: { slow: 0.3, mark: 0.25 }, turns: 3,
       },
       {
-        id: 'foe-whisper-mute', name: '杂音 · 封口', kind: '技能',
+        id: 'foe-whisper-mute', name: '杂音 · 封口', kind: '战技',
         desc: '把话从你嘴里拿走：沉默一名我方，这段时间他只剩普攻。',
         cost: 3, power: 0, axis: '反现实亲和', target: 'one', cd: 3,
         effect: { silence: true }, turns: 2,
       },
       {
-        id: 'foe-whisper-refold', name: '再聚合 · 齐声', kind: '技能',
+        id: 'foe-whisper-refold', name: '再聚合 · 齐声', kind: '战技',
         desc: '所有低语合到一处喊出来：全场重击。',
         cost: 4, power: 1.6, axis: '反现实亲和', target: 'all', cd: 4,
       },
@@ -644,19 +663,19 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-ryuka-bloom', '龙花 · 绽', '花瓣边缘是割人的。', '破坏力', 1.05,
         '「——」花瓣张开的那一下，边缘是割人的。'),
       {
-        id: 'foe-ryuka-cut', name: '花瓣 · 割伤', kind: '技能',
+        id: 'foe-ryuka-cut', name: '花瓣 · 割伤', kind: '战技',
         desc: '被花瓣边缘带过的地方一直在流血：每拍掉一截生命，不治就一路流下去。',
         cost: 3, power: 0.6, axis: '破坏力', target: 'one', cd: 3,
         effect: { bleed: 0.06 }, turns: 3,
       },
       {
-        id: 'foe-ryuka-vine', name: '异界 · 蔓生', kind: '技能',
+        id: 'foe-ryuka-vine', name: '异界 · 蔓生', kind: '战技',
         desc: '异界的藤从地面铺开：全场受伤，并被缠住慢下来。',
         cost: 4, power: 1.3, axis: '反现实亲和', target: 'all', cd: 3,
         effect: { slow: 0.35 }, turns: 2,
       },
       {
-        id: 'foe-ryuka-scale', name: '龙鳞 · 硬质化', kind: '技能',
+        id: 'foe-ryuka-scale', name: '龙鳞 · 硬质化', kind: '战技',
         desc: '花瓣收拢成龙鳞的硬度：大幅减伤，并回一口气。',
         cost: 3, power: 0, axis: '物理抗性', target: 'self', cd: 4,
         effect: { shield: 0.5, heal: 0.3 }, turns: 3,
@@ -672,13 +691,13 @@ const ENEMY_PROFILE: FoeProfile[] = [
       foeAtk('foe-unk-touch', '记录外 · 触碰', '没被登记过的一次接触。', '反现实亲和', 1,
         '「——」它碰了你一下。图鉴上仍然没有它。'),
       {
-        id: 'foe-unk-warp', name: '未分类 · 扭曲', kind: '技能',
+        id: 'foe-unk-warp', name: '未分类 · 扭曲', kind: '战技',
         desc: '把观测到的事实扭一下：全场受伤，行动条一并被推后。',
         cost: 4, power: 1.4, axis: '反现实亲和', target: 'all', cd: 3,
         effect: { pushBack: 0.3, mark: 0.2 }, turns: 2,
       },
       {
-        id: 'foe-unk-paradox', name: '观测悖论', kind: '技能',
+        id: 'foe-unk-paradox', name: '观测悖论', kind: '战技',
         desc: '「它被观测到」这件事本身就是它的力量：自抬充能，并抹掉自己身上的负面。',
         cost: 3, power: 0, axis: '意志力', target: 'self', cd: 4,
         effect: { spdUp: 0.5, cleanse: true }, turns: 3,
@@ -768,7 +787,7 @@ const SUFFIX = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛']
  * 打几手、喊一个，而不是每一手都在喊。
  */
 const SUMMON_MOVE: FoeSkill = {
-  id: 'foe-summon', name: '召唤 · 成形体诱出', kind: '技能',
+  id: 'foe-summon', name: '召唤 · 成形体诱出', kind: '战技',
   desc: '不朝谁动手：把旁边那一片还没成形的东西喊起来，场上多一个。',
   cost: 2, power: 0, axis: '反现实亲和', target: 'self', cd: 5,
   line: '「——」它没看谁。它只是把旁边的什么喊醒了。',
@@ -881,8 +900,8 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       : !solo
         ? `${prof.name} ${SUFFIX[i]}${tag ? ` · ${tag}` : ''}`
         : tag ? `${prof.name} · ${tag}` : prof.name
-    // 敌方体力随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
-    const spMax = chSpMax(axes.意志力)
+    // 敌方节拍随其意志力走：意志越硬，这一场能出的手越多（与角色同一口径）
+    const tempoMax = chTempoMax(axes.意志力)
     /* 破绽：型别定轴、档位定点数。
        指名首领**只认自己写的那一份** —— 不能回退到型别那张表：
        天空竞技祭那几位是同行、是弹痕持有者，不是「打不穿的反现实实体」，
@@ -900,6 +919,10 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       sigil: named?.sigil ?? prof.sigil,
       hue: named?.hue ?? prof.hue,
       cls: named?.cls ?? prof.cls,
+      // 职能：三期把敌方逐个归位；在此之前一律「主音」。
+      // 暴击那一份**只拿常数项**（不叠职能）：敌方的职能还没归位，
+      // 先按「谁都有的那一点」算，别让一队杂兵白拿主音那一份加成（见 S4）。
+      duty: '主音',
       trait: named?.trait ?? nature,
       tier,
       // 认人用：场上的 id 只有位次，认不出档案里是谁（见 Combatant.namedId）
@@ -933,7 +956,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
           : []),
         /* 召唤：首领与精英都带这一手（危险度底下的小兵不带 —— 见 SUMMON_MOVE）。
            注意排在这儿而不是型别技能表里：`enemyAct` 挑「重手」时取的是
-           skills 里**第一手** kind === '技能' 的，召唤排到后面去，
+           skills 里**第一手** kind === '战技' 的，召唤排到后面去，
            它才不会把首领的常规重手顶掉。
            指名首领也不带：那几位是同行、是弹痕持有者，不是「从这片现实里拆出人来」
            的东西 —— 他们的每一手机制都得有原文依据，不替他们新造（bosses.ts 的规矩）。 */
@@ -951,7 +974,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
           ? [{
               id: 'foe-ult',
               name: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).name,
-              kind: '技能' as const,
+              kind: '战技' as const,
               desc: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).desc,
               cost: 0,
               power: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).power,
@@ -972,9 +995,16 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       bar: 0,
       spd: speedOf(axes),
       evade: 0,
+      // 暴击：敌我也暴击（同一套骨架），但**只拿常数项** —— 敌方的职能要三期才归位，
+      // 先别让一队杂兵白拿主音那一份（critOf / critMulOf 认职能，见上面 duty 那一行）
+      crit: TUNING.critBase,
+      critMul: TUNING.critMul,
       buffs: [],
       shield: 0,
       taunt: 0,
+      // 防御姿态：同上（敌方也架盾 —— 敌我同一套骨架）
+      stance: false,
+      stanceBroken: false,
       down: false,
       endured: 0,
       gone: 0,
@@ -990,8 +1020,8 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       morph: null,
       startUsed: 0,
       unsealedAt: 0,
-      sp: spMax,
-      spMax,
+      tempo: tempoMax,
+      tempoMax,
       startNeed: 0,
       stack: 0,
     chant: {},

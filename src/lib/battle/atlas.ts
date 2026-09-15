@@ -5,7 +5,7 @@
    同样叫「减伤」，有人 0.38、有人 0.45 —— 谁也说不清哪个数才是对的，
    因为那根本不是一套东西，只是二十几份手稿。
    现在换一个写法：先把「战场上能做的事」列成一张清单（这张表），
-   每一类定死它的目标、耗体、冷却、持续拍数与倍率带；角色再往里面坐。
+   每一类定死它的目标、节拍消耗、冷却、持续回合数与倍率带；角色再往里面坐。
      · 类决定这一手**怎么打**（打谁、多大代价、多长冷却）；
      · 角色决定这一手**是什么**（名字、原文出处、轴、演出、台词），
        并在倍率带里挑一个自己的档位。
@@ -36,7 +36,8 @@
    对面正在咏唱的那一发，它是首领战的三种解法之一，拆了就没得解了。
    ============================================================ */
 
-import type { AxisKey, FxKind, SkillEffect, SkillKind, SkillSpec, Target } from './types'
+import type { AxisKey, FlagEffectKey, FxKind, NumericEffectKey, SkillEffect, SkillKind, SkillSpec, Target } from './types'
+import { EFF_BAND } from './tuning'
 
 export interface Arch {
   id: string
@@ -44,15 +45,39 @@ export interface Arch {
   name: string
   /** 这一类做什么（一句话） */
   desc: string
-  /** 这一类属于哪一种出手 */
-  kind: SkillKind
+  /** 这一类落在四格制的哪一格（普攻 / 战技 / 终结技）。天赋不占框架类 —— 见 §天赋 */
+  slot: SkillKind
+  /**
+   * 「解封门」这一类：不造成伤害，纯粹是把封印一层一层拧开。
+   * 它**不是单独一格**，而是「战技」格里的一个性质（原先的 `kind: '启动'`）——
+   * 引擎一律读 `SkillSpec.gate`。置位由这一栏自动落，档案里不手写。
+   */
+  gate?: boolean
   target: Target
   cost: number
   cd: number
-  /** 增益 / 减益类的持续拍数 */
+  /** 增益 / 减益类的持续**回合数**（不是拍 —— 主人 2026-09-14） */
   turns?: number
   /** 倍率带（「份」，即 POWER_SCALE 之前的那个数）：这一类只能落在这一档之间 */
   band: [number, number]
+  /**
+   * 效果带：这一类里某个数字键许落在哪一档（缺省走 tuning 的 `EFF_BAND` 全表）。
+   * 有了它，「倍率有上限」这句话才管到了附带的那几笔上 —— 见 §效果带。
+   */
+  effBand?: Partial<Record<NumericEffectKey, [number, number]>>
+  /**
+   * 许带的**布尔**键。布尔没有「多大」可言，夹不了，所以只有放行与不放行两种：
+   * 不在名单里的，角色层写了也一律丢掉 —— 不是悄悄丢掉，`place()` 当场抛。
+   *
+   * 名单按「这一类的手本来就该有这几样」来写，不是按现在谁写了什么来写。
+   */
+  allow?: FlagEffectKey[]
+  /**
+   * 认不认「行动条三键」（pushBar / pushBack / clearBar）。
+   * 一整类都以动条为打法的写 true；只某一手要用的，写那一手自己的 `PlaceOpt.bar`。
+   * **两处都没认领而写了三键 → place 抛** —— 这就是「行动条只许谁碰」那条规矩的机制化身。
+   */
+  bar?: boolean
   /** 到达点的印记层数 */
   needsStack?: number
   /** 骨架效果 —— 角色在这一层之上追加自己的那几笔 */
@@ -66,123 +91,148 @@ export const ARCH: Record<string, Arch> = {
   /* —— 出手：造成伤害的那几种 —— */
 
   basic: {
-    id: 'basic', name: '普攻', kind: '普攻',
+    id: 'basic', name: '普攻', slot: '普攻',
     desc: '不耗心神的常规一击。谁都有，也谁都能一直用。',
     target: 'one', cost: 1, cd: 0, band: [1.0, 2.0],
+    allow: ['pierce'],
   },
   强袭: {
-    id: '强袭', name: '强袭', kind: '技能',
+    id: '强袭', name: '强袭', slot: '战技',
     desc: '把这一拍的全部力气压在一个人身上：单体，倍率最高的一类。',
     target: 'one', cost: 5, cd: 2, band: [1.7, 2.6],
+    allow: ['pierce', 'sureCrit'],
   },
   扫荡: {
-    id: '扫荡', name: '扫荡', kind: '技能',
+    id: '扫荡', name: '扫荡', slot: '战技',
     desc: '一次打到敌方全体：单体倍率低一档，但人越多越值。',
     target: 'all', cost: 5, cd: 3, band: [1.1, 1.8],
+    allow: ['pierce', 'noCrit'],
   },
   穿甲: {
-    id: '穿甲', name: '穿甲', kind: '技能',
+    id: '穿甲', name: '穿甲', slot: '战技',
     desc: '无视护甲与减伤的一击：倍率不高，但它不吃对方的防。',
     target: 'one', cost: 5, cd: 2, band: [1.5, 2.2], effect: { pierce: true },
+    allow: ['pierce'],
   },
   连打: {
-    id: '连打', name: '连打', kind: '技能',
+    id: '连打', name: '连打', slot: '战技',
     desc: '两下连着出去：单下轻，合起来重，也更容易打穿闪避。',
     target: 'one', cost: 5, cd: 3, band: [0.85, 1.3], effect: { hits: 2 },
+    allow: ['noCrit'],
   },
   乱击: {
-    id: '乱击', name: '乱击', kind: '技能',
+    id: '乱击', name: '乱击', slot: '战技',
     desc: '效果随机、性能极端：掷到高点能一记打穿，掷到低点连普攻都不如。',
     target: 'one', cost: 4, cd: 3, band: [1.6, 3.0],
+    allow: ['sureCrit', 'noCrit'],
   },
   驱逐: {
-    id: '驱逐', name: '驱逐', kind: '技能',
+    id: '驱逐', name: '驱逐', slot: '战技',
     desc: '打出去的同时把它赶出射程：伤害中等，但它的节奏被打散了。',
     target: 'one', cost: 5, cd: 2, band: [1.4, 2.0], effect: { slow: 0.4 },
+    allow: ['pierce', 'silence'],
   },
   震退: {
-    id: '震退', name: '震退', kind: '技能',
+    id: '震退', name: '震退', slot: '战技',
     desc: '一下打到敌方全体，把它们的节奏一起震散：清小幅兵与拆蓄势都用它。',
     target: 'all', cost: 4, cd: 3, band: [1.0, 1.6], effect: { slow: 0.5, mark: 0.15 },
+    allow: ['stanceBreak'],
   },
 
   /* —— 保住人：往上加的那种 —— */
 
   治愈: {
-    id: '治愈', name: '治愈', kind: '技能',
+    id: '治愈', name: '治愈', slot: '战技',
     desc: '全队回复（以意志力为准），并把身上的负面一并刮掉。',
     target: 'allyAll', cost: 4, cd: 2, band: [0, 0], effect: { heal: 0.5, cleanse: true },
+    allow: ['cleanse', 'revive'],
   },
   自愈: {
-    id: '自愈', name: '自愈', kind: '技能',
+    id: '自愈', name: '自愈', slot: '战技',
     desc: '只修自己：回一截血、刮掉身上的负面，再扣上一层薄甲 —— 一个人把这条命找回来。',
     target: 'self', cost: 3, cd: 2, band: [0, 0], effect: { heal: 0.45, cleanse: true, shield: 0.18 },
+    allow: ['cleanse'],
   },
   屏障: {
-    id: '屏障', name: '屏障', kind: '技能',
+    id: '屏障', name: '屏障', slot: '战技',
     desc: '给全队一层减伤：挡在前面的人负责把这一轮吃掉。',
     target: 'allyAll', cost: 4, cd: 2, turns: 2, band: [0, 0], effect: { shield: 0.4 },
+    allow: ['cleanse'],
   },
   坚守: {
-    id: '坚守', name: '坚守', kind: '技能',
+    id: '坚守', name: '坚守', slot: '战技',
     desc: '只护自己，但护得极厚 —— 再顺手把敌人的注意力引过来。',
     target: 'self', cost: 4, cd: 3, turns: 3, band: [0, 0], effect: { shield: 0.62, taunt: true },
+    allow: ['taunt'],
   },
 
   /* —— 推着走：改节奏的那种 —— */
 
   增益: {
-    id: '增益', name: '增益', kind: '技能',
+    id: '增益', name: '增益', slot: '战技',
     desc: '全队打得更重：给的是攻击，不是这一下。',
     target: 'allyAll', cost: 4, cd: 3, turns: 3, band: [0, 0], effect: { atkUp: 0.35 },
+    allow: ['cleanse'],
+    bar: true,   // 这一整类都以动条为打法
   },
   提速: {
-    id: '提速', name: '提速', kind: '技能',
+    id: '提速', name: '提速', slot: '战技',
     desc: '全队跑得更快：先手是这一类给的 —— 但它只改充能的速度，不替谁把行动条挪过去。',
     target: 'allyAll', cost: 4, cd: 2, band: [0, 0], effect: { spdUp: 0.6 },
+    allow: ['selfToo'],
+    bar: true,   // 这一整类都以动条为打法
   },
   牵制: {
-    id: '牵制', name: '牵制', kind: '技能',
+    id: '牵制', name: '牵制', slot: '战技',
     desc: '压在一个人身上：打它更重、它充得更慢，退路也一并堵上。',
     target: 'one', cost: 4, cd: 3, turns: 3, band: [0, 0], effect: { mark: 0.3, slow: 0.25 },
+    allow: [],
+    bar: true,   // 这一整类都以动条为打法
   },
   重压: {
-    id: '重压', name: '重压', kind: '技能',
+    id: '重压', name: '重压', slot: '战技',
     desc: '对敌方全体下手：一起慢下来、一起被标上 —— 谁也跑不掉。',
     target: 'all', cost: 5, cd: 3, turns: 3, band: [0, 0], effect: { mark: 0.25, slow: 0.5 },
+    allow: [],
+    bar: true,   // 这一整类都以动条为打法
   },
   解厄: {
-    id: '解厄', name: '解厄', kind: '技能',
+    id: '解厄', name: '解厄', slot: '战技',
     desc: '只做一件事：把全队身上的负面全刮掉 —— 刮干净之后，敌人这一段的出手也一起落空。',
     target: 'allyAll', cost: 4, cd: 3, band: [0, 0], effect: { cleanse: true, evade: 0.2 },
+    allow: ['cleanse'],
   },
 
   /* —— 规格：改自己底子的那一类 —— */
 
   解放: {
-    id: '解放', name: '解放', kind: '技能',
+    id: '解放', name: '解放', slot: '战技',
     desc: '不碰敌人，也不碰同伴：解开自己的某一重限制，此后每一手都按新的规格算。'
       + '这一类是全表最贵的一手 —— 它买的不是这一拍，是接下来的每一拍。',
     target: 'self', cost: 6, cd: 5, turns: 3, band: [0, 0], effect: { skillMul: 2 },
+    allow: [],
   },
 
   /* —— 慢启动门的解封手 —— */
 
   启动: {
-    id: '启动', name: '启动', kind: '启动',
+    id: '启动', name: '启动', slot: '战技', gate: true,
     desc: '解封用的起手：不造成伤害，纯粹是「把封印一层一层拧开」的代价。'
       + '打满次数之前，普攻与技能都列不出来。',
     target: 'self', cost: 2, cd: 0, band: [0, 0],
+    allow: [],
   },
 
   /* —— 到达点：每个人的终结技 —— */
 
   到达点: {
-    id: '到达点', name: '到达点', kind: '到达点',
+    id: '到达点', name: '到达点', slot: '终结技',
     desc: '终结技（End）。出手每蓄一层印记，蓄满才列得出来 ——'
       + '那一手是这个人全部的东西，所以代价最高、冷却最长、样式由他自己定。'
       + '守护型的到达点不带伤害（倍率写 0），规格与辅助手无异。',
     target: 'one', cost: 8, cd: 4, needsStack: 3, band: [2.2, 5.2],
+    allow: ['pierce', 'cleanse', 'silence', 'sureCrit', 'stanceBreak'],
+    bar: true,   // 这一整类都以动条为打法
   },
 }
 
@@ -222,6 +272,13 @@ export interface PlaceOpt {
   startLines?: string[]
   /** 倍率浮动（乱击一类） */
   variance?: number
+  /**
+   * 这一手**认领了行动条三键**。
+   * 本表的骨架一律不带那三键（见头注），所以要用就得在这一行上写明是谁认的 ——
+   * 于是「谁把谁的条推了」在档案里是看得见的，不再是谁都能白拿的一条。
+   * 没认领而 effect 里带了三键，`place()` 当场抛。
+   */
+  bar?: boolean
   /** 复写：把小队方才用过的那一手原样念回来（见 engine 的回响分支） */
   echo?: boolean
   /** 复写（申告虚伪）：当场照抄任意一个角色的一手（见 engine 的 copy 分支） */
@@ -242,23 +299,77 @@ export interface PlaceOpt {
   summonPack?: string[]
 }
 
+/* 行动条三键 —— 骨架与角色层都不许白拿，认领了才放行（见 Arch.bar / PlaceOpt.bar） */
+const BAR_KEYS: Array<keyof SkillEffect> = ['pushBar', 'pushBack', 'clearBar']
+
+/**
+ * 把一时手的效果逐条过闸：**布尔走白名单，数字走效果带，动条三键要认领**。
+ *
+ * 这三道闸是同一件事的三个面 —— 「一手技能能附带多少东西」得有个说得清的上界：
+ *   · 布尔：夹不了量，所以只有放行与不放行（`Arch.allow`）；
+ *   · 数字：逐条夹回带内（本类 `effBand` 优先，其次全表 `EFF_BAND`）；
+ *   · 动条三键：本表骨架一律不带（见头注），谁要用谁在那一行上认领。
+ *
+ * 越界一律**抛**，不悄悄改数：档案里写了一个框架不认的东西，
+ * 那是数据错了，不是「引擎该替它收拾」。夹回带内的那一种不算越界 ——
+ * 倍率本来就这个规矩（「同一类里各有各的档位」），效果带只是把同一句话说完。
+ *
+ * 只对**过 place 的手**生效。敌方那几份不按 place 走的表（endfoes 的图鉴实体、
+ * derive 的杂兵技）与道具（gear.ts）不受此限 —— 推条是他们施压的手段，
+ * 不是给玩家挑的选项；道具的打断是首领战的三种解法之一，拆了就没得解。
+ */
+function tidyEffect(a: Arch, o: PlaceOpt, merged: SkillEffect): SkillEffect {
+  const out: SkillEffect = {}
+  const allow = new Set<string>(a.allow ?? [])
+  const barred = new Set<string>(BAR_KEYS)
+  for (const [key, v] of Object.entries(merged)) {
+    if (v === undefined) continue
+    // 认领先于分流：clearBar 是**布尔**的行动条键，混在布尔那一支里就漏检了
+    if (barred.has(key) && !a.bar && !o.bar) {
+      throw new Error(
+        `「${o.id}」带了 ${key} 却没人认领行动条 ——` +
+        '要碰条就在这一手上写 `bar: true`（见 atlas 头注：条只许认领过的人碰）。')
+    }
+    if (typeof v === 'boolean') {
+      if (!allow.has(key)) {
+        throw new Error(
+          `技能框架「${a.name}」不许带 ${key} 这一笔（${o.id}）——` +
+          '要带就把它写进这一类的 allow 里，并说清这一类为什么该有它。')
+      }
+      ;(out as Record<string, unknown>)[key] = v
+      continue
+    }
+    const band = a.effBand?.[key as NumericEffectKey] ?? EFF_BAND[key as NumericEffectKey]
+    if (!band) {
+      throw new Error(`技能框架「${a.name}」的 effect 里有 ${key}，但它没有效果带（${o.id}）`)
+    }
+    const num = Math.max(band[0], Math.min(band[1], v as number))
+    ;(out as Record<string, unknown>)[key] = num
+  }
+  return out
+}
+
 /**
  * 把一个角色的一手技能**放进框架里**。
  * 数值先过本类的带：写超了会被夹回边界 —— 这样既保留了「谁比谁更重一点」，
  * 又不会出现某一手凭空比同类高出三倍的情况。
  * 唯一的例外是**明写 0**：那是「这一手不造成伤害」的意思（守护型的到达点、
  * 纯辅助与增益），不受带约束；倍率带管的是伤害，不是这一类手的存在与否。
+ *
+ * 附带的那几笔走 `tidyEffect` 那三道闸（布尔白名单 / 数字效果带 / 动条认领）。
  */
 export function place(archId: string, o: PlaceOpt): SkillSpec {
   const a = ARCH[archId]
   if (!a) throw new Error(`技能框架里没有这一类：${archId}`)
   const raw = o.power ?? archPower(a)
   const power = raw === 0 ? 0 : Math.max(a.band[0], Math.min(a.band[1], raw))
-  const effect = a.effect || o.effect ? { ...a.effect, ...o.effect } : undefined
+  const merged = a.effect || o.effect ? { ...a.effect, ...o.effect } : undefined
+  const effect = merged ? tidyEffect(a, o, merged) : undefined
   return {
     id: o.id,
     name: o.name,
-    kind: a.kind,
+    kind: a.slot,
+    gate: a.gate,
     desc: o.desc,
     cost: o.cost ?? a.cost,
     power,
