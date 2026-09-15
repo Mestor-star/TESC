@@ -98,15 +98,17 @@ import { readFileSync, readdirSync } from 'node:fs'
 import {
   act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, chargeOf, createBattle,
   endureCap, enemysTurn, etaOf, evadeOf, find, guardLeft, legalSkills, pendingFoe, skipOf,
-  standingOf, summonFoe,
+  standingOf, summonFoe, rewardOf,
 } from '../../src/lib/battle/engine'
 import { combatantOf, enemiesOf, enemyFormation, minionOf } from '../../src/lib/battle/derive'
-import { effectiveGrowth, LEVEL_BASE_COST, LEVEL_STEP_PCT, levelCostOf } from '../../src/lib/battle/store'
+import {
+  effectiveGrowth, LEVEL_BASE_COST, LEVEL_RATE, LEVEL_STEP_PCT, levelCostOf,
+} from '../../src/lib/battle/store'
 import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
 import { TIMELINE } from '../../src/data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
-import { AXIS_SCALE, EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
+import { AXIS_SCALE, COIN_SCALE, EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
@@ -119,14 +121,19 @@ import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import type { NumericEffectKey, SkillEffect } from '../../src/lib/battle/types'
 import { ARCH, place } from '../../src/lib/battle/atlas'
 import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
-import { GEARS } from '../../src/lib/battle/gear'
+import { GEARS, ITEMS } from '../../src/lib/battle/gear'
 import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
 import { CHAR_LINES, FOLLOW_LINES, LINE_POOL, familiar, poolFor } from '../../src/lib/battle/banter'
 import { NAMED_BOSSES, namedBossOf } from '../../src/lib/battle/bosses'
 import { SIDE_AXIS } from '../../src/data/roster'
 import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
 import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
-import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
+import {
+  buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText, speechContract,
+} from '../../src/lib/plot'
+import {
+  appendSmsMsgs, loadSmsLogs, smsLogVersion, subscribeSmsLog, writeSmsLogs,
+} from '../../src/lib/sms'
 import { splitSpeech } from '../../src/lib/dialogue'
 import type { DialogueSeg } from '../../src/lib/dialogue'
 import {
@@ -1938,6 +1945,35 @@ export function run(): MechReport {
     ok('合流之后的面板确实吃到了等级那一份',
       at(merged.mefisa ?? 0).axes.破坏力 > bare.axes.破坏力 * 2,
       `裸面板 ${bare.axes.破坏力} → ${at(merged.mefisa ?? 0).axes.破坏力}`)
+
+    /* (c2) 终末点数是**一支笔** —— 2026-09-15 主人把整支货币 ×12.5：
+       终末等级底价 80→1000，收入与军需价格同步放大。数看着大了，
+       买起来的快慢必须与从前**一模一样** —— 那一份「一样」没有别的地方守着，
+       就靠这一组。分三层：
+         · **主人口径**（起点 1000 / 每级 ×1.6 指数 / 每级 +10% / 整支笔 ×12.5）
+           逐个数钉死。将来要改，先来改这几条，不是悄悄漂过去。
+         · **同一支笔**：军需每一件的价都是 COIN_SCALE 的整数倍 ——
+           单边动一张表（比如把 coinPerStage 拨到 180）当场就红。
+           **新增装具不必回来改这一条**，只要价也是按同一支笔写的。 */
+    ok('终末等级：主人定的那条曲线就是这几笔（起点 1000 · 每级 ×1.6 · 每级 +10%）',
+      LEVEL_BASE_COST === 1000 && LEVEL_RATE === 1.6 && LEVEL_STEP_PCT === 10,
+      `底价 ${LEVEL_BASE_COST}　倍率 ×${LEVEL_RATE}　每级 +${LEVEL_STEP_PCT}%（第 10 级 +${LEVEL_STEP_PCT * 10}%）`)
+    ok(`终末点数是同一支笔：整支货币 ×${COIN_SCALE}（收入与军需同步放大）`,
+      COIN_SCALE === 12.5 && TUNING.coinPerStage === 175 && TUNING.coinMainlineBase === 750,
+      `×${COIN_SCALE}；阶段基数 ${TUNING.coinPerStage}（14×12.5）　剧情另加 ${TUNING.coinMainlineBase}（60×12.5）`)
+    const onPen = [...GEARS.map((g) => g.price), ...ITEMS.map((i) => i.price)]
+      .filter((v) => v % COIN_SCALE !== 0)
+    ok(`军需价位与收入共用那一支笔：每一件都是 ×${COIN_SCALE} 的整数倍`,
+      onPen.length === 0, onPen.length ? `脱笔的：${onPen.join('、')}` : '逐件对上')
+    const payAt = (stage: number) =>
+      rewardOf({ stage, mainline: true } as unknown as Parameters<typeof rewardOf>[0]).coin
+    const pay1 = payAt(1)
+    const pay10 = payAt(10)
+    const topGear = Math.max(...GEARS.map((g) => g.price))
+    ok('终末点数的手感没被单边改掉：第一档买得起，最贵那一件不用攒一年',
+      LEVEL_BASE_COST < pay1 && topGear <= pay10 * 2,
+      `第一档 ${LEVEL_BASE_COST} ＜ 早期主线一场 ${pay1}；`
+      + `最贵一件 ${topGear} ≤ stage-10 主线一场 ${pay10} ×2`)
 
     // (d) 反向断言：比率与控制类**必须**还夹着，放宽不等于把机制做崩
     ok('闪避仍然封顶（过 1 就是打不中，那不叫放宽）',
@@ -6630,6 +6666,90 @@ export function run(): MechReport {
       + '「每格至少一条」。首次进游戏只对钟（`seed`），首条落在 20 分钟之后')
   } catch (e) {
     fail.push('主动来信节拍段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 35) 约会专线的会话账：写盘要回声 · 台词行契约要挂在最后 ----------
+     主人 2026-09-15 报的两条，都是**只在这条路上**才出得来的毛病：
+
+     ① 「新生成的文字出现后立刻消失了，重进约会才出现。」
+        约会专线的会话流是**从盘上现读**的（`logs` 只认 `logVer` 那个版本号），
+        而 `writeSmsLogs` **刻意不回声** —— 那一条是给短信页写的，短信页写完
+        自己 `setLogs` 留了一份镜像，所以它不需要这一声。约会专线没有那份镜像：
+        少这一声就是「写进去了、盘上有、屏上没有」，`setLive(null)` 把活气泡一撤，
+        刚落地的那一条渲染不出来，得等这一路卸载重开才从盘上读回来。
+
+     ② 「台词没切成角色气泡。」
+        主线把《台词行格式》单独成段、压在预设**之后**（plot.ts 的 `speechContract`），
+        因为预设段是跟在规则后面注入的，一句「文本格式」就能把行首写法收走。
+        约会专线那一份提示词漏了这一段 —— 契约里的话没错，是**位置**不够靠后。
+
+     两条都验得住：①用行为验（盘上有没有 + 版本号 + 订阅者），
+     ②用源码账验（DateLane 真调了它，且调在预设之后）。 */
+  try {
+    const g = globalThis as { localStorage?: unknown }
+    const hadLS = 'localStorage' in g
+    const prevLS = g.localStorage
+    const mem = new Map<string, string>()
+    g.localStorage = {
+      getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+      setItem: (k: string, v: string) => { mem.set(k, String(v)) },
+      removeItem: (k: string) => { mem.delete(k) },
+      clear: () => { mem.clear() },
+    }
+    try {
+      /* ① 回声：版本号要动、订阅者要被叫到、盘上要真有那一条 */
+      let called = 0
+      const off = subscribeSmsLog(() => { called += 1 })
+      const v0 = smsLogVersion()
+      const after = appendSmsMsgs('d:probe-1', (prev) => [...prev, {
+        id: 'p::1', from: 'them', text: '露娜：……你迟到了。', time: '15:00',
+      }])
+      off()
+      const onDisk = (loadSmsLogs()['d:probe-1'] ?? []).length
+      ok('约会专线 · 落盘要回声：版本号 +1、订阅者被叫一次、盘上真有那一条',
+        smsLogVersion() === v0 + 1 && called === 1
+        && (after['d:probe-1'] ?? []).length === 1 && onDisk === 1,
+        `版本 ${v0} → ${smsLogVersion()}　订阅者被叫 ${called} 次　盘上 ${onDisk} 条`)
+
+      /* 对照：不带回声的那一条**就是**不回声 —— 上一条绿不是因为它。
+         这也正是短信页要的（它有镜像，不要回声），所以别去改那一条。 */
+      const v1 = smsLogVersion()
+      let called2 = 0
+      const off2 = subscribeSmsLog(() => { called2 += 1 })
+      writeSmsLogs({ ...loadSmsLogs(), 'd:probe-2': [{ id: 'p::2', from: 'them', text: 'x', time: '15:01' }] })
+      off2()
+      ok('约会专线（对照）· 裸 writeSmsLogs 不动版本号、不叫订阅者（短信页的镜像路要的就是这个）',
+        smsLogVersion() === v1 && called2 === 0,
+        `版本仍是 ${smsLogVersion()}　订阅者被叫 ${called2} 次`)
+
+      /* ② 台词行契约：两条路各自那一份都在，且都点明「行首的『角色名：』」 */
+      const main = speechContract()
+      const date = speechContract('「在场角色」那一节')
+      ok('台词行契约 · 主线与约会专线各自那一份都写明了「行首的『角色名：』」',
+        main.includes('行首') && main.includes('角色名：') && main.includes('【本事件出场角色】')
+        && date.includes('行首') && date.includes('角色名：') && date.includes('在场角色'),
+        `主线 ${main.length} 字 ／ 约会 ${date.length} 字`)
+
+      /* 源码账：DateLane 真的挂上了，而且是挂在**预设之后** —— 挂早了等于没挂 */
+      const src = readFileSync('src/components/DateLane.tsx', 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+      const iCall = src.indexOf('speechContract(')
+      const iPre = src.indexOf('preset.post')
+      ok('约会专线 · 提示词里挂着台词行契约，且压在预设段之后（挂早了等于没挂）',
+        iCall > 0 && iPre > 0 && iCall > iPre,
+        iCall < 0 ? 'DateLane 里根本没调 speechContract' : `契约在第 ${iCall} 字 · 预设 post 在第 ${iPre} 字`)
+      ok('约会专线 · 落盘走的是带回声的那一条（源码账：append 里是 appendSmsMsgs）',
+        /const append = useCallback\([\s\S]{0,600}?appendSmsMsgs\(/.test(src),
+        'DateLane 的 append 指向 appendSmsMsgs')
+
+      info.push('约会专线会话账：落盘带回声（写盘 + bumpSmsVersion）· 台词行契约压在预设之后'
+        + ' —— 主人 2026-09-15 报的两条（回完就消失 / 台词不切气泡）各钉一条')
+    } finally {
+      if (hadLS) g.localStorage = prevLS
+      else delete g.localStorage
+    }
+  } catch (e) {
+    fail.push('约会专线会话账段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

@@ -83,6 +83,29 @@ export function appendSmsMsg(threadId: string, m: ChatMsg): Record<string, ChatM
   return next
 }
 
+/**
+ * 按**更新函数**改写某一线程并落盘（读盘 → 改 → 写 → **回声**）。
+ *
+ * 与 appendSmsMsg 只差入参形状（那一条收一整条消息，这一条收 `prev => next`），
+ * 与下面的 writeSmsLogs 差在**回不回这一声**。这一条是给「自己不存一份镜像、
+ * 直接读盘」的视图用的 —— 约会专线（components/DateLane.tsx）就是这样：
+ * 它的会话流从 `loadSmsLogs()` 现读，靠 `smsLogVersion` 这个版本号驱动重算。
+ *
+ * ⚠️ 少了 `bumpSmsVersion()` 那一声，症状是「**写进去了、盘上有、屏上没有**」：
+ * 视图那头版本号没动，重算就不会发生，刚落地的一条当场看不见 ——
+ * 要等这一路卸载重开（或别处写一次）才从盘上读回来。
+ * 短信页自己有 state 镜像（写完当场 `setLogs`），所以它继续走不回声明的那一条。
+ */
+export function appendSmsMsgs(
+  threadId: string, up: (prev: ChatMsg[]) => ChatMsg[],
+): Record<string, ChatMsg[]> {
+  const next = { ...loadSmsLogs() }
+  next[threadId] = up(next[threadId] ?? [])
+  writeSmsLogs(next)
+  bumpSmsVersion()
+  return next
+}
+
 /** 删掉整个线程的会话（群聊线程名册的清理在 lib/smsthreads.ts） */
 export function dropSmsThread(threadId: string): Record<string, ChatMsg[]> {
   const next = { ...loadSmsLogs() }

@@ -51,7 +51,10 @@ import { clampBudget } from '../lib/budget'
 import { cgDirOf, cgIdOf, cgNoteOf, cgVariantId, cgVariantsOf } from '../lib/cg'
 import { clock } from '../lib/format'
 import type { ChatMsg } from '../data/types'
-import { applyDirective, dateDirective, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
+import {
+  applyDirective, dateDirective, extractLiveDisplay, parseDirectorReply, replyDisplayText,
+  speechContract,
+} from '../lib/plot'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
   PARTY_MAX, cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous,
@@ -63,7 +66,8 @@ import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/p
 import { loreHitsOf } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import {
-  loadSmsLogs, markRead, newMsgId, smsLogVersion, smsTurns, subscribeSmsLog, writeSmsLogs,
+  appendSmsMsgs, loadSmsLogs, markRead, newMsgId, smsLogVersion, smsTurns, subscribeSmsLog,
+  writeSmsLogs,
 } from '../lib/sms'
 import { addTask } from '../lib/smstasks'
 
@@ -140,9 +144,14 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   useEffect(() => { setLogs(loadSmsLogs()) }, [logVer])
   const activeLog = rv ? logs[rv.id] ?? [] : []
 
+  /* 落盘走 `appendSmsMsgs`（写盘 **+ 回声**），不是光 `writeSmsLogs`。
+     这一路与短信页共用同一本会话账，但**读法不一样**：短信页写完自己
+     `setLogs` 留了一份镜像，这一路没有 —— `activeLog` 是从 `logs` 上读的，
+     而 `logs` 只认 `logVer`（`useSyncExternalStore`）。
+     少这一声就是「导演刚回的那一段在 `setLive(null)` 之后当场消失，
+     重进这一路才从盘上读回来」（主人 2026-09-15 报的那一条）。 */
   const append = useCallback((id: string, up: (prev: ChatMsg[]) => ChatMsg[]) => {
-    const all = loadSmsLogs()
-    writeSmsLogs({ ...all, [id]: up(all[id] ?? []) })
+    appendSmsMsgs(id, up)
   }, [])
 
   /* 导演点名的那张：**认不认它由 dateCgPalette 说了算**。
@@ -241,6 +250,11 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
+        /* 台词行契约压在**预设之后**：预设里但凡有一句「文本格式」把行首写法收走，
+           上面 rendezvousPrompt 的第 4 条就被盖掉，整段台词会一丝不差落进旁白 ——
+           「没有和正文推演一样美化」就是这一条漏了（主人 2026-09-15 报的那一条）。
+           摆法照主线：契约在预设之后、收尾的指令块之前。 */
+        + `\n\n${speechContract('「在场角色」那一节')}`
         + dateBondRule(charId, party.map((p) => p.id))
       const turns = smsTurns(log, 12)
       /* 空线程 = 这一场刚开场：不给它留白，直接让对面把第一句说出来 */

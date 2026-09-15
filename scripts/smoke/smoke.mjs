@@ -3216,7 +3216,9 @@ try {
        party:['luna','nyau'],ts:Date.now(),done:false}]));
     localStorage.setItem('zts-tavern:v1', JSON.stringify({
       'd:smoke-date-1':[{id:'sd::1',from:'them',
-        text:'【V】她靠在栏杆上，风把发梢吹到一边。',time:'15:00'}]}));
+        text:'【V】她靠在栏杆上，风把发梢吹到一边。\\n'
+          + '露娜：小主人，你迟到了十分钟。\\n'
+          + '她把手里的烟按灭在栏杆上。',time:'15:00'}]}));
     localStorage.setItem('zts-sms-auto:v1', JSON.stringify({roll: Date.now(), per: {}}));
     return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true }); await boot()
@@ -3261,6 +3263,16 @@ try {
     JSON.stringify({mainArea:vLane.mainArea,mainMode:vLane.mainMode}))
   ok('V1c 这一场的正文跟着过来了（同一本会话账：d:uuid 底下那一条）',
     vLane.body.includes('她靠在栏杆上'), vLane.body.slice(0, 120))
+
+  /* V1d 台词行切成角色气泡 —— 与正文推演同一把拆行器（PlotFlow 的 Speech）。
+     这一条是主人报的那一声「角色对话没有和正文推演一样美化」的门神：
+     只验「正文上屏了」是不够的 —— 整段落进旁白也照样上屏，那正是要拦的那一种。 */
+  const vBub = await ev(`(()=>{const t=document.querySelector('[data-date-thread]');
+    return {say:[...t.querySelectorAll('[data-say]')].map(e=>e.getAttribute('data-say-for')),
+      you:t.querySelectorAll('[data-you]').length,
+      narr:t.querySelectorAll('[data-narration]').length}})()`)
+  ok('V1d 这一场里的台词行切成角色气泡（同一把拆行器，不是整段落进旁白）',
+    vBub.say.includes('luna') && vBub.narr >= 1, JSON.stringify(vBub))
 
   /* V2 右栏正常的一面 = 「这一场」：三位都上栏，缺图不占版位（常服立绘这一族一张都没补时的既定取舍） */
   await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V date side panel')
