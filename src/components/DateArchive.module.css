@@ -1,0 +1,65 @@
+/* DateArchive.module.css —— 约会记录：只读的旧账本
+   除了上面那一列「挑哪一场」，其余排法全借 views/Plot.module.css 的
+   `.onBody` / `.thread` —— 读法与车道里必须一模一样，不在这儿另立一套。 */
+
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.pick {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--ink-mute);
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.pick:hover {
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--line-2));
+  color: var(--ink);
+}
+.pick b {
+  font-size: 12px;
+  font-weight: 600;
+}
+.pickOn {
+  border-color: color-mix(in srgb, var(--amber) 70%, transparent);
+  color: var(--ink);
+}
+.pickWhen {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* 开场那一行：这一场是谁、在哪儿、什么时候散场的。
+   不是「导演叙述」，所以不套旁白块 —— 它是账本的抬头。 */
+.lede {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed var(--line-2);
+}
+.ledeWho {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+  letter-spacing: 0.02em;
+}
+.ledeMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}

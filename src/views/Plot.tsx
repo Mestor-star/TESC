@@ -46,6 +46,7 @@ import { INTIMATE_BOND, hasIntimate, intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
 import { IntimateHud } from '../components/IntimateHud'
 import { DateLane } from '../components/DateLane'
+import { DateArchive } from '../components/DateArchive'
 import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { relName } from '../data/rel'
@@ -307,11 +308,21 @@ export function Plot() {
    * 事件指令（`dateRequest`，见 terminal/Terminal.tsx）。这一路刚开出来的那一刻
    * 也当场跳过来（下方那只看 `rvVer` 的效果），主人不必自己去发现多了一枚按钮。
    */
-  const [lane, setLane] = useState<'main' | 'date'>('main')
+  const [lane, setLane] = useState<'main' | 'date' | 'past'>('main')
   /** 这一路开着的是哪一场（DateLane 换场时报上来） */
   const [datePick, setDatePick] = useState<string | null>(null)
   const rvVer = useSyncExternalStore(subscribeRendezvous, rendezvousVersion)
   const liveRvs = useMemo(() => listRendezvous().filter((r) => !r.done), [rvVer])
+  /**
+   * 已经散场的那几场。
+   *
+   * 它们**不是**车道上的东西（`liveRvs` 一归零，那一枚就收走），但账还在 ——
+   * `endScene` 只立 `done`，线程一直躺在会话账里。不给一个读法的话，
+   * 主人自己写下的那场对话就只剩导演记得（正文注入读它，人却翻不到）。
+   * 所以另开一格「约会记录」（`components/DateArchive.tsx`，只读）：
+   * 有散场的一场才长这一枚，与「有没有在走的一场」互不相干。
+   */
+  const pastRvs = useMemo(() => listRendezvous().filter((r) => r.done), [rvVer])
   /* 挂载时就开着的那几场不算「刚开出来的」—— 主人自己重进终端时不该被拽走 */
   const seenRvs = useRef<Set<string>>(new Set(listRendezvous().filter((r) => !r.done).map((r) => r.id)))
   useEffect(() => {
@@ -326,7 +337,8 @@ export function Plot() {
      `liveRvs.length` 一归零，它自己就收走了。） */
   useEffect(() => {
     if (lane === 'date' && !liveRvs.length) setLane('main')
-  }, [lane, liveRvs])
+    if (lane === 'past' && !pastRvs.length) setLane('main')
+  }, [lane, liveRvs, pastRvs])
   const dateReqHandled = useRef(0)
   useEffect(() => {
     if (!dateRequest) return
@@ -1676,11 +1688,14 @@ export function Plot() {
               视觉上的「选中」本来就是拿 class 画的（css.isOn），屏幕阅读器读不到；
               `data-plot-mode` 则是给冒烟用的**稳定把手**：离线那一档的用例得先按到这一枚，
               否则它会去量一个当前根本没渲染的离线正文块（见 smoke 的 Phase U）。 */}
-          {/* 主线 / 约会专线。**这一枚平时不出现** —— 名册上没有未散场的一场时，
-              约会那一路无从走起，摆一枚点不动的按钮只会招人问「怎么开不了」。
-              它不是「藏起来」，是**真没有**：散场那一下名册清空，这一枚当场收走，
-              主人在那一路上也会被送回主线（见上面那一只效果）。 */}
-          {liveRvs.length > 0 ? (
+          {/* 主线 / 约会专线 / 约会记录。
+              「约会专线」**平时不出现** —— 名册上没有未散场的一场时，那一路无从走起，
+              摆一枚点不动的按钮只会招人问「怎么开不了」。它不是「藏起来」，是**真没有**：
+              散场那一下名册清空，这一枚当场收走，主人在那一路上也会被送回主线
+              （见上面那一只效果）。
+              「约会记录」反过来：**只在有散场的一场时才长** —— 它是旧账本，
+              没有散过场就没有可读的（写下的那一场，见 components/DateArchive.tsx）。 */}
+          {liveRvs.length > 0 || pastRvs.length > 0 ? (
             <div className={css.seg} role="tablist" aria-label="走哪一路">
               <button
                 role="tab"
@@ -1691,16 +1706,30 @@ export function Plot() {
               >
                 主线
               </button>
-              <button
-                role="tab"
-                aria-selected={lane === 'date'}
-                data-plot-lane="date"
-                className={`${css.segBtn} ${lane === 'date' ? css.isOn : ''}`}
-                onClick={() => setLane('date')}
-                title="约会专线：另开的一路，账目与正文各记各的"
-              >
-                约会专线{liveRvs.length ? ` · ${liveRvs.length}` : ''}
-              </button>
+              {liveRvs.length > 0 ? (
+                <button
+                  role="tab"
+                  aria-selected={lane === 'date'}
+                  data-plot-lane="date"
+                  className={`${css.segBtn} ${lane === 'date' ? css.isOn : ''}`}
+                  onClick={() => setLane('date')}
+                  title="约会专线：另开的一路，账目与正文各记各的"
+                >
+                  约会专线 · {liveRvs.length}
+                </button>
+              ) : null}
+              {pastRvs.length > 0 ? (
+                <button
+                  role="tab"
+                  aria-selected={lane === 'past'}
+                  data-plot-lane="past"
+                  className={`${css.segBtn} ${lane === 'past' ? css.isOn : ''}`}
+                  onClick={() => setLane('past')}
+                  title="约会记录：已经散场的那几场，只读"
+                >
+                  约会记录 · {pastRvs.length}
+                </button>
+              ) : null}
             </div>
           ) : null}
           {/* 推进方式只在主线那一路摆：约会专线没有「离线通读」可走 */}
@@ -1808,6 +1837,10 @@ export function Plot() {
              `data-session-area` 不挂在这儿 —— 冒烟与主线各处认的是**主线那一块**，
              这一路单给一个把手（`data-date-lane-area`），两边不打架。 */
           <DateLane rvId={datePick} onPick={setDatePick} />
+        ) : lane === 'past' ? (
+          /* 约会记录：散场之后翻旧账的地方，只读（见 components/DateArchive.tsx）。
+             右栏那两块在这儿没有位置 —— 它自己横跨 `.layout` 整两格。 */
+          <DateArchive rvs={pastRvs} />
         ) : (
         <section className="panel" data-session-area="1">
           <div className="panel__head">
@@ -2118,7 +2151,8 @@ export function Plot() {
         </section>
         )}
 
-        {lane === 'date' ? null : (
+        {/* 右栏只在主线那一路挂：约会专线自己出右栏，约会记录横跨整两格 */}
+        {lane === 'main' ? (
         <aside className={css.aside}>
           {eventCard}
           {/* 色情状态栏：在场且关系走到那一步的人，此刻的情欲值 / 最近一回 /
@@ -2131,7 +2165,7 @@ export function Plot() {
             <IntimateHud ids={hudIds} hint="此刻 · 主线在场 · 随推进实时变化" />
           ) : null}
         </aside>
-        )}
+        ) : null}
       </div>
 
       {/* 剧情交战：指令输出 battle 时按现场的角色与敌人开打；打完回到正文 */}

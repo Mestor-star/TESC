@@ -2501,13 +2501,15 @@ export function lootOddsOf(stage: number): number {
  * ------------------------------------------------------------
  * 点数主要来自剧情任务：正史复盘按阶段加倍、另加一笔固定份量；
  * 巡逻任务只是维持观测，给得少 —— 想攒装备，就得往正史里走。
+ * 点数最后统一乘一笔 TUNING.coinWinBonus —— **每场都算**，与掉不掉装具无关；
+ * 装具那一支是底下那句单独掷的（lootOddsOf），两支互不牵扯。
  */
 export function rewardOf(s: BattleState): { coin: number; loot: boolean } {
   const base = s.stage * TUNING.coinPerStage
   const raw = s.mainline
     ? base * TUNING.coinMainlineMul + TUNING.coinMainlineBase
     : base * TUNING.coinPatrolMul
-  const coin = Math.max(1, Math.round(raw * (1 + TUNING.coinDropBonus)))
+  const coin = Math.max(1, Math.round(raw * (1 + TUNING.coinWinBonus)))
   return { coin, loot: Math.random() < lootOddsOf(s.stage) }
 }
 

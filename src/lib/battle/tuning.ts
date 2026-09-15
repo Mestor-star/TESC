@@ -162,7 +162,10 @@ export const TUNING = {
   coinMainlineMul: 2,      // 剧情任务（正史复盘）按基数加倍
   coinMainlineBase: 750,   // 剧情任务另加的固定份量 —— 一份正史换一笔点数（60 × 12.5）
   coinPatrolMul: 0.35,     // 巡逻任务只是维持观测，给得少
-  coinDropBonus: 0.5,      // 掉落装具时附带的点数比例
+  /* 胜利点数加成 —— **每场都算**，与掉不掉装具无关（装具是 lootBase 那一支单独掷的）。
+     从前这行写的是「掉落装具时附带的点数比例」，名也起成 coinDropBonus：
+     名与注释都在说一件代码没做的事。2026-09-15 正名 —— 手感一个数没动。 */
+  coinWinBonus: 0.5,
   lootBase: 0.28,        // 战后搜刮到装具的基础概率
   lootPerStage: 0.045,   // 阶段每高一级的追加概率
   lootCap: 0.85,         // 再高也不会必出

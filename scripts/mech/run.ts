@@ -83,6 +83,9 @@
    · 节拍
      37  主动来信     —— 每 20 分钟滚一格、每格 45% 的骰；中没中都用掉（不补掷），
                         首次进游戏只对钟 —— 所以是「每格 45%」不是「每格至少一条」
+   · 旧账
+     38  约会记录     —— 散场那一下只立 done、不删账；于是**得有一扇门**翻得回去
+                        （只读）—— 顺带钉死「散场留账」与「作罢真删」的差别
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -147,7 +150,8 @@ import { cgIdOf } from '../../src/lib/cg'
 import { HIT_CHANCE, ROLL_EVERY_MS, rollStep } from '../../src/lib/smsauto'
 import type { AutoState } from '../../src/lib/smsauto'
 import {
-  DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBondRule, dateCgPalette, rendezvousPrompt,
+  DATE_CG, DATE_CG_INTIMATE, PARTY_MAX, dateBondRule, dateCgPalette, listRendezvous,
+  patchRendezvous, rendezvousPrompt,
 } from '../../src/lib/rendezvous'
 import type { Rendezvous, RendezvousParty } from '../../src/lib/rendezvous'
 import { BEDS } from '../../src/lib/audio/music'
@@ -1978,6 +1982,26 @@ export function run(): MechReport {
       LEVEL_BASE_COST < pay1 && topGear <= pay10 * 2,
       `第一档 ${LEVEL_BASE_COST} ＜ 早期主线一场 ${pay1}；`
       + `最贵一件 ${topGear} ≤ stage-10 主线一场 ${pay10} ×2`)
+
+    /* (c3) 胜利点数那一笔加成与装具**无关** —— 2026-09-15 正名，一个数没动。
+       从前它是 `coinDropBonus`，注释写着「掉落装具时附带的点数比例」：
+       名与注释都在说一件代码没做的事（`rewardOf` 是胜利就乘，loot 另掷一支）。
+       这里两条腿一起钉：名字对得上，且点数真的不吃那一掷 —— 单靠源码账，
+       将来把 `Math.random()` 接进 coin 那一行是看不出来的。 */
+    const loreCard = { stage: 6, mainline: false } as unknown as Parameters<typeof rewardOf>[0]
+    const coins = new Set(Array.from({ length: 40 }, () => rewardOf(loreCard).coin))
+    const loots = new Set(Array.from({ length: 40 }, () => rewardOf(loreCard).loot))
+    ok('胜利点数不吃掷骰：同一场连算 40 回，点数一个数不变（装具那支另掷）',
+      coins.size === 1 && loots.size === 2,
+      `点数 ${[...coins].join('/')}　装具掷出过 ${loots.size} 种`)
+    /* 只查**代码**（注释剥掉）：那条注释得留一句「从前叫 coinDropBonus」，
+       否则下一个人只会看到两个名字对不上的痕迹。 */
+    const tuneSrc = readFileSync('src/lib/battle/tuning.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    ok('那笔加成已正名：`coinWinBonus` 在、`coinDropBonus` 一个都不剩（注释里的旧名不算）',
+      /coinWinBonus\s*:/.test(tuneSrc) && !/coinDropBonus/.test(tuneSrc)
+      && TUNING.coinWinBonus === 0.5 && !/掉落装具时附带/.test(tuneSrc),
+      `coinWinBonus=${TUNING.coinWinBonus}`)
 
     // (d) 反向断言：比率与控制类**必须**还夹着，放宽不等于把机制做崩
     ok('闪避仍然封顶（过 1 就是打不中，那不叫放宽）',
@@ -6873,6 +6897,109 @@ export function run(): MechReport {
     }
   } catch (e) {
     fail.push('约会专线会话账段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ============================================================
+     §38 约会记录：散场之后翻旧账的那一扇门
+     ------------------------------------------------------------
+     主人 2026-09-15 点的那一条：「散场之后，那一场的对话记录从界面上进不去」。
+
+     查下来账**从来没丢过** —— `endScene` 只把名册上的 `done` 立起来，那条线程
+     一直躺在同一本会话账里（`lib/sms.ts` 的 `zts-tavern:v1`；`lib/crosslink.ts`
+     往正文注背景时读的就是它），散场那一刻的提示也写着「线程留着当记录」。
+     丢的是**入口**：`data-plot-lane="date"` 按「有没有未散场的一场」长
+     （Plot 的 `liveRvs`），散场那一下连按钮带人一起收走 ——
+     于是主人自己写下的那场对话，只有导演还记得。
+
+     补的就是那一格「约会记录」（`components/DateArchive.tsx`，只读）。
+     这一段把两头钉住：
+       ① **账确实还在**（行为：拿真 store 走一遍散场）；
+       ② **那一扇门确实开了、且是只读的**（源码账 + 对照 —— 只读这一条最怕
+          将来有人顺手在里面加个输入框：加进去就等于把一段已经收场的戏续上）。
+     ③ 顺带把「散场」与「作罢」两条路的差别钉死：一个留账、一个真删。
+     ============================================================ */
+  try {
+    const g = globalThis as { localStorage?: unknown }
+    const hadLS = 'localStorage' in g
+    const prevLS = g.localStorage
+    const mem = new Map<string, string>()
+    g.localStorage = {
+      getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+      setItem: (k: string, v: string) => { mem.set(k, String(v)) },
+      removeItem: (k: string) => { mem.delete(k) },
+      clear: () => { mem.clear() },
+    }
+    try {
+      const rid = 'd:mech-arc-1'
+      mem.set('zts-rendezvous:v1', JSON.stringify([
+        { id: rid, charId: 'luna', kind: 'date', title: '放学后的天台', place: '天台', time: '放学后', from: 'them', ts: 5, done: false },
+      ]))
+      appendSmsMsgs(rid, (prev) => [...prev,
+        { id: 'arc::1', from: 'them', text: '露娜：……你迟到了。', time: '16:00' },
+        { id: 'arc::2', from: 'user', text: '路上被梅芙拦住了。', time: '16:01' },
+      ])
+      /* 散场 —— 与 DateLane 的 endScene 同一句 */
+      patchRendezvous(rid, { done: true })
+      const all = listRendezvous()
+      const kept = loadSmsLogs()[rid] ?? []
+      ok('约会记录的前提：散场只立 done —— 名册上不再挂，账一条不删',
+        all.length === 1 && all[0]!.done === true && kept.length === 2,
+        `名册 ${all.length} 条（done=${all[0]?.done}）· 账上还剩 ${kept.length} 条`)
+      ok('约会记录：挑得出来、而且最近散场的那一场排在最前（翻开来先看到的是最后一场）',
+        all.filter((r) => r.done).length === 1 && all.filter((r) => !r.done).length === 0
+        && all[0]!.id === rid,
+        `已散场 ${all.filter((r) => r.done).length} 场 · 未散场 ${all.filter((r) => !r.done).length} 场`)
+
+      /* 对照：另一条路（作罢）是真的删 —— 两条路不是一回事，
+         把散场写成作罢 = 主人一场戏的记录当场没了。 */
+      const laneSrc = readFileSync('src/components/DateLane.tsx', 'utf8')
+      ok('约会记录（对照）：作罢那条路才真删 —— 元数据与那本账一起清',
+        /const clearScene[\s\S]{0,300}?dropRendezvous\([\s\S]{0,300}?delete next\[rv\.id\]/.test(laneSrc)
+        && /const endScene = useCallback[\s\S]{0,300}?patchRendezvous\(rv\.id, \{ done: true \}\)/.test(laneSrc),
+        '散场 = patchRendezvous(done)　作罢 = dropRendezvous + 删账')
+
+      /* 入口：那一格真的挂在 Plot 上，且与「有没有在走的一场」互不相干 */
+      const plotSrc = readFileSync('src/views/Plot.tsx', 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+      const pastDef = /const pastRvs = useMemo\(\(\) => listRendezvous\(\)\.filter\(\(r\) => r\.done\)/.test(plotSrc)
+      const pastTab = /data-plot-lane="past"/.test(plotSrc)
+      const pastArea = /lane === 'past' \?[\s\S]{0,200}?<DateArchive rvs=\{pastRvs\}/.test(plotSrc)
+      ok('约会记录：那一格长在段头，接的是**已散场**的那一份（与「有没有在走的一场」互不相干）',
+        pastDef && pastTab && pastArea,
+        `pastRvs=${pastDef}　data-plot-lane="past"=${pastTab}　挂 DateArchive=${pastArea}`)
+      const liveOnly = /liveRvs\.length > 0 \? \(\s*<button[\s\S]{0,400}?data-plot-lane="date"/.test(plotSrc)
+      ok('约会记录（不倒退）：散场那一下「约会专线」收走的老规矩一个字没动',
+        liveOnly, '「约会专线」那一枚仍只在 liveRvs 非空时长')
+      ok('约会记录：那一格只读 —— 右栏（事件卡 / 色情状态栏）只在主线那一路挂',
+        /\{lane === 'main' \? \(\s*<aside className=\{css\.aside\}>/.test(plotSrc),
+        'aside 的门从 `lane === \'date\' ? null` 收窄成 `lane === \'main\' ? …`')
+
+      /* 只读契约（源码账）：不许写账、不许生成、不许有输入框。
+         同一套判据在 DateLane 上必须**认得出**写账 —— 不然这条绿是假的。 */
+      const arcSrc = readFileSync('src/components/DateArchive.tsx', 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+      const writes = ['appendSmsMsgs(', 'writeSmsLogs(', 'patchRendezvous(', 'dropRendezvous(']
+        .filter((s) => arcSrc.includes(s))
+      const generates = ['chatCompletion', '<Composer', 'loadProfile('].filter((s) => arcSrc.includes(s))
+      ok('约会记录：只读是真的只读 —— 不写账、不生成、没有输入框',
+        writes.length === 0 && generates.length === 0,
+        writes.length || generates.length ? `混进来的：${[...writes, ...generates].join('、')}` : '四条写账与三条生成逐条查过')
+      ok('约会记录（对照）：同一条判据在车道上认得出「写账 + 生成」',
+        laneSrc.includes('appendSmsMsgs(') && laneSrc.includes('chatCompletion'),
+        'DateLane 里两样都在 —— 上一条的绿不是判据失灵')
+      ok('约会记录：读法与车道同一套壳（旁白块 + 台词框就借 PlotFlow 那一份）',
+        arcSrc.includes('NarrBlock') && arcSrc.includes('YouFrame')
+        && arcSrc.includes("from '../views/Plot.module.css'"),
+        'NarrBlock / YouFrame / Plot.module.css 三样都在')
+
+      info.push('约会记录：散场立 done 留账 · 段头那一格接的是已散场的那一份（只读，'
+        + '不写账不生成）· 作罢那条路仍是真的删')
+    } finally {
+      if (hadLS) g.localStorage = prevLS
+      else delete g.localStorage
+    }
+  } catch (e) {
+    fail.push('约会记录段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }
