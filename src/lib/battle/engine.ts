@@ -14,7 +14,7 @@
 import { LION_PAIR_ID, RIVAL_LINK, applySynergies, bondFloorOf, bondsOf } from './synergy'
 import type { Bond } from './synergy'
 import { lineFor, poolFor } from './banter'
-import { TUNING } from './tuning'
+import { AXIS_SCALE, TUNING } from './tuning'
 import {
   RIVAL_TAG, combatantOf, enemiesOf, minionOf, nextBossOf, rivalArchiveIdOf, rivalOf, speedOf,
 } from './derive'
@@ -434,7 +434,8 @@ function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec):
     // 弹痕 / 斩击：打反现实实体是本职，打纯物理目标反而不占优
     mult *= anti ? TUNING.scarVsAnti : TUNING.scarVsMundane
   } else {
-    mult *= 1 + (atk.axes[AFFINITY] / 200) * TUNING.affinityWeight * (anti ? 1 : 0.3)
+    // 分母同乘面板尺：亲和加成是**机制**，不是面板 —— 轴放大后这一项不能跟着变大
+    mult *= 1 + (atk.axes[AFFINITY] / (200 * AXIS_SCALE)) * TUNING.affinityWeight * (anti ? 1 : 0.3)
   }
   if (atk.side === 'ally' && s.overdrive) mult *= TUNING.overdrivePenalty
   let dmg = raw * mult * rollJitter() - def.axes.物理抗性 * TUNING.resistCut
@@ -877,7 +878,8 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
         crit: critMul > 0, critMul: critMul > 0 ? critMul : undefined,
       }
     }
-    if (def.side === 'ally' && TUNING.downWillSave && def.axes.意志力 >= 60 && !def.note?.includes('不倒')) {
+    // 门槛按面板尺走（60 是评定尺上「意志力极强」那一条，轴放大了它也得放大）
+    if (def.side === 'ally' && TUNING.downWillSave && def.axes.意志力 >= 60 * AXIS_SCALE && !def.note?.includes('不倒')) {
       // 意志力极强者：一次「不倒」——留一口气，记在 note 上，只保一次
       def.hp = 1
       def.note = `${def.note ?? ''}｜不倒`.trim()
@@ -1162,7 +1164,12 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     if (f.axes) {
       const k = 1 + Math.max(0, s.growth[atk.id] ?? 0) / 100
       const grown: Partial<AxisSheet> = {}
-      for (const [a, v] of Object.entries(f.axes)) grown[a as AxisKey] = Math.round((v as number) * k)
+      // `f.axes` 与其余数据表同一个写法：**评定尺**的绝对值。
+      // 而 `atk.axes` 此刻是面板尺 —— 所以除了成长的那一份 k，还要乘面板尺，
+      // 否则一变身，五轴就掉回四分之一。
+      for (const [a, v] of Object.entries(f.axes)) {
+        grown[a as AxisKey] = Math.round((v as number) * k * AXIS_SCALE)
+      }
       atk.axes = { ...atk.axes, ...grown }
     }
     atk.spd = speedOf(atk.axes)
@@ -1636,7 +1643,8 @@ export function act(s: BattleState, cmd: Command): BattleState {
        它在**本人下次出手时自动撤**（见 beginAction），所以姿态只覆盖这一轮。 */
     me.stance = true
     me.stanceBroken = false
-    const rec = Math.round(TUNING.guardRecover + me.axes.意志力 * TUNING.guardRecoverPerWill)
+    // 防御回的节拍是**机制**：意志力那一项按面板尺除回去
+    const rec = Math.round(TUNING.guardRecover + (me.axes.意志力 / AXIS_SCALE) * TUNING.guardRecoverPerWill)
     const got = Math.min(me.tempoMax, me.tempo + rec) - me.tempo
     me.tempo += got
     // 槽满了却一直在防御 —— 把话说在日志里。

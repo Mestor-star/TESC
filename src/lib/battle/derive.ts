@@ -18,12 +18,12 @@ import { opBuiltinOf, opPeriodAtProgress } from '../operator-arc'
 import type { OpAbility, OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
-import { POWER_SCALE, ROSTER } from './roster'
+import { ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
 import { critMulOf, critOf } from './duty'
 import { GEAR_OF, gearSkillOf } from './gear'
-import { START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
+import { AXIS_SCALE, START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
 import { rFactor, rOfPlace } from './rvalue'
 import type { AxisKey, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target } from './types'
 
@@ -61,9 +61,14 @@ export function squadIdsFrom(names: string[]): string[] {
   return out
 }
 
-/** 本人的**节拍上限**：意志力越高越耐打（防御时按同一根轴回复，回得不多） */
+/**
+ * 本人的**节拍上限**：意志力越高越耐打（防御时按同一根轴回复，回得不多）。
+ *
+ * ⚠️ 传进来的是**面板尺**的意志力，而「这一场能出几手」是**机制**不是面板 ——
+ * 所以这里按 AXIS_SCALE 除回去。不除的话，面板尺一放大，全员出手数就翻倍。
+ */
 export function chTempoMax(will: number): number {
-  return Math.round(TUNING.chTempoBase + will * TUNING.chTempoPerWill)
+  return Math.round(TUNING.chTempoBase + (will / AXIS_SCALE) * TUNING.chTempoPerWill)
 }
 
 /**
@@ -99,8 +104,20 @@ const CURVE: Record<string, [number, number]> = {
 }
 const DEFAULT_CURVE: [number, number] = [0.8, 1]
 
-/** 某人此刻的五轴（常态评定 × 时期系数 × 任务成长；不含装具） */
-export function axisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
+/**
+ * 面板尺：整张轴表乘上去。**造人出口只此两处**（这里与 `buildFoe`）——
+ * 数据表（chars / SIDE_AXIS / bosses / operator-arc）一律写评定尺，
+ * 放大只在造人的这一步发生（见 tuning 的 AXIS_SCALE 长注释）。
+ */
+function scaleAxes(a: AxisSheet): AxisSheet {
+  const out = {} as AxisSheet
+  for (const k of AXES) out[k] = Math.round(a[k] * AXIS_SCALE)
+  return out
+}
+
+/** 某人此刻的五轴（**评定尺**：常态评定 × 时期系数 × 任务成长；不含装具）。
+    对外用 `axisSheetOf` —— 那一个才是上场的口径。 */
+function rawAxisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
   // 言万心叶：他不走「档案 × 时期系数」那一套——原文里每个时期的面板本身就不一样
   if (id === OPERATOR_ID) {
     const per = opPeriodAtProgress(progress)
@@ -132,7 +149,14 @@ export function axisSheetOf(id: string, progress: number, growthPct = 0): AxisSh
   return out
 }
 
-/** 装具的数值修正（累加到轴上；另有 spd/evade/shield/atk 走别处） */
+/** 某人此刻的五轴（**面板尺**：见 tuning 的 AXIS_SCALE）。造人用这一个。 */
+export function axisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
+  return scaleAxes(rawAxisSheetOf(id, progress, growthPct))
+}
+
+/** 装具的数值修正（累加到轴上；另有 spd/evade/shield/atk 走别处）。
+    装具表写的是**评定尺**的加点，而这里是加在放大后的面板上 ——
+    所以同一把尺乘一次，不然一件装具的份量会被摊薄成四分之一。 */
 function gearAxes(gearId: string | undefined, axes: AxisSheet): AxisSheet {
   if (!gearId) return axes
   const g = GEAR_OF[gearId]
@@ -140,7 +164,7 @@ function gearAxes(gearId: string | undefined, axes: AxisSheet): AxisSheet {
   const out = { ...axes }
   for (const k of AXES) {
     const add = g.mods[k]
-    if (typeof add === 'number') out[k] = out[k] + add
+    if (typeof add === 'number') out[k] = out[k] + add * AXIS_SCALE
   }
   return out
 }
@@ -180,14 +204,14 @@ function fallbackSkills(id: string, armName: string, fx: FxKind): SkillSpec[] {
     {
       id: `${id}-skill`, name: armName ? `${base}解放` : '协同压制', kind: '战技',
       desc: '把观测到的弱点一次打穿。',
-      cost: TUNING.skillCost, power: TUNING.skillPower * POWER_SCALE, axis: '破坏力', fx,
+      cost: TUNING.skillCost, power: TUNING.skillPower, axis: '破坏力', fx,
       line: '「让开——」', target: 'one',
       arch: '强袭',
     },
     {
       id: `${id}-end`, name: armName ? `${base}全开` : '全力协同', kind: '终结技',
       desc: '攒够印记之后的那一手：把这一仗交了结。',
-      cost: 8, power: 2.6 * POWER_SCALE, axis: '破坏力', fx,
+      cost: 8, power: 2.6, axis: '破坏力', fx,
       line: '「——到此为止。」', target: 'one', cd: 4, needsStack: 3,
       arch: '到达点',
     },
@@ -276,9 +300,11 @@ export function skillsOf(id: string, gearId?: string): SkillSpec[] {
 
 /* ---------- 角色 → 战斗单位 ---------- */
 
-/** 行动条充能：由敏捷度导出（每**窗口**能攒多少，见 engine 的 windowGainOf） */
+/** 行动条充能：由敏捷度导出（每**窗口**能攒多少，见 engine 的 windowGainOf）。
+    ⚠️ 出手次数是**机制**：面板尺放大了敏捷度，这里必须除回去，
+    否则 AXIS_SCALE 一开，全场出手数跟着翻四倍。 */
 export function speedOf(axes: AxisSheet): number {
-  return Math.max(TUNING.spdFloor, TUNING.spdBase + axes.敏捷度 * TUNING.spdPerAgi)
+  return Math.max(TUNING.spdFloor, TUNING.spdBase + (axes.敏捷度 / AXIS_SCALE) * TUNING.spdPerAgi)
 }
 
 export function combatantOf(id: string, progress: number, growthPct = 0, gearId?: string): Combatant {
@@ -881,7 +907,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       ? Math.round((TUNING.enemyHpBase + hpStage * TUNING.enemyHpPerStage)
         * rf.mul * TUNING.bossHpMul * named.hpMul)
       : Math.round((TUNING.enemyHpBase + stage * TUNING.enemyHpPerStage) * rf.mul * hpMul * pf)
-    const axes: AxisSheet = named
+    const rawAxes: AxisSheet = named
       // 五轴照档案：与档案页读的是同一组数（roster 的 SIDE_AXIS 口径）
       ? {
         破坏力: named.axes?.[0] ?? SIDE_AXIS[named.id]?.[0] ?? 0,
@@ -894,6 +920,10 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       // 从前这一段是就地算的，反现实亲和还写死了一个 4 —— 于是「五轴可调」
       // 只在四条上成立，且图鉴实体另算一份就必然与这里对不上。
       : enemyAxesAt(stage, { atkMul, willMul, progressMul: pf, rMul: rf.mul })
+    // 面板尺：与 axisSheetOf 同一个出口口径 —— **敌我同乘**（见 tuning 的 AXIS_SCALE）。
+    // 放在这里、而不是放在 enemyAxesAt 里，是为了让 endfoes / bosses 的字面轴表
+    // 与 SIDE_AXIS 保持同一把尺：全部写评定尺，放大只发生在造人这一步。
+    const axes = scaleAxes(rawAxes)
     const tag = tier === 'boss' ? '首领' : tier === 'elite' ? '精英' : ''
     const ename = named
       ? named.name

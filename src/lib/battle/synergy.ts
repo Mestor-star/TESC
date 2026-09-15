@@ -17,7 +17,7 @@
 
 import { OPERATOR_ID } from '../../data/castmeta'
 import { ROSTER_GROUPS } from '../../data/roster'
-import { TUNING } from './tuning'
+import { AXIS_SCALE, TUNING } from './tuning'
 import type { AxisKey, AxisSheet, Combatant, FxKind } from './types'
 
 /**
@@ -573,7 +573,8 @@ export function applySynergies(
       c.gearAtk += atk
       c.gearSpd += spd
       c.evade += evade
-      for (const [k, v] of Object.entries(axes)) c.axes[k as AxisKey] += v as number
+      // 连携的轴加成写的是**评定尺**，加在放大后的面板上 —— 同一把尺乘一次
+      for (const [k, v] of Object.entries(axes)) c.axes[k as AxisKey] += (v as number) * AXIS_SCALE
       c.synergy = names
     }
   }

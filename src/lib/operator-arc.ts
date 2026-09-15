@@ -15,8 +15,7 @@ import type {
   AxisKey, AxisSheet, DutyId, FxKind, PassiveSpec, SkillEffect, SkillKind, Target,
 } from './battle/types'
 import { OPERATOR_ID } from '../data/castmeta'
-/** 与名册同一口径：power 以「对应轴的百分之多少」计（见 roster.ts 的 POWER_SCALE） */
-import { POWER_SCALE } from './battle/roster'
+/** 与名册同一口径：power 以「对应轴的百分之多少」计（带里的数就是最终倍率，见 atlas.ts 的 band） */
 
 /** 变身后的那副面目：名字／五轴／整份技能表（技能表按 OpAbility 写，转面板在 derive） */
 export interface OpForm {
@@ -119,7 +118,7 @@ const ab = (
   name: string, kind: SkillKind, desc: string, pow: number, axis: AxisKey, fx: FxKind,
   o: Omit<OpAbility, 'name' | 'kind' | 'desc' | 'pow' | 'axis' | 'fx'> = {},
 ) : OpAbility => ({
-  name, kind, desc, pow: pow * POWER_SCALE, axis, fx,
+  name, kind, desc, pow, axis, fx,
   target: o.gate ? 'self' : 'one', ...o,
 })
 
@@ -253,7 +252,11 @@ export const OP_PERIODS: OpPeriod[] = [
     duty: '主音',
     note: '夜梦之后枕边多了一把手枪。它能让他变成任何人——曾被指为「会化作怪物的能力」。'
       + '使用期间，他本人的意志不会反映出来；而借来的东西总要还，还得缓一缓。',
-    axes: A(44, 58, 41, 105, 119),
+    /* 意志力 / 反现实亲和这两栏收过一次（2026-09-15）：
+       原先写 105 / 119，落在名册之上——意志力 129 对名册最高的 75（1.7 倍），
+       而意志力一头管生命、一头管这一场能出几手。于是后半场队友先倒、他活着收尾，
+       伤害份额被自己一个人吃掉。现在这两栏只比名册最高那一档高一点点。 */
+    axes: A(44, 58, 41, 98, 84),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'noapusa',
     armSub: 'NOAPUSA · 弹痕 · 化身之枪',
@@ -299,7 +302,10 @@ export const OP_PERIODS: OpPeriod[] = [
     duty: '主音',
     note: '篝火之国坠落后那一夜，他梦见满身伤痕的「斩击的天使」；醒来枕边多了一枚极其简朴的白金戒指。'
       + '「变成他人」已经随 noapusa 一起碎掉了——现在他要做的是合而为一，不是变成别人。',
-    axes: A(82, 78, 75, 143, 163),
+    /* 同上一段：原先 143 / 163 —— 落到面板上是反现实亲和 151、意志力 173，
+       对名册最高的 100 / 77，是 1.5 倍与 2.25 倍。收到这一档之后，
+       他仍旧是全场意志力最高的那一个，但不再是「一个人打一支队」。 */
+    axes: A(82, 78, 75, 108, 88),
     builtin: 'luna-thread', builtinFrom: VOL1_END,
     arm: 'a Session.',
     armSub: 'A SESSION. · 斩击之戒',

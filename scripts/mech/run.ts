@@ -105,7 +105,7 @@ import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
 import { TIMELINE } from '../../src/data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
-import { EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
+import { AXIS_SCALE, EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf } from '../../src/lib/battle/from-directive'
@@ -2826,11 +2826,15 @@ export function run(): MechReport {
        不然「实体只是把观测体换了个名字」这句话就成立了。 */
     const codex6 = at(6, 'organ-apt')
     const generic6 = at(6)
+    /* 曲线本身写的是**评定尺**；上了场的那两位读的是**面板尺**
+       （造人出口整体乘过 AXIS_SCALE，见 tuning）。两边仍是同一条曲线 ——
+       比的时候把尺对上就行。不乘的话，这条会拿着 46 去比 184。 */
+    const curveOf6 = enemyAxesAt(6, { atkMul: TUNING.bossAtkMul }).破坏力 * AXIS_SCALE
     ok('五轴同一条曲线：同危险度、同档位的图鉴实体与现推首领，破坏力读数一致',
       codex6.axes.破坏力 === generic6.axes.破坏力
-      && codex6.axes.破坏力 === enemyAxesAt(6, { atkMul: TUNING.bossAtkMul }).破坏力,
+      && codex6.axes.破坏力 === curveOf6,
       `图鉴实体 ${codex6.axes.破坏力} / 现推首领 ${generic6.axes.破坏力} / 曲线 `
-      + `${enemyAxesAt(6, { atkMul: TUNING.bossAtkMul }).破坏力}`)
+      + `${curveOf6}`)
     ok('五轴（对照）：套件的偏置确实落在了读数上 —— 它不只是现推首领换了个名字',
       AXES5.some((k) => codex6.axes[k] !== generic6.axes[k]),
       AXES5.map((k) => `${k} ${codex6.axes[k]}/${generic6.axes[k]}`).join('　'))

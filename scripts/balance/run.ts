@@ -5,11 +5,16 @@
    所以这里不接界面、不接接口，直接把作战引擎当纯函数反复调用，
    用一个**中等水平的玩家**（不是最优解，也不是乱点）打满全场。
 
-   玩家策略（policyOf）刻意写得笨一点：
-     · 有启动技就先启动 —— 那是解封，不是浪费回合
+   玩家策略（policyOf）刻意写得笨一点 —— 但要笨得像**一个人**，
+   而不是像「只会按倍率最高的那个键」的机器：
+     · 有解封门就先解封 —— 那是开锁，不是浪费回合
      · 能一击带走血最少的敌体就打它，打不动就挑倍率最高的
-     · 全队掉血过半且手里有群体回血，就先回一口
-     · 什么都出不起就防御（这一条出现的频率本身就是「体力够不够」的读数）
+     · 全队有伤且手里有群体回血，就先回一口
+     · **能给全队挂上的增益 / 护盾，队里没挂着就挂上去**（三期补）
+       —— 少了这一条，会奶会加盾的人整场都在打普攻，
+       而「他打普攻」又会被算成他的伤害份额，读数就骗人
+     · **普攻挑倍率最高的那一手**，不是技能表里排第一的那一手（三期补）
+     · 什么都出不起就防御（这一条出现的频率本身就是「节拍够不够」的读数）
 
    看什么：
      胜率随危险度的走势、平均拍数、平均存活人数、
@@ -17,13 +22,14 @@
    ============================================================ */
 
 import { genBoard } from '../../src/lib/battle/missiongen'
-import { squadIdsFrom } from '../../src/lib/battle/derive'
-import { POWER_SCALE } from '../../src/lib/battle/roster'
+import { combatantOf, squadIdsFrom } from '../../src/lib/battle/derive'
+import { dutyOf } from '../../src/lib/battle/duty'
+import type { DutyId } from '../../src/lib/battle/duty'
 import { TUNING } from '../../src/lib/battle/tuning'
 import {
-  act, affordable, allOf, bossUltOf, createBattle, legalSkills, standingOf,
+  act, affordable, allOf, bossUltOf, buffOf, createBattle, legalSkills, standingOf,
 } from '../../src/lib/battle/engine'
-import type { BattleState, Combatant, SkillSpec } from '../../src/lib/battle/types'
+import type { BuffKey, BattleState, Combatant, SkillEffect, SkillSpec } from '../../src/lib/battle/types'
 import type { Mission } from '../../src/data/types'
 
 const OPERATOR = 'operator'
@@ -51,6 +57,20 @@ function targetFor(k: SkillSpec, s: BattleState): string | undefined {
   return undefined   // all / self / allyAll 不吃目标
 }
 
+/** `effect` 里那几个数字键，落成的是哪个 BuffKey（其余键不是挂身上的东西） */
+const BUFF_KEY: Partial<Record<keyof SkillEffect, BuffKey>> = {
+  atkUp: 'atk', spdUp: 'spd', evade: 'evade', accUp: 'acc', shield: 'shield', crit: 'crit',
+}
+
+/** 这一手要挂的那几样，队里是不是**已经全有了** —— 有就不重复放 */
+function alreadyUp(k: SkillSpec, mates: Combatant[]): boolean {
+  const e = k.effect
+  if (!e) return true
+  const keys = (Object.keys(BUFF_KEY) as Array<keyof SkillEffect>).filter((x) => (e[x] as number | undefined) ?? 0)
+  if (!keys.length) return false
+  return keys.every((x) => mates.every((c) => buffOf(c, BUFF_KEY[x]!) > 0))
+}
+
 function policyOf(s: BattleState, me: Combatant): { t: 'skill'; skillId: string; targetId?: string } | { t: 'guard' } {
   const foes = standingOf(s.enemies)
   const mates = standingOf(s.allies)
@@ -63,16 +83,22 @@ function policyOf(s: BattleState, me: Combatant): { t: 'skill'; skillId: string;
 
   const pick = (k: SkillSpec) => ({ t: 'skill' as const, skillId: k.id, targetId: targetFor(k, s) })
 
-  // 1）解封优先：启动技是第一手该做的事
+  // 1）解封优先：解封门是第一手该做的事
   const start = roster.find((k) => k.gate)
   if (start) return pick(start)
 
-  // 2）全队掉过半血，先回一口
+  // 2）全队有伤，先回一口（一半血才治太晚了 —— 真人会早一点）
   const hurt = mates.reduce((n, c) => n + c.hp, 0) / Math.max(1, mates.reduce((n, c) => n + c.hpMax, 0))
   const heal = roster.find(isHeal)
-  if (heal && hurt < 0.5) return pick(heal)
+  if (heal && hurt < 0.6) return pick(heal)
 
-  // 3）打手：单体挑血最少的（能一击带走最好），群体技看总收益
+  /* 3）能给全队挂上的增益 / 护盾：队里还挂着一份就别重复放。
+     这一条不在「打得重不重」上，而在**让队友活到打完**上 ——
+     少了它，会加盾会加攻的人整场只剩普攻，读数也跟着把他记成「上场等于少一个人」。 */
+  const buff = roster.find((k) => k.target === 'allyAll' && k.power === 0 && k.effect && !alreadyUp(k, mates))
+  if (buff) return pick(buff)
+
+  // 4）打手：单体挑血最少的（能一击带走最好），群体技看总收益
   const dps = roster.filter((k) => k.power > 0)
   if (dps.length) {
     // 群体技按「打中几个」折算，单体按实际倍率
@@ -81,8 +107,9 @@ function policyOf(s: BattleState, me: Combatant): { t: 'skill'; skillId: string;
     return pick(best)
   }
 
-  // 4）普攻兜底；连普攻都出不起（或还在冷却）就防御 —— mine 已经滤过一轮，这里不会空转
-  const basic = mine.find((k) => k.kind === '普攻')
+  // 5）普攻兜底：**挑倍率最高的那一手**（技能表里可能排着不止一手普攻）；
+  //     连普攻都出不起（或还在冷却）就防御 —— mine 已经滤过一轮，这里不会空转
+  const basic = [...mine.filter((k) => k.kind === '普攻')].sort((a, b) => b.power - a.power)[0]
   if (basic) return pick(basic)
   return { t: 'guard' }
 }
@@ -99,6 +126,12 @@ interface Tally {
   survivors: number
   /** 每人打出去的总伤害（含溢出） */
   dealt: Record<string, number>
+  /** 每人回复出去的总量（`heal` 那一栏相加）—— 和音那一职的读数 */
+  healed: Record<string, number>
+  /** 每人架起来的护盾 / 减伤手数（`tone === 'ward'`）—— 护卫那一职的读数之二 */
+  warded: Record<string, number>
+  /** 每人**上过场的场次** —— 份额要按它折算，不然「很少被推荐出场」会被读成「废物」 */
+  appeared: Record<string, number>
   /** 每人的出手次数与技能出手次数 */
   swings: Record<string, number>
   skills: Record<string, number>
@@ -123,8 +156,12 @@ function fight(m: Mission, progress: number, growth: Record<string, number>): Ta
   })
 
   const dealt: Record<string, number> = {}
+  const healed: Record<string, number> = {}
+  const warded: Record<string, number> = {}
+  const appeared: Record<string, number> = {}
   const swings: Record<string, number> = {}
   const skills: Record<string, number> = {}
+  for (const id of squad) appeared[id] = 1
   let guards = 0
   let seen = 0
 
@@ -148,7 +185,10 @@ function fight(m: Mission, progress: number, growth: Record<string, number>): Ta
     // 逐条结算本段新增日志里的伤害
     for (; seen < s.log.length; seen++) {
       const e = s.log[seen]
-      if (e.side === 'ally' && e.dmg) dealt[e.actorId] = (dealt[e.actorId] ?? 0) + e.dmg
+      if (e.side !== 'ally') continue
+      if (e.dmg) dealt[e.actorId] = (dealt[e.actorId] ?? 0) + e.dmg
+      if (e.heal) healed[e.actorId] = (healed[e.actorId] ?? 0) + e.heal
+      if (e.tone === 'ward') warded[e.actorId] = (warded[e.actorId] ?? 0) + 1
     }
   }
 
@@ -160,6 +200,9 @@ function fight(m: Mission, progress: number, growth: Record<string, number>): Ta
     actors: s.allies.length,
     survivors,
     dealt,
+    healed,
+    warded,
+    appeared,
     swings,
     skills,
     guards,
@@ -192,18 +235,56 @@ interface Row {
   title: string
 }
 
+/** 逐人的一行读数 —— 判据按职能分栏读它（见 Band 的注释） */
+export interface ShareRow {
+  id: string
+  /** 伤害份额（只在主音那一栏拿它作判据） */
+  share: number
+  /** 治疗份额 */
+  healShare: number
+  swings: number
+  heal: number
+  /** 架盾手数（`tone === 'ward'`） */
+  ward: number
+  /** 上过场的场次 */
+  appearances: number
+  /** 每场平均出手（按上过场的场次折算，不是按总场次） */
+  swingsPer: number
+  duty: DutyId
+}
+
 export interface BalanceReport {
   rows: Row[]
-  /** 全场伤害份额 */
-  share: Array<{ id: string; share: number; swings: number }>
+  /** 全场逐人读数 */
+  share: ShareRow[]
   /** 只算危险度 ≥ 5 的场次 —— 前几档常常是一手就完，混进来会把份额带偏 */
-  shareHard: Array<{ id: string; share: number; swings: number }>
+  shareHard: ShareRow[]
   totals: { runs: number; win: number; stuck: number; guards: number; thin: number }
   flags: string[]
+  /** 不判伤害的那几职，逐条把理由与自己的读数写出来 —— **不藏** */
+  exempt: string[]
 }
 
 /** 低于这一档的敌人往往活不过一手，份额统计和「一人成军」判据都不该把它算进来 */
 const HARD_STAGE = 5
+
+/**
+ * 逐人的一本账。
+ *
+ * 为什么要摊成这么几栏：**一把尺量不了五个职能**。原来是拿伤害份额一把尺量所有人，
+ * 可设定里调度「自身伤害全队最低」、取材「不直接杀人」—— 拿伤害去量他们，
+ * 量出来的必然是「上场等于少一个人」，那不是他们的毛病，是尺子的毛病。
+ * 所以每人照自己那一职的栏读：主音看 dmg，和音看 heal，护卫看 ward，调度看出手率，
+ * 取材另有台账（见下方判据）。**份额按 `appearances` 折算** —— 一人只在上过场的
+ * 那些场次里分摊，不然「很少被推荐出场」会被读成「上去也没用」。
+ */
+interface Band {
+  dmg: number
+  swings: number
+  heal: number
+  ward: number
+  appearances: number
+}
 
 /** 固定的成长值：复核的是面板本身，不是运气 */
 function growthFor(progress: number): Record<string, number> {
@@ -217,8 +298,8 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
   const progress = opts.progress ?? 0.5
 
   const buckets = new Map<number, Tally[]>()
-  const share = new Map<string, { dmg: number; swings: number }>()
-  const shareHard = new Map<string, { dmg: number; swings: number }>()
+  const share = new Map<string, Band>()
+  const shareHard = new Map<string, Band>()
   let runs0 = 0, win0 = 0, stuck0 = 0, guards0 = 0
 
   for (let i = 0; i < runs; i++) {
@@ -233,13 +314,18 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
       const list = buckets.get(t.stage) ?? []
       list.push(t)
       buckets.set(t.stage, list)
-      const bands: Array<Map<string, { dmg: number; swings: number }>> =
+      const bands: Array<Map<string, Band>> =
         t.stage >= HARD_STAGE ? [share, shareHard] : [share]
       for (const band of bands) {
-        for (const [id, d] of Object.entries(t.dealt)) {
-          const cur = band.get(id) ?? { dmg: 0, swings: 0 }
-          cur.dmg += d
+        // 名册是逐人摊的：没打出伤害的人（和音 / 调度）也得进账本，
+        // 不然他们在伤害份额里根本不出现，「按职能分栏」就没有栏可读。
+        for (const id of Object.keys(t.appeared)) {
+          const cur = band.get(id) ?? { dmg: 0, swings: 0, heal: 0, ward: 0, appearances: 0 }
+          cur.dmg += t.dealt[id] ?? 0
+          cur.heal += t.healed[id] ?? 0
+          cur.ward += t.warded[id] ?? 0
           cur.swings += t.swings[id] ?? 0
+          cur.appearances += t.appeared[id] ?? 0
           band.set(id, cur)
         }
       }
@@ -271,10 +357,25 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
       }
     })
 
-  const sharesOf = (m: Map<string, { dmg: number; swings: number }>) => {
-    const total = [...m.values()].reduce((a, b) => a + b.dmg, 0) || 1
+  const sharesOf = (m: Map<string, Band>): ShareRow[] => {
+    /* 份额按**上过场的场次**折算 —— 一人只在他上过场的那些场次里分摊。
+       不折算的话，每场都在的那一位（主角）总量必然最大，读出来就是「一人成军」：
+       那不是他强，是他出场多。名册是轮换的，总量与强度不是一回事。 */
+    const per = (v: Band, k: 'dmg' | 'heal') => v[k] / Math.max(1, v.appearances)
+    const total = [...m.values()].reduce((a, b) => a + per(b, 'dmg'), 0) || 1
+    const totalHeal = [...m.values()].reduce((a, b) => a + per(b, 'heal'), 0) || 1
     return [...m.entries()]
-      .map(([id, v]) => ({ id, share: v.dmg / total, swings: v.swings }))
+      .map(([id, v]) => ({
+        id,
+        share: per(v, 'dmg') / total,
+        healShare: per(v, 'heal') / totalHeal,
+        swings: v.swings,
+        heal: v.heal,
+        ward: v.ward,
+        appearances: v.appearances,
+        swingsPer: v.swings / Math.max(1, v.appearances),
+        duty: dutyOf(combatantOf(id, progress, 0).duty).id,
+      }))
       .sort((a, b) => b.share - a.share)
   }
   const shares = sharesOf(share)
@@ -300,8 +401,24 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
   if (top && hardSwings >= 120 && top.share > 0.5) {
     flags.push(`伤害集中（危险度 ≥ ${HARD_STAGE}）：${top.id} 独占 ${(top.share * 100).toFixed(0)}%——一人成军`)
   }
+  /* 判据按**职能**分栏读 —— 一把尺量不了五个职能（见 Band 的注释）。
+     主音判伤害份额；和音判治疗；护卫判护盾＋治疗；调度与取材**不判伤害**
+     （设定里就是「自身伤害全队最低」「不直接杀人」），只把他们自己的那一栏读数
+     连同理由写进 report —— **不藏**，免得看起来像漏判。 */
+  const exempt: string[] = []
   for (const x of hard) {
-    if (x.swings >= 40 && x.share < 0.05) flags.push(`伤害偏低：${x.id} 出手 ${x.swings} 次只占 ${(x.share * 100).toFixed(1)}%——上场等于少一个人`)
+    if (x.swings < 40) continue
+    const pctOf = (v: number) => `${(v * 100).toFixed(1)}%`
+    if (x.duty === '主音') {
+      if (x.share < 0.05) flags.push(`伤害偏低（主音）：${x.id} 出手 ${x.swings} 次只占 ${pctOf(x.share)}——上场等于少一个人`)
+    } else if (x.duty === '和音') {
+      if (x.heal <= 0) flags.push(`治疗为零（和音）：${x.id} 出手 ${x.swings} 次一口没回——她那一栏是空的`)
+    } else if (x.duty === '护卫') {
+      if (x.ward + x.heal <= 0) flags.push(`护持为零（护卫）：${x.id} 出手 ${x.swings} 次没架过一次盾、也没回过一口血`)
+    } else {
+      exempt.push(`${x.id}（${x.duty}）每场出手 ${x.swingsPer.toFixed(1)} 次 · 伤害份额 ${pctOf(x.share)}`
+        + ` · 治疗 ${x.heal} · 架盾 ${x.ward} 手 —— ${x.duty === '调度' ? '设定即自身伤害全队最低' : '设定即不直接杀人'}，不判伤害`)
+    }
   }
   const bossRows = rows.filter((r) => r.bossRuns >= 8)
   for (const r of bossRows) {
@@ -314,6 +431,7 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
     shareHard: sharesHard,
     totals: { runs: runs0, win: runs0 ? win0 / runs0 : 0, stuck: stuck0, guards: guards0, thin },
     flags,
+    exempt,
   }
 }
 
@@ -347,6 +465,17 @@ export function report(r: BalanceReport, progress: number): string {
   }
   table(`危险度 ≥ ${HARD_STAGE}`, r.shareHard)
   table('全部场次', r.share)
+  /* 不判伤害的那几职，逐条摆出来 —— 不藏。
+     判据是按职能分栏读的：拿伤害去量和音、调度、取材，量出来的必然是「没用」，
+     那不是他们的毛病，是尺子的毛病。所以这里连理由带读数一起摊开，
+     要检的人自己看得见哪几栏没判、为什么没判。 */
+  if (r.exempt.length) {
+    out.push('  按职能分栏 · 不判伤害的那几职（不藏）')
+    out.push('  ────────────────────────────────────────────────')
+    for (const e of r.exempt.slice(0, 16)) out.push('  · ' + e)
+    if (r.exempt.length > 16) out.push(`  · （另有 ${r.exempt.length - 16} 条同款，略）`)
+    out.push('')
+  }
   if (r.flags.length) {
     out.push('  ⚠ 越界项')
     for (const f of r.flags) out.push('    · ' + f)
@@ -356,5 +485,3 @@ export function report(r: BalanceReport, progress: number): string {
   out.push('')
   return out.join('\n')
 }
-
-export { POWER_SCALE }
