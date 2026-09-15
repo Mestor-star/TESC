@@ -88,6 +88,9 @@
    · 旧账
      38  约会记录     —— 散场那一下只立 done、不删账；于是**得有一扇门**翻得回去
                         （只读）—— 顺带钉死「散场留账」与「作罢真删」的差别
+   · 拉不到分块的时候
+     39  分块自动重取 —— 原地重取一次 → 不行再带 `?v=` 整页重来 → 再不行才摊兜底；
+                        额度记在**块名**上（防打转的关键：别的块成功不许销它的账）
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -150,6 +153,8 @@ import {
 import { groupSystemPrompt, systemPrompt } from '../../src/lib/sms'
 import { clearRunStorage } from '../../src/lib/slots'
 import { cgIdOf } from '../../src/lib/cg'
+import { CHUNK_ERR, RETRY_KEY, chunkError, clearRetry, freshUrl, isChunkError, takeRetryOnce } from '../../src/lib/chunkretry'
+import type { RetryStore } from '../../src/lib/chunkretry'
 import { HIT_CHANCE, ROLL_EVERY_MS, SAME_CHAR_MS, canSendNow, rollStep } from '../../src/lib/smsauto'
 import type { AutoState, SendGate } from '../../src/lib/smsauto'
 import {
@@ -7313,6 +7318,125 @@ export function run(): MechReport {
     }
   } catch (e) {
     fail.push('约会记录段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ------------------------------------------------------------
+     §39 分块拉不下来时的自救（lib/chunkretry.ts ＋ App.tsx 的 `loadView`）
+     ------------------------------------------------------------
+     主人 2026-09-15 在线上撞见的那一屏：「界面中止 · RENDER HALTED
+     Error: Unable to preload CSS for …/Saga-<hash>.css」。查下来**不是代码的错** ——
+     分块的一次请求失手（或页面缓存着上一版的入口，那名分块已经不在服务器上了），
+     而视图这一层**没有任何恢复路径**；既有的「重挂界面」也救不了：
+     `React.lazy` 把失败的那次 import 连同结果一起记着，重挂只是把同一个失败再抛一遍。
+
+     主人点的自救法是**失败自动重取一次**。走法是两步：原地再把那一块拉一次
+     （多半是网络抖了一下，成了主人根本看不出发生过什么）；还不行就带
+     `?v=<时间戳>` 整页换地址重来（缓存错版只有这一条路解得开）；两趟都走过
+     仍失败，才把错摊到兜底那一屏上 —— 而那一屏要**说得准**
+     （拉不到的是代码、不是进度），给的路也要**按得动**（重新载入，不是重挂）。
+
+     这一段把两样钉住：
+       ① 额度那几个函数的行为（内存桩，逐个走一遍）—— 防打转是它的全部意义，
+          而防打转的**要点是「账记在块上」**：第一版记在「这一趟」上，实测当场
+          撞出那个圈（开屏那张 Dashboard 一拉成功就把账抹了 → 同一块一路重载下去，
+          「点一次、重载一次」，永远见不到兜底）。那一条现在有定点断言守着了；
+       ② 接线真的接上了（源码账）：顺序不对、或哪天有人把 `view()` 写回一行，
+          这一整套就静悄悄地没了，而界面上看不出差别，直到下回真撞上。
+     ============================================================ */
+  try {
+    /* —— ① 额度：一趟只给一次，成了还回去 —— */
+    const mem = new Map<string, string>()
+    const store: RetryStore = {
+      get: (k) => (mem.has(k) ? mem.get(k)! : null),
+      set: (k, v) => { mem.set(k, v) },
+      del: (k) => { mem.delete(k) },
+    }
+    const first = takeRetryOnce(store, 'Saga')
+    const second = takeRetryOnce(store, 'Saga')
+    ok('分块重取：同一块只给一次额度 —— 第二次问就是「不行」（这就是防打转的那一道闸）',
+      first === true && second === false,
+      `第一次 ${first} · 第二次 ${second}`)
+    ok('分块重取：记账落在 zts- 前缀的键上，值写的是**块名**',
+      mem.has(RETRY_KEY) && RETRY_KEY.startsWith('zts-') && mem.get(RETRY_KEY) === 'Saga',
+      `${RETRY_KEY} = ${mem.get(RETRY_KEY) ?? '(没记上)'}`)
+
+    /* 这一条是**实测里真撞出来的那个圈**钉在这儿：原先账只记「这一趟用过没有」，
+       于是开屏那张 Dashboard 一拉成功就把账抹了，Saga 于是一路重载下去 ——
+       「点一次、重载一次」，永远见不到兜底那一屏。 */
+    ok('分块重取：别的块拉成功不许销掉这一块的账（不然就是「点一次、重载一次」的死圈）',
+      clearRetry(store, 'Dashboard') === undefined && takeRetryOnce(store, 'Saga') === false,
+      'Dashboard 成功之后，Saga 那一笔仍在，仍答「不行」')
+    ok('分块重取（对照）：换一块问又是「可以」—— 账是按块记的，不是一趟只准一次',
+      takeRetryOnce(store, 'Tavern') === true,
+      '账上写的是 Tavern 而不是 Saga → 放行')
+
+    clearRetry(store, 'Tavern')
+    ok('分块重取：这一块自己拉成功了就把账销掉 —— 下一回真撞上还能自动重取',
+      takeRetryOnce(store, 'Tavern') === true,
+      'clearRetry(Tavern) 之后又是「可以」')
+    ok('分块重取（对照）：不销就一直是「不行」—— 上一条测的是销账这个动作，不是判据失灵',
+      (() => { takeRetryOnce(store, 'Arms'); return takeRetryOnce(store, 'Arms') === false })(),
+      '同一笔账没销掉时答「不行」')
+
+    /* —— ② 换地址：只动 `v`，别把主人手上的状态洗掉 ——
+       线上那份跑在 workers.dev 上，可能带着自己的查询串与锚点；
+       换地址这一手要**只换缓存认的那个键**，其余原样留着。 */
+    const u1 = freshUrl('https://tesc.ktwc54.workers.dev/?mode=pages#/plot', 1757000000001)
+    ok('分块重取 · 换地址：原有的查询串与锚点原样留着，只把 `v` 换成新的时间戳',
+      u1.includes('mode=pages') && u1.endsWith('#/plot') && u1.includes('v=1757000000001'),
+      u1)
+    ok('分块重取 · 换地址：两次换出来的地址不一样（一样就等于还在撞同一份缓存）',
+      freshUrl('https://a/b/', 1) !== freshUrl('https://a/b/', 2),
+      'v=1 与 v=2 不同')
+    ok('分块重取 · 换地址（边界）：地址解析不了就原样还回去，不抛',
+      (() => { try { return freshUrl('::::', 1) === '::::' } catch { return false } })(),
+      '畸形 href 走的是 catch 那一路')
+
+    /* —— ③ 认得出是哪一种错：认错就等于把另一半的出路白白收走 —— */
+    const ce = chunkError('Saga', new Error('Unable to preload CSS for /assets/Saga-abc.css'))
+    ok('分块重取：分块那种错认得出来，且底下那句原话还留在正文里（兜底那一屏要摊给人看）',
+      isChunkError(ce) && ce.name === CHUNK_ERR && ce.message.includes('Unable to preload CSS'),
+      `${ce.name}: ${ce.message.slice(0, 60)}…`)
+    ok('分块重取（对照）：渲染到一半炸的那种错**不**算分块错 —— 它的出路是「重挂界面」，不该被换掉',
+      isChunkError(new Error('Cannot read properties of undefined')) === false
+      && isChunkError(null) === false,
+      '普通 Error 与 null 都判「不是」')
+
+    /* —— ④ 接线（源码账）——
+       这三条最怕的是「哪天有人把它写回去」：界面上完全看不出差别，
+       直到下回真撞上，主人又看见那一屏「界面中止」。 */
+    const bare = (p: string) => readFileSync(p, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const appSrc = bare('src/App.tsx')
+    const wrapped = /const view = <K extends string>\(name: K, load: \(\) => Promise<Record<K, ComponentType>>\) =>\s*lazy\(async \(\) => \(\{ default: await loadView\(name, load\) \}\)\)/.test(appSrc)
+    const picked = /const mod = await load\(\)[\s\S]{0,160}?const comp = mod\?\.\[name\][\s\S]{0,120}?if \(!comp\) throw/.test(appSrc)
+    ok('分块重取：十一个视图走的是包过的那一层，而且「模块到手了但没有这个名」也算失败',
+      wrapped && picked,
+      `view() 过 loadView=${wrapped} · 挑具名导出并当场判空=${picked}`)
+    const iTake = appSrc.indexOf('takeRetryOnce(browserStore, name)')
+    const iReload = appSrc.indexOf('reloadFresh()')
+    ok('分块重取：顺序是**先领额度、后整页重来** —— 反了就是每次失败都重来一趟，必然打转',
+      iTake >= 0 && iReload > iTake
+      && /if \(!takeRetryOnce\(browserStore, name\)\) throw chunkError\(name, e\)/.test(appSrc),
+      `takeRetryOnce@${iTake} < reloadFresh@${iReload}`)
+    ok('分块重取：领额度与销账都**带着块名**（不带就退回「一趟只准一次」，那个圈会回来）',
+      (appSrc.match(/clearRetry\(browserStore, name\)/g) ?? []).length >= 2,
+      `clearRetry(browserStore, name) 出现 ${(appSrc.match(/clearRetry\(browserStore, name\)/g) ?? []).length} 次（两趟各一次）`)
+
+    const ebSrc = bare('src/components/ErrorBoundary.tsx')
+    ok('分块重取 · 兜底那一屏：分块那种错走的是**重新载入**（reloadFresh），不是按了没用的「重挂界面」',
+      ebSrc.includes('isChunkError(err)')
+      && /chunk \?[\s\S]{0,200}?this\.reload[\s\S]{0,80}?重新载入/.test(ebSrc)
+      && /reload = \(\) => \{[\s\S]{0,140}?reloadFresh\(\)/.test(ebSrc),
+      'isChunkError 分岔 ＋ 那一枚按钮接的是 reloadFresh')
+    ok('分块重取 · 兜底那一屏（对照）：渲染那一路的「重挂界面 / 清空作战缓存」一个字没动',
+      /this\.reset\}[\s\S]{0,40}?重挂界面/.test(ebSrc) && /wipeBattle\}[\s\S]{0,40}?清空作战缓存/.test(ebSrc),
+      '两条老路都还在')
+
+    info.push('分块自动重取：额度一趟一次（成了还回去）· 换地址只动 `v`（查询串与锚点留着）· '
+      + '分块错与渲染错分开说话（前者「重新载入」，后者「重挂界面」）')
+  } catch (e) {
+    fail.push('分块重取段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

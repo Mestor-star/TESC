@@ -394,6 +394,9 @@ try {
   cdp = await connect(wsUrl)
   await cdp.send('Runtime.enable')
   await cdp.send('Page.enable')
+  /* 网络这一层只为 Phase W 开：那一相要**真的把一块分块拦住**，
+     看它自己怎么重来（`Network.setBlockedURLs`）。 */
+  await cdp.send('Network.enable')
   await cdp.send('Input.setIgnoreInputEvents', { ignore: false })
 
   /* ============ Phase A：离线通读 1→2→3 → 解锁 + 记录 ============ */
@@ -3458,6 +3461,100 @@ try {
   const vShopYes = await v8Probe('V8b')
   ok('V8b 走到那一步之后（beats 落了 outfit-tryon）→ 同一张当场摆上（对照：上一条的 0 不是探针瞎了）',
     vShopYes.shop === 1 && vShopYes.wear === 1, JSON.stringify(vShopYes))
+
+  /* ============ Phase W：分块拉不下来时的自救 ============
+     主人 2026-09-15 在线上撞见「点低语者日志 → 界面中止 · RENDER HALTED
+     Error: Unable to preload CSS for …/Saga-<hash>.css」。根因是那一块的一次请求失手
+     （或页面缓存着上一版的入口），而视图这一层**没有任何恢复路径** ——
+     连「重挂界面」也救不了（`React.lazy` 把失败的那次 import 连着结果一起记着）。
+
+     这一相是这一套里唯一**非真浏览器验不动**的一段，所以摆在冒烟里：
+     用 `Network.setBlockedURLs` 真的把 Saga 那一块拦住，看它自己怎么走。
+     三臂连起来正好是那条完整的路 —— 臂一「拦住时它自己重来」、
+     臂二「放开之后真的开得起来（重来的意义在这儿）」、
+     臂三「一直拦着时它会**停下来摊兜底**，而不是无限重载」。
+
+     至于「账记在块名上、别的块成功不许销它的账」那几条判据归 mech §39
+     （纯函数，内存桩直接走），这一相只管浏览器里看得见的那一半。 */
+  console.log('\n[Phase W] 分块拉不下来：自动重取一次 → 还不行摊兜底（不无限重载）')
+  const W_BLOCK = ['*Saga-*']
+  const wFlag = `(()=>{try{return sessionStorage.getItem('zts-chunk-retry:v1')}catch(e){return 'ERR'}})()`
+  const wClear = `(()=>{try{sessionStorage.removeItem('zts-chunk-retry:v1')}catch(e){}return true})()`
+  /* 直接点导航那一枚，不用 `goto` —— 那一位要等 `data-view-loading` 落下去，
+     可这一相里它**落不下去**（那一块一直挂在等上），等来的是整页换掉。 */
+  const clickSaga = () => ev(`(()=>{const b=[...document.querySelectorAll('button')]
+    .find(x=>x.textContent&&x.textContent.includes('低语者日志'));if(!b)return false;b.click();return true})()`)
+  const wShot = () => ev(`(()=>{const eb=document.querySelector('[data-error-boundary]');
+    const box=document.querySelector('[data-error-kind]');
+    return {href:location.href, boot:!!document.querySelector('[aria-label="认证开屏"]'),
+      eb:!!eb, kind:box?box.getAttribute('data-error-kind'):null,
+      title:eb?(eb.querySelector('b')||{}).textContent:null,
+      btns:eb?[...eb.querySelectorAll('button')].map(x=>x.textContent):[],
+      vpage:!!document.querySelector('.vpage'), flag:${wFlag}}})()`)
+  /* 点一下，等它自己整页换掉（返回换过去的那个现场） */
+  const wClickUntilReload = async (href0) => {
+    if (!(await clickSaga())) throw new Error('W: 「低语者日志」那一枚不在屏上')
+    for (let i = 0; i < 24; i++) {
+      await sleep(500)
+      const s = await wShot()
+      if (s.href !== href0 && s.boot) return s
+    }
+    return null
+  }
+
+  /* 臂一：拦住 —— 点进去该**自己带 ?v= 整页重来一趟**，落回指纹开屏，且**不闪兜底** */
+  await cdp.send('Network.setBlockedURLs', { urls: W_BLOCK })
+  await ev(wClear)
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  const wHref0 = await ev('location.href')
+  const w1 = await wClickUntilReload(wHref0)
+  ok('W1 那一块拉不到 → 自己带 ?v= 整页重来一趟（绕开缓存里那份旧入口），中途不闪兜底',
+    !!w1 && w1.href.includes('v=') && w1.eb === false,
+    w1 ? `${wHref0} → ${w1.href}（兜底=${w1.eb}）` : '没等到自动重来')
+  ok('W1b 重来之前先把「哪一块」记在账上（不记就认不出「这一块已经用过它那一次了」）',
+    !!w1 && w1.flag === 'Saga', `账 = ${JSON.stringify(w1 && w1.flag)}`)
+
+  /* 臂二：放开 —— 同一块这下该**真的开得起来**，并且它那一笔账当场销掉。
+     这一臂是臂一的意义所在：重来不是为了转圈，是为了这一下能成。 */
+  await cdp.send('Network.setBlockedURLs', { urls: [] })
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await goto('低语者日志')
+  const w2 = await wShot()
+  ok('W2 放开之后同一块真的开得起来，且它那一笔账当场销掉（下一回撞上还能自动重取）',
+    w2.vpage && !w2.eb && w2.flag === null,
+    `开起来了=${w2.vpage} 兜底=${w2.eb} 账=${JSON.stringify(w2.flag)}`)
+
+  /* 臂三：**一直**拦着，走主人真会走的那条路 —— 再点一次，这回该**停下来摊兜底**
+     （说得准、给的路按得动），而不是又重载一次。这是防「点一次、重载一次」那个圈的关键。 */
+  await cdp.send('Network.setBlockedURLs', { urls: W_BLOCK })
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  const wHref1 = await ev('location.href')
+  const w3a = await wClickUntilReload(wHref1)
+  ok('W3 再走一趟仍然拉不到 → 还是先自动重来一次（账是新的一笔：上一趟 Saga 成功时销过）',
+    !!w3a && w3a.href.includes('v='), w3a ? `${wHref1} → ${w3a.href}` : '没等到自动重来')
+  await boot()
+  const wHref2 = await ev('location.href')
+  await clickSaga()
+  let w3 = null
+  for (let i = 0; i < 24 && !w3; i++) {
+    await sleep(400)
+    const s = await wShot()
+    if (s.eb) w3 = s
+  }
+  ok('W3b 这一趟它**停下来摊兜底**，不再整页重载（无限重载那个圈到这儿为止）',
+    !!w3 && w3.href === wHref2, w3 ? `停在 ${w3.href}（与点击前同一地址）` : '既没重载也没摊出来')
+  ok('W3c 兜底那一屏说得准：认得出是「分块」那一种，标题是「这一块没拉下来」',
+    !!w3 && w3.kind === 'chunk' && w3.title === '这一块没拉下来', JSON.stringify(w3 && { kind: w3.kind, title: w3.title }))
+  ok('W3d 那一屏给的路按得动：**重新载入**（不是对分块没用的「重挂界面」），另留复制错误信息',
+    !!w3 && w3.btns.includes('重新载入') && w3.btns.includes('复制错误信息')
+    && !w3.btns.includes('重挂界面'), JSON.stringify(w3 && w3.btns))
+  /* 分岔的另一半（渲染炸了那一路仍留着「重挂界面」）归 mech §39 的源码账 ——
+     这儿不再摆一条测不出东西的「对照」：能在浏览器里翻出来的只有分块这一半。 */
+
+  /* 收尾：放开网络、把账清掉、重来一趟干净的，别把状态漏给后面的 SHOT 那一段 */
+  await cdp.send('Network.setBlockedURLs', { urls: [] })
+  await ev(wClear)
+  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
 
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */

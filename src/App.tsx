@@ -8,6 +8,7 @@ import type { Toast, ToastKind } from './data/types'
 import { clock, rSeverity } from './lib/format'
 import { rFactor } from './lib/battle/rvalue'
 import { clearRemount, registerRemount } from './lib/remount'
+import { browserStore, chunkError, clearRetry, reloadFresh, takeRetryOnce } from './lib/chunkretry'
 import { resetGuide } from './lib/guide'
 import { bedForState, bedForView, installAudio, setAudio, setBed, stopBed, useAudioSettings } from './lib/audio'
 import { subscribeUnread, totalUnread } from './lib/sms'
@@ -36,8 +37,59 @@ import css from './App.module.css'
    视图都是**具名导出**（`export function Plot()`），而 `lazy` 只认 `default`。
    与其回头给十一个视图各补一个 default export（拆包的活儿不该动视图自己的导出），
    不如在这儿垫一层薄薄的胶水 —— 就是下面这个 `view()`。 */
+/* ---- 拉一块视图分块：失手自动重取一次（主人 2026-09-15）--------------
+   头一次失败先原地再来一次 —— 多半是网络抖了一下，或那一块 CSS 的请求断在中途，
+   重来一次就好了，主人这边**看不出发生过什么**。还不行就带 `?v=<时间戳>`
+   整页换地址重来：页面缓存着上一版入口（那份 index 里记的分块名已经不在了）
+   时，只有这一条路解得开。两趟都走过仍然失败，才抛给兜底那一屏。
+
+   额度（**每一块**只自动重取一次，账记在块名上，见 `lib/chunkretry.ts` 开头那段）
+   与换地址那一步都在 `lib/chunkretry.ts` 里，那儿是纯的，mech 拿内存桩直接验；
+   这儿只管按顺序试。
+
+   整页重来有一个代价，写在明处：`sessionAuthed` 是 `Terminal` 的模块变量
+   （`terminal/Terminal.tsx:292`），冷启动必回 false —— 所以那一条路走完，
+   主人回到的是**指纹开屏**那一屏，不是刚才那一页。这条只在「真·缓存错版」
+   时才会走到；拿它换「不黑屏」，值。
+
+   还有一处不走 `vite:preloadError` 的监听：那一手要 `preventDefault()` 把
+   Vite 的异常吞掉，吞掉之后 import 会**装成成功**（拿到 `undefined`），
+   反而绕开了下面这套重取。让它照常抛出来，这里接住，更直。 */
+async function loadView<K extends string>(name: K, load: () => Promise<Record<K, ComponentType>>) {
+  /* 取一次，并且当场把具名导出挑出来 ——「模块到手了但没有这个名」也算失败
+     （Vite 那条预载被别的监听吞掉时会走到这儿），一样要重取，不能放它出去 */
+  const pick = async (): Promise<ComponentType> => {
+    const mod = await load()
+    const comp = mod?.[name]
+    if (!comp) throw new Error(`这一块里没有导出「${name}」`)
+    return comp
+  }
+  try {
+    const comp = await pick()
+    clearRetry(browserStore, name)   // 成了 —— 销掉这一块的账，下一回撞上还能自动重取
+    return comp
+  } catch (e) {
+    /* 账上写着这一块的名字，说明它整页重来过一趟了还是不行 —— 直接抛给兜底，
+       绝不再换一次地址（不然主人会卡在「点一次、重载一次」的圈里，
+       永远见不到兜底那一屏）。名字对不上才是新的一回。 */
+    if (!takeRetryOnce(browserStore, name)) throw chunkError(name, e)
+    try {
+      await new Promise((r) => setTimeout(r, 320))   // 让开那一下抖动，别原样再撞一次
+      const comp = await pick()
+      clearRetry(browserStore, name)
+      return comp
+    } catch (e2) {
+      reloadFresh()
+      /* 页面正在把自己换掉。先挂在「正在接通模块…」上，别闪一下兜底 ——
+         给换页 1.2 秒；真没换成（地址就是走不了）才把错摊出来。 */
+      await new Promise((r) => setTimeout(r, 1200))
+      throw chunkError(name, e2)
+    }
+  }
+}
+
 const view = <K extends string>(name: K, load: () => Promise<Record<K, ComponentType>>) =>
-  lazy(async () => ({ default: (await load())[name] }))
+  lazy(async () => ({ default: await loadView(name, load) }))
 
 const Dashboard = view('Dashboard', () => import('./views/Dashboard'))
 const Plot = view('Plot', () => import('./views/Plot'))
