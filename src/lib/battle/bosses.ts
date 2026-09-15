@@ -10,7 +10,9 @@
    是终末停滞委员会的同行、Corporations 的代表选手。
 
    所以这个文件把那一类对手**单独写出来**：
-     · 五轴取 roster 的档案读数（与档案页同一个数，不另编）
+     · 五轴取 roster 的档案读数（与档案页同一个数，不另编）；
+       档案里没有的那两位（面具心叶 / 黑金狮子）把五轴写在自己身上 ——
+       他们不入本名录，那一组数只属于站在对面的这一个他。
      · 技能是这个人自己的手（不是通用件 + 机制包），带他自己的台词
      · 到达点兼任他的「终结技能」：照样蓄势、照样可以被打算
    任务只要挂上 bossId，derive 就会把场上的头一名换成他。
@@ -18,10 +20,26 @@
    规则：这里的每一个名字、每一句台词、每一手机制，都得从
    arms.ts（武装考据）/ sidecast.ts（人物页）/ chars.ts 里取，
    一个字都不许新造。写不出来就说明这一手没有原文依据，不该有。
+
+   **手序**（离线那一手只认 index 1，别乱放）：
+     · index 0 恒为普攻 —— derive 拿 skills[0].fx 当整只敌人的演出 fx；
+     · index 1 必须是**造成伤害**的那一手 —— engine 的 enemyAct 离线只挑
+       「第一个 kind === '战技' 且不带 ult / summon 的」那一手，35% 的回合用它，
+       其余回合用 index 0。放在 index 1 的若是 0 伤的机制手，等于那 35% 白给；
+     · index 2 放机制手（召唤 / 减益 / 亮牌），只有思考型通道才挑得到。
+
+   **数值**：每一手都过 `atlas.place()` 那把尺（倍率带 / 效果带 / 动条白名单）。
+   `place()` 对布尔白名单**抛**、对数字**只静默夹** —— 所以带外的数在数据上
+   完全看不出来（写着 1.6、落地是 0）。本文件的规矩是：**带外的值一律改写成
+   带内的值并注明**，让「夹动清单为空」变成一条查得出、断言得住的不变量。
+   已改的两类：
+     · 五笔 `pushBack` 原写 0.4/0.45/0.6 → 全改 0.35（`EFF_BAND.pushBack` 的上限）；
+     · `重压` / `牵制`（band 都是 [0, 0]）的手一律**明写 `power: 0`**，
+       不写就是被夹，写了才是「故意的」。
    ============================================================ */
 
 import { place } from './atlas'
-import type { AxisKey, PassiveSpec, SkillSpec } from './types'
+import type { AxisKey, DutyId, PassiveSpec, SkillSpec } from './types'
 import { TUNING } from './tuning'
 import { END_FOES } from './endfoes'
 
@@ -40,6 +58,18 @@ export interface NamedBoss {
   hpMul: number
   /** 五轴。缺省取 roster 的档案读数 */
   axes?: [number, number, number, number, number]
+  /**
+   * 职能 —— 只有**有档案的真人**写它（图鉴实体与杂兵不写，见 duty.ts）。
+   *
+   * 「职业只是框架，具体实力看原著的能力」：职能决定的是他**怎么打**那一栏
+   * （暴击率 / 暴击倍数取自 `duty.ts` 的 crit / critMul），不是他有多强 ——
+   * 强弱在五轴与技能上。写了才生效（`derive` 判的是「有没有这一栏」，
+   * 不是 `dutyOf` 的兜底值，否则全敌阵都会白拿主音那一份）。
+   *
+   * 不扩 `assertDutySlots()`：那一把是用 `duty.arch` 卡「这个职能该有哪些类的手」，
+   * 拿它卡首领就会与「每一手必须有原文依据」直接冲突 —— 他是谁由原文说了算。
+   */
+  duty?: DutyId
   /**
    * 这一位的**危险度**（图鉴登记的 Stage）。
    *
@@ -103,6 +133,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '格',
     hue: '#7fd1c4',
     cls: '传送门游击',
+    duty: '调度',
     trait: '弹痕「愚者的足迹」—— 门开在哪里，她的下一步就在哪里。'
       + '格蕾用它跨越无人岛、跨越战场，也一次次出现在心叶意想不到的身后。',
     hpMul: 1,
@@ -139,7 +170,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         id: 'boss-merwen-end', name: '愚者的足迹 · 无人岛的尽头', axis: '破坏力', power: 4.8,
         desc: '把对手身后那条退路整个换成一颗砂砾：门一开，人就到了没人到过的地方。'
           + '外传话 4 里她与心叶被卷进的那场以数年计的「无人岛人生」，就是从这一步开始的。',
-        effect: { pierce: true, pushBack: 0.6, stasis: 1 },
+        effect: { pierce: true, pushBack: 0.35, stasis: 1 },
         line: '「那么——你打算怎么回去呢？」',
       })),
     ],
@@ -152,6 +183,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '玛',
     hue: '#d98fb0',
     cls: '情感系歌者',
+    duty: '和音',
     trait: '片羽「天下无双的公主大人」—— 她的歌声就是她的反现实。'
       + '情感入歌的那一类，亲和最高、直面最脆。',
     hpMul: 0.9,
@@ -192,6 +224,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '亚',
     hue: '#8f9bd9',
     cls: '硬质化突击',
+    duty: '护卫',
     trait: '片羽「午夜降临」——「肉体将变换成为『夜』的形式。其性质表现为硬质化与粒子化。'
       + '但是，心脏不可被转化」〔v2 第8话〕。硬到连导弹都吃得下，但那颗心脏一直是肉做的。',
     hpMul: 1.15,
@@ -209,13 +242,8 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         desc: '把手臂换成夜的形式再打出去：这一拳比看上去重得多。',
         line: '「——我上了。」',
       }),
-      place('坚守', {
-        id: 'boss-alex-night', name: '夜之形态 · 硬质化', axis: '物理抗性',
-        desc: '整个人散成粒子再凝回来：中坚战时，他独自承受了「摩耶」所受的全部攻击〔v3 第9话〕。'
-          + '凝住的那几拍，他就是那面墙。',
-        effect: { shield: 0.62, taunt: true },
-        line: '「打吧。看看你们能打穿多少。」',
-      }),
+      /* 手序：0 普攻 / 1 十米之拳（重手，离线唯一会挑的那一手）/ 2 硬质化（机制）。
+         先前 1 放的是硬质化（0 伤），离线那 35% 的回合等于白给 —— 换过来。 */
       place('穿甲', {
         id: 'boss-alex-fist', name: '十米之拳', axis: '破坏力', power: 2.2,
         desc: '「亚历克斯将翅膀的所有体积压缩进右拳……那只拳头的大小——足足超过了10米」'
@@ -223,6 +251,13 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         effect: { pierce: true, pushBack: 0.3 },
         bar: true,
         line: '「——退开。」',
+      }),
+      place('坚守', {
+        id: 'boss-alex-night', name: '夜之形态 · 硬质化', axis: '物理抗性',
+        desc: '整个人散成粒子再凝回来：中坚战时，他独自承受了「摩耶」所受的全部攻击〔v3 第9话〕。'
+          + '凝住的那几拍，他就是那面墙。',
+        effect: { shield: 0.62, taunt: true },
+        line: '「打吧。看看你们能打穿多少。」',
       }),
       asUlt(place('到达点', {
         id: 'boss-alex-end', name: '午夜降临 · 心脏那一处', axis: '破坏力', power: 5.0,
@@ -242,6 +277,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '菲',
     hue: '#c8a2e0',
     cls: '能力复制',
+    duty: '取材',
     trait: '片羽「申告虚伪」—— 二十四小时内复制他人的能力。'
       + '但三条硬限制并列：二十四小时的观测窗口、同一时间只能用一种、以及减寿的代价。',
     hpMul: 1,
@@ -259,13 +295,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         desc: '借来的那点东西，用得比本人还顺手。',
         line: '「这一手，我还给你。」',
       }),
-      place('牵制', {
-        id: 'boss-phidra-read', name: '读心 · 先读', axis: '反现实亲和',
-        desc: '副将战里她一直在读心 —— 只是读到的是心叶反侦察摆出来的假货。'
-          + '读准了的那几拍，对手的每一步都在她前面。',
-        effect: { mark: 0.35, slow: 0.3 },
-        line: '「你现在想什么，我全都知道。」',
-      }),
+      /* 手序：0 普攻 / 1 复写（重手 —— copy 的伤害来自被抄的那一手）/ 2 读心（机制）。 */
       place('连打', {
         id: 'boss-phidra-copy', name: '虚伪申告 · 复写', power: 0,
         desc: '当场挑在场的任意一个角色，照抄他的一手，原样打出来 ——'
@@ -275,6 +305,13 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
           + '恋兔的吉他更抄不过来 —— 那把琴只是形状，出力的是她本人。',
         copy: true,
         line: '「你刚才是这么打的吧。」',
+      }),
+      place('牵制', {
+        id: 'boss-phidra-read', name: '读心 · 先读', axis: '反现实亲和', power: 0,
+        desc: '副将战里她一直在读心 —— 只是读到的是心叶反侦察摆出来的假货。'
+          + '读准了的那几拍，对手的每一步都在她前面。',
+        effect: { mark: 0.35, slow: 0.3 },
+        line: '「你现在想什么，我全都知道。」',
       }),
       asUlt(place('到达点', {
         id: 'boss-phidra-end', name: '第二个菲德拉', axis: '破坏力', power: 4.6,
@@ -298,6 +335,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '凯',
     hue: '#e0b860',
     cls: '越伤越强',
+    duty: '主音',
     trait: '片羽「英雄不灭」——「受伤的程度越严重，肉体就会越强大」〔v2 第10话〕。'
       + 'RANK6。她不是越打越弱的那种对手，是越打越重的。',
     hpMul: 1.35,
@@ -332,7 +370,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         id: 'boss-katherine-end', name: '英雄不灭 · 最后一拳', axis: '破坏力', power: 5.0,
         desc: 'RANK6 的全部：这一拳打出去之前，她已经不在乎自己还剩多少。'
           + '档案页上写着「企业警备队队长」，正文里写着「此刻还站着的，只有她」。',
-        effect: { pierce: true, pushBack: 0.4 },
+        effect: { pierce: true, pushBack: 0.35 },
         line: '「——英雄，是不会倒下的。」',
       })),
     ],
@@ -345,6 +383,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '吴',
     hue: '#9ad0a0',
     cls: '召唤 · 法则改写',
+    duty: '取材',
     trait: '弹痕「四大凶兽」—— 穷奇「上变下，快变慢，明变暗，非人变人，世界变非世界」，'
       + '「连小吴自己也无法控制」「无人能预见结局」〔v2 第7话〕。'
       + '限的是数量不是规模：单日最多召一只。',
@@ -369,10 +408,11 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         line: '「它一出来，我就管不住了。」',
       }),
       place('重压', {
-        id: 'boss-youshihan-hundun', name: '四大凶兽 · 浑沌', axis: '反现实亲和',
+        id: 'boss-youshihan-hundun', name: '四大凶兽 · 浑沌', axis: '反现实亲和', power: 0,
         desc: '「能将无化为有的空间」—— 天空竞技祭那一次，她把三个人一起吞了进去。'
-          + '不伤人，先把场地换掉。',
-        effect: { mark: 0.2, slow: 0.35, pushBack: 0.4 },
+          + '不伤人，先把场地换掉。'
+          + '（明写 0：`重压` band [0, 0]，desc 自己写着「不伤人」。）',
+        effect: { mark: 0.2, slow: 0.35, pushBack: 0.35 },
         line: '「接纳浑沌吧。」',
       }),
       asUlt(place('到达点', {
@@ -393,6 +433,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '魔',
     hue: '#7b6fd0',
     cls: '自我同一性崩坏',
+    duty: '取材',
     trait: '终末「黑之魔王」Stage5『混乱』—— 影可化作切开大海的巨大怪物，'
       + '「那点小子弹……对我来说也就只是稍微有点疼的程度」〔v3 第3话〕。'
       + '自囚于「施害者 / 恶 / 魔王」之位，期盼宇宙毁灭。',
@@ -416,13 +457,14 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         id: 'boss-maou-sea', name: '影之巨人 · 切开大海', axis: '破坏力', power: 1.7,
         desc: '太平洋货船那一夜，她从船的影子里拉出一个能把大海切开的巨人。'
           + '那一击打的是全场。',
-        effect: { pushBack: 0.45, mark: 0.2 },
+        effect: { pushBack: 0.35, mark: 0.2 },
         bar: true,
         line: '「这种程度，是挡不住的。」',
       }),
       place('重压', {
-        id: 'boss-maou-despair', name: '混沌 · 期盼毁灭', axis: '反现实亲和',
-        desc: '把她自囚的那份东西摊开：在场的每一个人都开始觉得，毁灭也挺好的。',
+        id: 'boss-maou-despair', name: '混沌 · 期盼毁灭', axis: '反现实亲和', power: 0,
+        desc: '把她自囚的那份东西摊开：在场的每一个人都开始觉得，毁灭也挺好的。'
+          + '（明写 0：`重压` band [0, 0]，这一类摊的是状态不是伤害。）',
         effect: { mark: 0.25, slow: 0.4, frail: 0.2 },
         line: '「世界本来就是会结束的。」',
       }),
@@ -431,7 +473,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         desc: 'Stage5 的终末全部放开的那一记：她自己也知道这会让「自我同一性」塌掉，'
           + '但她求的就是这个。',
         target: 'all',
-        effect: { mark: 0.3, frail: 0.3, pushBack: 0.4 },
+        effect: { mark: 0.3, frail: 0.3, pushBack: 0.35 },
         line: '「——这样的结局，绝不是我的终末！」',
       })),
     ],
@@ -444,6 +486,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '达',
     hue: '#d07f7f',
     cls: '对人处刑',
+    duty: '主音',
     trait: '斩击「认真模式SSS」。RANK7。放逐部队出身，专业是「对人」——'
       + '她的每一手都是冲着人身上最经不起打的那一处去的。',
     hpMul: 1.3,
@@ -468,8 +511,9 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         line: '「——这里。就是这里。」',
       }),
       place('牵制', {
-        id: 'boss-danae-hunt', name: '黑锤部队 · 围猎', axis: '敏捷度',
-        desc: '黑锤部队的队长不会一个人动手：她把退路与出手的时机一起封掉。',
+        id: 'boss-danae-hunt', name: '黑锤部队 · 围猎', axis: '敏捷度', power: 0,
+        desc: '黑锤部队的队长不会一个人动手：她把退路与出手的时机一起封掉。'
+          + '（明写 0：`牵制` 的 band 是 [0, 0]，这一类压人不伤人。）',
         effect: { mark: 0.3, slow: 0.3, pushBack: 0.3 },
         line: '「跑吧。跑起来更有意思。」',
       }),
@@ -494,6 +538,7 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '假',
     hue: '#9b8fd0',
     cls: '异法 · 梵我合一',
+    duty: '取材',
     trait: '异次元世界的言万心叶 —— 在「露娜小姐已死的世界」里长大、把挚友当作全世界的人。'
       + '他证明了「低语者」在任何一个世界，都会选择成为温柔的怪物。'
       + '（No.8590 Stage4『活性化』）',
@@ -501,6 +546,25 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
        所以面板必须比这一场里任何一个观测体都厚 —— 这一场要打的是两阶段，
        第一阶段就得站够久，否则「经过剧情还有第二阶段」根本来不及发生。 */
     hpMul: 2.6,
+    /* 五轴（评定尺，与档案页同一把；放大的那一步在 derive 的 scaleAxes，敌人也同乘）。
+       底子是言万心叶 v4-5 那一页（operator-arc 的 A(82,78,75,108,88)）——
+       「我——言万心叶，看见了那面具底下，和自己一模一样的脸」〔v4-8.txt:1251〕，
+       所以逐项不低于那一位。写在**这一份档案上**、不进 roster 的 SIDE_AXIS：
+       他不入本名录（roster.ts:6），这一组数只属于站在对面的这一个他。
+         破坏力 96 —— 他的常手不是拳头，是「指定坐标，破外周围一米内的物质」〔v4-8.txt:473〕
+           那种点杀，高于本人的体评；但仍低于黑之魔王 119 / 凯特琳 114 / 亚历克斯 106 ——
+           他那一场赢在两阶段与军团，不在单人力气。
+         敏捷度 84 —— 躲过刺拳、头槌、扫堂腿〔v4-8.txt:403-411〕，身上有身法；
+           低于格蕾 95（无限制格斗冠军），原文里他是**被追上**的那一方。
+         物理抗性 80 —— 他不走硬质化那条路（亚历克斯 84 是「肉体变『夜』」的专精），
+           「厚」由 hpMul 2.6 承担，不抢那张专精。
+         反现实亲和 118 —— **全表最高**：「吸收了『线之人』的力量，终末化的『鸟与诗』，
+           成为了言万心叶曾经爱过，又死去之人的集合体」〔v4-8.txt:1305-1319〕、
+           「○性质——旧神·仪式灾害·线之律·世界色彩·梵我合一」〔v4-8.txt:2189〕。
+           这一轴在他身上不是「武装多强」，是「他容纳了多少人」。
+         意志力 92 —— 他不是被打死的，是自己阖目的（「谢谢你……相信我……」）。
+           落在 operator-arc 已定的政策上：本人 88 只比名册最高那一档高一点点，他再 +4。 */
+    axes: [96, 84, 80, 118, 92],
     passive: {
       name: '梵我合一',
       desc: '「把「我」与「世界」视为同一、以一己容纳万象的法理……骷髅假面之男的异法・梵我合一皆属此类」'
@@ -517,6 +581,20 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
           + '挡在身前的那一位，先替他挨下这一手。',
         line: '「——去吧。」',
       }),
+      /* 手序：0 普攻 / 1 就是这一手（他真正会杀人那一手，离线唯一会挑的）/ 2 军团 / 3 容纳万象。
+         先前 1 放的是召唤（`enemyAct` 的重手谓词跳过 summon），于是离线 35% 的回合
+         落到 2 的「容纳万象」—— 而那一手挂在 `重压`（band [0,0]）上，写着 1.3 被静默夹成 0。
+         两处一起修：这一手补进来当重手，容纳万象退到 3 并明写 power 0。
+         破 96 这一轴就是为这一手写的（见上方五轴注），所以它走**破坏力**、不走亲和。 */
+      place('穿甲', {
+        id: 'boss-mask-point', name: '「鸟与诗」· 指定坐标', axis: '破坏力', power: 1.9,
+        desc: '「指定坐标，破外周围一米内的物质」〔v4-8.txt:473〕——'
+          + '他不挥拳：点一个位置，那个位置上的东西就没有了。'
+          + '「鸟与诗」是他唤出来的东西，坐标是它替他报的。',
+        // 不写 line：档案里没有这一手对应的原话，编一句就破了本文件的规矩。
+        // （`line` 是可选的，四个消费点全都 `k.line ? … : null`，缺了只是这一手不说话。）
+        effect: { pierce: true },
+      }),
       place('扫荡', {
         id: 'boss-mask-legion', name: '亡灵军团 · 成形体诱出', axis: '反现实亲和', power: 0,
         desc: '「以「鸟与诗」「复活的小蕾雅」等亡灵战斗」（图鉴 No.8590 考据）。'
@@ -529,9 +607,11 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         line: '「一个人打不完的仗 —— 那就都回来吧。」',
       }),
       place('重压', {
-        id: 'boss-mask-vast', name: '容纳万象', axis: '反现实亲和', power: 1.3,
+        id: 'boss-mask-vast', name: '容纳万象', axis: '反现实亲和', power: 0,
         desc: '梵我合一摊开的那一拍：他既是他自己，也是那一片东西。'
-          + '在场的人会先分不清哪一下是冲自己来的。',
+          + '在场的人会先分不清哪一下是冲自己来的。'
+          + '（明写 0：`重压` 的 band 是 [0, 0] —— 这一类本来就不直接伤人，'
+          + '先前写着 1.3 只是被尺子静默夹掉，读数据的人看不出「这是故意的」。）',
         effect: { mark: 0.3, slow: 0.3, frail: 0.2 },
         line: '「这里也是我。你也是。」',
       }),
@@ -555,11 +635,32 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
     sigil: '狮',
     hue: '#c8a24e',
     cls: '终末 · 融合',
+    duty: '主音',
     trait: '卡乌斯学院全员能力的融合体 —— 那五位各自那套手一并长在一具躯体上。'
       + '「言万心叶发动「a Session.」与蕾雅合体为「心蕾雅」，分解了终末化的黑金狮子」（v4 尾声-a）。',
     /* 第二阶段要压得住：这一场打到这儿，玩家已经清了一整轮亡灵军团，
        血量与出力都得再抬一档，否则「第二形态」只是换个名字再打一遍。 */
     hpMul: 3.6,
+    /* 五轴（同上，评定尺）。第一阶段的面具心叶已经写满，这一位是它的完成形 ——
+       每一项都比那一位再高一档，唯独意志力塌下去：它不是在变强，是在裂开。
+         破坏力 148 —— 全表最高：「鬃毛里冒出了数十种从未见过的武器。它正无序地，
+           肆意地破坏着周围」〔v4-8.txt:1377〕；但**低于恋兔光 200**。
+           对一眼：它的普攻 148×1.7 = 252 仍低于凯特琳那记强袭 114×2.5 = 285 ——
+           「数十种武器」重而**散**，不是一拳定胜负。
+         敏捷度 76 —— 「黒金狮子**笨拙地**『反转』了我的光束」〔v4-8.txt:1621〕，
+           「笨拙」是原文里的字；比面具心叶 84 低一位，他比它灵。
+         物理抗性 104 —— 全表最高（凯特琳 72 / 亚历克斯 84）：
+           「巨大的钉雨甚至贯穿了黑金狮子自身。它全身血流不止……」〔v4-8.txt:1335〕，
+           加上 passive 的 endure: 1 ——「打不烂」由这一轴承担，在 hpMul 3.6 之外。
+         反现实亲和 136 —— 高于面具心叶 118：「卡乌斯学院全员能力的融合体」，
+           连别人的**到达点**都拿得动（「それは『热沃当的少女』的到达点的能力吧」〔v4-8.txt:1621〕）
+           —— 它才是「终末化」的顶点。
+         意志力 48 —— 「失去了对自我与他者的界限感知，同时被强烈的**自我毁灭冲动**所支配」
+           〔v4-8.txt:1305-1319〕；chTempoMax(48) = 48 点节拍，对面具心叶的 73（22 + 志×0.55）——
+           「它不是在战斗，是在崩塌」〔v4-8.txt:1393〕。
+           ⚠️ 这一轴**不读生命**（derive 的 named 分支只走 hpMul）：写低不会让它变脆，
+           只在接上思考型通道时让它的手更少。 */
+    axes: [148, 76, 104, 136, 48],
     passive: {
       name: '融合 · 全体化',
       desc: '五个人的手长在同一具躯体上 —— 它会的东西比场上任何人都会得多（v4 尾声-a 的融合设定）。',
@@ -580,7 +681,13 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
         effect: { pierce: true, bleed: 0.06 },
         line: '「锯开。」',
       }),
-      place('重压', {
+      /* 类从 `重压` 改成 `震退`：`重压` 的 band 是 [0, 0]，写着 1.6 被静默夹成 0 ——
+         「大麻烦」是拿球棒把全场压住（「令其寸步难行」），本来就该打全体，`震退`
+         （target 'all'，band [1.0, 1.6]，1.6 正好带上限）才是它该在的那一类。
+         ⚠️ 换类会把类骨架并进来（atlas 的 `{ ...a.effect, ...o.effect }`）：
+         `重压` 骨架 `{mark:0.25, slow:0.5}` → `震退` 骨架 `{slow:0.5, mark:0.15}`，
+         两个键都被下面这一句 `o.effect` 覆盖，合并结果与换类前**逐键相同**。 */
+      place('震退', {
         id: 'boss-lion-nana', name: '大麻烦', axis: '破坏力', power: 1.6,
         desc: '「一根金属球棒，可将击中对象的重量任意增减——增物重至三倍、或把对方自重提至数十倍，令其寸步难行」'
           + '（arms.ts 神流奈奈）。被压住的人先发现，自己抬不起自己的脚。',

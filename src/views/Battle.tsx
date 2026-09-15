@@ -1540,7 +1540,9 @@ function Unit({
         <div className={css.unitTags}>
           <span className={css.unitCls}>{c.cls}</span>
           {/* 职能与定位叠着，不顶替：定位是身份，职能是活计（见 duty.ts）。
-              敌方不带职能 —— 五档是给我方那 24 个人定的。 */}
+              这一枚只给我方：**敌方杂兵不带职能**，而档案里的那几位首领**带**
+              （`NamedBoss.duty`，只喂面板的暴击那一栏）—— 只是他们的职能不上屏，
+              所以这里仍然是 `side === 'ally'` 才渲染。 */}
           {c.side === 'ally' ? (
             <span className={css.unitDuty} data-unit-duty={c.id} title={`${dutyOf(c.duty).desc}　主攻轴：${dutyOf(c.duty).axis}`}>
               {dutyOf(c.duty).name}

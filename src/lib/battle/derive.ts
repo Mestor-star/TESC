@@ -949,10 +949,11 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       sigil: named?.sigil ?? prof.sigil,
       hue: named?.hue ?? prof.hue,
       cls: named?.cls ?? prof.cls,
-      // 职能：三期把敌方逐个归位；在此之前一律「主音」。
-      // 暴击那一份**只拿常数项**（不叠职能）：敌方的职能还没归位，
-      // 先按「谁都有的那一点」算，别让一队杂兵白拿主音那一份加成（见 S4）。
-      duty: '主音',
+      /* 职能：**有档案的那几位**带着自己那一份（`NamedBoss.duty`，见 bosses.ts），
+         其余（杂兵 / 图鉴实体）挂「主音」这个占位。
+         下面 `crit` 那两行认的是「档案上写没写 duty」，不是这个字段落在了什么值上 ——
+         所以这个占位不会给杂兵换来任何东西（`dutyOf` 自己的兜底另算，见那一行）。 */
+      duty: named?.duty ?? '主音',
       trait: named?.trait ?? nature,
       tier,
       // 认人用：场上的 id 只有位次，认不出档案里是谁（见 Combatant.namedId）
@@ -1025,10 +1026,12 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       bar: 0,
       spd: speedOf(axes),
       evade: 0,
-      // 暴击：敌我也暴击（同一套骨架），但**只拿常数项** —— 敌方的职能要三期才归位，
-      // 先别让一队杂兵白拿主音那一份（critOf / critMulOf 认职能，见上面 duty 那一行）
-      crit: TUNING.critBase,
-      critMul: TUNING.critMul,
+      /* 暴击：敌我也暴击（同一套骨架）。
+         有档案、且**档案上明写了职能**的那几位拿自己那一份（critOf / critMulOf）；
+         杂兵与图鉴实体仍拿常数项。判的条件是「有没有 `duty`」而不是「`dutyOf` 兜出什么」——
+         `dutyOf(undefined)` 会兜到主音，照那个兜底写等于给整个敌阵白送 6% 暴击（见 A7 对照）。 */
+      crit: named?.duty ? critOf(named.duty) : TUNING.critBase,
+      critMul: named?.duty ? critMulOf(named.duty) : TUNING.critMul,
       buffs: [],
       shield: 0,
       taunt: 0,

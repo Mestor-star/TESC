@@ -38,6 +38,7 @@
      12  增益回合上限 —— 增益有回合寿命，不会永久挂着
      13  召唤       —— 召唤物入场 / 退场 / 占位不越界
      14  面具心叶等   —— 亡灵军团 · 二阶段黑金狮子这一串特殊形态
+     14b 具名首领     —— 五轴写在人自己身上 · 离线那一手打得痛 · 夹动清单为空 · 职能归位
      15  图鉴与形态链 —— 图鉴实体 ↔ 形态链 ↔ 五轴走同一条曲线
    · 声音与引导
      16  背景音     —— 六段床各自成曲、且不跑调（半音表比对）
@@ -121,7 +122,8 @@ import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '
 import { GEARS } from '../../src/lib/battle/gear'
 import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
 import { CHAR_LINES, FOLLOW_LINES, LINE_POOL, familiar, poolFor } from '../../src/lib/battle/banter'
-import { namedBossOf } from '../../src/lib/battle/bosses'
+import { NAMED_BOSSES, namedBossOf } from '../../src/lib/battle/bosses'
+import { SIDE_AXIS } from '../../src/data/roster'
 import { OPERATOR_ID, personOf, defaultBondOf, PERSON_IDS } from '../../src/data/castmeta'
 import { BOND_STAGE, confirmOf, stagePassed } from '../../src/data/bondstage'
 import { buildDirectorSystem, parseDirectorReply, parsePlotReply, replyDisplayText } from '../../src/lib/plot'
@@ -911,7 +913,9 @@ export function run(): MechReport {
     ok('暴击 · 名册上没写职能的都落在主音上（缺省那一档）',
       s0.allies.every((c) => dutyOf(c.duty).id === c.duty && !!DUTY[c.duty]),
       `本场：${s0.allies.map((c) => `${c.name} ${c.duty}`).join('／')}`)
-    ok('暴击 · 敌方只拿常数项（职能还没归位，先别白送）',
+    /* 这一条量的是**现推的杂兵**（`s0` 是没挂 bossId 的板）。
+       有档案的那几位已经归位、拿的是自己那一份 —— 那是 §14b 的事，见那一段的 A7 与两条对照。 */
+    ok('暴击 · 敌方杂兵只拿常数项（有档案的那几位另算，见 §14b）',
       s0.enemies.every((c) => c.crit === TUNING.critBase && c.critMul === TUNING.critMul),
       `${s0.enemies.length} 具 · ${(TUNING.critBase * 100).toFixed(0)}% ×${TUNING.critMul}`)
 
@@ -1778,9 +1782,11 @@ export function run(): MechReport {
     if (namedMission) {
       const n0 = enemiesOf(namedMission, 0)[0]!
       const n1 = enemiesOf(namedMission, 1)[0]!
+      /* `> 0` 那半句是补上的：只比「时期 0 与 1 相等」的话，五轴全 0 也过 ——
+         `0 === 0` 是绿的，而「五轴全 0 的首领每一次出手只打 floor」正是 §14b 要抓的那个病。 */
       ok('敌阵：点名首领不吃时期增幅（与档案页读数一致）',
-        n0.hpMax === n1.hpMax && n0.axes.破坏力 === n1.axes.破坏力,
-        `${n0.name} ${n0.hpMax} → ${n1.hpMax}`)
+        n0.hpMax === n1.hpMax && n0.axes.破坏力 === n1.axes.破坏力 && n0.axes.破坏力 > 0,
+        `${n0.name} ${n0.hpMax} → ${n1.hpMax}　破坏力 ${n0.axes.破坏力}`)
     } else {
       info.push('敌阵：没有挂 bossId 的任务，跳过点名首领那一条')
     }
@@ -2536,9 +2542,33 @@ export function run(): MechReport {
       }
       return w
     }
-    /* 三个时期各打一场 —— 与 balance 同一套口径：只在一个时期上看得出的结论，
-       换个时期未必成立（这一条是复核跑出来的教训，见 tuning 的 enemyProgressGain）。 */
-    const plays = [0.15, 0.5, 0.9].map((p) => ({ p, w: playOut(p) }))
+    /* 三场都是**随机**打出来的：`rollJitter`、暴击、重手那 35% 都在掷骰子，
+       所以「三场都要到二阶段」在真随机下自带一条尾巴 —— 0.15 那一段队伍远低于
+       此役等级，约 1% 的场次第一阶段就被灭，于是每跑一次这条断言约 **2.7%** 概率变红
+       （实测：300 次里 8 次）。顺带量过一笔对照，说明这跟面具新添的那一手**无关**：
+       200 场里 power 1.9 与 power 0 的输赢、二阶段露脸率几乎逐项相同。
+       随机的东西就用固定种子测 —— 把 `Math.random` 换成定序发生器，**断言一字不改**：
+       现在它既不会蒙对、也不会蒙错，红了就是真红。
+       种子取自然序里第一个（1），不是挑出来的：1..8 都过。换种子得连这段注释一起改。 */
+    const nextRandom = (() => {
+      let x = 1 >>> 0
+      return () => {
+        x ^= x << 13; x >>>= 0
+        x ^= x >>> 17
+        x ^= x << 5; x >>>= 0
+        return x / 4294967296
+      }
+    })()
+    /* 三场共用同一条定序流（跟挑种子时量的是同一路数）——每场各起一条流结果就不一样了。 */
+    const plays = (() => {
+      const real = Math.random
+      Math.random = nextRandom
+      try {
+        /* 三个时期各打一场 —— 与 balance 同一套口径：只在一个时期上看得出的结论，
+           换个时期未必成立（这一条是复核跑出来的教训，见 tuning 的 enemyProgressGain）。 */
+        return [0.15, 0.5, 0.9].map((p) => ({ p, w: playOut(p) }))
+      } finally { Math.random = real }
+    })()
     ok('面具心叶：整场打得完 —— 三个时期都不会卡在半路',
       plays.every(({ w }) => w.phase === 'won' || w.phase === 'lost'),
       plays.map(({ p, w }) => `时期 ${p}：${w.phase} ${w.hand} 手`).join('　'))
@@ -2555,6 +2585,304 @@ export function run(): MechReport {
     void generic
   } catch (e) {
     fail.push('面具心叶段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 14b) 具名首领 · 五轴与手 ----------
+     主人这一轮的话是「职业只是框架，具体实力看原著的能力。敌人的技能什么的好好弄，
+     尤其是特殊的BOSS」。上一轮把五轴那把尺做齐了，却**只量了我方二十四人** ——
+     对面站着的人一分没量。这一段就是补上那一边，量法与 §14 同一路数：
+
+       ① **五轴写在人自己那一份档案上**（`NamedBoss.axes`），不靠 roster 兜底、也不留 0。
+          两位特殊首领从前正是不写、又不在 SIDE_AXIS 里，于是 `derive` 的五轴全落 0，
+          `damageOf` 乘 0 再夹到 `TUNING.floor` —— **他们每一次出手都只打 4 点**。
+          所以这一节的核心是一条回归线：「没有一手落在 floor 上」，并配一条清零对照。
+       ② **手序**：离线（`enemyAct`）挑「重手」时取的是 skills 里**第一手** `kind === '战技'`
+          且不带 ult / summon 的那一记，挑不中才退回 `skills[0]`（普攻）。
+          于是 `index 1` 是离线唯一会出现的战技、`index 2` **永不出现** ——
+          所以 `index 1` 必须是造成伤害的那一手（「写得像有伤害、落地是 0」那种就藏在这儿）。
+       ③ **夹动**：`place()` 对倍率**只夹不抛**（见 §7b），所以「写着 1.6、落地是 0」
+          在代码上完全看不见。这一节把「夹动清单为空」钉成一条可断言的不变量。
+
+     量「痛」不量「死」：把全队与本体都变成打不死的沙包，只看每一手的落点有多重 ——
+     不这么摆的话，量到的是「打不打得死」，而 0 轴那两个首领恰好也打不死人，会假绿。 */
+  try {
+    const SPECIAL = ['masked-kokonoha', 'black-gold-lion'] as const
+    const AXES5: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
+    const two = MISSIONS.find((m) => m.bossId === 'masked-kokonoha')!
+    const mkTwo = () => createBattle({
+      mission: two, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    })
+
+    /* ① 五轴上身：写在**他自己那一份档案**上，且本体不入角色名录。 */
+    for (const id of SPECIAL) {
+      const nb = NAMED_BOSSES[id]!
+      ok(`具名首领 · ${nb.name}：五轴写在**他自己那一份档案**上（不靠 roster 兜底，也不留 0）`,
+        !!nb.axes && nb.axes.length === 5 && nb.axes.every((v) => v > 0),
+        nb.axes ? nb.axes.join('/') : '（没写）')
+      ok(`具名首领 · ${nb.name}：本体不入角色档案（守 roster 第 6 行「不入本名录」）`,
+        !(id in ROSTER) && !SIDE_AXIS[id],
+        `ROSTER ${id in ROSTER ? '有' : '没有'}　SIDE_AXIS ${SIDE_AXIS[id] ? '有' : '没有'}`)
+    }
+
+    /* ② 落地读数与档案一致 —— 比的是场上那一具，不是字面表。 */
+    const lord0 = mkTwo().enemies[0]!
+    ok('具名首领 · 面具心叶：面板就是档案上那一组数（× AXIS_SCALE）',
+      lord0.axes.破坏力 === 96 * AXIS_SCALE && lord0.axes.反现实亲和 === 118 * AXIS_SCALE,
+      `破 ${lord0.axes.破坏力}（档案 96×${AXIS_SCALE}）　亲 ${lord0.axes.反现实亲和}（档案 118×${AXIS_SCALE}）`)
+
+    /* ③ 打得痛。沙包场：全队与本体都打不死，只量本体**自己那几手**的落点有多重。
+       `own` 那道筛子不能省：`enemyAct` 打完一手会跟一记 `fireRivalLink`，
+       而连携的伤害走 `damageOf` 里单独的一项 `mate`（`k.linkUnits` 里别人的轴），
+       与本体自己的轴无关 —— 不筛掉的话，清零对照里会冒出「别人的轴打出来的那一笔」。 */
+    const painOf = (bossId: string, prep: (w: BattleState) => Combatant) => {
+      const w = createBattle({
+        mission: { ...two, bossId }, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, ...NO_CRIT,
+      })
+      /* 沙包要在 `prep` **之前**就立起来：二阶段那一位的 `prep`（`mkLion`）自己会推一手
+         触发 `phaseTwo`，那一手是我方在无保护状态下挨的。沙包立在后面的话，血抬回来了
+         `down` 却留着 → `standingOf(allies) === 0` → 这一场判负，量到 0 手。
+         （这是随机挑手（`Math.random() < 0.35`）才偶尔踩到的地雷，跑两遍才现形。） */
+      const sack = (a: Combatant) => { a.hpMax = 1e9; a.hp = 1e9; a.down = false }
+      for (const a of w.allies) sack(a)
+      const boss = prep(w)
+      const own = new Set(boss.skills.map((k) => k.id))
+      for (const a of w.allies) sack(a)     // `prep` 那一手之后再补一次
+      boss.hpMax = 1e9; boss.hp = 1e9; boss.down = false        // 让他活到量完
+      const shot: number[] = []
+      let guard = 0
+      while (w.phase === 'select' && guard++ < 600 && shot.length < 8) {
+        const before = w.log.length
+        const who = w.actor ? find(w, w.actor) : null
+        if (who && who.side === 'ally') act(w, { t: 'guard' })   // 我方只防御，不抢戏
+        else advance(w)
+        for (const l of w.log.slice(before)) {
+          if (l.actorId === boss.id && own.has(l.skillId ?? '') && (l.dmg ?? 0) > 0) shot.push(l.dmg!)
+        }
+      }
+      return { shot, boss, dbg: `${w.phase}｜场：${w.enemies.map((e) => (e.namedId ?? e.id) + (e.down ? '✝' : '')).join('、')}｜我方：${w.allies.map((e) => `${e.name.slice(0, 3)} ${e.hp}/${e.hpMax}${e.down ? '✝' : ''}`).join('、')}｜actor=${w.actor ?? '无'}｜log=${w.log.length}` }
+    }
+    /** 二阶段那一位：本体倒下、军团散尽，推一手触发 phaseTwo 再量 */
+    const mkLion = (w: BattleState): Combatant => {
+      const lord = w.enemies[0]!
+      lord.down = true; lord.hp = 0
+      for (const e of w.enemies) if (e.id !== lord.id) { e.down = true; e.hp = 0 }
+      for (const c of [...w.allies, ...w.enemies]) c.bar = -1e6
+      const a = w.allies.find((x) => !x.down)!
+      a.bar = TUNING.barMax
+      w.actor = null; w.phase = 'select'
+      advance(w)
+      if (w.phase === 'select' && w.actor === a.id) act(w, { t: 'guard' })
+      const lion = w.enemies.find((e) => e.namedId === 'black-gold-lion')
+      if (!lion) throw new Error('二阶段没顶上来 —— 场地废了，量不到黑金狮子')
+      return lion
+    }
+
+    const mm = (xs: number[]) => ({ lo: xs.length ? Math.min(...xs) : 0, hi: xs.length ? Math.max(...xs) : 0 })
+    const mask = painOf('masked-kokonoha', (w) => w.enemies[0]!)
+    /* 对照尺：同一条梯子上已经站好的那一位（凯特琳 RANK6 / hpMul 1.35），
+       用同一套沙包场量一遍。不拿「level-0 队友的血」当尺 —— 那会把到达点本来就该有的
+       量误判成「秒杀」：凯特琳那一记 5.0×破456 ≈ 2280，与面具心叶的 4.6×亲472 ≈ 2171
+       本就同档，那不是新病，是那把尺拍错了。 */
+    const ctrl = painOf('katherine', (w) => w.enemies[0]!)
+    const C = mm(ctrl.shot)
+    const { lo, hi } = mm(mask.shot)
+    ok('具名首领 · 面具心叶：他一拳打得痛（没有一手落在 TUNING.floor 上）',
+      mask.shot.length >= 4 && mask.shot.every((d) => d > TUNING.floor * 5),
+      `打出 ${mask.shot.length} 手：${mask.shot.join('/') || '（一手也没打）'}（floor=${TUNING.floor}）`
+      + (mask.shot.length ? '' : `〔诊断 ${mask.dbg}〕`))
+    ok('具名首领 · 面具心叶：一手落在**同档具名首领**的量级里（不是挠痒，也不是另一把尺）',
+      lo >= C.lo * 0.5 && hi <= C.hi * 2,
+      `对照（凯特琳）${C.lo}~${C.hi}　面具心叶 ${lo}~${hi}`)
+
+    const lion = painOf('masked-kokonoha', mkLion)
+    const L = mm(lion.shot)
+    ok('具名首领 · 黑金狮子：它一拳打得痛（没有一手落在 TUNING.floor 上）',
+      lion.shot.length >= 4 && lion.shot.every((d) => d > TUNING.floor * 5),
+      `打出 ${lion.shot.length} 手：${lion.shot.join('/') || '（一手也没打）'}（floor=${TUNING.floor}）`
+      + (lion.shot.length ? '' : `〔诊断 ${lion.dbg}〕`))
+    ok('具名首领 · 黑金狮子：第二阶段比第一阶段打得痛（与 hpMul 3.6 > 2.6 同一句话）',
+      L.hi > hi,
+      `${lion.boss.name} 最重 ${L.hi}　>　${mask.boss.name} 最重 ${hi}`)
+    /* 上限放到 3× 而不是与面具心叶同一个 2×：它是**完成形**，本来就该压一档 ——
+       hpMul 3.6（对面具心叶的 2.6）与破 148（全表最高）都写着这件事。
+       这一条要拦的是「另一把尺」（打出 4 或者打出十万），不是拦「高一档」。 */
+    ok('具名首领 · 黑金狮子：一手也落在**同档具名首领**的量级里（它是完成形，容许高一档）',
+      L.lo >= C.lo * 0.5 && L.hi <= C.hi * 3,
+      `对照（凯特琳）${C.lo}~${C.hi}　黑金狮子 ${L.lo}~${L.hi}`)
+
+    /* 对照：把五轴清零，同一手必须只剩 floor —— 证明上面那几条量的是**轴**，不是别的。
+       少了这一条，将来谁把 `damageOf` 里那个 `* axes[...]` 改成别的算法，上面照样绿。 */
+    const broke = painOf('masked-kokonoha', (w) => {
+      const b = w.enemies[0]!
+      for (const k of AXES5) b.axes[k] = 0
+      return b
+    })
+    ok('具名首领（对照）：五轴清零之后，同一手只剩 TUNING.floor',
+      broke.shot.length > 0 && broke.shot.every((d) => d === TUNING.floor),
+      `打出 ${broke.shot.join('/') || '（一手也没打）'}（floor=${TUNING.floor}）`)
+
+    /* A4 手序（运行期）：index 0 恒为普攻；**离线唯一会挑的那一手**必须是造成伤害的手。
+       `enemyAct` 挑的是「第一个 kind === '战技' 且不带 ult / summon」的那一手 ——
+       挑中一记 0 伤的手，那 35% 的回合就是白给（面具心叶 / 亚历克斯 / 菲德拉先前各中一条）。 */
+    const badOrder: string[] = []
+    for (const nb of Object.values(NAMED_BOSSES)) {
+      const first = nb.skills[0]
+      /* index 0 必须是普攻：derive 拿 `named.skills[0].fx` 当整只敌人的演出 fx，
+         换了序，这只敌人的出手特效会跟着变（换序时最容易踩的一条）。 */
+      if (first?.kind !== '普攻') badOrder.push(`${nb.id} index0 是「${first?.kind ?? '（空）'}」`)
+      const heavy = nb.skills.find((k) => k.kind === '战技' && !k.ult && !k.summon)
+      if (!heavy || !((heavy.power ?? 0) > 0 || heavy.copy)) {
+        badOrder.push(`${nb.id} 的重手是${heavy ? `「${heavy.name}」power=${heavy.power ?? 0}` : '空'}`)
+      }
+    }
+    ok('具名首领 · 手序：index 0 恒为普攻，且离线唯一会挑的那一手打得痛',
+      badOrder.length === 0, badOrder.join('；'))
+
+    /* A5 夹动清单为空 —— 这一条**读源码**，不读运行期。
+       `place()` 对越界的数是**静默夹回带内**的，所以运行期拿到的永远「在带内」，
+       照运行期断言是同义反复（0.6 夹成 0.35 之后，`≤ 0.35` 照样绿）。
+       真正会撒谎的是**声明值**：写着 1.6、落地 0 —— 原文件上看不出来，读数据的人看不出来。
+       所以这里直接查 `bosses.ts` 的正文（先刮掉注释，免得注释里的数字混进来）。 */
+    const bSrc = readFileSync('src/lib/battle/bosses.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const ledger: string[] = []
+    const pbCap = EFF_BAND.pushBack![1]
+    for (const m of bSrc.matchAll(/pushBack:\s*([\d.]+)/g)) {
+      if (Number(m[1]) > pbCap) ledger.push(`有声明值 pushBack ${m[1]} > 上限 ${pbCap}`)
+    }
+    /* `重压` / `牵制` 的 band 都是 [0, 0]：写别的数只会被夹成 0。
+       明写 `power: 0` 才看得出「这一类本来就不伤人」，不写就是「被夹的」。 */
+    for (const h of bSrc.split(/place\(/).slice(1)) {
+      const arch = h.slice(0, h.indexOf(',')).trim()
+      if (arch !== "'重压'" && arch !== "'牵制'") continue
+      const id = h.match(/id:\s*'([^']+)'/)?.[1] ?? '(未署名)'
+      if (!/power:\s*0\b/.test(h)) ledger.push(`${id}（${arch}）没明写 power: 0`)
+    }
+    ok('具名首领 · 夹动清单为空：声明值一个都不出带，重压 / 牵制 的手明写 0',
+      ledger.length === 0, ledger.slice(0, 6).join('；'))
+
+    /* A6 框架那一笔：`到达点` 自己认领了整条行动条（`bar: true`），
+       白名单里就该有 `clearBar`（清条是这条上最重的那一笔）。
+       漏着它，接 `FOE_ULT` 那记 `clearBar: true` 会在 **import 期**当场抛 ——
+       到时候只能改语义或改表结构，两样都比补一个白名单贵。 */
+    let barOk = true
+    let barWhy = ''
+    try {
+      place('到达点', { id: '__probe-clearBar__', name: '探针', effect: { clearBar: true } })
+    } catch (e) {
+      barOk = false; barWhy = e instanceof Error ? e.message : String(e)
+    }
+    ok('技能框架 · 到达点认领了行动条，白名单里就得有 clearBar（不是 import 期抛）',
+      barOk, barWhy)
+
+    /* A7 职能（只有具名首领那一份）。判的条件必须是「档案上**写没写** duty」——
+       `dutyOf(undefined)` 会兜到主音，照那个兜底值写就等于给全敌阵白送 6% 暴击率
+       ＋15% 暴击倍数（下面那两条对照就是为这件事立的）。 */
+    const mkFoe = (bossId?: string) => createBattle({
+      mission: { ...two, bossId }, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {},
+    }).enemies[0]!
+    const dutyBad: string[] = []
+    const covered = new Set<string>()
+    for (const nb of Object.values(NAMED_BOSSES)) {
+      if (!nb.duty) { dutyBad.push(`${nb.id} 没写 duty`); continue }
+      covered.add(nb.duty)
+      /* 写错字会被 `dutyOf` 的 `||` 静默兜成主音 —— 板上钉不出声，这一条让它出声 */
+      if (!(nb.duty in DUTY)) { dutyBad.push(`${nb.id} 的「${nb.duty}」不是五档里的字`); continue }
+      const c = mkFoe(nb.id)
+      if (c.crit !== critOf(nb.duty) || c.critMul !== critMulOf(nb.duty)) {
+        dutyBad.push(`${nb.id} 面板 ${c.crit}/${c.critMul}，该是 ${critOf(nb.duty)}/${critMulOf(nb.duty)}`)
+      }
+    }
+    ok('具名首领 · 职能：面板暴击拿的是他自己那一份（且写的是五档里的字）',
+      dutyBad.length === 0, dutyBad.slice(0, 5).join('；'))
+
+    const missingDuty = Object.keys(DUTY).filter((d) => !covered.has(d))
+    ok('具名首领 · 职能：十位把五档铺满（不是清一色主音）',
+      missingDuty.length === 0,
+      `缺 ${missingDuty.join('、') || '（无）'}；已覆盖 ${[...covered].join('、')}`)
+
+    /* 对照两条：现推的观测体与图鉴实体都不写 duty，两边都得停在常数项上。
+       谁把 `crit: named?.duty ? … : …` 改成 `critOf(named?.duty)`，这两条当场变红。 */
+    const foePlain = mkFoe(undefined)
+    const codexWithDuty = Object.values(END_FOES).filter((e) => e.duty).length
+    ok('具名首领（对照）：杂兵与图鉴实体仍拿常数项，没被职能带上去',
+      foePlain.crit === TUNING.critBase && foePlain.critMul === TUNING.critMul && codexWithDuty === 0,
+      `杂兵 ${foePlain.crit}/${foePlain.critMul}（该 ${TUNING.critBase}/${TUNING.critMul}）；`
+      + `图鉴写了 duty 的 ${codexWithDuty} 位（该 0）`)
+
+    /* A8 「越伤越强」不是挂牌子 —— 拆成两条，一条定死量纲、一条粗判真的打出去了。
+       ① 确定性的一支：`atkMulOf` 就是 `damageOf` 里乘上去的那个因子
+          （engine.ts 的 `raw = … * atkMulOf(atk) * …`），半血与满血之比该是 1.9/1.1。
+          一个只写在 `passive` 里、`atkMulOf` 从来不读的被动，在这里当场露馅（比值 1.0）。 */
+    const atkMulAt = (hpFrac: number) => {
+      const c = mkFoe('katherine')
+      c.hpMax = 1e9
+      c.hp = Math.max(1, Math.round(1e9 * hpFrac))
+      return atkMulOf(c)
+    }
+    const mFull = atkMulAt(1)
+    const mLow = atkMulAt(0.3)
+    ok('具名首领 · 凯特琳：`lowHpAtk` 真的进了伤害那一路的乘数（`atkMulOf`，不是挂牌子）',
+      mFull > 0 && Math.abs(mLow / mFull - 1.9 / 1.1) < 0.02,
+      `atkMulOf 满血 ${mFull.toFixed(3)} → 半血 ${mLow.toFixed(3)}`
+      + `（${(mLow / mFull).toFixed(3)}×，该 ${(1.9 / 1.1).toFixed(3)}×）`)
+
+    /* ② 实际打出来的那一手也得跟着更重 —— 这一条**只做粗判**。
+       ⚠️ 别想着用均值把比值卡到 1.7：实测拉满样本仍是 1.59~1.79（抖动的标准差压不下来），
+       贴着阈值就是偶发变红（第一版 1.6 的红灯、以及后来 1.59 的那一次，都是这么来的）。
+       量纲上的精确断言交给上面那一支，这里只证明「确实更重」。
+       沙包要把物理抗性**清零**：`damageOf` 末了的 `- def.axes.物理抗性 * resistCut`
+       是**每下固定减**，会把比值整体往下压（不清零时均值比只有 ~1.65，清了才贴近 1.73）。 */
+    const woundOf = (hpFrac: number) => {
+      const w = createBattle({
+        mission: { ...two, bossId: 'katherine' }, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, ...NO_CRIT,
+      })
+      const k = w.enemies[0]!
+      const own = new Set(k.skills.map((s) => s.id))
+      for (const a of w.allies) {
+        a.hpMax = 1e9; a.hp = 1e9; a.down = false
+        a.axes.物理抗性 = 0        // 见上：固定削减会把比值压下来，不是我们要量的东西
+      }
+      k.hpMax = 1e9
+      k.hp = Math.max(1, Math.round(1e9 * hpFrac))
+      const byHand = new Map<string, number[]>()
+      let guard = 0
+      let total = 0
+      while (w.phase === 'select' && guard++ < 1200 && total < 60) {
+        const before = w.log.length
+        const who = w.actor ? find(w, w.actor) : null
+        if (who && who.side === 'ally') act(w, { t: 'guard' })
+        else advance(w)
+        for (const l of w.log.slice(before)) {
+          if (l.actorId === k.id && own.has(l.skillId ?? '') && (l.dmg ?? 0) > 0) {
+            const arr = byHand.get(l.skillId!) ?? []
+            arr.push(l.dmg!); total += 1
+            byHand.set(l.skillId!, arr)
+          }
+        }
+      }
+      return byHand
+    }
+    const meanOf = (m: Map<string, number[]>, id: string) => {
+      const xs = m.get(id) ?? []
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
+    }
+    /* 锁普攻那一手：它出现得最密（离线非重手的回合都打它），均值收敛最快。
+       混着比会被「重手与普攻的出现比例」再带一层噪声（那 35% 也是现掷的）。 */
+    const FULL = woundOf(1)
+    const LOW = woundOf(0.3)
+    const fMean = meanOf(FULL, 'boss-katherine-basic')
+    const lMean = meanOf(LOW, 'boss-katherine-basic')
+    ok('具名首领 · 凯特琳：半血打出来的那一拳确实更重（粗判，量纲见上一条）',
+      fMean > 0 && lMean >= fMean * 1.3,
+      `普攻均值：满血 ${fMean.toFixed(1)}（${(FULL.get('boss-katherine-basic') ?? []).length} 拍）`
+      + ` → 半血 ${lMean.toFixed(1)}（${(LOW.get('boss-katherine-basic') ?? []).length} 拍）`
+      + `（${fMean ? (lMean / fMean).toFixed(2) : '—'}×）`)
+
+    info.push(`具名首领：面具心叶一手 ${lo}~${hi}；黑金狮子一手 ${L.lo}~${L.hi}；`
+      + `对照（凯特琳）${C.lo}~${C.hi}`)
+  } catch (e) {
+    fail.push('具名首领段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   /* ---------- 15) 图鉴实体 · 形态链 · 五轴同一条曲线 ----------

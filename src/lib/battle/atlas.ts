@@ -233,7 +233,11 @@ export const ARCH: Record<string, Arch> = {
       + '那一手是这个人全部的东西，所以代价最高、冷却最长、样式由他自己定。'
       + '守护型的到达点不带伤害（倍率写 0），规格与辅助手无异。',
     target: 'one', cost: 8, cd: 4, needsStack: 3, band: [2.2, 5.2],
-    allow: ['pierce', 'cleanse', 'silence', 'sureCrit', 'stanceBreak'],
+    /* `clearBar` 是**漏写**不是设计：下面 `bar: true` 已经把整条行动条认领了
+       （见头注「条只许认领过的人碰」），而清条是这条上最重的那一笔 ——
+       漏着它的话，谁写出 `{ clearBar: true }` 谁就在 **import 期**当场抛，
+       只能去改语义或改表结构，两样都比补一个白名单贵。 */
+    allow: ['pierce', 'cleanse', 'silence', 'sureCrit', 'stanceBreak', 'clearBar'],
     bar: true,   // 这一整类都以动条为打法
   },
 }
