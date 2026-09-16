@@ -126,7 +126,7 @@ export const ARMS: ArmEntry[] = [
   /* ———————— 斩击 · 卡乌斯学院 ———————— */
   {
     id: 'majina-curse', kind: '斩击', name: '森林的诅咒', sub: 'CURSE OF THE FOREST',
-    holder: '玛吉娜・阿布拉姆', holderNote: '卡乌斯学院',
+    holder: '玛吉娜・阿布拉姆', holderNote: '卡乌斯学院', holderId: 'majina-abram',
     phrase: '以口头禁令束缚罪人',
     power: '一根巨大如树的木钉，也长于口舌：对目标下达「禁止」的口头命令，违者即受诅咒反噬。'
       + '命令的句子越长、越是郑重其事，束缚的力量就越强——她的每一句话都像在森林里立下一道不可逾越的界碑。',

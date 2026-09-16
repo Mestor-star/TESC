@@ -1085,7 +1085,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
   const clearDateRequest = useCallback(() => setDateRequest(null), [])
 
-  /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 20 名在册登场者） */
+  /** 立即把某角色标记为「遇见」（接受档案名录内任意 id：四位主役 + 21 名在册登场者） */
   const meetChar = useCallback((charId: string) => {
     if (!PERSON_IDS.includes(charId)) return
     setWorld((prev) => (prev.met[charId] ? prev : { ...prev, met: { ...prev.met, [charId]: true } }))

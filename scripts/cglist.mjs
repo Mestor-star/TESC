@@ -87,7 +87,7 @@ try {
   const cell = (s) => String(s ?? '—').replace(/\|/g, '\\|')
 
   /* ---- ① 约会常服立绘 / ② 私密立绘 / ③ 见面约会 ----
-     ①②两族立绘都挂在同一份名单（INTIMATE，18 位）上：一人一张、id 由 charId 现算，
+     ①②两族立绘都挂在同一份名单（INTIMATE，19 位）上：一人一张、id 由 charId 现算，
      所以不另立登记表 —— 常服那一族的 id 现算那一步与视图共用 `dateWearId`，
      免得脚本和 components/DateSide.tsx 各写各的字符串。 */
   const wear = Object.keys(INTIMATE).map((charId) => ({

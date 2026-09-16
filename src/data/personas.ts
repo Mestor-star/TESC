@@ -4,7 +4,7 @@ import { personOf } from './castmeta'
 import { personaCardLines, personaCardOf } from './persona'
 
 /**
- * 角色短信 —— 可对话的出场角色（**全员 24 人**，名单与「角色档案」同一张表：
+ * 角色短信 —— 可对话的出场角色（**全员 25 人**，名单与「角色档案」同一张表：
  * data/roster.ts 的 ROSTER_GROUPS，主役在前、其余按学院分组）。
  * 解锁规则也与档案一致：**遇见（world.met）后**才可发起对话，未遇见者在名册里挂着锁。
  * 口径之所以照抄档案而不另立一套：同一部终端上「这个人算不算见过」只该有一个说法，
@@ -88,6 +88,11 @@ export const TAVERN_PERSONAS: TavernPersona[] = [
     scenario: '记者席上，稿子敲到一半',
     greeting: '哎呀，这不是终末停滞委员会的那位吗！正好——你随便说点什么，我负责把它写成头条☆',
   },
+  {
+    charId: 'majina-abram',
+    scenario: '卡乌斯学院的走廊，她刚下完课、晃悠悠地往回走',
+    greeting: '哦，是你啊。这个点切到学姐的信道，要么是有事，要么就是想挨钉——说吧，我听着。',
+  },
   // —— Corporations ——
   {
     charId: 'katherine',
@@ -164,7 +169,7 @@ export interface PersonaChar {
   sigil: string
 }
 
-/** 查名册角色（主役 + 20 名在册登场者；操作员与表外 id 一律 undefined） */
+/** 查名册角色（主役 + 21 名在册登场者；操作员与表外 id 一律 undefined） */
 export function charOf(id: string): PersonaChar | undefined {
   const p = personOf(id)
   if (!p || p.kind === 'operator') return undefined

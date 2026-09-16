@@ -52,7 +52,7 @@
 
 - **它不是 CG。** 不登记进任何候选清单，导演点不到它，也不落 `world.cg` ——
   立绘跟着人走：她在这一场里，那一栏就该有她的脸（见 `components/DateSide.tsx`）。
-- `charId` 就是那份名单的键（`src/data/intimate.ts`，共 18 位女角色）——
+- `charId` 就是那份名单的键（`src/data/intimate.ts`，共 19 位女角色）——
   与私密档案立绘同一份名单，两位立绘是**同一个人的两张画**。
 - 缺图时**不占版位**，只塌成一行「待补」并写明该补到哪个文件名。
 - 别跟约会那批（`cg-date-*`）、私密立绘（`cg-intim-*`）撞名。
@@ -87,7 +87,7 @@
 | --- | --- |
 | `cg-intim-<charId>.webp` / `.png` / `.jpg` | 例：`cg-intim-hikari.webp`（恋兔光）、`cg-intim-luna.webp`（露娜） |
 
-- `charId` 就是档案角色 id（见 `src/data/intimate.ts` 的键，共 18 位女角色）。
+- `charId` 就是档案角色 id（见 `src/data/intimate.ts` 的键，共 19 位女角色）。
 - 版位是**左栏那一根窄高条**（`minmax(240px, 1fr)` 的一栏，高 `min(84vh, 760px)` 减掉底部
   说明带 ≈ 620 px），算下来**约 1 : 2**。按 `contain` 摆 —— 整身要完整看得见，
   **画得比 1:2 更方也不会被裁**，只是两侧留空；想铺满就照 1:2 竖构图来。

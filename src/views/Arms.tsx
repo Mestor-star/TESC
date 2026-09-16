@@ -12,7 +12,7 @@ const KINDS: ArmKind[] = ['弹痕', '斩击', '片羽', '特殊武器']
 
 /**
  * 图鉴门禁（P8）：
- *  无 holderId 且无 revealAt → 恒显（公开条目，如「泣泪巨鸟」「森林的诅咒」等）。
+ *  无 holderId 且无 revealAt → 恒显（公开条目，如「泣泪巨鸟」「喜讯喜讯」等）。
  *  仅 holderId → 需「遇见」持有者（isMet）后点亮。
  *  仅 revealAt → 需收束该事件（epDone[revealAt]）后点亮（操作员的 noapusa / a Session. 属此）。
  *  二者皆有 → 按 gate 取：'holder' 只需持有者已见；'event' 只需事件收束；缺省两者皆须满足。

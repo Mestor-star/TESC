@@ -135,7 +135,7 @@ export function Dashboard() {
 
   const lastSquad = live.rec[0]?.squad ?? []
   const squadShown = lastSquad.length ? lastSquad : CHARACTERS.slice(0, 4).map((c: Character) => c.id)
-  /* 「已遇见」数的是**在册名册**（24 位），不是主役四人 —— 档案页列的是这一份名册，
+  /* 「已遇见」数的是**在册名册**（25 位），不是主役四人 —— 档案页列的是这一份名册，
      剧情里照过面的人也照这份登记（见 Terminal 的现场名册落账）。 */
   const metCount = useMemo(() => PERSON_IDS.filter((id) => isMet(id)).length, [isMet])
 
