@@ -165,10 +165,11 @@ node scripts/smoke/smoke.mjs   # 全链路冒烟
   底下那条细线留着。改法是纯 CSS —— 十屏的结构全是「文字块 + 第二槽」，第二槽在
   column 方向里自然落第二行，一个 tsx 都不用动。
   ⚠️ **装饰一律挂 `.vhead` 后代（`.vhead .vhead__kicker::before` / `.vhead h1::before`），
-  不许写进 `.vhead__kicker` 本体** —— 那个类在 `Archive.tsx` 的立绘卡里还有三处
-  **脱离页头**的小角标用法（`PORTRAIT / 全身`），改本体就会让那三处也长出两条线来。
-  **本体里至今躺着一条漏网的**：`tokens.css` 的 `.vhead__kicker::before`（26×3 红杠）
-  是「细线夹 kicker」那一版的遗物，`a2d3f1b` 只加了带 `.vhead` 前缀的那对细线、
-  没删它 —— 于是 Archive / Memory / Saga / Plot 那四枚脱离页头的小角标每个前面都顶着
-  一条红杠。**要动它先问一声**，那四处的观感是主人看过的。
+  不许写进 `.vhead__kicker` 本体** —— 那个类共有**六处脱离页头**的小角标用法：
+  `Archive.tsx:238 / 447 / 1167`（`PORTRAIT / 全身`、`PRIVATE DOSSIER / 立绘`）、
+  `Memory.tsx:350`、`Saga.tsx:123`、`Plot.tsx:1410`。改本体那六处会跟着一起变。
+  **旧的漏网已清（2026-09-16，主人拍的「删」）**：`tokens.css` 本体那条
+  `.vhead__kicker::before`（26×3 红杠，「细线夹 kicker」那一版的遗物，`a2d3f1b` 只加了
+  带 `.vhead` 前缀的那对细线、没删它）当时正漏到那六处小角标的前面，现已整条删掉、
+  原处留了注。页头十屏不受影响（它们走 `.vhead .vhead__kicker::before` 那对细线）。
 给露娜的webui生图想tag
