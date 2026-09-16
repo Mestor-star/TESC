@@ -438,7 +438,13 @@ function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec):
     mult *= 1 + (atk.axes[AFFINITY] / (200 * AXIS_SCALE)) * TUNING.affinityWeight * (anti ? 1 : 0.3)
   }
   if (atk.side === 'ally' && s.overdrive) mult *= TUNING.overdrivePenalty
-  let dmg = raw * mult * rollJitter() - def.axes.物理抗性 * TUNING.resistCut
+  /* 穿甲：不止免闪避，**护甲那一笔也照免**。原先这里只免闪避，减伤照吃 ——
+     与写在面板上的那两句对不上（skilltext「无视闪避与减伤」、atlas 的「穿甲」
+     「无视护甲与减伤的一击：倍率不高，但它不吃对方的防」）。字面是标着「护甲」的
+     那一笔固定削减，就免它；**护罩与架势不动** —— 那两样各有各的名字，也各有各的
+     破法（护罩看倍率、架势看 `stanceBreak`），不该被一个 pierce 顺手拆了。 */
+  const armor = k.effect?.pierce ? 0 : def.axes.物理抗性 * TUNING.resistCut
+  let dmg = raw * mult * rollJitter() - armor
   dmg = Math.max(TUNING.floor, Math.round(dmg))
   // 破绽成立：观测既已成立，打上去就是看得见的那种重（与「标记」同层，两者叠乘）
   dmg = Math.round(dmg * (1 + markOf(def)) * (brokenOf(def) ? TUNING.breakAmp : 1))
@@ -812,6 +818,58 @@ function scopeOf(k: SkillSpec): 'one' | 'all' {
   return k.target === 'all' || k.target === 'allyAll' ? 'all' : 'one'
 }
 
+/**
+ * 血被打到 0 之后，先问两条「留一口气」的规矩，两条都过不去才真的失能。
+ *
+ *   · **战斗续行** —— 被动给的，限次（`endureCap`）；原文里「心脏破了也照样站着」
+ *     的人，致命伤只留一口气。
+ *   · **不倒** —— 意志力极强者一次硬撑，记在 `note` 上，只保一次。
+ *
+ * 抽出来是因为**致死不止挨打一条路**：流血每一拍都在掉血（见 tickBuffs），
+ * 原先它自己写了一句 `down = true` 就完事，把这两条整个绕过去了 ——
+ * 一个「心脏破了也照样站着」的人，会因为慢慢流血流干而死，这说不通。
+ * 谁把人打到 0 都得从这一道门过。
+ *
+ * @returns 'endure' 续行住了 · 'stand' 硬撑住了 · 'down' 这次是真的失能
+ */
+function keepStanding(s: BattleState, def: Combatant): 'endure' | 'stand' | 'down' {
+  // 战斗续行：被动那一份，本场已经续过几次记在 def.endured 上
+  const p = def.passive
+  const cap = p ? endureCap(s, p) : 0
+  if (cap !== 0 && (cap < 0 || def.endured < cap) && p) {
+    const base = p.endure ?? 0
+    def.hp = 1
+    def.endured += 1
+    /* 这一下若是**加算**换来的（本场已经续过 base 次），把那个人点出来：
+       「回来」这一下不是她自己织的，是有人在场上 —— 见 endurePlus。 */
+    const plus = p.endurePlus
+    const by = plus && base > 0 && def.endured > base
+      ? aliveOf(allOf(s)).find((c) => c.id === plus.with)
+      : undefined
+    pushLog(s, {
+      round: s.hand, actorId: def.id, actor: def.name, side: def.side,
+      skillId: 'endure', skill: '战斗续行', kind: '指令', fx: 'guard',
+      note: by
+        ? `${p.name} —— ${p.desc.split('。')[0]}：${by.name}还在场上，这一下也没打穿。`
+        : `${p.name} —— ${p.desc.split('。')[0]}：这一下没打穿。`,
+    })
+    return 'endure'
+  }
+  // 门槛按面板尺走（60 是评定尺上「意志力极强」那一条，轴放大了它也得放大）
+  if (def.side === 'ally' && TUNING.downWillSave && def.axes.意志力 >= 60 * AXIS_SCALE && !def.note?.includes('不倒')) {
+    def.hp = 1
+    def.note = `${def.note ?? ''}｜不倒`.trim()
+    pushLog(s, {
+      round: s.hand, actorId: def.id, actor: def.name, side: def.side,
+      skillId: 'stand', skill: '不倒', kind: '指令', fx: 'heal',
+      note: '被打倒的瞬间硬撑住了 —— 只此一次。',
+    })
+    return 'stand'
+  }
+  def.down = true
+  return 'down'
+}
+
 function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogEntry {
   const pierce = k.effect?.pierce === true
   // 命中 = 对方的闪避减去出手者这一手的命中（被动常驻 + 本手加成）
@@ -855,27 +913,8 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   }
   let down = false
   if (def.hp === 0 && !def.down && def.gone <= 0) {
-    // 战斗续行：原文里「心脏破了也照样站着」的人，致命伤只留一口气
-    const p = def.passive
-    const cap = p ? endureCap(s, p) : 0
-    const canEndure = cap !== 0 && (cap < 0 || def.endured < cap)
-    if (canEndure && p) {
-      const base = p.endure ?? 0
-      def.hp = 1
-      def.endured += 1
-      /* 这一下若是**加算**换来的（本场已经续过 base 次），把那个人点出来：
-         「回来」这一下不是她自己织的，是有人在场上 —— 见 endurePlus。 */
-      const plus = p.endurePlus
-      const by = plus && base > 0 && def.endured > base
-        ? aliveOf(allOf(s)).find((c) => c.id === plus.with)
-        : undefined
-      pushLog(s, {
-        round: s.hand, actorId: def.id, actor: def.name, side: def.side,
-        skillId: 'endure', skill: '战斗续行', kind: '指令', fx: 'guard',
-        note: by
-          ? `${p.name} —— ${p.desc.split('。')[0]}：${by.name}还在场上，这一下也没打穿。`
-          : `${p.name} —— ${p.desc.split('。')[0]}：这一下没打穿。`,
-      })
+    const kept = keepStanding(s, def)
+    if (kept === 'endure') {
       return {
         round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
         skillId: k.id, skill: k.name, kind: k.kind, fx: k.fx,
@@ -884,20 +923,7 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
         crit: critMul > 0, critMul: critMul > 0 ? critMul : undefined,
       }
     }
-    // 门槛按面板尺走（60 是评定尺上「意志力极强」那一条，轴放大了它也得放大）
-    if (def.side === 'ally' && TUNING.downWillSave && def.axes.意志力 >= 60 * AXIS_SCALE && !def.note?.includes('不倒')) {
-      // 意志力极强者：一次「不倒」——留一口气，记在 note 上，只保一次
-      def.hp = 1
-      def.note = `${def.note ?? ''}｜不倒`.trim()
-      pushLog(s, {
-        round: s.hand, actorId: def.id, actor: def.name, side: def.side,
-        skillId: 'stand', skill: '不倒', kind: '指令', fx: 'heal',
-        note: '被打倒的瞬间硬撑住了 —— 只此一次。',
-      })
-    } else {
-      def.down = true
-      down = true
-    }
+    down = kept === 'down'
   }
   return {
     round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
@@ -1327,16 +1353,21 @@ function endBeat(s: BattleState) {
         note: `${c.name} 在流血 —— 这一拍又少 ${dmg}。`,
       })
       if (c.hp <= 0 && !c.down) {
-        c.down = true
-        c.bar = 0
-        pushLog(s, {
-          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
-          skillId: 'down', skill: '失能', kind: '指令', fx: 'noise',
-          targetId: c.id, target: c.name, down: true,
-          note: `${c.name} 流尽了 —— 失去战力。`,
-        })
-        // 流血流倒的也照样牵天赋 ——「有人倒下」不问他是怎么倒的
-        fireDownTalents(s, c)
+        /* 致死不止挨打一条路，留一口的规矩也只有一套 —— 续行 / 不倒都从这一道门过
+           （原先这里直接 down = true，把两条整个绕过去了）。 */
+        if (keepStanding(s, c) === 'down') {
+          c.bar = 0
+          pushLog(s, {
+            round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+            skillId: 'down', skill: '失能', kind: '指令', fx: 'noise',
+            targetId: c.id, target: c.name, down: true,
+            note: `${c.name} 流尽了 —— 失去战力。`,
+          })
+          // 流血流倒的也照样牵天赋 ——「有人倒下」不问他是怎么倒的
+          fireDownTalents(s, c)
+        }
+        /* 没倒的那两支不用在这儿补话：keepStanding 自己已经写了
+           「战斗续行」/「不倒」那一行，紧跟在流血那一句后面，读着是连着的。 */
       }
       /* 掉到线以下也算跌破（流血算真伤）—— 与 hit 里那一路同一个口子，
          少了这一句，「残血才响」的天赋会被一整段流血悄悄绕过去。 */
@@ -1495,6 +1526,20 @@ export function advance(s: BattleState): BattleState {
         note: `${cur.name} 这一次出手没了 —— 条照扣，这一拍什么也没打出来`
           + (broken ? '（身上还压着那道破绽）。' : '（断拍未解）。'),
       })
+      /* 这一拍被划掉了，但**拍子照过**：我方的人该登记的也得登记。
+         不登记的话 `acted` 永远凑不齐（收拍判的是「我方存活者各出过一手」，
+         见 beginAction），这一回合就得等到他下一次真出手才算完 ——
+         而他的条刚被扣掉一整条，中间要空转好几格，于是「断拍」在玩家眼里
+         变成了**全队一起被拖一拍**。断拍该收的是他自己那一手，不是所有人的节奏。
+
+         ⚠️ 只补 `acted` 与收拍，**冷却与手数一个字不动** ——
+         「条照扣、冷却不走」正是这一手狠的地方（见上面那一段注）。
+         回手（extra）给的那次照旧不登记，与 beginAction 同一口径。 */
+      if (cur.side === 'ally' && !extra) {
+        if (!s.acted.includes(cur.id)) s.acted.push(cur.id)
+        const friends = s.allies.filter((x) => !x.down && x.gone <= 0)
+        if (friends.length > 0 && friends.every((x) => s.acted.includes(x.id))) endBeat(s)
+      }
       continue
     }
     if (cur.side === 'enemy') {
@@ -2056,6 +2101,19 @@ function ultStep(s: BattleState, foe: Combatant, t: Combatant): boolean {
  *   · 有 `summonPack` —— 喊的是**真正站在对面的人**，按名单依次出场
  *     （derive 的 rivalOf，五轴与技能照搬本人）。骷髅假面之男的亡灵军团走的是这一支。
  *
+ * **节拍照扣，但这一手永远出得起。**
+ * 扣款收在这里而不是两个调用点上，是为了让「喊人的钱只付一次」成为一条读得出的事实
+ * （从前只有思考型那一路付，离线那一路一分不付 —— 见 tuning 的 chTempoBase 那一段）。
+ * 而**不设门槛**是一条有原因的不对称，不是漏掉的一行：
+ *   · 喊人喊的是**剧本里的那一批人**（骷髅假面之男的亡灵军团直接连着第二阶段，
+ *     见 bosses.ts 的 summonPack 与 engine 的 phaseTwo），
+ *   · 而敌方那一池几乎只出不进：三条回节拍的路（普攻回 / 防御回 / 被动空转回）
+ *     全挂在我方那一套上，破绽那一笔（`stripGuard`）也只在我方身上才结得出来 ——
+ *     点数在我方恒为 0，第一句就退了。
+ * 把剧本手挂在一条几乎不进水的池子上，长一点的仗就会把「军团随本体意志散去」这一幕
+ * 变成「他没钱，所以没喊」——那不是设计，那是资源账漏到了正文上。
+ * 常规重手不同：它被打回普攻仍然是一手，所以那一栏照 `affordable` 筛（见 enemyAct）。
+ *
  * @returns 这一手是否真的用来喊人了（false = 它没这一手／到顶了／还在冷却）
  */
 export function summonFoe(s: BattleState, foe: Combatant): boolean {
@@ -2087,6 +2145,8 @@ export function summonFoe(s: BattleState, foe: Combatant): boolean {
       })
   if (!named) s.summoned = (s.summoned ?? 0) + 1
   s.enemies.push(m)
+  // 喊人这一手的钱（扣到 0 为止，与我方出手同一条规矩；不设门槛，见函数头）
+  foe.tempo = Math.max(0, foe.tempo - k.cost)
   // 这一手自己也有冷却（走「自身出手次数」，见 beginAction）——
   // 不然首领每一手都在喊人，它自己一次都不打，那就不叫首领，叫传送门。
   foe.cds[k.id] = k.cd ?? 4
@@ -2303,16 +2363,34 @@ function fireHitTalents(s: BattleState, atk: Combatant, def: Combatant, e: LogEn
   if (e.down) fireDownTalents(s, def)
 }
 
-/** 离线判断：引擎自带的那套（没有接口、或接口没接上时用它） */
+/**
+ * 离线判断：引擎自带的那套（没有接口、或接口没接上时用它）。
+ *
+ * **节拍照扣**（`foe.tempo`）。敌方那一池是实打实的资源 ——
+ * `derive.buildFoe` 照 `chTempoMax(意志力)` 给（与角色同一根轴、同一把尺），
+ * 思考型通道那一遍也照它筛 `affordable`；只有这一路从前漏了扣款，
+ * 于是「接没接上接口」变成了敌方强度的两档（见 tuning 的 chTempoBase 那一段）。
+ * 扣法与我方 `act` 一模一样：**出手前扣，扣到 0 为止**（不欠账）。
+ *
+ * 「挑重手」那一栏也照 `affordable` 筛：出不起的重手不该被挑中 ——
+ * 挑中了也只是扣成一笔还不上的空账，那正是「扣不动就白嫖」的另一半。
+ * 出不起就退回普攻（**普攻永远出得起**，与我方普攻同一条规矩，见 act 的 atk 分支）。
+ */
 function enemyAct(s: BattleState, foe: Combatant) {
   const t = pickTarget(s, foe)
   if (!t) return
   if (ultStep(s, foe, t)) return
   // 首领与精英先把人喊来 —— 喊人算它这一手（有冷却，也有整场上限）
   if (summonFoe(s, foe)) return
-  // 挑「重手」时跳过召唤那一手：它不造成伤害，被挑中等于白出一手
-  const heavy = foe.skills.find((k) => k.kind === '战技' && !k.ult && !k.summon)
-  const k = heavy && Math.random() < 0.35 ? heavy : foe.skills[0]
+  /* 挑「重手」时跳过召唤那一手：它不造成伤害，被挑中等于白出一手。
+     再加一条 `affordable` —— 出不起的不算数（见函数头）。 */
+  const heavy = foe.skills.find(
+    (k) => k.kind === '战技' && !k.ult && !k.summon && affordable(k, foe.tempo),
+  )
+  const basic = basicOf(foe) ?? foe.skills[0]
+  const k = heavy && Math.random() < 0.35 ? heavy : basic
+  if (!k) return
+  foe.tempo = Math.max(0, foe.tempo - k.cost)
   resolve(s, foe, k, t.id)
   // 打完这一手才轮到那记连携 —— 它是「接在攻击后面」的，不是另起一手
   fireRivalLink(s, foe.id)
@@ -2333,12 +2411,10 @@ function enemyActWith(s: BattleState, foe: Combatant, it: EnemyIntent) {
     return
   }
   /* 交回来的是一记召唤：喊得动就喊，喊不动（到顶了 / 冷却没走完）就退回常规一手。
-     这一手不走 resolve —— 它没有目标、也不造成伤害（见 summonFoe）。 */
+     这一手不走 resolve —— 它没有目标、也不造成伤害（见 summonFoe）。
+     ⚠️ 扣款不在这儿：它收在 summonFoe 自己身上，两条路共用那一笔（别在这儿再扣一次）。 */
   if (k.summon) {
-    if (summonFoe(s, foe)) {
-      foe.tempo = Math.max(0, foe.tempo - k.cost)
-      return
-    }
+    if (summonFoe(s, foe)) return
     enemyAct(s, foe)
     return
   }
@@ -2567,8 +2643,15 @@ export function digestOf(s: BattleState): string {
   return lines.join('\n')
 }
 
-/** 本场打得最重的一个（作战记录里点名） */
-export function mvpOf(s: BattleState): string {
+/**
+ * 本场打得最重的那一位的 **id**（空场 / 谁都没打出伤害时为 undefined）。
+ *
+ * 结算要的正是这个 id（MVP 多算一格羁绊，见 settle），而**不该**拿名字反查回去 ——
+ * `Combatant.name` 是**屏幕上的名牌**（`derive` 会按时期 / 档位 / 同型编号改写它），
+ * 它并不总是名录里那一行字，反查就会静默落空、那 +1 谁也没拿到。
+ * 名字那一路（`mvpOf`）留给正文与面板读。
+ */
+export function mvpIdOf(s: BattleState): string | undefined {
   const tally: Record<string, number> = {}
   for (const e of s.log) {
     if (e.side !== 'ally' || !e.dmg) continue
@@ -2577,7 +2660,13 @@ export function mvpOf(s: BattleState): string {
   let best = ''
   let bestV = -1
   for (const id in tally) if (tally[id] > bestV) { bestV = tally[id]; best = id }
-  return (best && find(s, best)?.name) || '—'
+  return best || undefined
+}
+
+/** 本场打得最重的一个（作战记录里点名）—— 名牌，给人读的 */
+export function mvpOf(s: BattleState): string {
+  const id = mvpIdOf(s)
+  return (id && find(s, id)?.name) || '—'
 }
 
 /** 剩余体力（结算后写回持久池） */

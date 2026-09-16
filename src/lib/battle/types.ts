@@ -960,8 +960,17 @@ export interface BattleRecord {
   at: number
   /** 参战角色 id */
   squad: string[]
-  /** 本场出力最重者的显示名 */
+  /** 本场出力最重者的显示名（给人读的：面板 / 正文都用它） */
   mvp: string
+  /**
+   * 同一位的**角色 id** —— 结算那一格羁绊（`TUNING.bondMvp`）照它发。
+   *
+   * 独立一格而不是让结算拿 `mvp` 反查名录，是因为 `mvp` 是**名牌**：
+   * derive 会按时期 / 档位 / 同型编号改写它，反查就可能一个也认不出，
+   * 于是那 +1 静默落空（见 engine 的 mvpIdOf）。
+   * 旧档没有这一栏 —— 结算那头留着按名字反查的兜底，不追溯改写既有记录。
+   */
+  mvpId?: string
   /** 逐回合做了什么 —— 给模型与作战记录共用的一份事实底稿 */
   digest: string
   turns: LogEntry[]

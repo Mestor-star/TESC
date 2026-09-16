@@ -10,7 +10,7 @@
 
 import { chatCompletion, isReady, loadProfile } from '../api'
 import type { ChatTurn } from '../api'
-import { mvpOf } from './engine'
+import { mvpIdOf, mvpOf } from './engine'
 import type { BattleRecord, BattleState } from './types'
 
 /** 系统侧口径：终端在替委员会起草文书，不是「AI 写小说」 */
@@ -159,6 +159,7 @@ export function recordOf(s: BattleState, digest: string): BattleRecord {
     at: Date.now(),
     squad: s.allies.map((a) => a.id),
     mvp: mvpOf(s),
+    mvpId: mvpIdOf(s),
     digest,
     turns: s.log,
     narrative: '',

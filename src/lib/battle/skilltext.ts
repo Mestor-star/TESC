@@ -70,7 +70,7 @@ export function effectTextsOf(e: SkillEffect | undefined, turns?: number): strin
   else if (e.noCrit) out.push('绝不暴击（求稳不求重）')
   if (e.crit) out.push(`暴击率 +${pct(e.crit)}`)
   if (e.critMul) out.push(`暴击伤害 +${pct(e.critMul)}`)
-  if (e.pierce) out.push('无视闪避与减伤')
+  if (e.pierce) out.push('无视闪避与护甲')
   /* 架着盾的目标：一个专门打它（加成），一个把盾打脱手（击溃） */
   if (e.stanceAmp) out.push(`打「架着盾」的目标 +${pct(e.stanceAmp)}`)
   if (e.stanceBreak) out.push('击溃防御姿态（架着的盾当场脱手）')

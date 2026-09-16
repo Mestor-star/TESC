@@ -6,7 +6,8 @@ import {
 } from '@phosphor-icons/react'
 
 import {
-  act, bossUltOf, createBattle, digestOf, enemysTurn, etaOf, legalSkills, lootOddsOf, pendingFoe, rewardOf,
+  act, bossUltOf, chargeOf, createBattle, digestOf, enemysTurn, etaOf, legalSkills, lootOddsOf,
+  pendingFoe, rewardOf,
 } from '../lib/battle/engine'
 import type { Command } from '../lib/battle/engine'
 import { intentOf, requestEnemyIntent } from '../lib/battle/ai'
@@ -407,9 +408,21 @@ export function Battle({
         /* 顺位读的是 windowGainOf —— 离散化之后「余量 ÷ 充能」不再是那把尺子（见 §3） */
         const w = etaOf(c)
         const eta = ready ? 0 : Number.isFinite(w) ? Math.max(1, Math.ceil(w)) : 99
-        return { c, pct, ready, eta }
+        /* 排序用的余量**不取整**（`eta` 是给人读的整数）。引擎是逐格推条的，
+           谁先在某一格里满谁就先动，比的是那个小数；拿取整过的 `eta` 排，
+           1.2 与 1.6 会平白并列，屏幕上就多出一堆「谁先手」的错觉。 */
+        const raw = ready ? 0 : Number.isFinite(w) ? w : 99
+        return { c, pct, ready, eta, raw }
       })
-      .sort((a, b) => a.eta - b.eta || b.pct - a.pct)
+      /* 这把尺与引擎**逐条对齐**（见 engine 的 readyList 与 advance 的空转那一段）：
+         先到先手 → 同一格满的比 `chargeOf`（快的人先手）→ 我方先 → 按 id。
+         面板自己排一套的话，「还差 N 拍」相同的两个人谁先动，屏上说的与底下跑的
+         会是两件事 —— 而顺位条正是玩家拿来决定「这一拍该防还是该打」的那一眼。 */
+      .sort((a, b) =>
+        a.raw - b.raw
+        || chargeOf(b.c) - chargeOf(a.c)
+        || (a.c.side === b.c.side ? 0 : a.c.side === 'ally' ? -1 : 1)
+        || a.c.id.localeCompare(b.c.id))
   }, [st])
 
   /* ---- 敌阵的站位：头目档站正中、召唤物分列两翼（见 derive.enemyFormation）----

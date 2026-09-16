@@ -112,7 +112,7 @@ export const ARCH: Record<string, Arch> = {
   },
   穿甲: {
     id: '穿甲', name: '穿甲', slot: '战技',
-    desc: '无视护甲与减伤的一击：倍率不高，但它不吃对方的防。',
+    desc: '无视闪避与护甲的一击：倍率不高，但它不吃对方那身防。',
     target: 'one', cost: 5, cd: 2, band: [1.5, 2.2], effect: { pierce: true },
     allow: ['pierce'],
   },

@@ -30,7 +30,11 @@ export async function settleWin(a: SettleArgs): Promise<string> {
   const patch: Record<string, number> = {}
   for (const id of rec.squad) patch[id] = TUNING.growthPerWin
   await addGrowth(patch)
-  const mvpId = squadIdsFrom([rec.mvp])[0]
+  /* MVP 那一格多算一份羁绊。**认 id，不认名牌** ——
+     `rec.mvp` 是屏幕上的那一行字（会带时期后缀、会带「甲 / 乙」编号），
+     拿它反查名录是碰运气：认不出就静默少发一份，谁也不报错。
+     旧档（这一栏立起来之前写的）没有 id，才退回按名字认那一手。 */
+  const mvpId = rec.mvpId ?? squadIdsFrom([rec.mvp])[0]
   for (const id of rec.squad) {
     bumpBond(id, TUNING.bondPerWin + (id === mvpId ? TUNING.bondMvp : 0))
   }
