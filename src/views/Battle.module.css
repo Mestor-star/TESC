@@ -528,6 +528,9 @@
   .root[data-shake] { animation: none !important; }
   .unit[data-stance-broken='1'], .foeBody[data-stance-broken='1'] { animation: none !important; }
   .stanceBrokenTag { animation: none; }
+  /* 大字报：三处位移与那一次淡出全免，立在那里给读完就收
+     （它本来就是「停下来读一屏」的东西，不晃反而更清楚） */
+  .ultCut, .ultCutCard, .ultCutArt, .ultCutBody { animation: none !important; }
 }
 
 /* ---------- HUD ---------- */
@@ -2105,6 +2108,152 @@
   /* 错位重影那一手，按本处语义换成琥珀（原来是 `0 0 12px` 的柔光） */
   text-shadow: -2px 0 0 color-mix(in srgb, var(--amber) 45%, transparent),
     2px 0 0 color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+/* ============================================================
+   终结技大字报 —— 这一手放出来之前先立的那一屏
+   ------------------------------------------------------------
+   我方「到达点」与敌方咏唱的终结技各走一次（判据见 Battle.tsx 的 isUlt）。
+   站哪一边就说清了是谁放的：我方立绘在左、敌方在右，不必再写一个字。
+
+   写法上照全站的**方贴纸**那一套：
+     · 白色贴纸压在 72% 的墨遮罩上，方角、硬垫片影（零模糊零扩散）；
+     · 大字走 `--duo-shadow` 错位重影 —— 全站唯一留下的那件装饰；
+     · **不用 `backdrop-filter`**（全站 0 处）；
+     · 字一律 `--ink` / `--*-deep`（本色当字要另走 `inkOf`，这里没有那种用法）；
+       演员主题色只当立绘位外沿那一道 6px 实心带（本色当底、上面不压字）。
+   ============================================================ */
+
+.ultCut {
+  position: absolute;
+  inset: 0;
+  z-index: 22;              /* 压在全屏演出层（20）之上 —— 大字报期间那一层是空的 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+  animation: ultCutMask 1.1s ease-out both;
+}
+/* 只褪这一层：卡片与立绘的都是 transform，收尾全靠它把整棵子树一起带走 */
+@keyframes ultCutMask {
+  0% { opacity: 0; }
+  8%, 80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.ultCutCard {
+  display: flex;
+  align-items: stretch;
+  max-width: min(860px, 88vw);
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: 0 8px 0 color-mix(in srgb, var(--ink) 62%, transparent);
+  animation: ultCutCard 1.1s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+@keyframes ultCutCard {
+  0%, 5% { transform: translateY(16px); }
+  26%, 100% { transform: none; }
+}
+
+/* 立绘位。**底色是白的，不是本色** —— 本色当底那一稿实测撞色：素材多半是不透明的
+   白背景（`operator.webp` 就是），压在一块掺了本色的浅底上会硬邦邦地贴出一张白纸，
+   像是图层没对齐。本色于是退到**外沿那一道 6px 实心带**上 —— 本色当底、只当边线，
+   正是全站那条规矩，白底立绘反而读作「印在卡面上的一张画」。
+   缺图的那几位由 Portrait 退回纹章 —— 敌阵的终末多半没有脸，那正是它该有的样子。 */
+.ultCutArt {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  padding: 16px 16px 0;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line-2);
+  /* 硬垫片那一手，只是这次往内 —— 零模糊零扩散，6px 本色带贴外沿 */
+  box-shadow: inset 6px 0 0 var(--u);
+  animation: ultCutArt 1.1s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+/* 敌方站右边：镜子一翻，立绘连着那道本色带一起挪到外沿 */
+.ultCut[data-side='enemy'] .ultCutArt {
+  order: 2;
+  border-right: 0;
+  border-left: 1px solid var(--line-2);
+  box-shadow: inset -6px 0 0 var(--u);
+}
+@keyframes ultCutArt {
+  0%, 4% { transform: translateX(-22px); }
+  22%, 100% { transform: none; }
+}
+.ultCut[data-side='enemy'] .ultCutArt { animation-name: ultCutArtR; }
+@keyframes ultCutArtR {
+  0%, 4% { transform: translateX(22px); }
+  22%, 100% { transform: none; }
+}
+/* 立绘不铺满那一格：四周留白，让底下那层白露出来一圈。 */
+.ultCutImg { box-shadow: 0 6px 0 color-mix(in srgb, var(--ink) 22%, transparent); }
+/* `contain` 留出的那两条 letterbox 本来铺的是 Portrait 写死的 `--bg-2`（浅蓝）——
+   白底立绘自己是不透明白，两侧那两条浅蓝反而比画更扎眼。拉平到白，整格读作一张画。
+   ⚠️ 必须 `!important`：那一层是 Portrait 写在 `style=` 上的**行内**背景，只认它。 */
+.ultCutImg img { background: var(--bg-1) !important; }
+
+.ultCutBody {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 30px 34px 38px;
+  min-width: 0;
+  animation: ultCutBody 1.1s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+.ultCut[data-side='enemy'] .ultCutBody { animation-name: ultCutBodyR; }
+@keyframes ultCutBody {
+  0%, 12% { transform: translateX(20px); }
+  32%, 100% { transform: none; }
+}
+@keyframes ultCutBodyR {
+  0%, 12% { transform: translateX(-20px); }
+  32%, 100% { transform: none; }
+}
+/* 收底那条三色分段 —— 与全站页头同一道尺（官方量出来的那一版：3px 粗、
+   正中 600px、藏蓝 40% │ 绯 │ 金 │ 蔚蓝 各 6.667% │ 藏蓝 40%） */
+.ultCutBody::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background-image: linear-gradient(90deg,
+    var(--ink)   0       40%,
+    var(--red)   40%     46.667%,
+    var(--amber) 46.667% 53.333%,
+    var(--steel) 53.333% 60%,
+    var(--ink)   60%     100%);
+  background-size: 600px 3px;
+  background-position: 50% 100%;
+  background-repeat: no-repeat;
+}
+
+/* 「终结技 · 谁」。本色当底、`-deep` 当字 —— 我方走蔚蓝、敌方走绯（都过 4.5:1） */
+.ultCutKicker {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: var(--steel-deep);
+}
+.ultCut[data-side='enemy'] .ultCutKicker { color: var(--red-deep); }
+
+/* 招式名大字。错位重影是本处唯一的装饰 */
+.ultCutName {
+  font-size: clamp(26px, 3.2vw, 44px);
+  font-weight: 800;
+  line-height: 1.14;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  text-shadow: var(--duo-shadow);
 }
 
 /* ============================================================

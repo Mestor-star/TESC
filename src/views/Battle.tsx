@@ -120,6 +120,28 @@ interface FxView {
   stance?: 'on' | 'break'
 }
 
+/**
+ * 终结技**大字报** —— 这一手放出来之前先立的那一屏（见 UltCut）。
+ *
+ * 配得上它的只有两条路，各有各的判据（都在回放那一步认）：
+ *   · 我方**「到达点」** —— `SkillSpec.kind === '终结技'`（人人一手，蓄满印记才列得出来）；
+ *   · 敌方**咏唱的终结技** —— `SkillSpec.ult` 是拍数（`foe-ult` 那一手，`kind` 写的是
+ *     '战技'，所以**不能只看 kind**，得两条并着认）。
+ */
+interface CutView {
+  /** 与 fx.n 同源：换一条账就换一次 key，动画才重头放 */
+  n: number
+  /** 施术者 —— 立绘 / 纹章 / 主题色都按这个 id 取（= public/charimg/<id>.* 的那个 id） */
+  id: string
+  name: string
+  hue?: string
+  sigil?: string
+  /** 招式名 —— 大字那一行 */
+  skill: string
+  /** 站哪一边：我方立绘在左、敌方在右（见 Battle.module.css 的 .ultCut[data-side]） */
+  side: 'ally' | 'enemy'
+}
+
 /** 技能 id → 稳定的色相与变奏号（同一招永远同一副样子，不同招互不相同） */
 function fxSeed(skillId: string): { hue: number; variant: number; dir: number } {
   let h = 2166136261
@@ -210,6 +232,8 @@ export function Battle({
   const [fx, setFx] = useState<FxView | null>(null)
   /** 正在演的这一条账「打实了没有」—— 到点才把血账翻过去（见回放那一段与 hpView） */
   const [impacted, setImpacted] = useState(false)
+  /** 正立着的那一屏终结技大字报；没有就是 null（见 CutView） */
+  const [cut, setCut] = useState<CutView | null>(null)
   const [panel, setPanel] = useState<Panel>('root')
   /** 待选目标的指令（攻击 / 单体技能 / 单体道具 / 单体装具技） */
   const [pending, setPending] = useState<Command | null>(null)
@@ -437,6 +461,7 @@ export function Battle({
   useEffect(() => {
     if (shown >= st.log.length) {
       setFx(null)
+      setCut(null)
       return
     }
     const e = st.log[shown]
@@ -444,38 +469,76 @@ export function Battle({
        打的是谁（分量要挨打者的上限）。都在同一份账上查，查不到就照旧只有基形。 */
     const who = [...st.allies, ...st.enemies].find((c) => c.id === e.actorId)
     const tgt = e.targetId ? [...st.allies, ...st.enemies].find((c) => c.id === e.targetId) : undefined
-    setFx({
-      n: shown, kind: e.fx, tone: e.tone ?? 'strike', scope: e.scope ?? 'one',
-      actorId: e.actorId, skillId: e.skillId, skill: e.skill,
-      targetId: e.targetId, dmg: e.dmg, down: e.down, link: e.link,
-      affix: affixesOf(who?.skills.find((x) => x.id === e.skillId)),
-      duty: who?.duty,
-      crit: e.crit, critMul: e.critMul,
-      weight: e.dmg && tgt ? e.dmg / Math.max(1, tgt.hpMax) : 0,
-      stance: e.stance,
-    })
-    // 打实的那一下先响暴击 —— 同一个 FxKind 里，暴与不暴得听得出来
-    if (e.crit) sfx('crit')
-    else if (e.down) sfx('down')
-    else if (e.miss) sfx('tick')
-    else if (e.heal) sfx('heal')
-    else if (e.gate) sfx('form')
-    else sfx(SFX_OF_FX[e.fx] ?? 'hit')
-    // 连携要留够看清两张脸的时间：它后面还跟着一手伤害，380ms 会一闪而过
-    const hold = e.link ? 1500 : e.dmg || e.down ? 620 : 380
-    /* ---- 「打到」的那一下 ----
-       演出是动画（斩击 0.42s 掠过去、爆破环 0.6s 涨开），而引擎早把**整手**算完了：
-       `act()` 是同步的，一次性把这一手的账全部追加进 log。血条若直接读实时状态，
-       特效还没落，血就先掉了 —— 主人 2026-09-16 报的就是这一条。
-       所以每一条账另配一个「落定」时刻：在那之前，血条 / 飘字 / 「失能」读的都是
-       账上记的 `hpBefore`（见下面 hpView）；到点才翻成实时血。
-       取 hold 的 45%（斩击正掠过、爆破环正涨开），上限压在 hold 之前 ——
-       翻晚了会跟下一条账的开场撞在一起。 */
-    const impact = Math.max(150, Math.min(Math.round(hold * 0.45), hold - 120))
-    const landedAt = window.setTimeout(() => setImpacted(true), impact)
-    setImpacted(false)
-    const t = window.setTimeout(() => setShown((n) => n + 1), hold)
-    return () => { window.clearTimeout(t); window.clearTimeout(landedAt) }
+    const ks = who?.skills.find((x) => x.id === e.skillId)
+
+    /* 放这一手：立 fx、点名那一响、按 hold 排下一条。整段装成一个函数 ——
+       终结技要先让大字报走完再叫它（见下面 isUlt 那一段）。 */
+    const play = (): number => {
+      setFx({
+        n: shown, kind: e.fx, tone: e.tone ?? 'strike', scope: e.scope ?? 'one',
+        actorId: e.actorId, skillId: e.skillId, skill: e.skill,
+        targetId: e.targetId, dmg: e.dmg, down: e.down, link: e.link,
+        affix: affixesOf(ks),
+        duty: who?.duty,
+        crit: e.crit, critMul: e.critMul,
+        weight: e.dmg && tgt ? e.dmg / Math.max(1, tgt.hpMax) : 0,
+        stance: e.stance,
+      })
+      // 打实的那一下先响暴击 —— 同一个 FxKind 里，暴与不暴得听得出来
+      if (e.crit) sfx('crit')
+      else if (e.down) sfx('down')
+      else if (e.miss) sfx('tick')
+      else if (e.heal) sfx('heal')
+      else if (e.gate) sfx('form')
+      else sfx(SFX_OF_FX[e.fx] ?? 'hit')
+      // 连携要留够看清两张脸的时间：它后面还跟着一手伤害，380ms 会一闪而过
+      const hold = e.link ? 1500 : e.dmg || e.down ? 620 : 380
+      /* ---- 「打到」的那一下 ----
+         演出是动画（斩击 0.42s 掠过去、爆破环 0.6s 涨开），而引擎早把**整手**算完了：
+         `act()` 是同步的，一次性把这一手的账全部追加进 log。血条若直接读实时状态，
+         特效还没落，血就先掉了 —— 主人 2026-09-16 报的就是这一条。
+         所以每一条账另配一个「落定」时刻：在那之前，血条 / 飘字 / 「失能」读的都是
+         账上记的 `hpBefore`（见下面 hpView）；到点才翻成实时血。
+         取 hold 的 45%（斩击正掠过、爆破环正涨开），上限压在 hold 之前 ——
+         翻晚了会跟下一条账的开场撞在一起。 */
+      const impact = Math.max(150, Math.min(Math.round(hold * 0.45), hold - 120))
+      const landedAt = window.setTimeout(() => setImpacted(true), impact)
+      setImpacted(false)
+      timers.push(landedAt)
+      return window.setTimeout(() => setShown((n) => n + 1), hold)
+    }
+
+    const timers: number[] = []
+    /* ---- 终结技先立大字报 ----
+       配得上这一屏的只有两条路：我方「到达点」（`kind === '终结技'`）与敌方咏唱的
+       终结技（`ult` 是拍数 —— 那一手 kind 写的是 '战技'，所以两条并着认）。
+
+       为什么**不能**让大字报跟特效同时起：遮罩一压 72%，底下那套演出就白跑了；
+       而且「先报到、再出手」本来就是这一屏的读法。所以这一条账拆成两拍 ——
+       大字报走完（ULT_CUT），`play()` 才把 fx 放出来。
+       ⚠️ 大字报期间要把 fx 清掉：不清的话，上一条账的演出还挂在屏上不动
+       （它那些层是 `forwards` 收尾的，不前推就一直停在最后一帧）。 */
+    const ULT_CUT = 1100
+    const isUlt = ks?.kind === '终结技' || !!ks?.ult
+    if (isUlt) {
+      setCut({
+        n: shown, id: e.actorId, name: who?.name ?? e.actor,
+        hue: who?.hue, sigil: who?.sigil,
+        skill: e.skill, side: e.side,
+      })
+      setFx(null)
+      setImpacted(false)
+      // 大字报有它自己的一响（那条 `ult` 早写在音效表里，一直没人用）
+      sfx('ult')
+      timers.push(window.setTimeout(() => {
+        setCut(null)
+        timers.push(play())
+      }, ULT_CUT))
+      return () => { for (const t of timers) window.clearTimeout(t) }
+    }
+
+    timers.push(play())
+    return () => { for (const t of timers) window.clearTimeout(t) }
     // 依赖记在长度上：log 数组由引擎就地追加，引用不变
   }, [shown, st.log.length])
 
@@ -674,6 +737,9 @@ export function Battle({
           <span className={css.fxTag} data-fx-tag={fx.skillId}>{fx.skill}</span>
         </div>
       ) : null}
+
+      {/* 终结技大字报 —— 压在演出层之上（z 22 > 20），只在那一手放出来之前立一屏 */}
+      {cut ? <UltCut key={cut.n} cut={cut} /> : null}
 
       {/* 连携技：右侧立一张牌 —— 两个人（或一整队）的头像 + 招式名 */}
       {fx?.link ? <LinkPop key={fx.n} link={fx.link} /> : null}
@@ -1487,6 +1553,60 @@ function linkFaceOf(id: string) {
      会拼成 `var(--ink)2e` 这种不是颜色的东西，整条 background 会被丢掉。
      查不到就留空，让它照常回自己那张灰底 —— 名字照念。 */
   return { name: nb?.name ?? id, hue: nb?.hue, sigil: nb?.sigil }
+}
+
+/* ---------- 终结技大字报 ----------
+   这一手放出来之前先立的一屏：**立绘 + 「终结技 · 谁」+ 招式名大字**，
+   底下一条三色分段线收底（与全站页头同一道尺），约 1.1s，然后让位给演出。
+
+   为什么给终结技单开一屏：它跟别的技能差的不是伤害，是**分量**。而在这之前，
+   人人一手的大招与最平常的一次普攻长得一模一样 —— 屏上没有任何一处告诉玩家
+   「刚才是谁把这一仗交了结」。连携至少还有右侧那张牌（LinkPop），终结技什么都没有。
+
+   三条写法上的规矩：
+     · **立绘照 方贴纸 走**：白色贴纸压在 72% 的墨遮罩上，方角、硬垫片影、
+       大字走 `--duo-shadow` 错位重影 —— 全站唯一留下的那件装饰。
+       ⚠️ **不用 `backdrop-filter`**（全站 0 处）：浮层靠遮罩压住，不靠糊。
+     · **底色一律走 token**：演员主题色只当立绘位外沿那一条 6px 实心带（本色当底、上面不压字，
+       所以不必过对比尺）；字全走 `--ink` 与 `--*-deep`（对白底 ≥4.5:1，见 mech §41）。
+       本色当字要另走 `inkOf()`，这里没有那种用法。
+     · **我方立绘在左、敌方在右** —— 站哪一边就把这一屏的归属说清楚了，
+       不必再写一个字（见 Battle.module.css 的 `.ultCut[data-side='enemy']`）。 */
+function UltCut({ cut }: { cut: CutView }) {
+  return (
+    <div
+      className={css.ultCut}
+      data-ult-cut="1"
+      data-side={cut.side}
+      data-ult-cut-skill={cut.skill}
+      role="status"
+      aria-label={`终结技 · ${cut.name} —— ${cut.skill}`}
+      style={{ '--u': cut.hue ?? 'var(--steel)' } as CSSProperties}
+    >
+      <div className={css.ultCutCard}>
+        {/* 立绘整身。缺图的那几位（敌阵的终末多半没有脸）由 Portrait 退回纹章 ——
+            「未评定的东西不该看着像个人」，那正是它该有的样子。 */}
+        <span className={css.ultCutArt} data-ult-cut-art={cut.id}>
+          <Portrait
+            avatarId={cut.id}
+            name={cut.name}
+            hue={cut.hue}
+            sigil={cut.sigil}
+            fit="contain"
+            variant="full"
+            width={240}
+            height={334}
+            eager
+            className={css.ultCutImg}
+          />
+        </span>
+        <span className={css.ultCutBody}>
+          <span className={`${css.ultCutKicker} mono`}>终结技 · {cut.name}</span>
+          <b className={css.ultCutName}>{cut.skill}</b>
+        </span>
+      </div>
+    </div>
+  )
 }
 
 function LinkPop({ link }: { link: { id: string; name: string; members: string[] } }) {
