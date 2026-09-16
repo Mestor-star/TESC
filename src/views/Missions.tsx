@@ -21,7 +21,7 @@ import {
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
 import { PAIRS, TRAITS, bondCut, bondNext, bondsOf, pairsOf, traitsOf } from '../lib/battle/synergy'
-import { genBoard } from '../lib/battle/missiongen'
+import { genBoard, signOffCap } from '../lib/battle/missiongen'
 import { mainlineMissions } from '../lib/battle/mainline'
 import { GEAR_SHOP, ITEMS, GEAR_OF, canEquip } from '../lib/battle/gear'
 import { ITEM_TARGET_LABEL, effectTextsOf, modsTextsOf } from '../lib/battle/skilltext'
@@ -144,7 +144,13 @@ export function Missions() {
   const eventsDone = Object.keys(epDone).length
   /** 看板种子 = 观测进度 + 手动重掷计数（同一 seed 必得同一批任务） */
   const seed = eventsDone * 101 + reroll * 17 + 1
-  const board = useMemo(() => (patrolOpen ? genBoard(seed) : []), [patrolOpen, seed])
+  /** 观测进度 —— 与作战面板、敌体缩放走**同一个**数（periodProgress），
+      签署放行线也按它抬：剧情往后走，委员长签得越深。 */
+  const progress = useMemo(() => periodProgress(epDone), [epDone])
+  const board = useMemo(
+    () => (patrolOpen ? genBoard(seed, progress) : []),
+    [patrolOpen, seed, progress],
+  )
 
   const reload = useCallback(async () => {
     const [sp, g, rs, c, gb, eq, bg, mc, lv] = await Promise.all([
@@ -277,7 +283,9 @@ export function Missions() {
       }
       push('info', '已归档', `${m.no}「${m.title}」的战果已在档案里，不必再提交。`, false)
     } else if (cur === '锁定') {
-      push('warn', '等待签署', '本任务需要执行委员长签署，目前无法由你直接下达。', false)
+      // 说清签到第几档 —— 不然玩家分不出「再推一段就开」和「这张本来就不给你」
+      push('warn', '等待签署',
+        `本任务需要执行委员长签署 —— 当前放行至危险度 S${signOffCap(progress)}，先继续推进剧情。`, false)
     }
   }
 

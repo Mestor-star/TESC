@@ -99,6 +99,9 @@
                         镜面那一半（本色当底）压 `--on-accent` 墨字，白字走具名例外表，
                         原色本身过不了（两档是两支，不是抄一遍）；运行时同一把尺是
                         `lib/hue.ts` 的 inkOf()。module 里 `color:` 挂裸主题色即红
+   · 看板
+     42  签署放行线   —— 「等待签署」不是死路：线随时期抬（0.15→S7 · 0.50→S8 · 0.90→S10），
+                        越过线才挂锁，且只增不减；复核跳过挂锁的牌不打
 
    ------------------------------------------------------------
    写一节新的时候，跟着这一节的老规矩走：
@@ -127,6 +130,7 @@ import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
 import { AXIS_SCALE, COIN_SCALE, EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
 import { EVENT_HEAD, NON_FIGHT_EVENTS, eventHasNoFoe, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
+import { genBoard, signOffCap } from '../../src/lib/battle/missiongen'
 import { battleMissionOf, plotSquadOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { assertDutySlots, passiveText, ROSTER } from '../../src/lib/battle/roster'
@@ -7910,6 +7914,86 @@ export function run(): MechReport {
       + '镜面那一半（本色当底）压 `--on-accent` 墨字，白字只剩一张具名例外表')
   } catch (e) {
     fail.push('配色两档段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 42) 看板的签署放行线：高威胁任务是**会解开的** ----------
+     这一节钉的是「等待签署」不再是一条死路（2026-09-16 主人拍「补上解锁」）。
+     从前 `genBoard` 按 `stage >= 7` 一把锁死，而全仓没有第二处写回这个 status ——
+     面板上「先继续推进剧情」那句话就是空头支票。现在线随时期抬，这里量三样：
+     线本身在抬、看板确实照线挂锁、以及**只增不减**（推进不该把能接的收回去）。 */
+  try {
+    const cap0 = signOffCap(0.15)
+    const cap1 = signOffCap(0.5)
+    const cap2 = signOffCap(0.9)
+    ok('看板 · 签署放行线随时期抬：开局放到 7 档、中盘 8 档、卷末 10 档',
+      cap0 === 7 && cap1 === 8 && cap2 === 10,
+      `0.15→S${cap0} · 0.50→S${cap1} · 0.90→S${cap2}`)
+    /* 对照：老那条死线得**真的从源码里没了**。只量函数读数不够 ——
+       有人把 `signOffCap` 留在原地、又在 genBoard 里写回 `stage >= 7`，
+       读数照样对，锁照样死。 */
+    const srcGen = readFileSync('src/lib/battle/missiongen.ts', 'utf8')
+    ok('看板 · 对照：那条「stage >= 7 一刀锁死」的死线已从源码里撤走（没被留在原地）',
+      !/stage\s*>=\s*7\s*\?/.test(srcGen) && /stage\s*>\s*cap\s*\?\s*'锁定'/.test(srcGen),
+      /stage\s*>\s*cap/.test(srcGen) ? '现在挂的是 `stage > cap`' : '源码里找不到按 cap 挂锁的那一行')
+
+    /* 看板确实照线挂锁 —— 同一颗种子在两个时期各抽一批：
+       越过线的一张不落都挂「等待签署」，线内的一张不落都能接。 */
+    const strict = (p: number, s: number) => {
+      const cap = signOffCap(p)
+      const b = genBoard(s, p, 10)
+      const over = b.filter((m) => m.stage > cap)
+      const under = b.filter((m) => m.stage <= cap)
+      return {
+        n: b.length, over: over.length, under: under.length,
+        badOver: over.filter((m) => m.status !== '锁定').map((m) => `S${m.stage}`),
+        badUnder: under.filter((m) => m.status !== '待接取').map((m) => `S${m.stage}`),
+      }
+    }
+    /* 两个时期各查一遍，但两边要证的不是同一件事：
+       开局那批**两边都得有**（线在中间，接的与锁的都抽得到 —— 只有一边就说明线没接上）；
+       卷末那批该**一张不锁**（线抬到顶了，放行线不该还留着谁）。
+       写成一模一样的两条，卷末那条会永远红 —— 顶档之上没有更高的档。 */
+    const low = strict(0.15, 7)
+    const high = strict(0.9, 7)
+    ok('看板 · 开局（线在 S7）：越线的全挂「等待签署」、线内的一个个都能接',
+      low.over > 0 && low.under > 0 && low.badOver.length === 0 && low.badUnder.length === 0,
+      `越线 ${low.over} 张全锁（${low.badOver.length ? low.badOver.join('／') : '无漏网'}）· `
+      + `线内 ${low.under} 张全开（${low.badUnder.length ? low.badUnder.join('／') : '无漏网'}）`)
+    ok('看板 · 卷末（线抬到 S10）：整批一张不锁 —— 放行线不该还留着谁',
+      high.over === 0 && high.under === high.n && high.n > 0,
+      `${high.n} 张 · 锁着 ${high.n - high.under} 张 · 越线 ${high.over} 张（顶档之上无更高档）`)
+
+    /* 同一颗种子在两档时期抽出**不同**的牌面 —— 这是「推进真的会翻开新牌」，
+       也是上面那条对照的前提（若两批一样，说明放行线根本没接到看板上）。 */
+    const idsLow = genBoard(7, 0.15, 10).map((m) => `${m.id}:${m.status}`).join('|')
+    const idsHigh = genBoard(7, 0.9, 10).map((m) => `${m.id}:${m.status}`).join('|')
+    ok('看板 · 对照：同一颗种子在卷末翻开的牌确实比开局多（不是两批一模一样的）',
+      idsLow !== idsHigh && genBoard(7, 0.9, 10).filter((m) => m.status === '锁定').length === 0,
+      `开局锁 ${genBoard(7, 0.15, 10).filter((m) => m.status === '锁定').length} 张 · `
+      + `卷末锁 ${genBoard(7, 0.9, 10).filter((m) => m.status === '锁定').length} 张`)
+
+    /* 只增不减：推进只会把牌翻开，不会把已经能接的收回去（权限回退是最难查的那种 bug） */
+    let prev = signOffCap(0)
+    const drops: string[] = []
+    let rises = 0
+    for (let p = 0; p <= 1.0001; p += 0.01) {
+      const c = signOffCap(p)
+      if (c < prev) drops.push(`${p.toFixed(2)}:${prev}→${c}`)
+      if (c > prev) rises += 1
+      prev = c
+    }
+    ok('看板 · 放行线只增不减（推进不该把已经能接的档位收回去）', drops.length === 0 && rises >= 3,
+      drops.length ? `回退处：${drops.join(' · ')}` : `0→1 抬了 ${rises} 次，从 S${signOffCap(0)} 到 S${signOffCap(1)}`)
+
+    /* 同一 seed + 同一时期必得同一批（看板是纯函数拼的，可复现是它的前提） */
+    ok('看板 · 同一颗种子 + 同一档时期必得同一批（拼装可复现，不掺随机）',
+      idsLow === genBoard(7, 0.15, 10).map((m) => `${m.id}:${m.status}`).join('|'),
+      `种子 7 · 时期 0.15：${genBoard(7, 0.15, 10).length} 张`)
+
+    info.push('看板的签署放行线：`missiongen` 的 `SIGN_OFF` 随时期抬（0.15→S7 · 0.50→S8 · 0.90→S10）· '
+      + '越过线才挂「等待签署」· 只增不减；复核（balance）跳过挂锁的牌不打')
+  } catch (e) {
+    fail.push('签约放行线段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

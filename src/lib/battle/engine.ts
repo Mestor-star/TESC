@@ -650,11 +650,12 @@ function applyEffect(
     if (t.down && !eff.heal) continue
     if (eff.heal) {
       const n = iv(healAmount(src, t, eff.heal))
+      const hpBefore = t.hp
       t.hp = Math.min(t.hpMax, t.hp + n)
       pushLog(s, {
         round: s.hand, actorId: src.id, actor: src.name, side: src.side,
         skillId: 'heal', skill: '回复', kind: '指令', fx: 'heal',
-        targetId: t.id, target: t.name, heal: n,
+        targetId: t.id, target: t.name, heal: n, hpBefore,
       })
     }
     // 解除负面：沉默 / 流血 / 减攻一并洗掉（见 types 的 DEBUFF_KEYS）
@@ -822,6 +823,8 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
       skillId: k.id, skill: k.name, kind: k.kind, gate: k.gate, fx: k.fx,
       tone: toneOf(k), scope: scopeOf(k),
       targetId: def.id, target: def.name, miss: true, line: k.line || undefined,
+      // 落空也是「这一手的结果」：掉血是零，但回放得把血条钉在打之前的位置
+      hpBefore: def.hp,
     }
   }
   /* 暴击：命中之后、结算之前掷 —— 掷出来的这一下要参与后面所有的判据
@@ -829,6 +832,9 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   const raw = damageOf(s, atk, def, k)
   const critMul = rollCrit(s, atk, def, k)
   const dmg = critMul > 0 ? Math.max(TUNING.floor, Math.round(raw * critMul)) : raw
+  // 打之前的血量：回放靠它把血条停在「还没挨这一下」的位置（见 LogEntry.hpBefore）。
+  // 必须在**写血之前**取 —— 溢出斩杀 / 不倒 / 续行三条都会让 `dmg` 与真实落差对不上
+  const hpBefore = def.hp
   def.hp = Math.max(0, def.hp - dmg)
   breakChant(s, def, dmg)
 
@@ -874,7 +880,7 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
         round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
         skillId: k.id, skill: k.name, kind: k.kind, fx: k.fx,
         tone: toneOf(k), scope: scopeOf(k),
-        targetId: def.id, target: def.name, dmg, line: k.line || undefined,
+        targetId: def.id, target: def.name, dmg, hpBefore, line: k.line || undefined,
         crit: critMul > 0, critMul: critMul > 0 ? critMul : undefined,
       }
     }
@@ -897,7 +903,7 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
     round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
     skillId: k.id, skill: k.name, kind: k.kind, gate: k.gate, fx: k.fx,
     tone: toneOf(k), scope: scopeOf(k),
-    targetId: def.id, target: def.name, dmg, down, line: k.line || undefined,
+    targetId: def.id, target: def.name, dmg, hpBefore, down, line: k.line || undefined,
     crit: critMul > 0, critMul: critMul > 0 ? critMul : undefined,
   }
 }
@@ -1312,11 +1318,12 @@ function endBeat(s: BattleState) {
     const bl = bleedOf(c)
     if (bl > 0) {
       const dmg = Math.max(1, Math.round(c.hpMax * bl))
+      const hpBefore = c.hp
       c.hp = Math.max(0, c.hp - dmg)
       pushLog(s, {
         round: s.hand, actorId: c.id, actor: c.name, side: c.side,
         skillId: 'bleed', skill: '流血', kind: '指令', fx: 'slash',
-        targetId: c.id, target: c.name, dmg,
+        targetId: c.id, target: c.name, dmg, hpBefore,
         note: `${c.name} 在流血 —— 这一拍又少 ${dmg}。`,
       })
       if (c.hp <= 0 && !c.down) {

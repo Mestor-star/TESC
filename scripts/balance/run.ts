@@ -259,7 +259,7 @@ export interface BalanceReport {
   share: ShareRow[]
   /** 只算危险度 ≥ 5 的场次 —— 前几档常常是一手就完，混进来会把份额带偏 */
   shareHard: ShareRow[]
-  totals: { runs: number; win: number; stuck: number; guards: number; thin: number }
+  totals: { runs: number; win: number; stuck: number; guards: number; thin: number; locked: number }
   flags: string[]
   /** 不判伤害的那几职，逐条把理由与自己的读数写出来 —— **不藏** */
   exempt: string[]
@@ -300,12 +300,18 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
   const buckets = new Map<number, Tally[]>()
   const share = new Map<string, Band>()
   const shareHard = new Map<string, Band>()
-  let runs0 = 0, win0 = 0, stuck0 = 0, guards0 = 0
+  let runs0 = 0, win0 = 0, stuck0 = 0, guards0 = 0, locked0 = 0
 
   for (let i = 0; i < runs; i++) {
     const seed = seedBase + i
-    const board = genBoard(seed, 10)
+    /* 本时期的看板 —— 走**同一个** `progress`，签署放行线也跟着这一档走。
+       ⚠️ 挂「等待签署」的那几张**跳过不打**：那是玩家按不动的牌
+       （Missions 的 `act` 只弹一句提示，`data/mission` 上根本没有出击钮）。
+       从前它们照打，于是复核一直在给「开局危险度 9/10 胜率 13%」这类
+       谁也开不了的仗打分 —— 见 2026-09-16 那条 `SIGN_OFF`。 */
+    const board = genBoard(seed, progress, 10)
     for (const m of board) {
+      if (m.status === '锁定') { locked0 += 1; continue }
       const t = fight(m, progress, {})
       runs0 += 1
       if (t.outcome === 'won') win0 += 1
@@ -429,7 +435,7 @@ export function run(opts: { runs?: number; seedBase?: number; progress?: number 
     rows,
     share: shares,
     shareHard: sharesHard,
-    totals: { runs: runs0, win: runs0 ? win0 / runs0 : 0, stuck: stuck0, guards: guards0, thin },
+    totals: { runs: runs0, win: runs0 ? win0 / runs0 : 0, stuck: stuck0, guards: guards0, thin, locked: locked0 },
     flags,
     exempt,
   }
@@ -453,6 +459,7 @@ export function report(r: BalanceReport, progress: number): string {
   }
   out.push('')
   out.push(`  总体胜率 ${pc(r.totals.win)} · 卡死 ${r.totals.stuck} 场 · 全场共 ${r.totals.guards} 次只能防御`)
+  out.push(`  本时期看板上另有 ${r.totals.locked} 张挂「等待签署」，按不动 —— 未计入上表`)
   out.push('')
   const table = (label: string, list: BalanceReport['share']) => {
     out.push(`  伤害份额 · ${label}`)

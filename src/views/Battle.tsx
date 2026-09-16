@@ -208,6 +208,8 @@ export function Battle({
   )
   const [shown, setShown] = useState(0)
   const [fx, setFx] = useState<FxView | null>(null)
+  /** 正在演的这一条账「打实了没有」—— 到点才把血账翻过去（见回放那一段与 hpView） */
+  const [impacted, setImpacted] = useState(false)
   const [panel, setPanel] = useState<Panel>('root')
   /** 待选目标的指令（攻击 / 单体技能 / 单体道具 / 单体装具技） */
   const [pending, setPending] = useState<Command | null>(null)
@@ -461,10 +463,50 @@ export function Battle({
     else sfx(SFX_OF_FX[e.fx] ?? 'hit')
     // 连携要留够看清两张脸的时间：它后面还跟着一手伤害，380ms 会一闪而过
     const hold = e.link ? 1500 : e.dmg || e.down ? 620 : 380
+    /* ---- 「打到」的那一下 ----
+       演出是动画（斩击 0.42s 掠过去、爆破环 0.6s 涨开），而引擎早把**整手**算完了：
+       `act()` 是同步的，一次性把这一手的账全部追加进 log。血条若直接读实时状态，
+       特效还没落，血就先掉了 —— 主人 2026-09-16 报的就是这一条。
+       所以每一条账另配一个「落定」时刻：在那之前，血条 / 飘字 / 「失能」读的都是
+       账上记的 `hpBefore`（见下面 hpView）；到点才翻成实时血。
+       取 hold 的 45%（斩击正掠过、爆破环正涨开），上限压在 hold 之前 ——
+       翻晚了会跟下一条账的开场撞在一起。 */
+    const impact = Math.max(150, Math.min(Math.round(hold * 0.45), hold - 120))
+    const landedAt = window.setTimeout(() => setImpacted(true), impact)
+    setImpacted(false)
     const t = window.setTimeout(() => setShown((n) => n + 1), hold)
-    return () => window.clearTimeout(t)
+    return () => { window.clearTimeout(t); window.clearTimeout(landedAt) }
     // 依赖记在长度上：log 数组由引擎就地追加，引用不变
   }, [shown, st.log.length])
+
+  /* ---- 血账的回放游标 ----
+     `shown` 是「演出演到第几条」，这里再叠一格「落定了没有」（见上）。
+     还没落定的那几条，界面读的是账上记的 `hpBefore` —— 于是血条、飘字、
+     「失能」三样一起等到特效打到才动。全落定了就返回 null，直接读实时状态。
+
+     ⚠️ **不能拿 `dmg` 从当前血倒加回去。** 斩杀溢出（打 30 血的人报 500 伤）、
+     「不倒」（血被摁成 1 但账上仍报全额）、「战斗续行」三条都对不上。
+     前值记在账上，就没有这些例外 —— 见 LogEntry.hpBefore。 */
+  const landed = shown + (impacted ? 1 : 0)
+  const hpView = useMemo(() => {
+    if (landed >= st.log.length) return null
+    const v = new Map<string, { hp: number; down: boolean }>()
+    for (let i = landed; i < st.log.length; i++) {
+      const e = st.log[i]
+      if (e.hpBefore === undefined || !e.targetId) continue
+      /* **最先没落定的那一条说了算。** 多段手是同一个人连挨几下，
+         后面那几条的 hpBefore 是挨过前几下的数，不能拿来当「此刻」。 */
+      if (v.has(e.targetId)) continue
+      v.set(e.targetId, { hp: e.hpBefore, down: e.hpBefore > 0 ? false : true })
+    }
+    return v.size ? v : null
+  }, [landed, st])
+
+  /** 上屏用的那一份：血账还没落定的单位，血量与失能状态都退回打之前 */
+  const viewOf = (c: Combatant): Combatant => {
+    const v = hpView?.get(c.id)
+    return v ? { ...c, hp: v.hp, down: v.down } : c
+  }
 
   /* ---- 收场：结算战利品，然后成文 ---- */
   useEffect(() => {
@@ -575,8 +617,13 @@ export function Battle({
   /* 抖屏按**分量**分级，不再按动画类别 ——
      从前只有 blast / noise 抖，于是同一记爆裂，敲在小怪身上与敲在首领身上晃得一样狠，
      而一记暴击斩击一点都不抖。weight 是「这一下打掉了对面几成血」：
-     暴击与倒下最重，其次按掉血量，最后才轮到那几个本来就该震的类别。 */
-  const shake = !fx ? 0
+     暴击与倒下最重，其次按掉血量，最后才轮到那几个本来就该震的类别。
+
+     抖屏跟着「打到」走，不跟着演出开场走（见回放那一段的 impact）：
+     斩击要 0.42s 才掠到人身上，开场就晃屏等于刀还没到先挨了一下。
+     附带修掉一处旧账 —— 连着两手同为 1 级时，`data-shake` 前后都是 '1'，
+     DOM 不变、CSS 动画不重启，第二手就不晃了；现在中间必然落回 0 一帧。 */
+  const shake = !fx || !impacted ? 0
     : fx.crit || fx.down ? 3
       : (fx.weight ?? 0) >= 0.12 ? 2
         : fx.kind === 'blast' || fx.kind === 'noise' ? 1
@@ -777,8 +824,9 @@ ${siteR.f.word}`}>
             {foeLine.left.map((c) => (
               <Foe
                 key={c.id}
-                c={c}
+                c={viewOf(c)}
                 fx={fx}
+                landed={impacted}
                 active={!over && actor?.id === c.id}
                 targetable={aimEnemies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
@@ -789,8 +837,9 @@ ${siteR.f.word}`}>
           <div className={css.foeMid} data-foe-mid>
             {foeLine.mid ? (
               <Foe
-                c={foeLine.mid}
+                c={viewOf(foeLine.mid)}
                 fx={fx}
+                landed={impacted}
                 active={!over && actor?.id === foeLine.mid.id}
                 targetable={aimEnemies && !foeLine.mid.down && !playing}
                 onPick={() => pickTarget(foeLine.mid!.id)}
@@ -802,8 +851,9 @@ ${siteR.f.word}`}>
             {foeLine.right.map((c) => (
               <Foe
                 key={c.id}
-                c={c}
+                c={viewOf(c)}
                 fx={fx}
+                landed={impacted}
                 active={!over && actor?.id === c.id}
                 targetable={aimEnemies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
@@ -1185,8 +1235,9 @@ ${siteR.f.word}`}>
             {st.allies.map((c) => (
               <Unit
                 key={c.id}
-                c={c}
+                c={viewOf(c)}
                 fx={fx}
+                landed={impacted}
                 active={!over && actor?.id === c.id}
                 targetable={aimAllies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
@@ -1469,10 +1520,12 @@ function LinkPop({ link }: { link: { id: string; name: string; members: string[]
 /* ---------- 单位卡：我方（小队列里的一行 —— 血、节拍、行动条一眼看全） ---------- */
 
 function Unit({
-  c, fx, active, targetable, onPick,
+  c, fx, landed, active, targetable, onPick,
 }: {
   c: Combatant
   fx: FxView | null
+  /** 这一手打实了没有 —— 飘字与「失能」都等它（血量走 `c.hp`，已由 viewOf 退回打之前） */
+  landed?: boolean
   active?: boolean
   targetable?: boolean
   onPick?: () => void
@@ -1603,12 +1656,14 @@ function Unit({
         </span>
       ) : null}
 
-      {hit && fx.dmg ? (
+      {/* 飘字与「失能」都等**打实**那一下才出来 —— 特效还没落到身上先跳数字，
+          就是「打空了反而先掉血」的那种别扭 */}
+      {hit && fx.dmg && landed ? (
         <span key={fx.n} className={css.dmgNum} data-crit={fx.crit ? '1' : undefined}>
           {fx.dmg}{fx.crit ? <i className={css.dmgCrit}>!</i> : null}
         </span>
       ) : null}
-      {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
+      {hit && fx.down && landed ? <span className={css.downMark}>失能</span> : null}
     </div>
   )
 }
@@ -1619,10 +1674,12 @@ function Unit({
    谁是谁、什么来历、会使哪几手，点卡上的「信息」看（见 FoeInfoPanel）。*/
 
 function Foe({
-  c, fx, active, targetable, onPick, onInfo,
+  c, fx, landed, active, targetable, onPick, onInfo,
 }: {
   c: Combatant
   fx: FxView | null
+  /** 这一手打实了没有 —— 飘字与「失能」都等它（血量走 `c.hp`，已由 viewOf 退回打之前） */
+  landed?: boolean
   active?: boolean
   targetable?: boolean
   onPick?: () => void
@@ -1658,12 +1715,12 @@ function Foe({
         {/* 倒下的那一下：化开、收进去，人留在原位当个空壳 ——
             位置不能塌，一塌两翼就跟着挪，玩家刚记住的排面全乱。 */}
         {c.down ? <span className={css.vanish} data-foe-vanish={c.id} aria-hidden /> : null}
-        {hit && fx.dmg ? (
+        {hit && fx.dmg && landed ? (
           <span key={fx.n} className={css.dmgNumBig} data-crit={fx.crit ? '1' : undefined}>
             {fx.dmg}{fx.crit ? <i className={css.dmgCrit}>!</i> : null}
           </span>
         ) : null}
-        {hit && fx.down ? <span className={css.downMark}>失能</span> : null}
+        {hit && fx.down && landed ? <span className={css.downMark}>失能</span> : null}
         {onMe ? (
           <span
             key={fx!.n}

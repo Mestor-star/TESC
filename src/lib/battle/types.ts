@@ -726,6 +726,16 @@ export interface LogEntry {
   target?: string
   dmg?: number
   heal?: number
+  /**
+   * 这一手**落下之前**，受术者还有多少血。
+   *
+   * 一次出手是原子的：引擎把整手算完才交出来，日志一口气追加好几条，而回放
+   * 是一条一条落的（见 Battle.tsx 的 `impacted`）。所以要「特效打到才掉血」，
+   * 视图必须知道每条账打之前长什么样 —— 拿 `dmg` 从当前血量倒加回去是**错的**，
+   * 三处都对不上：斩杀溢出（打 30 血的人报 500 伤）、「不倒」（血被摁成 1
+   * 但账上仍报全额）、「战斗续行」（同理）。记前值就没有这些例外。
+   */
+  hpBefore?: number
   down?: boolean
   miss?: boolean
   line?: string

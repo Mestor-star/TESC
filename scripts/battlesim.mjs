@@ -32,7 +32,17 @@ try {
   const der = await server.ssrLoadModule('/src/lib/battle/derive.ts')
   const tun = await server.ssrLoadModule('/src/lib/battle/tuning.ts')
 
-  const board = gen.genBoard(seed, 5)
+  const epDone = {}
+  const ALL = ['v1-1', 'v1-2', 'v1-3', 'v1-4', 'v1-5', 'v1-6', 'v1-7', 'v1-8', 'v1-9',
+    'v2-1', 'v2-2', 'v2-3', 'v2-4', 'v2-5', 'v2-6', 'v2-7', 'v2-8', 'v2-9',
+    'v3-1', 'v3-2', 'v3-3', 'v3-4', 'v3-5', 'v3-6', 'v3-7', 'v3-8', 'v3-9']
+  for (const id of ALL.slice(0, epCount)) epDone[id] = true
+  const progress = der.periodProgress(epDone)
+
+  // 看板按**同一档时期**抽：签署放行线跟着时期走，抽出来的头一张就是这一场要打的。
+  // 抽到的那批里若有「等待签署」的（越过了放行线），这里照打 —— 这是单场试跑，
+  // 用来量「这一仗为什么长」，不是量玩家真能开什么（那个看 balance 的分布）。
+  const board = gen.genBoard(seed, progress, 5)
   const mission = board[0]
   // 队伍：给了参数就用手挑的那一队，不给就按任务卡上的「推荐小队」编
   // （后者才是 balance 复核走的路径 —— 它拿的是任务自己写明的应对班底）。
@@ -40,12 +50,6 @@ try {
   const squad = process.argv[5]
     ? process.argv[5].split(',')
     : ['operator', ...der.squadIdsFrom(mission.recommend).filter((x) => x !== 'operator')].slice(0, 6)
-  const epDone = {}
-  const ALL = ['v1-1', 'v1-2', 'v1-3', 'v1-4', 'v1-5', 'v1-6', 'v1-7', 'v1-8', 'v1-9',
-    'v2-1', 'v2-2', 'v2-3', 'v2-4', 'v2-5', 'v2-6', 'v2-7', 'v2-8', 'v2-9',
-    'v3-1', 'v3-2', 'v3-3', 'v3-4', 'v3-5', 'v3-6', 'v3-7', 'v3-8', 'v3-9']
-  for (const id of ALL.slice(0, epCount)) epDone[id] = true
-  const progress = der.periodProgress(epDone)
   const stamina = { cur: 120, max: 120 }
   const bond = Object.fromEntries(squad.map((id) => [id, 60]))
 

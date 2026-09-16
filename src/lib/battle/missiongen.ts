@@ -153,12 +153,48 @@ const DURATION = [
   '本日内 · 观测窗很短', '72 小时内 · 允许延期一次', '即刻出发',
 ]
 
+/* ------------------------------------------------------------------
+   「等待签署」—— 执行委员长签到第几档危险度
+   ------------------------------------------------------------------
+   看板上挂「等待签署」的高威胁任务，原来是**永远不会解开的**：
+   生成时按 `stage >= 7` 一把锁死，而全仓没有第二处会写回 status，
+   面板上那句「解锁条件尚未满足者，先继续推进剧情」（见 data/manual）
+   于是成了一句空话。2026-09-16 主人拍「补上解锁」，这里就是那条路。
+
+   放行线随**观测进度**（`periodProgress`，0..1 的时期系数）抬：
+   剧情越往后，委员长签得越深。取的是「这一档在**这个时期**还打得过」
+   的最大值 —— 读数来自 `scripts/balance` 三跑平均（那套尺子的口径与
+   噪声见 tuning 的「砍恢复路径」一节）：
+
+       时期 0.15（开局）  7 档 58% 打得过  ·  8 档 32% 打不过
+       时期 0.50（中盘）  8 档 53% 打得过  ·  9 档 35% 打不过
+       时期 0.90（卷末）  9 档 44% · 10 档 42% —— 顶档本来就是这个难度，放行
+
+   ⚠️ 表外的时期是插值，不是实测点（尺子只量那三档）。要动先重跑复核。
+   ⚠️ 放行线只增不减：推进只会把牌翻开，不会把已经能接的收回去。
+   ------------------------------------------------------------------ */
+const SIGN_OFF: readonly { at: number; cap: number }[] = [
+  { at: 0.00, cap: 7 },
+  { at: 0.30, cap: 8 },
+  { at: 0.60, cap: 9 },
+  { at: 0.90, cap: 10 },
+]
+
+/** 此刻的签署放行线（危险度上限）。`progress` 走 `periodProgress(epDone)` */
+export function signOffCap(progress: number): number {
+  let cap = SIGN_OFF[0].cap
+  for (const s of SIGN_OFF) if (progress + 1e-6 >= s.at) cap = s.cap
+  return cap
+}
+
 /**
  * 重掷一批任务。
- * @param seed  以「已收束事件数」为主，叠加手动刷新的计数
- * @param count 看板条数
+ * @param seed     以「已收束事件数」为主，叠加手动刷新的计数
+ * @param progress 观测进度 0..1（`periodProgress`）—— 决定这一批签到第几档
+ * @param count    看板条数
  */
-export function genBoard(seed: number, count = 5): Mission[] {
+export function genBoard(seed: number, progress: number, count = 5): Mission[] {
+  const cap = signOffCap(progress)
   const rnd = rng(seed * 2654435761)
   const pool = [...TEMPLATES]
   const out: Mission[] = []
@@ -178,7 +214,8 @@ export function genBoard(seed: number, count = 5): Mission[] {
       stage,
       nature: t.nature,
       recommend: crew,
-      status: stage >= 7 ? '锁定' : stage <= 2 ? '待接取' : '待接取',
+      // 超过放行线的才挂「等待签署」—— 线是活的，随剧情往上抬（见 SIGN_OFF）
+      status: stage > cap ? '锁定' : '待接取',
       deadline: pick(rnd, DURATION),
       desc: t.desc,
       reward: t.reward,
