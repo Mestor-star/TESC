@@ -20,8 +20,8 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--steel) 38%, transparent);
   border-radius: var(--radius);
+  /* 115° 斜纹那层随方贴纸稿撤走（那是 HUD 时期的底纹），色洗那层保留。 */
   background:
-    repeating-linear-gradient(115deg, transparent 0 34px, color-mix(in srgb, var(--steel) 5%, transparent) 34px 68px),
     linear-gradient(180deg, color-mix(in srgb, var(--steel) 10%, transparent), transparent 60%),
     var(--bg-1);
 }
@@ -39,9 +39,8 @@
   user-select: none;
 }
 /* 白字只剩这一处（mech §41 的 WHITE_OK 具名例外表里独一条）：
-   底走**两档深色**（steel-deep → violet-deep），白字在两头是 5.14 / 5.07 ——
-   比 4.5 的正文线还高，「84px 方块」里那枚 30px/800 的姓字自然更稳。
-   上一版底是 red → red-deep（白字 3.19 / 4.64，靠大字线 3:1 才勉强站住）。 */
+   底走**两档深色**（steel-deep → red-deep），白字在两头是 5.04 / 5.07 ——
+   比 4.5 的正文线还高，「84px 方块」里那枚 30px/800 的姓字自然更稳。 */
 .opGlyph {
   width: 84px; height: 84px;
   display: flex; align-items: center; justify-content: center;
@@ -54,7 +53,10 @@
   font-family: var(--font-mono);
   font-weight: 800;
   font-size: 30px;
-  box-shadow: var(--glow-steel);
+  /* 柔光换**实心位移投影**（官方那条 `0 7px 0`）：这块 84px 的姓字牌是全站
+     唯一一处白字，底又是最深的两档深色，配一条 `--offset-lg` 垫在下沿，
+     它就从「发光的方块」变成了「贴上去的方块」。 */
+  box-shadow: var(--offset-lg);
   border-radius: var(--radius);
 }
 /* 那一格换成他的头像时：外形照旧（同一个圆角、同一圈青光），只是字换成人。
@@ -63,7 +65,7 @@
    `borderRadius: 0`，是旧版「方角配斜切」留下的。那句话随改版一并删了，
    行内让位之后这里按常规权重就能盖住 Portrait 自己的兜底圆角。） */
 .opFace {
-  box-shadow: var(--glow-steel);
+  box-shadow: var(--offset-lg);
   border-radius: var(--radius);
 }
 .opBannerMain h2 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.02em; }
@@ -135,10 +137,12 @@
     var(--bg-1);
   transition: transform var(--t-mid) var(--ease-out), border-color var(--t-mid), box-shadow var(--t-mid);
 }
+/* 悬停：抬 2px + 底下冒出实心垫片（走卡片自己的 `--c`，不是 `--offset-*` 那支青的）。
+   原来是抬 4px 配 `--shadow-3` 那层柔影，方贴纸稿换成同一句「贴纸被掀起来一条边」。 */
 .card:hover {
-  transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--c) 46%, var(--line-2));
-  box-shadow: var(--shadow-3);
+  transform: translateY(-2px);
+  border-color: var(--c);
+  box-shadow: 0 3px 0 var(--c);
 }
 .card:focus-visible {
   /* 焦点圈要一眼看见：本色兑墨色，别兑白 —— 浅底上兑白的圈等于没画 */
@@ -151,7 +155,9 @@
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--c), transparent 85%);
+  /* 顶上那条色带改**实心**（原来是 `var(--c) → transparent 85%` 的渐隐）。
+     官方那套的色块都是纯色到底，渐隐是玻璃时期的习惯 —— 一根带子要么在要么不在。 */
+  background: var(--c);
   opacity: 0.85;
 }
 
@@ -162,7 +168,7 @@
   filter: saturate(0.15);
 }
 .cardLocked:hover { transform: none; border-color: var(--line); box-shadow: none; }
-.cardLocked::before { background: linear-gradient(90deg, var(--ink-faint), transparent 85%); opacity: 0.4; }
+.cardLocked::before { background: var(--ink-faint); opacity: 0.4; }
 .cardLocked .cardQuote { color: var(--ink-faint); font-style: italic; }
 .lockSigil {
   flex: 0 0 auto;
@@ -329,8 +335,8 @@
   position: fixed;
   inset: 0;
   z-index: 75;
-  background: color-mix(in srgb, var(--ink) 46%, transparent);
-  backdrop-filter: blur(2px);
+  /* 46% → 72%：与全站遮罩统一。原来配着 blur(2px) 才够糊。 */
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
   animation: fadeIn 200ms ease both;
 }
 
@@ -368,7 +374,6 @@
   overflow: hidden;
   background:
     radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--c, var(--violet)) 22%, transparent), transparent 72%),
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--c, var(--violet)) 4%, transparent) 26px 52px),
     var(--bg-2);
 }
 /* 有立绘：铺满左栏 —— 上贴顶、下给说明让位，整身完整可见（contain） */
@@ -419,7 +424,9 @@
   border-radius: var(--radius);
   border-color: color-mix(in srgb, var(--rose) 34%, var(--line-2));
   border-top-color: color-mix(in srgb, var(--c, var(--rose)) 52%, var(--rose));
-  box-shadow: var(--shadow-3), 0 0 46px -20px var(--rose);
+  /* 浮层那一档保留（`--shadow-3` 是全站唯一还留柔影的一处），
+     玫瑰色那圈外发光撤了 —— 翻面这件事已经由边框转暖说清楚了。 */
+  box-shadow: var(--shadow-3);
 }
 .dialogHead {
   position: relative;
@@ -428,9 +435,7 @@
   gap: 16px;
   padding: 20px 22px;
   border-bottom: 1px solid var(--line);
-  background:
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--c, var(--violet)) 5%, transparent) 26px 52px),
-    var(--bg-2);
+  background: var(--bg-2);
 }
 .dialogTitle h3 { margin: 0; font-size: 24px; font-weight: 900; }
 .dialogTitle small { display: block; margin-top: 4px; color: var(--ink-mute); font-size: 12px; letter-spacing: 0.05em; }
@@ -489,9 +494,10 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  /* 看大图那一层仍要压暗（图是要看的主体），只是不用旧版那种纯黑，用墨紫 */
+  /* 看大图那一层仍要压暗（图是要看的主体），只是不用旧版那种纯黑，用墨紫。
+     88% 是全站最实的一层遮罩 —— 它**不跟着上面的遮罩提到 72%**：那一层糊化
+     撤了之后本来就靠 88% 撑着，再统一过去大图就压不住了。blur(8px) 一并撤。 */
   background: color-mix(in srgb, var(--ink) 88%, transparent);
-  backdrop-filter: blur(8px);
   animation: fadeIn 200ms ease both;
 }
 .lightboxStage {
@@ -898,7 +904,6 @@
   overflow: hidden;
   background:
     radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--warm) 24%, transparent), transparent 72%),
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--warm) 5%, transparent) 26px 52px),
     color-mix(in srgb, var(--bg-2) 78%, var(--rose-deep));
 }
 /* 图位铺满左栏，底下给说明带让位 —— inset 与正面 .dossierArt 那张取同值 */

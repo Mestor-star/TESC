@@ -24,7 +24,6 @@
   border: 1px solid color-mix(in srgb, var(--red) 42%, transparent);
   border-radius: var(--radius);
   background:
-    repeating-linear-gradient(115deg, transparent 0 40px, color-mix(in srgb, var(--red) 7%, transparent) 40px 80px),
     linear-gradient(90deg, color-mix(in srgb, var(--red) 14%, transparent), transparent 70%),
     var(--bg-1);
 }
@@ -39,7 +38,9 @@
   color: var(--red-deep);
   transform: rotate(-3deg);
   background: color-mix(in srgb, var(--red) 10%, transparent);
-  box-shadow: var(--glow-red);
+  /* 柔光换实心位移投影。⚠️ 这条**不能套 `--offset*`** —— 那三支的色写死成
+     `var(--steel)`，套在绯色的牌上会出「红方块 + 青垫片」。各色档一律写字面。 */
+  box-shadow: 0 7px 0 var(--red);
 }
 .heroStage b { font-family: var(--font-mono); font-size: 52px; font-weight: 800; line-height: 1; }
 .heroStage small { font-family: var(--font-mono); letter-spacing: 0.1em; margin-top: 6px; font-size: 10px; }

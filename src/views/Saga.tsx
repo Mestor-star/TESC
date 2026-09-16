@@ -181,7 +181,7 @@ export function Saga() {
                         title={met ? `调阅 ${c.name} 的档案` : `${c.name} 的档案尚未显影`}
                       >
                         {met ? (
-                          <Portrait avatarId={id} size={30} style={{ borderRadius: 4 }} />
+                          <Portrait avatarId={id} size={30} />
                         ) : (
                           /* 未遇见的人不露脸，与「？？？」同口径 */
                           <span className="glyph" style={{ '--g': c.hue, width: 30, height: 30 }}>

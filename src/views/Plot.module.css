@@ -276,15 +276,16 @@
   margin-top: 12px;
 }
 
-/* 台词框：一块通栏宽的圆角框（白底 + 细边 + 轻投影，浅底上才读得出「这是一格」）；
-   名字铭牌跨骑在顶边上、遮断其下边框段，形成 ╭─名字─…╮ */
+/* 台词框：一块通栏宽的方框（白底 + 1px 实边，浅底上才读得出「这是一格」）；
+   名字铭牌跨骑在顶边上、遮断其下边框段。
+   （原注释里的「圆角框」与「轻投影」都是上一版的话 —— 方贴纸稿把圆角归零、
+   把那层 `--shadow-1` 撤了：一块实心白底加一条实边就够了，「这是一格」不用靠影说。） */
 .frame {
   position: relative;
   width: 100%;
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   background: var(--bg-1);
-  box-shadow: var(--shadow-1);
 }
 /* 一行是「立绘 + 正文」两格，垂直居中在框里；立绘自带 align-self: stretch 铺满整框，
    所以这里改成 center 只挪正文那一格，不会把立绘缩掉。 */
@@ -718,7 +719,7 @@
   width: 100%;
   padding: 4px 6px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   font: inherit;

@@ -5,8 +5,8 @@
   inset: 0;
   z-index: 130;
   /* 浅底上的遮罩：用墨紫压暗（比纯黑柔和），底下的晨光还透得出来一点 */
-  background: color-mix(in srgb, var(--ink) 52%, transparent);
-  backdrop-filter: blur(3px);
+  /* 52% → 72%：与全站遮罩统一。原来配着 blur(3px) 才够糊。 */
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;

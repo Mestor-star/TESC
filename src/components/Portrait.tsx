@@ -97,7 +97,9 @@ export function Portrait(props: PortraitProps) {
     height: h,
     flex: 'none',
     overflow: 'hidden',
-    borderRadius: round ? '50%' : 12,
+    /* 方的那一档跟着全局方角走（原来是字面 12）。⚠️ 这个默认值会被下面 `...style`
+       盖掉，所以真正决定那几处的是调用点有没有再写 `borderRadius` —— 已经清干净了。 */
+    borderRadius: round ? '50%' : 'var(--radius)',
     /* 本色只当**底纹**：浅底上原样淡淡一层就够（当文字用要另走 inkOf） */
     background: `linear-gradient(150deg, ${meta.hue}2e 0%, ${meta.hue}55 100%)`,
     ...style,

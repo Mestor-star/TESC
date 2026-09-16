@@ -21,20 +21,9 @@
   align-items: center;
   justify-content: center;
 }
-/* 全息网格底纹（Title 阶段无 .app--stage 覆盖层，自备）——
-   与 tokens 里 `.app--stage::after` 同一套：两组正交细线，中间实、四周化开。
-   上一版这里是课桌手账那一层点阵，再上一版是工业网格 + 扫描线。 */
-.root::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(var(--holo-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--holo-grid) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 84% 74% at 50% 46%, black 38%, transparent 100%);
-}
+/* 全息网格底纹**已删**（2026-09-16 方贴纸稿）——
+   标题页自带的那一份（Title 阶段没有 `.app--stage` 覆盖层，所以自备了一套），
+   与 tokens 那两层同一批撤走。这一屏现在只剩单列居中的标题、菜单与四角小件。 */
 
 /* ---- 四角小件：左上自动档 · 右上操作员 ----
    注意 `pointer-events`：这一层罩在正文上，默认必须穿透，
@@ -85,8 +74,7 @@
   border-left: 3px solid var(--amber);
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--amber) 14%, transparent), transparent 62%),
-    color-mix(in srgb, var(--bg-1) 84%, transparent);
-  box-shadow: var(--shadow-2);
+    var(--bg-1);
   animation: ttIn 480ms var(--ease-out) 120ms backwards;
 }
 .autoKicker {
@@ -164,7 +152,6 @@
   height: 10px;
   margin-top: -5px;
   background: linear-gradient(140deg, var(--steel), var(--red));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--steel) 45%, transparent);
   opacity: 0.85;
   pointer-events: none;
   animation: ttDiaIn 520ms var(--ease-out) 300ms backwards;
@@ -233,7 +220,10 @@
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out);
+  /* 把 `box-shadow` 也纳进来 —— 主按钮的垫片要跟着 hover / active 涨落，
+     不加这一样的话那两下是「啪」地跳过去，不是贴纸被掀起来。 */
+  transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast),
+    transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
   animation: ttIn 520ms var(--ease-out) backwards;
 }
 /* 首枚（行动继续）之外的项：悬停时左沿长出一枚小菱形 */
@@ -270,15 +260,20 @@
   transition: color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
 }
 /* 主按钮就是这一版的名字：青那一头是「反現実」，绯那一头是标题那枚心。
-   与 tokens 的 .btn--primary 同一套：绯那头走提亮档，字走墨（原色上墨字只有 5.11:1） */
+   与 tokens 的 .btn--primary 同一套：绯那头走提亮档，字走墨（原色上墨字只有 5.11:1），
+   投影走官方那一手**实心位移垫片**（`0 5px 0`，零模糊）。
+   这一枚原来缺 hover / active 的落差 —— 只有一句 `translateY(-1px)` 配柔光，
+   按下去毫无回响。补齐成与 `.btn--primary` 一模一样的三拍：
+   平时垫 5px、悬停抬 3px 垫片涨到 8px、按下垫片缩回 3px 且身子落地。 */
 .menuBtn.menuPrimary {
   border-color: transparent;
   background: linear-gradient(135deg, var(--steel), var(--red-lift));
   color: var(--on-accent);
-  box-shadow: var(--glow-red);
+  box-shadow: var(--offset);
 }
 .menuBtn.menuPrimary:disabled { background: var(--bg-3); border-color: var(--line-2); color: var(--ink-faint); box-shadow: none; }
-.menuBtn.menuPrimary:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
+.menuBtn.menuPrimary:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-3px); box-shadow: 0 8px 0 var(--red); }
+.menuBtn.menuPrimary:active:not(:disabled) { box-shadow: var(--offset-sm); transform: translateY(2px) scale(0.99); }
 .menuBtn.menuPrimary::before { display: none; }
 .menuBtn.menuPrimary .ic {
   color: var(--on-accent);
@@ -356,8 +351,8 @@
   position: fixed;
   inset: 0;
   z-index: 130;
-  background: color-mix(in srgb, var(--ink) 62%, transparent);
-  backdrop-filter: blur(2px);
+  /* 62% → 72%：与全站遮罩统一。原来配着 blur(2px) 才够糊。 */
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1148,7 +1148,7 @@ ${siteR.f.word}`}>
                           style={{ '--c': p?.hue ?? 'var(--line)' } as CSSProperties}
                           onClick={() => { setPending(null); setPanel('root'); play({ ...(pending as Command), targetId: id } as Command) }}
                         >
-                          <Portrait avatarId={id} width={28} style={{ width: 28, height: 28, borderRadius: 2 }} />
+                          <Portrait avatarId={id} width={28} style={{ width: 28, height: 28 }} />
                           <span>{p?.name ?? id}</span>
                         </button>
                       )
@@ -1500,7 +1500,7 @@ function Unit({
       {c.side === 'ally' ? (
         <Portrait
           avatarId={c.avatarId ?? c.id} name={named(c)} hue={c.hue} sigil={c.sigil}
-          size={44} style={{ borderRadius: 3 }}
+          size={44}
         />
       ) : (
         <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>

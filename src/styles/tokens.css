@@ -148,16 +148,18 @@
   --rose-deep: #b83a68;
   --rose-soft: rgba(217, 69, 122, 0.10);
 
-  /* —— 辉光 → 柔影（浅底的「发光」是彩色投影，不是暗底上的霓虹） —— */
-  --glow-red: 0 10px 28px rgba(255, 54, 109, 0.28);
-  --glow-amber: 0 10px 28px rgba(255, 191, 0, 0.26);
-  --glow-steel: 0 10px 26px rgba(0, 142, 255, 0.30);
-  --glow-violet: 0 10px 28px rgba(125, 92, 255, 0.26);
+  /* —— `--glow-red` / `--glow-amber` / `--glow-steel`（原「辉光 → 柔影」三支）——
+     **已随 2026-09-16 方贴纸稿撤走**：主人拍的是「柔光只留错位重影」。
+     新写法一律走下面那条**实心位移投影** —— 柔影说「浮起来」，贴纸那一套说的是
+     「贴上去、压住」，两者不并置。`--glow-violet` 更早一步就删了（本来就零引用）。
+     别把它们引回来：见到需要「发光」的地方，先问是不是该换成垫片或细环（`0 0 0 Npx`）。 */
 
   /* 通用投影 / 错位重影 —— 新代码优先用这几把，别再手写 rgba(0,0,0,…)。
-     投影一律取 --ink 那一族的深藏蓝（不是纯黑）：冷底上纯黑发脏。 */
-  --shadow-1: 0 2px 8px rgba(14, 23, 41, 0.06);
-  --shadow-2: 0 10px 28px rgba(14, 23, 41, 0.10);
+     投影一律取 --ink 那一族的深藏蓝（不是纯黑）：冷底上纯黑发脏。
+     `--shadow-1`（卡片静态浮起）与 `--shadow-2`（悬停浮起）**已撤**（2026-09-16 方贴纸稿）：
+     卡片的层次改由**边**来分，静态无影、`:hover` 走 `var(--offset-sm)` + `translateY(-2px)`。
+     这一族只留 `--shadow-3` 一档 —— 它伺候的是**浮层**（modal / toast / lightbox），
+     浮层不在版面上、是压在整页之上，全站唯一留柔影的就是它。 */
   --shadow-3: 0 18px 48px rgba(14, 23, 41, 0.14);
   /* 「次元错位」的签名 —— 这一版它换了名字也换了身份：青与绯各偏两像素叠在字上，
      读起来就是**全息投影的色散**（两条光没对齐那一层毛边）。
@@ -168,21 +170,20 @@
      官方按钮与卡片一律写 `box-shadow: 0 5px 0 #008eff` / `0 7px 0 #008eff`：
      **零模糊、零扩散**的一条实心色块垫在下沿，像贴纸翘起来一条边。
      与上面那一族柔影是两种话：柔影说「浮起来」，这一族说「贴上去、压住」。
-     这一稿把它捡回来，圆角收窄（6/3）之后才搭得住 —— 圆角一大，实心边就散。
-     只给**主按钮与角标**用；大面积卡片仍走柔影，否则整屏会吵。 */
+     这一稿把它捡回来，圆角已经收到全方，实心边才搭得住 —— 圆角一大，实心边就散。
+     用途：主按钮（`0 5px 0` / 悬停 `0 8px 0`）与可点卡片、列表行的 `:hover`。
+     静态的卡片与面板**没有影**，一层边就够 —— 整屏都是垫片才会吵。 */
   --offset-sm: 0 3px 0 var(--steel);
   --offset: 0 5px 0 var(--steel);
   --offset-lg: 0 7px 0 var(--steel);
 
-  /* —— 全息 HUD 那几件 ——
-     网格底纹、细线框与角括号、玻璃面、玻璃上沿的高光、扫描线。
-     都走 --steel 那一族（系统的颜色），透明度一律压得很低：
-     HUD 的力气在「细」，一条线喊出来就不是 HUD 了。 */
-  --holo-grid: rgba(0, 142, 255, 0.06);
-  --holo-line: rgba(0, 142, 255, 0.42);
-  --holo-glass: color-mix(in srgb, var(--bg-1) 88%, transparent);
-  --holo-edge: rgba(255, 255, 255, 0.9);
-  --holo-scan: rgba(0, 142, 255, 0.09);
+  /* —— 全息 HUD 那几件：**已随方贴纸稿整族撤走**（2026-09-16）——
+     这里原本住着网格底纹、细线框与角括号、玻璃面、玻璃上沿的高光、扫描线五支。
+     五支连同它们的用法一并删了：网格与扫描线是「这是块屏」的话，玻璃面是
+     「浮起来」的话 —— 而这一稿要说的是**贴纸**：实心白底、硬边、实心位移投影。
+     两套话并置会互相拆台，所以不是压淡，是撤走。
+     ⚠️ **别再引回来**。下一个想加「一点科技感底纹」的人：先看 `.panel` 与
+     `.vhead` 现在长什么样 —— 底纹会让那两条实心边立刻显脏。 */
 
   /* —— 指针 ——
      两枚 SVG 就摆在同目录（`cursor-arrow.svg` / `cursor-point.svg`）：
@@ -217,13 +218,25 @@
   --t-slow: 420ms;
 
   /* —— 版式 ——
-     圆角比上一版收了一半（14 → 10 / 10 → 6）：糖果贴纸换仪表盘，
-     块面要**挺**一点，但又不能方得像旧工业期 —— 10px 是「精密」那一档。 */
+     **圆角归零**（2026-09-16）。前两稿一直在「收」：14 → 10 → 6，还是在糖果贴纸
+     那一族里挪。这一稿照官方那套**整个摆正** —— 官方 `destyle.css` 把各处圆角
+     一律重置成 0，按钮、卡片、列表行全是硬角，靠 `box-shadow: 0 5px 0` 那条
+     实心垫片与 1px 彩边撑出「贴纸」的层次，不靠圆。
+     `--radius-pill` 不跟着归零，留 2px：徽标 / 芯片 / 状态签那几处若也切直角，
+     会和旁边的方块读成同一族、认不出是「一枚小签」。2px 是**最小可辨的圆**，
+     当「贴纸翘了个角」用。胶囊在官方那套里是不存在的（顶栏那一排因此从圆胶囊
+     变方签 —— 这是对的，不是 bug）。
+
+     ⚠️ 这一节只此三行，但**全站 255 条 `border-radius` 声明都指着它们**
+     （`var(--radius)` 95 条 + `var(--radius-sm)` 91 条 + `var(--radius-pill)` 69 条），
+     横跨 11 屏与 30 个 module，含 5 个模块自己重抄的 `.panel`。`--radius` 全仓
+     **只在 `:root` 定义这一次**，没有局部覆盖、tsx 里也没人引 —— 所以改这里
+     就是改全站，别去各 module 里找。 */
   --rail-w: 236px;
   --topbar-h: 56px;
-  --radius: 6px;
-  --radius-sm: 3px;
-  --radius-pill: 999px;
+  --radius: 0;
+  --radius-sm: 0;
+  --radius-pill: 2px;
 }
 
 /* ============ 基础 ============ */
@@ -252,39 +265,12 @@ body {
   cursor: var(--cursor-arrow);
 }
 
-/* 覆在整体上的**全息网格** —— 上一版这一层是课桌手账的点阵，再上一版是工业网格。
-   这一版两样都不是：两组正交的细线，压得几乎看不见，只在中间实、四周化开。
-   网格不是装饰，是「底下垫着的是仪表盘」那一层意思。
-
-   `mask-image` 那一句别删：满屏等亮的网格会跟正文抢注意力，
-   化开之后它只在余光里存在。 */
-.app--stage::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 999;
-  background-image:
-    linear-gradient(var(--holo-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--holo-grid) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 94% 86% at 50% 44%, #000 28%, transparent 100%);
-}
-
-/* 扫描线：一道极淡的青光自上而下扫过，16 秒一轮 ——
-   慢到不看它时察觉不到，看到时又确实在动。这是「这不是一张纸，是一块屏」
-   最省的一笔。`scanline` 那个关键帧原本就是干这个的（见文件末尾「动画」一节）。 */
-.app--stage::before {
-  content: "";
-  position: fixed;
-  left: 0;
-  right: 0;
-  height: 240px;
-  pointer-events: none;
-  z-index: 999;
-  background: linear-gradient(180deg, transparent, var(--holo-scan) 48%, var(--holo-scan) 52%, transparent);
-  animation: scanline 16s linear infinite;
-}
+/* 覆在整体上的那两层**已经撤走**（2026-09-16 方贴纸稿）：
+   一层是全息网格（两组正交细线 + 径向化开的 mask），一层是 16 秒一轮的扫描光带。
+   撤的理由不是「看腻了」：那两层都在说「你面前是一块屏」，而这一稿要说的是
+   「你面前是一张贴纸」—— 实心白底、硬边、实心位移投影。底纹压得再淡，
+   也会让 `.panel` 那条 1px 实边和 `.vhead` 那条三色分段读起来发脏。
+   （`@keyframes scanline` 随之成了死代码，一并删在「动画」一节末尾。） */
 
 a { color: inherit; text-decoration: none; cursor: var(--cursor-point); }
 button { font-family: inherit; cursor: var(--cursor-point); }
@@ -327,7 +313,7 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   text-transform: uppercase;
   color: var(--steel-deep);
   background: color-mix(in srgb, var(--steel) 10%, transparent);
-  border: 1px solid var(--holo-line);
+  border: 1px solid var(--line-2);
   border-left-width: 2px;
   border-left-color: var(--steel);
   padding: 3px 12px 3px 10px;
@@ -336,14 +322,19 @@ select { font-family: inherit; cursor: var(--cursor-point); }
 }
 
 /* ============ 通用面板 ============ */
-/* 这一版的面板是**全息玻璃**：半透的白面 + 细线框 + 上沿一道棱光。
-   上沿那道光（inset 那条 shadow）是关键 —— 玻璃与塑料的区别就在有没有它。 */
+/* 面板是**实心白卡 + 一条硬边**（2026-09-16 方贴纸稿）。
+   上一版它是全息玻璃：半透的 `--holo-glass` + 上沿一道 `inset` 棱光 + 一层柔影 ——
+   那三样合起来读作「玻璃浮在底上」。这一稿三样全撤：白是实的白，边是 1px 的硬边，
+   没有影。层次改由**边**来分（`--line-2` 平时、`:hover` 时换 `--steel`），
+   而不是由影来分。
+   ⚠️ 别给全站 `.panel` 一律上蔚蓝边 —— 它在 15 个 tsx 里被用了 115 次，
+   一屏二十个蓝框会开不出花。「这是官方那一套」的记号交给 `.vhead` 底下那条
+   三色分段，全站一条就够。 */
 .panel {
   position: relative;
-  background: var(--holo-glass);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-1), inset 0 1px 0 var(--holo-edge);
   overflow: hidden;
 }
 /* 栏头：底下一条细线，面上压一层极淡的青 —— 与网格同一族。 */
@@ -380,25 +371,11 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   display: none;
 }
 
-/* 四角括号（终端 HUD）—— 上一版收成了圆角小角标，这一版**回摆成硬角**：
-   线更细（1px）、臂更长（16px）、圆角一律去掉（硬角才是仪表那一手），
-   颜色退到主调青。留个「这是个框」的记号就够，不必再喊。 */
-.brc::before, .brc::after {
-  content: "";
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  pointer-events: none;
-  z-index: 2;
-  border-color: var(--holo-line);
-  border-style: solid;
-}
-.brc::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
-.brc::after { right: -1px; bottom: -1px; border-width: 0 1px 1px 0; }
-.brc--steel::before, .brc--steel::after { border-color: var(--steel); }
-.brc--amber::before, .brc--amber::after { border-color: var(--amber); }
-.brc--red::before, .brc--red::after { border-color: var(--red); }
-.brc--violet::before, .brc--violet::after { border-color: var(--violet); }
+/* 四角括号（终端 HUD）：**已删**（2026-09-16 方贴纸稿）。
+   原本在框的左上与右下各挂一个 16px 的直角臂，留个「这是个框」的记号。
+   删得毫无迁就成本 —— 翻遍 `src/` 与 11 屏的 tsx，这一个类**一处都没被用过**，
+   是早几稿撤掉用法之后忘了收回的定义。这里留一行字，免得下一个人照着 git
+   历史把它连同用法一起重建。 */
 
 /* ============ 文本条（导航 / 徽标等） ============
    名字里的「斜切」是旧账，如今**又对上了**：它当初就是平行四边形的一刀，
@@ -424,12 +401,15 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   background: var(--bg-1);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-1);
+  /* 次级按钮平时**不带影**（贴纸躺在桌上，不飘）。要看见「它可以按」靠两件事：
+     平时那条 1px 实边，与悬停时冒出来的实心垫片 —— 见下面 `:hover`。 */
   transition: transform var(--t-fast) var(--ease-out), background var(--t-fast), color var(--t-fast),
     border-color var(--t-fast), box-shadow var(--t-fast);
   user-select: none;
 }
-.btn:hover { background: var(--bg-2); border-color: var(--line-3); transform: translateY(-1px); box-shadow: var(--shadow-2); }
+/* 悬停：边换主调青 + 抬起 2px + 底下冒出 `0 3px 0` 的实心垫片。
+   这与主按钮是同一句语法（垫片 = 被掀起来的那条边），只是次级按钮垫片更薄。 */
+.btn:hover { background: var(--bg-2); border-color: var(--steel); transform: translateY(-2px); box-shadow: var(--offset-sm); }
 .btn:active { transform: translateY(0) scale(0.97); }
 
 .btn--primary {
@@ -457,9 +437,11 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   background: linear-gradient(135deg, var(--amber), color-mix(in srgb, var(--amber) 78%, #fff));
   border-color: transparent;
   color: var(--on-accent);
-  box-shadow: 0 8px 22px rgba(255, 191, 0, 0.30);
+  /* ⚠️ 垫片写**字面金**，不套 `--offset*` —— 那三支的色写死成 `var(--steel)`，
+     套在琥珀按钮上会出「金按钮 + 青垫片」，一眼就不对。 */
+  box-shadow: 0 5px 0 var(--amber);
 }
-.btn--amber:hover { box-shadow: var(--glow-amber); filter: brightness(1.05); }
+.btn--amber:hover { box-shadow: 0 8px 0 var(--amber); filter: brightness(1.05); transform: translateY(-3px); }
 
 .btn--ghost {
   background: transparent;
@@ -490,7 +472,8 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   border: 1px solid currentColor;
-  background: rgba(255, 255, 255, 0.72);
+  /* 原来是半透明白（暗底期的玻璃残留）—— 浅底上压白底只靠一根细边，改实心。 */
+  background: var(--bg-1);
 }
 .chip { background: var(--bg-1); border: 1px solid var(--line-2); border-radius: var(--radius-pill); color: var(--ink-dim); }
 .tag { background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-mute); }
@@ -499,10 +482,12 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
-.chip--on { color: var(--jade-deep); border-color: rgba(0, 255, 186, 0.45); background: rgba(0, 255, 186, 0.10); }
+/* 这三条原来把本色写成了字面 rgba（上一版调色时的残留）——写回 color-mix，
+   否则下一轮换色只改 token、这三处会静默脱队。 */
+.chip--on { color: var(--jade-deep); border-color: color-mix(in srgb, var(--jade) 45%, transparent); background: color-mix(in srgb, var(--jade) 10%, transparent); }
 .chip--off { color: var(--ink-mute); }
-.chip--warn { color: var(--amber-deep); border-color: rgba(255, 191, 0, 0.5); background: rgba(255, 191, 0, 0.12); }
-.chip--danger { color: var(--red-deep); border-color: rgba(255, 54, 109, 0.45); background: var(--red-soft); animation: pulseGlow 1.6s infinite; }
+.chip--warn { color: var(--amber-deep); border-color: color-mix(in srgb, var(--amber) 50%, transparent); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.chip--danger { color: var(--red-deep); border-color: color-mix(in srgb, var(--red) 45%, transparent); background: var(--red-soft); animation: pulseGlow 1.6s infinite; }
 
 /* R值正常/异常着色（读数都是小字 → 一律走 -deep 档） */
 .sev-ok { color: var(--steel-deep); }
@@ -523,7 +508,9 @@ select { font-family: inherit; cursor: var(--cursor-point); }
 .meter__fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: linear-gradient(90deg, var(--steel), var(--steel));
+  /* 原来是 `linear-gradient(90deg, var(--steel), var(--steel))` —— 同色写两遍的假渐变，
+     与下面三支「deep → 本色」的真渐变长得不一样。改回实心本色。 */
+  background: var(--steel);
   transition: width var(--t-slow) var(--ease-out);
 }
 .meter__fill.is-amber { background: linear-gradient(90deg, var(--amber-deep), var(--amber)); }
@@ -570,7 +557,11 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   font-size: 14px;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.field:focus { outline: none; border-color: var(--violet); box-shadow: 0 0 0 3px rgba(123, 92, 255, 0.14); }
+/* 聚焦环仍是零模糊的一圈（`0 0 0 3px`），只是底色的写法换了 ——
+   原来这里硬写着 `rgba(123, 92, 255, .14)`，那是第一稿电紫的值；
+   `--violet` 现在是 `#7d5cff`，两者**已经对不上**了（mech 只扫 `color:`/`fill:`，
+   扫不到 `box-shadow`，所以这一处一直没被逮住）。改回走变量。 */
+.field:focus { outline: none; border-color: var(--violet); box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 14%, transparent); }
 .field::placeholder { color: var(--ink-faint); }
 select.field { appearance: none; }
 
@@ -601,7 +592,7 @@ input[type='range']::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--slider);
   border: 2px solid var(--bg-1);
-  box-shadow: 0 2px 7px color-mix(in srgb, var(--slider) 45%, transparent);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--slider) 45%, transparent);
 }
 input[type='range']::-moz-range-track {
   height: 8px;
@@ -635,22 +626,16 @@ input[type='range']::-moz-range-thumb {
      `--g` 是外部写进来的）会把墨字压到 3 字头。掺到 62% 白之后连纯黑当底都有 5.9:1 */
   background: linear-gradient(140deg, color-mix(in srgb, var(--g) 22%, #fff), color-mix(in srgb, var(--g) 38%, #fff));
   border: 1px solid color-mix(in srgb, var(--g) 42%, transparent);
-  border-radius: 12px;
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--g) 22%, transparent);
-  overflow: hidden;
-}
-/* 右下那一道亮边 —— 上一版是斜切块右侧的硬条，这一版收成圆角块上的一抹高光 */
-.glyph::after {
-  content: "";
-  position: absolute;
-  right: -18%; bottom: -34%;
-  width: 78%; height: 78%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.75), transparent 68%);
-  opacity: 0.85;
+  /* 纹章右下原来躺着**一抹白色的圆形径向高光**（`.glyph::after`，一块 78% 见方的
+     圆斑 + `0 8px 20px` 的柔影）—— 那是全站最「柔光」的一处，`--glow-*` 撤了它
+     还在。方贴纸稿两样一并删：纹章就是一枚贴上去的方牌，底是掺过白的浅色、
+     边是 1px 实线，本来就读得清，不需要再打光。
+     方牌的角随 `--radius` 一并归零；`overflow: hidden` 当初只是为兜住那块圆斑，
+     它走了这一句也就没用了。 */
+  border-radius: var(--radius);
 }
 .glyph span { position: relative; z-index: 1; font-size: 17px; letter-spacing: -0.02em; }
-.glyph--lg { width: 76px; height: 76px; border-radius: 16px; }
+.glyph--lg { width: 76px; height: 76px; border-radius: var(--radius); }
 .glyph--lg span { font-size: 26px; }
 
 /* ============ 分隔条 ============ */
@@ -666,7 +651,7 @@ input[type='range']::-moz-range-thumb {
   display: inline-block;
   width: 3px; height: 1.05em;
   background: var(--steel);
-  border-radius: 1px;
+  border-radius: var(--radius-sm);
   margin: 0 8px;
 }
 
@@ -708,10 +693,11 @@ input[type='range']::-moz-range-thumb {
   22% { opacity: 0.25; }
   38% { opacity: 1; }
 }
-@keyframes scanline {
-  0% { top: -12%; }
-  100% { top: 112%; }
-}
+/* `@keyframes scanline` 已删（2026-09-16 方贴纸稿）—— 它那两处消费者
+   （Boot 的四角小件与「接入序列」面板）都已撤走，上面已无引用。
+   ⚠️ 删全局关键帧的顺序永远是这个：**先把引用删干净，再删定义**。
+   反过来那一下，引用方会指着一个不存在的名字 —— 而 CSS Modules 对
+   `global(...)` 这种写法既不报错也不 lint，只是那一处动画**静默不跑**。 */
 @keyframes rotateSlow { to { transform: rotate(360deg); } }
 
 .anim-rise { animation: riseIn var(--t-mid) var(--ease-out) both; }
@@ -738,9 +724,9 @@ input[type='range']::-moz-range-thumb {
   transition: transform var(--t-mid) var(--ease-out), box-shadow var(--t-mid), border-color var(--t-mid), background var(--t-mid);
 }
 .hoverable:hover {
-  transform: translateY(-3px);
-  border-color: var(--line-3);
-  box-shadow: var(--shadow-2);
+  transform: translateY(-2px);
+  border-color: var(--steel);
+  box-shadow: var(--offset-sm);
 }
 
 /* ============ 响应式 ============ */
@@ -760,17 +746,46 @@ input[type='range']::-moz-range-thumb {
   animation: riseIn 300ms var(--ease-out) both;
 }
 
+/* 页头改**居中**（2026-09-16 方贴纸稿）。
+   上一版是 `space-between` 的两头撑开：文字块靠左、控件槽靠右。官方那套是
+   单列居中 —— 标题打中间，底下一条三色分段横线收底。
+   改法只有四行（`flex-direction` / `align-items` / `text-align` / 去 `space-between`）：
+   十个屏的 `.vhead` 结构全是「文字块 div + 第二槽」，没有第三个孩子、也没有倒序，
+   所以第二槽在 column 方向里**自然落到第二行**，不用动任何 tsx。
+   （Codex 根本没有第二槽；Missions 的第二槽是它自己的 `.filters` 不是 `.vhead__right`，
+   所以居中这条对十屏**一律成立** —— 若只给 `.vhead__right` 写靠右，Missions 会跟
+   其余八屏不一致。这是选「居中」而不是「第二行靠右」的实打实的理由。）
+   `> :first-child { width: 100% }` 是给 `align-items: center` 擦屁股的：
+   居中会让子项变成 shrink-to-fit，文字块的宽度就成了「最宽的那个孩子说了算」，
+   副标长短不一时块宽会飘。钉成 100% 之后再居中，落点是死的。 */
 .vhead {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 22px;
   padding-bottom: 16px;
-  /* 细线收底 —— 与进门三段那两条「细线夹副标」同族 */
   border-bottom: 1px solid var(--line);
+  /* 收底那一条**三色分段** —— 官方节标题底下量出来的那一笔，逐字照搬：
+     3px 粗，正中一段 600px，五段是「藏蓝 40% │ 绯 6.667% │ 金 6.667% │ 蔚蓝 6.667% │ 藏蓝 40%」。
+     官方那张 `head_*.png` 是 600×71，分隔线正好占满 600px、三个色条各 40px（= 600 的 1/15）。
+     底下那条 `border-bottom` 细线**留着**：官方也是「细线 + 正中一段彩条」两层，
+     只铺彩条会显得孤零零一根浮在那儿。
+     `min(600px, 100%)` 是给窄屏的：小于 600px 时整段等比例缩，色条比例不变。
+     这段颜色只此一处，别再往别的地方抄 —— 全站一条就够认了。 */
+  background-image: linear-gradient(90deg,
+    var(--ink)   0       40%,
+    var(--red)   40%     46.667%,
+    var(--amber) 46.667% 53.333%,
+    var(--steel) 53.333% 60%,
+    var(--ink)   60%     100%);
+  background-size: min(600px, 100%) 3px;
+  background-position: 50% 100%;
+  background-repeat: no-repeat;
 }
+.vhead > :first-child { width: 100%; }
 .vhead__kicker {
   display: flex;
   align-items: center;
@@ -791,14 +806,17 @@ input[type='range']::-moz-range-thumb {
    **斜杠**夹标题 · 细线夹 kicker · 细线收底 —— 与开屏 / 标题页 / 顶栏同一族的锐角记号。
    （标题两厢那一对从菱形改成了斜杠，是照官方标题两头那两道斜笔；见下面 h1 那条注。）
    ⚠️ 装饰**一律挂 `.vhead` 后代**，不写进 `.vhead__kicker` 本体：
-   那个类在 Archive 的立绘卡里还有三处**脱离页头**的小角标用法（`PORTRAIT / 全身`），
-   改本体就会让那三处也长出两条线来。
-   （2026-09-16 这一稿只动了下面 h1 那两道斜杠的形状、渐变与辉光，位置与尺寸一个字没动。） */
+   那个类**有六处脱离页头**的小角标用法 —— Archive 的立绘卡三处
+   （`Archive.tsx:238 / 447 / 1167`，`PORTRAIT / 全身`、`PRIVATE DOSSIER / 立绘`），
+   外加 `Memory.tsx:350`、`Saga.tsx:123`、`Plot.tsx:1413` 各一处内联小角标。
+   改本体那六处就会一起长出两条线来。（原先这里记的是「三处」，只数了 Archive ——
+   2026-09-16 方贴纸稿复核时补齐。） */
 .vhead .vhead__kicker {
   gap: 12px;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 800;
   letter-spacing: 0.18em;
-  color: var(--ink-mute);
+  color: var(--ink-dim);
 }
 .vhead .vhead__kicker::before,
 .vhead .vhead__kicker::after {
@@ -808,7 +826,11 @@ input[type='range']::-moz-range-thumb {
   background: var(--line-3);
   border-radius: 0;
 }
-.vhead h1 { position: relative; margin: 10px 0 0; padding: 0 20px; letter-spacing: 0.02em; }
+/* 标题字号与字距照官方那一档抬（32 → 36 / 0.02em → 0.04em）。
+   `padding: 0 22px` 现在是**斜杠与字之间的间距**（不是块内缩进）——
+   居中之后文字块收缩到字宽，那对斜杠就贴在字的两侧，正是官方标题那个样子；
+   20px 在这个距离上偏挤，放到 22px。 */
+.vhead h1 { position: relative; margin: 10px 0 0; padding: 0 22px; font-size: 36px; letter-spacing: 0.04em; }
 /* 标题两厢那一对记号：上一稿是 9px 的菱形，这一稿改成**斜杠**（照原作标题两头的
    那两道斜笔）。菱形是「旋转 45° 的方」，斜杠是「切了一刀的竖」——
    同一族的锐角，但斜杠读起来更快、更像标题的括号。
@@ -824,7 +846,8 @@ input[type='range']::-moz-range-thumb {
   margin-top: -11px;
   background: linear-gradient(180deg, var(--steel), var(--red));
   transform: skewX(-18deg);
-  box-shadow: 0 0 9px color-mix(in srgb, var(--steel) 42%, transparent);
+  /* 两厢那对斜杠上原来还压着一层 `0 0 9px` 的青光 —— 随方贴纸稿撤。
+     斜杠本身是实心的青→绯渐变，形状与位置一个字没动，去掉糊光反而更「切得利落」。 */
   opacity: 0.9;
   pointer-events: none;
 }
@@ -851,8 +874,12 @@ input[type='range']::-moz-range-thumb {
 .vhead .vhead__sub { margin-top: 9px; max-width: 640px; line-height: 1.75; }
 
 @media (max-width: 720px) {
-  .vhead h1 { font-size: 24px; padding: 0 18px; }
-  .vhead h1::before, .vhead h1::after { width: 7px; height: 7px; margin-top: -3px; }
+  .vhead h1 { font-size: 26px; padding: 0 18px; }
+  /* 窄屏这一对跟着标题缩：`36 → 26` 是 0.72 倍，斜杠就按这个比例从 5×22 收到 4×16
+     （居中仍靠 `margin-top: -height/2`）。
+     ⚠️ 这两行原来停在**菱形**那一版（`7px × 7px / -3px`）—— a2d3f1b 把宽屏那对换成
+     斜杠时漏改了这里，窄屏会把斜杠压回一枚小方块，与宽屏不是同一个记号。 */
+  .vhead h1::before, .vhead h1::after { width: 4px; height: 16px; margin-top: -8px; }
   .vhead .vhead__kicker::before, .vhead .vhead__kicker::after { width: 18px; }
 }
 

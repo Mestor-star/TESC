@@ -187,7 +187,8 @@
 .schemeRow.isOn {
   border-color: var(--amber);
   background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 12%, transparent), color-mix(in srgb, var(--amber) 3%, transparent) 55%, var(--bg-1));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 38%, transparent), var(--glow-amber);
+  /* 只留那条 `inset` 硬环（零模糊的一圈金线），外圈的柔光随方贴纸稿撤走。 */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 38%, transparent);
   position: relative;
 }
 .schemeRow.isOn::before {

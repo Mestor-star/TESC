@@ -15,10 +15,28 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  background:
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--steel) 7%, transparent) 26px 52px),
-    linear-gradient(180deg, color-mix(in srgb, var(--violet) 6%, transparent), transparent 45%),
-    var(--bg-1);
+  /* 本屏没有 `.vhead` —— 这张 hero 卡自己就是页头，所以它得自己收下那一套：
+     居中列（`align-items` + `text-align`）+ 底下那条**三色分段**。
+     第一层就是那段线（配方与 tokens 的 `.vhead` 逐字相同：3px 粗、正中 600px、
+     藏蓝 40% / 绯 6.667% / 金 6.667% / 蔚蓝 6.667% / 藏蓝 40%），
+     第二层是色洗（**保留** —— 那是颜色不是纹理）。原来压在最上面的那层
+     115° 斜纹随方贴纸稿撤走。 */
+  align-items: center;
+  text-align: center;
+  background-color: var(--bg-1);
+  background-image:
+    linear-gradient(90deg,
+      var(--ink)   0       40%,
+      var(--red)   40%     46.667%,
+      var(--amber) 46.667% 53.333%,
+      var(--steel) 53.333% 60%,
+      var(--ink)   60%     100%),
+    /* 色洗由紫改青：这一稿的身份是青→绯，紫退回点缀之后，
+       留在页头大面积铺底的紫就成了唯一一处「还认旧主」的地方。 */
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 6%, transparent), transparent 45%);
+  background-size: min(600px, 100%) 3px, auto;
+  background-position: 50% 100%, 0 0;
+  background-repeat: no-repeat, no-repeat;
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -44,10 +62,11 @@
   align-items: center;
   gap: 12px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 800;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ink-mute);
+  color: var(--ink-dim);
 }
 .heroKicker::before,
 .heroKicker::after {
@@ -60,9 +79,9 @@
   position: relative;
   margin: 12px 0 4px;
   padding: 0 26px;
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 900;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   line-height: 1.18;
 }
 /* 标题两侧各一枚菱形 —— 与 .vhead 的 h1、开屏、标题页同一枚记号 */
@@ -90,11 +109,12 @@
   color: var(--ink-mute);
   max-width: 560px;
   font-size: 14px;
-  margin: 10px 0 18px;
+  margin: 10px auto 18px;   /* `auto` 两侧：居中列里这一行要跟着居中 */
 }
 
-.heroChips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.heroActions { display: flex; gap: 10px; flex-wrap: wrap; }
+/* 芯片与按钮两行同样居中（父级已是居中列，这里只要别自己撑左） */
+.heroChips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; justify-content: center; }
+.heroActions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
 /* ---- R 值仪表盘卡 ---- */
 .gaugePanel {
@@ -159,7 +179,6 @@
   border: 1px solid color-mix(in srgb, var(--red) 42%, transparent);
   border-radius: var(--radius);
   background:
-    repeating-linear-gradient(115deg, transparent 0 30px, color-mix(in srgb, var(--red) 8%, transparent) 30px 60px),
     linear-gradient(180deg, color-mix(in srgb, var(--red) 12%, transparent), color-mix(in srgb, var(--red) 3%, transparent));
   animation: global(flickerIn) 600ms linear both;
 }
@@ -183,7 +202,8 @@
   font-size: 42px;
   font-weight: 800;
   color: var(--red-deep);
-  text-shadow: 0 2px 14px color-mix(in srgb, var(--red) 45%, transparent);
+  /* 42px 的大字那一档，装饰影走全站唯一的错位重影（原来是 `0 2px 14px` 的柔光） */
+  text-shadow: var(--duo-shadow);
   line-height: 1;
 }
 

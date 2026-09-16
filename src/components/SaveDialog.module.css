@@ -5,8 +5,10 @@
   inset: 0;
   z-index: 130;
   /* 遮罩走墨紫而不是纯黑：浅底上黑罩发脏，墨紫罩与这一版同调 */
-  background: color-mix(in srgb, var(--ink) 62%, transparent);
-  backdrop-filter: blur(2px);
+  /* 遮罩提到 72%（2026-09-16 方贴纸稿）：原来这层是 62% + 一道 `blur(2px)`，
+     压暗与糊化各出一半力。blur 撤了，糊化那一半的力气得由压暗补回来 ——
+     72% 是全站几个遮罩现在共用的那一档（PresetManager / LorebookModal 本来就是它）。 */
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;

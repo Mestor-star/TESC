@@ -1087,7 +1087,7 @@ export function Archive() {
         {/* 能力五轴说明 */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 16 }}>
           {AXIS_ORDER.map((k) => (
-            <div key={k} className="tag" style={{ lineHeight: 1.5, padding: '8px 10px', borderRadius: 2 }}>
+            <div key={k} className="tag" style={{ lineHeight: 1.5, padding: '8px 10px' }}>
               <b style={{ color: 'var(--ink)' }}>{k}</b>
               <span style={{ display: 'block', marginTop: 2, fontSize: 10.5 }}>{STAT_HINT[k]}</span>
             </div>

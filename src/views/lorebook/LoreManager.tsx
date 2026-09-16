@@ -216,9 +216,11 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
   const setAllEntries = (on: boolean) =>
     setEditBook((b) => (b ? { ...b, entries: b.entries.map((e) => ({ ...e, enabled: on })), updatedAt: Date.now() } : b))
 
-  /* modal 形态：整页遮罩 + 居中面板；embedded：无遮罩，面板铺满可用宽度 */
+  /* modal 形态：整页遮罩 + 居中面板；embedded：无遮罩，面板铺满可用宽度。
+     embedded 只去掉「浮在遮罩上」那两样（`boxShadow` / 显式的 `borderRadius`）——
+     `border` 留着：内嵌形态读作**一张卡**，不是一个没有框的框。 */
   const panelStyle: CSSProperties = embedded
-    ? { width: '100%', maxHeight: 'none', borderRadius: 0, border: 'none', boxShadow: 'none' }
+    ? { width: '100%', maxHeight: 'none' }
     : {}
 
   const wrap = (node: ReactNode) =>

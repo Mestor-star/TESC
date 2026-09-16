@@ -33,18 +33,23 @@
   border-left: 0;
   border-radius: var(--radius);
   background: var(--bg-1);
-  box-shadow: var(--shadow-1);
+  /* 平时无影（贴纸躺在桌上）。原来这里是 `--shadow-1` 那层柔影 +
+     悬停时**向右横移 4px** —— 圆角时代横移有视觉缓冲，方角下那一下会「跳」。
+     改成与全站同一句：抬起来、底下冒出实心垫片。垫片走卡片自己的 `--s`
+     （每张卡的阶段色不同，套 `--offset-*` 会一律变青垫片）。 */
   overflow: hidden;
   transition: border-color var(--t-mid), transform var(--t-mid) var(--ease-out), box-shadow var(--t-mid);
 }
-.card:hover { transform: translateX(4px); border-color: color-mix(in srgb, var(--s) 42%, var(--line-2)); box-shadow: var(--shadow-2); }
+.card:hover { transform: translateY(-2px); border-color: var(--s); box-shadow: 0 3px 0 var(--s); }
 
 /* 左侧阶段竖带 */
 .cardRibbon {
   align-self: stretch;
   width: 8px;
   background: var(--s);
-  box-shadow: inset -2px 0 6px color-mix(in srgb, var(--ink) 14%, transparent);
+  /* `6px` 的模糊收到 0：这一条原来是「竖带往卡片里投一层柔影」，
+     方贴纸稿里改成一条**硬边**（深一档的墨），读起来还是「带子压住了卡片」。 */
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--ink) 14%, transparent);
 }
 .cardRibbon.danger { background: repeating-linear-gradient(180deg, var(--red) 0 10px, #fff 10px 16px); }
 .cardRibbon.warn { background: var(--amber); }
@@ -191,8 +196,8 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in srgb, var(--ink) 52%, transparent);
-  backdrop-filter: blur(3px);
+  /* 52% → 72%：与全站遮罩统一。原来配着 blur(3px) 才够糊。 */
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
 }
 .modalBox {
   width: min(760px, 100%);

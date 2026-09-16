@@ -362,7 +362,7 @@ function TopStatus({ view }: { view: ViewId }) {
           </button>
         ) : (
           <button className={css.pill} title="本区观测平稳">
-            <span className={css.pulseDot} style={{ background: 'var(--jade)', boxShadow: '0 0 8px var(--jade)' }} />
+            <span className={css.pulseDot} style={{ background: 'var(--jade)' }} />
             本区观测平稳
           </button>
         )}

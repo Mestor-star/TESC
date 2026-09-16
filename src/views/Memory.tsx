@@ -172,7 +172,7 @@ export function Memory() {
                       onClick={() => { requestProfile(r.id); navigate('archive') }}
                       title={`调阅 ${r.name} 的档案`}
                     >
-                      <Portrait avatarId={r.id} size={36} style={{ borderRadius: 4 }} />
+                      <Portrait avatarId={r.id} size={36} />
                       <div className={css.relMain}>
                         <div className={css.relTop}>
                           <b>{r.name}</b>

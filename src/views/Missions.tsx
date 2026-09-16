@@ -740,7 +740,7 @@ export function Missions() {
                       档案 {m2.no} / 阶段 S{m2.stage}
                     </span>
                     <span className="num badge" style={{ color: sev.color, borderColor: sev.color }}>{sev.label}</span>
-                    <span className={`${sm.cls}`}><span className={css.statusBadge}><span className={css.dot} style={{ background: sm.color, boxShadow: `0 0 6px ${sm.color}` }} />{sm.label}</span></span>
+                    <span className={`${sm.cls}`}><span className={css.statusBadge}><span className={css.dot} style={{ background: sm.color }} />{sm.label}</span></span>
                     <span className={`chip`} style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>{m2.nature}</span>
                   </div>
                   <h3 className={css.cardTitle} style={{ marginTop: 6 }}>{m2.title}</h3>

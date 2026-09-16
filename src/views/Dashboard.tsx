@@ -338,7 +338,7 @@ export function Dashboard() {
                 strokeLinecap="round"
                 strokeDasharray={CIRC}
                 strokeDashoffset={CIRC * (1 - f)}
-                style={{ filter: `drop-shadow(0 0 8px ${sev.tone})` }}
+                style={{ filter: `drop-shadow(0 4px 0 color-mix(in srgb, ${sev.tone} 55%, transparent))` }}
               />
             </svg>
             <div className={css.gaugeCenter}>
@@ -395,8 +395,17 @@ export function Dashboard() {
           </div>
         </div>
       ) : (
-        <div className={css.threat} style={{ borderColor: 'rgba(63,224,160,0.4)', background: 'rgba(63,224,160,0.05)' }}>
-          <div className={css.threatHazard} style={{ background: 'repeating-linear-gradient(-45deg, var(--jade) 0 10px, #0b0b13 10px 20px)' }} />
+        <div
+          className={css.threat}
+          style={{
+            /* 原来这两处写的是 `rgba(63,224,160,…)` —— 第一稿墨绿系的残留，**不是** --jade。
+               `#0b0b13` 也是暗底期的残留；斜纹的浅端全站统一走 `#fff`（见 tokens 的 .hazard
+               与 Missions 的 .cardRibbon.danger）。 */
+            borderColor: 'color-mix(in srgb, var(--jade) 40%, transparent)',
+            background: 'color-mix(in srgb, var(--jade) 5%, transparent)',
+          }}
+        >
+          <div className={css.threatHazard} style={{ background: 'repeating-linear-gradient(-45deg, var(--jade) 0 10px, #fff 10px 20px)' }} />
           <div className={css.threatBody}>
             <b style={{ color: 'var(--jade-deep)' }}>本区观测平稳 · {focusRegion.name}</b>
             <p>
@@ -432,7 +441,7 @@ export function Dashboard() {
                 const g = live.equip[c.id] ? GEAR_OF[live.equip[c.id]] : undefined
                 return (
                   <div key={c.id} className={css.squadRow} style={{ '--c': c.hue } as CSSProperties}>
-                    <Portrait avatarId={c.id} name={c.name} hue={c.hue} sigil={c.sigil} size={38} style={{ borderRadius: 4 }} />
+                    <Portrait avatarId={c.id} name={c.name} hue={c.hue} sigil={c.sigil} size={38} />
                     <div className={css.squadMeta}>
                       <b>{c.name} <span className="tiny muted" style={{ fontWeight: 400 }}>· {c.station}</span></b>
                       <small>{c.role} · {c.division.split(' · ').pop()}{g ? ` · 装具 ${g.name}` : ''}</small>

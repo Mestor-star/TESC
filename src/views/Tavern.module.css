@@ -124,7 +124,7 @@
   font-size: 10px;
   font-weight: 700;
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   background: var(--red);
   color: var(--on-accent);   /* 10px 的小字，白压在樱粉上只有 3.19:1 */
 }
@@ -136,7 +136,7 @@
   font-size: 10px;
   font-weight: 700;
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   background: var(--red);
   color: var(--on-accent);   /* 10px 的小字，白压在樱粉上只有 3.19:1 */
 }
@@ -213,8 +213,8 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in srgb, var(--ink) 62%, transparent);
-  backdrop-filter: blur(2px);
+  /* 62% → 72%：与全站遮罩统一。原来配着 blur(2px) 才够糊。 */
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
 }
 .modalCard {
   width: min(460px, 100%);

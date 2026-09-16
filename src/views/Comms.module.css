@@ -46,7 +46,6 @@
   font-size: 10px;
   font-weight: 800;
   border-radius: var(--radius-pill);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--amber) 35%, transparent);
 }
 
 /* 会话区 */
@@ -96,10 +95,14 @@
 }
 /* 会话区本身是白面板，对方那条就用一档淡紫底把它从版面上托起来 ——
    白底压白底只靠一根细边，浅底上几乎看不见。 */
+/* 气泡尾：圆角全方之后，「三个直角 + 一个 4px 圆角」是畸形，改用**切角**
+   （tokens.css 的 `.block-tag` 已经是这一手）。对方那条尾在左上，自己那条尾在右上。
+   ⚠️ 切角会把 `box-shadow` 整块裁掉 —— 所以自己那条的柔影必须先撤干净，
+   否则阴影没了、还留下一个裁过的边。 */
 .msg--them .bubble {
   background: var(--bg-2);
   border: 1px solid var(--line-2);
-  border-radius: 4px var(--radius) var(--radius) var(--radius);
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
 }
 .msg--user .bubble {
   /* 自己那一侧是彩色底 —— 底亮的这一头，字就跟着走墨（白字在这条渐变上只有 3.16→3.33，
@@ -107,8 +110,7 @@
      （墨压在 steel-deep 上只有 3.37:1）。与 tokens 的 .btn--primary 同一个配方。 */
   background: linear-gradient(160deg, var(--steel), var(--red-lift));
   color: var(--on-accent);
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--steel) 26%, transparent);
-  border-radius: var(--radius) 4px var(--radius) var(--radius);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
 }
 .msgTime { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); margin-top: 4px; padding: 0 4px; }
 
@@ -137,7 +139,8 @@
   padding: 10px 14px;
   background: var(--bg-2);
   border: 1px solid var(--line-2);
-  border-radius: 4px var(--radius) var(--radius) var(--radius);
+  /* 与「对方那条」同一副切角（尾在左上） */
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
 }
 .typing i {
   width: 6px; height: 6px;

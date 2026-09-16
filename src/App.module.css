@@ -65,7 +65,9 @@
   display: flex; align-items: center; justify-content: center;
   background: linear-gradient(140deg, var(--steel), var(--red-lift));
   border-radius: var(--radius-sm);
-  box-shadow: var(--glow-steel);
+  /* 柔光换成**实心位移投影**：品牌菱形是顶栏左端那枚「贴上去的角标」，
+     配 `0 3px 0` 那一手正合适（零模糊，像贴纸翘起来一条边）。 */
+  box-shadow: var(--offset-sm);
   transform: rotate(45deg);
 }
 .brandMark > span {
@@ -208,7 +210,9 @@
 .navItem.isActive::before { opacity: 1; transform: translateY(-50%) rotate(45deg) scale(1); }
 .navItem.isActive .navItem__icon {
   color: var(--steel-deep);
-  filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--steel) 45%, transparent));
+  /* 这里原来还有一层 `drop-shadow(0 3px 8px)`，替图标说「浮起来」。
+     方贴纸稿撤了 —— 选中态的信息已经由「图标变色 + 行底那层淡青 + 菱形记号
+     `::before`」三条说满了，再叠一层糊影只是噪音。 */
 }
 .navItem.isActive .navItem__idx { opacity: 1; color: var(--steel-deep); }
 
@@ -338,12 +342,12 @@
   align-items: center;
   gap: 14px;
   padding: 0 22px;
-  background: color-mix(in srgb, var(--bg-1) 78%, transparent);
-  backdrop-filter: blur(10px);
+  /* 顶栏改**实心白**（2026-09-16 方贴纸稿）。它原本是 78% 半透 + 一层
+     `blur(10px)`，好让底下的内容透上来 —— 那是「玻璃浮在内容之上」的话。
+     贴纸那一套不浮：顶栏就是一条实心的白边，靠底下那条 1px 细线切下来。
+     底下原来还托着一层极淡的青光（替 `box-shadow` 说「浮起来」），一并撤。 */
+  background: var(--bg-1);
   border-bottom: 1px solid var(--line-2);
-  /* 细线底下托一层极淡的青光 —— 顶栏因此「浮」在内容之上，
-     而不是拿一条线把上面切下来。这是全息 HUD 那一版给顶栏留的记号。 */
-  box-shadow: 0 10px 26px -20px color-mix(in srgb, var(--steel) 70%, transparent);
   z-index: 4;
 }
 .tbLeft { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
@@ -456,11 +460,13 @@
   align-items: start;
   padding: 12px 12px 12px 14px;
   color: var(--ink);
-  background: var(--holo-glass);
-  backdrop-filter: blur(10px);
+  background: var(--bg-1);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-3), inset 0 1px 0 var(--holo-edge);
+  /* 角标是**浮层**，是全站唯一还留着柔影的一档（卡片与面板的影已在
+     2026-09-16 那稿撤走，改由 1px 实边分层）。玻璃面与上沿那道棱光一并撤了：
+     角标浮在内容之上，靠的是这一层真实投影，不是半透。 */
+  box-shadow: var(--shadow-3);
   animation: toastIn 340ms var(--ease-out) both;
   overflow: hidden;
 }
@@ -512,12 +518,15 @@
 
 /* ---------- 终端启动「弹出」进场 ---------- */
 /* 上一版那一下 brightness(2.7) 是给暗底准备的闪白；浅底上闪白等于闪了个空，
-   改成「从虚到实 + 轻微下沉」—— 落地那一下更轻，也不刺眼。 */
+   改成「从虚到实 + 轻微下沉」—— 落地那一下更轻，也不刺眼。
+   2026-09-16 方贴纸稿：三帧里的 `filter: blur(6px)` 一并删 —— 「柔焦进场」与这一稿
+   的硬边语汇不是一路，且它给整棵子树挂了一层终身合成层。
+   ⚠️ 100% 帧的 `transform` 仍不是 `none`，Guide 的 portal 前提没变，**别顺手撤 portal**。 */
 .bootPop {
   animation: bootPop 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes bootPop {
-  0%   { opacity: 0; transform: scale(0.96) translateY(18px); filter: blur(6px); }
-  55%  { opacity: 1; filter: blur(0); }
-  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+  0%   { opacity: 0; transform: scale(0.96) translateY(18px); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }

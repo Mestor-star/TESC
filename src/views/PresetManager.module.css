@@ -4,8 +4,8 @@
   position: fixed;
   inset: 0;
   z-index: 130;
+  /* 遮罩本来就是 72%，这一稿只是把配着它的 blur(2px) 撤了。 */
   background: color-mix(in srgb, var(--ink) 72%, transparent);
-  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -61,24 +61,11 @@
   100% { transform: translateX(340%) skewX(-14deg); opacity: 0; }
 }
 
-/* 认证页整体的底纹：全息网格（与 tokens 的 `.app--stage::after` 同一套），
-   中间实、四周淡。上一版这一层是点阵（课桌 / 手账那一层）。 */
-.boot::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(var(--holo-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--holo-grid) 1px, transparent 1px);
-  background-size: 34px 34px;
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 46%, black 40%, transparent 100%);
-  animation: dotIn 900ms var(--ease-out) backwards;
-}
-@keyframes dotIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+/* 认证页整体的底纹（全息网格）**已删**（2026-09-16 方贴纸稿）——
+   与 tokens 那两层同一批撤走。开屏现在靠四角小件、菱形夹标题与「接入序列」
+   那条进度自己把版面撑起来，底下不留纹。
+   （它唯一的消费者走了之后，`@keyframes dotIn` 也成了死代码，一并删。） */
+
 
 /* ---- 四角小件（游戏开屏的第一眼：框先摆好）---- */
 .corner {
@@ -87,23 +74,10 @@
   pointer-events: none;
   z-index: 3;
 }
-/* 框内常驻的一条扫描线 —— 慢慢往下淌，给这一屏留一点「在跑」的呼吸 */
-.corner::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  opacity: 0.45;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--red) 55%, transparent),
-    color-mix(in srgb, var(--steel) 65%, transparent),
-    transparent
-  );
-  animation: global(scanline) 5.4s linear 1.6s infinite;
-}
+/* 框内那条扫描线**已删**（2026-09-16 方贴纸稿）。它是 `global(scanline)` 的
+   两处消费者之一 —— 撤它的时候连着 tokens 里 `@keyframes scanline` 的定义
+   一起收了，否则会留下「引用一个不存在的关键帧」：CSS Modules 下那种错
+   **不报错、lint 也不报**，只是那一处永远不动（tokens 的「动画」一节记着这个病）。 */
 .chip {
   position: absolute;
   display: inline-flex;
@@ -221,7 +195,6 @@
   height: 11px;
   margin-top: -5.5px;
   background: linear-gradient(140deg, var(--steel), var(--red));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--steel) 45%, transparent);
   opacity: 0.85;
   pointer-events: none;
   /* 从正着躺平一路转到 45° 立起来 —— 收尾与基础样式的写法对齐 */
@@ -318,7 +291,6 @@
   border-radius: 50%;
   background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
   border: 1px solid var(--line-3);
-  box-shadow: var(--shadow-2);
   user-select: none;
   touch-action: none;
   cursor: var(--cursor-point);
@@ -376,18 +348,23 @@
   width: 84px;
   height: 84px;
   color: var(--steel-deep);
-  filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--steel) 45%, transparent));
   transition: color var(--t-fast), transform var(--t-fast);
 }
-/* 扫描中的呼吸：浅底上的「发光」是彩色投影，不是暗底上的霓虹。 */
+/* 扫描中的呼吸 —— 这一支**硬化**了（2026-09-16 方贴纸稿）。
+   它原本是两帧的柔影：落下时 `0 4px 8px`、抬起时 `0 12px 20px`，
+   靠影子的糊与不糊说「浮起来又落下去」。新的写法是**零模糊的实心垫片** ——
+   影子随身子一起错开（落下 3px、抬起 9px），呼吸那一拍一个字没丢，
+   但话从「浮」改成了「贴纸翘起来一条边」，与全站同一句。
+   `.fpIcon` 自己那条常驻的 `drop-shadow(0 8px 16px)` 一并撤：颜色已经由
+   `--steel-deep` 说清楚了，再叠一层糊影只是 HUD 时期的习惯。 */
 @keyframes fpScan {
   0%, 100% {
     transform: translateY(-6px);
-    filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--steel-deep) 38%, transparent));
+    filter: drop-shadow(0 3px 0 color-mix(in srgb, var(--steel-deep) 38%, transparent));
   }
   50% {
     transform: translateY(6px);
-    filter: drop-shadow(0 12px 20px color-mix(in srgb, var(--steel) 58%, transparent));
+    filter: drop-shadow(0 9px 0 color-mix(in srgb, var(--steel) 58%, transparent));
   }
 }
 
@@ -399,7 +376,6 @@
   right: 10px;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--steel), transparent);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--steel) 60%, transparent);
   opacity: 0;
 }
 .isScanning .fpBeam {
@@ -424,10 +400,11 @@
      手快的人会在按下之后对着一枚「透明的按钮」按满一秒。顶掉它反而安全 ——
      元素立刻回到基础样式的满不透明度。 */
   animation: fpShake 1.05s ease-in-out infinite;
-  box-shadow:
-    0 0 0 7px color-mix(in srgb, var(--steel) 15%, transparent),
-    0 0 34px color-mix(in srgb, var(--steel) 34%, transparent),
-    var(--shadow-2);
+  /* 三层影只留中间那条**硬环**（`0 0 0 7px`：偏移 0、模糊 0，是实心的一圈）——
+     它本来就是零模糊，不用改。另外两层（`0 0 34px` 那团糊光、`--shadow-2`
+     那层浮影）随方贴纸稿撤走：按下指纹时该看见的是「按钮被点亮了一圈」，
+     不是「按钮浮起来了」。 */
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--steel) 15%, transparent);
 }
 /* 握着的这一会儿轻轻发抖 —— 震幅小到不晃眼，只当是「在读」 */
 @keyframes fpShake {
@@ -450,7 +427,6 @@
 }
 .isScanning .fpRing {
   opacity: 1;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--steel) 68%, transparent));
 }
 
 .fpHint {
@@ -510,34 +486,10 @@
   from { opacity: 0; clip-path: inset(46% 0 46% 0); }
   to { opacity: 1; clip-path: inset(-20% 0 -20% 0); }
 }
-.seq::after {
-  /* 细密横格 —— 上一版这条是「横格纸的那一道」（浅底手账），
-     这一版改成 CRT 那种逐行扫描的纹：横格还在，但格子变成了屏的。 */
-  content: "";
-  position: absolute;
-  inset: -60px;
-  pointer-events: none;
-  opacity: 0.6;
-  background: repeating-linear-gradient(0deg,
-    color-mix(in srgb, var(--steel) 7%, transparent) 0 1px,
-    transparent 1px 4px);
-}
-/* 面板里也淌一条扫描线（与四角那条同一支） */
-.seq::before {
-  content: "";
-  position: absolute;
-  left: -60px;
-  right: -60px;
-  height: 1px;
-  opacity: 0.5;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--jade) 60%, transparent),
-    transparent
-  );
-  animation: global(scanline) 3.6s linear 700ms infinite;
-}
+/* 「接入序列」面板上原本盖着两层（2026-09-16 方贴纸稿全撤）：
+   一层 CRT 逐行扫描的横纹（`::after`），一层与四角那条同支的扫描线（`::before`）。
+   横纹是「这是块屏」的话，扫描线是 `global(scanline)` 的另一处消费者 ——
+   与四角那条一起走。面板现在是干净的实心白卡，「在跑」这件事交给进度条本身。 */
 
 .seqKicker {
   display: flex;
@@ -667,7 +619,8 @@
   width: 9px;
   height: 1.05em;
   background: var(--jade);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--jade) 55%, transparent);
+  /* 光标原来还带一圈糊光（`0 0 10px`）—— 像老式 CRT 上那个亮点。
+     方贴纸稿撤了它：一条薄荷色的实心竖条本身就是光标，不用再发光。 */
   animation: caretBlink 0.9s steps(1) infinite;
   align-self: center;
   padding: 0;

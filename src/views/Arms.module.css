@@ -64,7 +64,8 @@
   font-weight: 900;
   letter-spacing: 0.14em;
   color: var(--c);
-  text-shadow: 0 6px 18px color-mix(in srgb, var(--c) 32%, transparent);
+  /* 大字那一档的装饰影：走全站唯一的错位重影（原来是 `0 6px 18px` 的柔光） */
+  text-shadow: var(--duo-shadow);
 }
 .tradMark small {
   font-family: var(--font-mono);
