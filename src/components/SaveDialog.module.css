@@ -100,3 +100,8 @@
   color: var(--ink-dim);
 }
 .grow { margin-left: auto; }
+
+/* 手机档 · 粗指针：对话框右上那枚关闭（桌面 30px）抬到 44 */
+@media (pointer: coarse) {
+  .iconBtn { min-width: 44px; min-height: 44px; }
+}

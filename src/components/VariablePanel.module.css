@@ -216,3 +216,8 @@
 @media (max-width: 680px) {
   .key, .keyEdit { flex-basis: 140px; }
 }
+
+/* 手机档 · 粗指针：变量行尾那几枚小图标（桌面 30px）抬到 44 */
+@media (pointer: coarse) {
+  .iconBtn { min-width: 44px; min-height: 44px; }
+}

@@ -24,7 +24,7 @@
    ============================================================ */
 
 import { charOf, profileLinesOf } from '../data/personas'
-import { INTIMATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
+import { ACTIVE_DATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
 import type { CgRef } from '../data/types'
@@ -603,7 +603,8 @@ export function dateOpeningPrompt(rv: Rendezvous): string {
     : `（是${her ? `「${her}」` : '对方'}先约的这一场，现在轮到他赴约。请照上面那套正文口径，把这一场的**开场**写出来：他到了「${rv.place}」，${rv.time ? `说定的是「${rv.time}」` : '没把钟点说死'} —— 周围是什么样子、${her ? `${her}是已经等在哪儿还是还没到` : '那儿是什么情形'}。两三段以内。）`
 }
 
-/** 门槛：能不能约（羁绊读数；会长一类恒满值一并算过） */
+/** 门槛：**你主动开口**约她 —— 羁绊到 `ACTIVE_DATE_BOND`(30) 就开得了口。
+ *  她主动开口约你那一头**不设门槛**（见 data/intimate.ts 那两支常量的分工）。 */
 export function canDate(bond: number): boolean {
-  return bond >= INTIMATE_BOND
+  return bond >= ACTIVE_DATE_BOND
 }

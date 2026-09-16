@@ -5113,13 +5113,17 @@ export function run(): MechReport {
         .filter((g) => g.value > 100)
         .map((g) => `${e.id} 要 ${g.char} ${g.value}，而读数最高只到 100`))
     ok('好感门槛：门槛值不会高过读数上限 100（否则那一段谁也开不了）',
-      unreachable.length === 0, unreachable.length ? unreachable.join('；') : '卷一的契约门槛 70 ≤ 100，够得着')
+      unreachable.length === 0,
+      unreachable.length ? unreachable.join('；')
+        : (gated.length ? `在册门槛 ${gated.length} 条，全在 100 以内` : '当前一段门槛都没有（v1-9 那条已撤）'))
 
-    /* ③ 契约那一段：门槛 70 拦入口 / 走完锁 100 —— 这一档是**留着**的，
-       且门槛只在**第一卷**内（v1-9 属卷 1）。 */
+    /* ③ 契约那一段：**入口门槛已撤**（主人 2026-09-16），走完仍锁 100。
+       从前这一条钉的是反面（门槛 70 必须挂着）—— 现在钉的是「撤了，别再回来」：
+       哪天有人顺手把 gate 加回去，这一条会当场拦下来。
+       `lock` 仍然要在，且 v1-9 仍属第一卷。 */
     const pact = TIMELINE.find((e) => e.id === 'v1-9')
-    ok('好感门槛：卷一使用者契约（v1-9）要好感先到 70，走完锁 100',
-      pact?.gate?.some((g) => g.char === 'luna' && g.value === 70) === true
+    ok('好感门槛：卷一使用者契约（v1-9）的入口门槛已撤、走完仍锁 100',
+      (pact?.gate?.length ?? 0) === 0
       && pact?.lock?.some((g) => g.char === 'luna' && g.value === 100) === true
       && pact?.vol === 1,
       `卷=${pact?.vol}　门槛=${JSON.stringify(pact?.gate ?? null)}　锁定=${JSON.stringify(pact?.lock ?? null)}`)

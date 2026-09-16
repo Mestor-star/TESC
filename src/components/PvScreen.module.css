@@ -31,6 +31,10 @@
   height: 100%;
   object-fit: contain;
   background: var(--ink);
+  /* 自己一层，别跟底下的界面挤在同一个合成层里 —— 片子每帧都要上屏，
+     被别人的重画拖着走就掉帧（`translateZ(0)` 只是提一层，不动布局）。 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* 载入那一下垫一行字，别让黑底先愣着 */
@@ -45,6 +49,13 @@
   color: color-mix(in srgb, var(--bg-1) 58%, transparent);
   animation: pvBlink 1.6s ease-in-out infinite;
 }
+/* 慢下来的时候别再闪：一块黑底上只剩这一句，闪起来像坏了，不像在等。
+   顺带也把压在片子上的一支无限动画去掉。 */
+.loading[data-pv-wait="slow"] {
+  animation: none;
+  opacity: 1;
+  color: var(--bg-1);
+}
 
 /* 跳过：右上角，避让刘海/状态栏 */
 .skip {
@@ -55,6 +66,26 @@
   font-size: 12px;
   padding: 7px 13px;
   animation: pvIn 380ms var(--ease-out) 600ms backwards;
+}
+
+/* 迟迟放不出来的时候，跳过键得**从角落里站出来**（2026-09-16）。
+   平时它只是右上角一枚安静的小字 —— 网络慢到这一屏要等十几秒时，
+   主人第一眼该看到的是这条出路，不是一块黑底。
+   配色照本仓那条规矩：本色当底、墨当字（`--red` 上压 `--on-accent`），
+   垫片走实心位移，零模糊 —— `--offset*` 三支硬编码的是 `--steel`，
+   这儿要绯色，所以写字面同色，别让它出「红按钮青垫片」。 */
+.skipHot {
+  color: var(--on-accent);
+  background: var(--red);
+  border: 1px solid var(--red);
+  font-weight: 700;
+  padding: 9px 17px;
+  font-size: 12.5px;
+  box-shadow: 0 4px 0 var(--red-deep);
+}
+.skipHot:hover {
+  background: var(--red-lift);
+  border-color: var(--red-lift);
 }
 
 /* 「点击任意处开启声音」：静音起播时压在底下提醒一句，出声了自会消失 */

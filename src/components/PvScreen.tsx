@@ -23,12 +23,26 @@ import css from './PvScreen.module.css'
  * ③ **「跳过」算看过。** 主人说的是「第一次强制看」，跳过也是看过一遍；
  *    不然每次都弹，反而比不放更烦。片子**没放出来**（`onError`）则不算 ——
  *    那种情况下不写 `zts-pv-seen`，将来文件补上了还放得成。
+ *
+ * ④ **网络救不回来，就别把人锁在这一屏**（2026-09-16 加，主人报的「先是断断续续、
+ *    再完全卡死不动」）。那支片子是 43 秒的 mp4，站点架在 Cloudflare Workers 上，
+ *    从墙内过去是断断续续的 —— 片子放不完不是这一屏的错，但**卡在这儿出不去**是。
+ *    所以两条看门狗：起播迟迟不来（`START_MS`）、放起来之后卡住不动（`STALL_MS`），
+ *    到点就按「跳过」处理，把主人交还给开屏。看门狗只管**放不出来**这一种，
+ *    放得出来就一次都不插手。
  */
+const START_MS = 10000 /* 起播死线：这么久还没出画面 → 提示「较慢」，并把跳过摆明白 */
+const GIVE_UP_MS = 28000 /* 再宽限这么久还没出画面 → 当这一趟放不出来，收场 */
+const STALL_MS = 9000 /* 已经在放了，卡住这么久没缓过来 → 收场 */
+
 export function PvScreen({ onClose }: { onClose: () => void }) {
   const vid = useRef<HTMLVideoElement>(null)
   const [muted, setMuted] = useState(true)
   const [started, setStarted] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [slow, setSlow] = useState(false)
+  /* 看门狗活在 effect 里，读的是**当下**的起播状态 —— state 在闭包里会一直是初值 */
+  const startedRef = useRef(false)
   const closing = useRef(false)
 
   /** 收场：`seen` 决定要不要记「看过」，`fade` 是淡出时长（放不出来时不给淡） */
@@ -65,6 +79,35 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
     }
     void kick()
 
+    /* ---- 看门狗：网络慢到放不出来时，别把主人锁在这一屏 ----
+       两段：起播迟迟不来 → 先提示「较慢」（跳过键本来就在，只是这会儿得说明白），
+       再宽限一阵还不来 → 收场；已经在放了但卡住不动 → 也收场。
+       两种情况都走 `close(true)`：主人**这一趟没看成**，但也不该被罚每刷一次页面
+       就再等一趟 —— 想重看，开屏右上角那枚播放键一直在。 */
+    let giveUp = window.setTimeout(() => {
+      if (alive && !startedRef.current) close(true)
+    }, GIVE_UP_MS)
+    let tipSlow = window.setTimeout(() => {
+      if (alive && !startedRef.current) setSlow(true)
+    }, START_MS)
+
+    let stall = 0
+    const onWaiting = () => {
+      if (stall || !startedRef.current) return
+      stall = window.setTimeout(() => {
+        if (alive) close(true)
+      }, STALL_MS)
+    }
+    const onPlaying = () => {
+      startedRef.current = true
+      if (stall) {
+        window.clearTimeout(stall)
+        stall = 0
+      }
+    }
+    v.addEventListener('waiting', onWaiting)
+    v.addEventListener('playing', onPlaying)
+
     const unlock = () => {
       if (!v.muted) return
       v.muted = false
@@ -86,6 +129,11 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
 
     return () => {
       alive = false
+      window.clearTimeout(giveUp)
+      window.clearTimeout(tipSlow)
+      if (stall) window.clearTimeout(stall)
+      v.removeEventListener('waiting', onWaiting)
+      v.removeEventListener('playing', onPlaying)
       window.removeEventListener('pointerdown', unlock)
       window.removeEventListener('keydown', unlock)
       window.removeEventListener('keydown', onKey)
@@ -97,6 +145,7 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
     <div
       className={`${css.pv} ${leaving ? css.isLeaving : ''}`}
       data-pv="1"
+      data-pv-slow={slow ? '1' : undefined}
       role="dialog"
       aria-modal="true"
       aria-label="开场影像"
@@ -108,6 +157,8 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
         playsInline
         preload="auto"
         onPlaying={() => {
+          startedRef.current = true
+          setSlow(false)
           setStarted(true)
           notePvOk(true)
         }}
@@ -118,11 +169,16 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
         }}
       />
 
-      {/* 载入那一下垫一句话，别让黑底先愣着 */}
-      {started ? null : <div className={css.loading}>开场影像 · 正在载入</div>}
+      {/* 载入那一下垫一句话，别让黑底先愣着。
+          迟迟不来的时候改口径 —— 别让主人对着「正在载入」干等，把跳过说明白。 */}
+      {started ? null : (
+        <div className={css.loading} data-pv-wait={slow ? 'slow' : 'ok'}>
+          {slow ? '影像载入较慢 · 可直接跳过' : '开场影像 · 正在载入'}
+        </div>
+      )}
 
       <button
-        className={css.skip}
+        className={`${css.skip} ${slow ? css.skipHot : ''}`}
         data-pv-skip
         onClick={() => close(true)}
         aria-label="跳过开场影像"

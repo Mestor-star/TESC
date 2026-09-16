@@ -173,10 +173,13 @@ export default function PresetEntryPane({ entries, onChange }: Props) {
                 常驻（每回合都注入）
               </label>
               {!sel.constant && (
-                <label style={{ flex: 1, minWidth: 260 }}>
+                /* 这两条 `min-width` 从前是**内联**的（260 / 220）—— 内联样式媒体查询
+                   够不着，390 屏上这一行直接把面板顶出去。挪进类里之后，
+                   窄屏那一条在 PresetManager.module.css 末尾收它们。 */
+                <label className={css.keyLabel}>
                   关键词（逗号分隔，命中才注入）
                   <input
-                    className="field" style={{ flex: 1, minWidth: 220 }}
+                    className={`field ${css.keyInput}`}
                     value={sel.keys.join('，')}
                     onChange={(ev) => patch(sel.id, { keys: ev.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean) })}
                   />

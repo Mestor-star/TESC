@@ -231,3 +231,19 @@
   .body { grid-template-columns: 1fr; }
   .colList { max-height: 200px; border-right: none; border-bottom: 1px solid var(--line); }
 }
+
+/* ---- 关键词那一格（PresetEntryPane）----
+   这两条 `min-width` 从前是内联写在 tsx 里的，媒体查询够不着。 */
+.keyLabel { flex: 1; min-width: 260px; }
+.keyInput { flex: 1; min-width: 220px; }
+
+/* 手机档：390 屏上 260 + 220 两条下限叠起来把整行顶出去 —— 窄屏放开，
+   让它们按可用宽度分（`flex-wrap` 那一层会把这两件各自折成一整行）。 */
+@media (max-width: 720px) {
+  .keyLabel, .keyInput { min-width: 0; width: 100%; }
+}
+
+/* 手机档 · 粗指针：页签（30px）与列表那一行（28px）抬到 44 */
+@media (pointer: coarse) {
+  .tab, .row { min-height: 44px; }
+}

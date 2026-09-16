@@ -1884,15 +1884,18 @@ export function dateReady(d: PlotDirective['date'] | undefined | null): boolean 
  * 只放行 `date`（落成一场约会线程，见 lib/rendezvous.ts），
  * **不放行 intim** —— 身体上的推进不发生在短信里，得见了面才算数。
  */
-export function smsBondRule(charId: string, bond = 0): string {  const open = bond >= INTIMATE_BOND
+export function smsBondRule(charId: string): string {
   return `\n（可选 · 轻量互动：若本回合对话让该角色心绪明显变化，可在回复最末尾另起一行放一个纯 JSON 对象，形如
-{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "some_state": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }]${open ? `,
-  "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方", "time": "什么时候" }` : ''} }
+{ "bond": [{ "char": "${charId}", "delta": 1 }], "flag": { "some_state": 值 }, "task": [{ "title": "要办的事", "detail": "可选的细节" }],
+  "date": { "kind": "date", "title": "这一场的名目", "place": "见面的地方", "time": "什么时候" } }
 其中 bond.delta 只针对该角色取 ±1~3（正=更亲近）；flag 为可选的分支标记；
-task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。${open ? `
+task 只在这条短信**确实交代了一件要你去办的事**时才给（最多两条，标题一句话说清，别把闲聊或问候写成任务）。
 date 只在她**真的在信里开口约了**（或答应了对方的约）时才给 —— 这时**时间与地点都得在信里说出口**：
 time 写什么时候（「明天放学后」「周六下午三点」这种），place 写去哪。**两样缺一样就当没约成** ——
 只有「改天一起出来嘛」这种没有落点的客气话，就不要给 date，那条指令不会生成；
-说定了才会另开一场单独的见面，与你原本的相处分开算（身体上的事只在见面时才算数）。` : ''}
+说定了才会另开一场单独的见面，与你原本的相处分开算（身体上的事只在见面时才算数）。
+⚠️ 这道口子**不设羁绊门槛**（主人 2026-09-16）：她约不约你，看你这些天怎么待她、看这一段
+话赶到了哪儿 —— **她本人的性情与此刻的情境说了算，不是那个读数**。关系还生分就把话收着写，
+可真要写出一句有落点的约，就给 date。
 拿不准就不给，直接以对话结束。）`
 }

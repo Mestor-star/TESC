@@ -320,3 +320,15 @@
   word-break: break-word;
 }
 .logActs { display: flex; gap: 8px; }
+
+/* ============ 手机档（≤720px）============
+   声音面板 `minmax(240px, 1fr)` 在 360 那一档的机子上越界（360 − 面板内边距 < 240）。 */
+@media (max-width: 720px) {
+  .volGrid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+}
+
+/* 手机档 · 粗指针：那几个方块（音量那枚 42px）与两处可点行（26 / 34px）抬到 44 */
+@media (pointer: coarse) {
+  .eyeBtn { min-width: 44px; min-height: 44px; }
+  .logHead, .schemeRow { min-height: 44px; }
+}

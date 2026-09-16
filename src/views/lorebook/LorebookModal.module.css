@@ -307,3 +307,8 @@
   .editBody { grid-template-columns: 1fr; }
   .entryList { max-height: 220px; border-right: none; border-bottom: 1px solid var(--line); }
 }
+
+/* 手机档 · 粗指针：词条那一行（桌面 28px）抬到 44 —— 整行可点，别只点得中字 */
+@media (pointer: coarse) {
+  .entryRow { min-height: 44px; }
+}

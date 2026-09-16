@@ -294,8 +294,7 @@ function NavRail() {
             图标化之后读屏只剩图标，所以每枚都补上 `aria-label`；`title` 照旧留给指针。
             二次确认那一句也跟着换短的：底条上放不下「再次点击确认重置」。 */}
         <button
-          className="btn btn--ghost"
-          style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          className={`btn btn--ghost ${css.footBtn}`}
           data-guide="slot"
           onClick={() => setSlotsOpen(true)}
           title="手动存档 / 读档（独立于当前进度，重置不影响）"
@@ -305,8 +304,7 @@ function NavRail() {
           <span className={css.btnLabel}>存读档</span>
         </button>
         <button
-          className="btn btn--ghost"
-          style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          className={`btn btn--ghost ${css.footBtn}`}
           data-guide="vars"
           onClick={() => setVarsOpen(true)}
           title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
@@ -317,8 +315,7 @@ function NavRail() {
         </button>
         <button
           data-guide="reset"
-          className={confirmReset ? 'btn btn--amber' : 'btn btn--ghost'}
-          style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
+          className={`btn ${confirmReset ? 'btn--amber' : 'btn--ghost'} ${css.footBtn}`}
           onClick={handleReset}
           aria-label="重置世界进度"
         >
@@ -351,7 +348,9 @@ function TopStatus({ view }: { view: ViewId }) {
   return (
     <header className={css.topbar} data-guide="topbar">
       <span className={css.tbTitleSlash} />
-      <span className={css.tbLeft}>
+      {/* `data-tb="left|read|mach"` 是给冒烟量「折两行」用的把手（Phase Z 的 M3）。
+          类名是 CSS Modules 的哈希，冒烟认不得；量的是几何，得有个稳定的名。 */}
+      <span className={css.tbLeft} data-tb="left">
         <span className={css.tbTitleEn}>{t.en}</span>
         <span className={css.tbTitleCn}>{t.cn}</span>
       </span>
@@ -362,7 +361,7 @@ function TopStatus({ view }: { view: ViewId }) {
           与从前 `.tbRight` 里那一串完全一致，一个像素都不动。
           两行之间的分隔线 `.tbDiv` 照旧夹在它们中间。 */}
       <div className={css.tbRight}>
-        <div className={css.tbRead}>
+        <div className={css.tbRead} data-tb="read">
         <button className={css.pill} title="当前监测区域" onClick={() => push('info', '监测区域', `当前焦点：${focus.name} · ${focus.code}`, false)}>
           <span data-guide="region-pill" />区域&nbsp;<span className="muted tiny">{focus.code}</span>&nbsp;{focus.name.split(' · ').pop()}
         </button>
@@ -393,7 +392,7 @@ function TopStatus({ view }: { view: ViewId }) {
         {/* 两簇之间那一道细线：左边三格是**读数**（区域 / R 值 / 异常），
             右边三格是**机器**（时钟 / 信道 / 声音）。 */}
         <span className={css.tbDiv} />
-        <div className={css.tbMach}>
+        <div className={css.tbMach} data-tb="mach">
         <button className={`${css.pill} ${css.clock}`} title="弗尔克图斯本地时间">
           <span className="num">{clock(now)}</span>
         </button>
@@ -542,7 +541,7 @@ function Gate() {
   if (!authed) {
     return (
       <>
-        <Boot onDone={enter} onReplay={() => setPvOpen(true)} />
+        <Boot onDone={enter} onReplay={() => setPvOpen(true)} frozen={pvOpen} />
         {pvOpen ? <PvScreen onClose={() => setPvOpen(false)} /> : null}
       </>
     )

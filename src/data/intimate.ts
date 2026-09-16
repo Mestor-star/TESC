@@ -60,6 +60,21 @@ export { INTIMATE, NO_ACT, PHYSIQUE }
 /** 私密档案 / 私密话题的解锁门槛（羁绊读数） */
 export const INTIMATE_BOND = 70
 
+/**
+ * **你主动开口约她**的门槛（羁绊读数）—— 主人 2026-09-16 定的 30。
+ *
+ * 与 `INTIMATE_BOND` 分开，是因为这两件事根本不是一码事：
+ *   · **她开口约你**（短信里她真把时间与地点说出口）—— **一点门槛都没有**，
+ *     只要她说得出来就成一场（见 `smsBondRule` / `smsauto.ts`）。
+ *     她愿不愿意开这个口，是导演按情境与她本人的性情判的，不该由一个读数代劳。
+ *   · **你主动约她** —— 才是这一支：羁绊到 30 就开得了口。
+ *
+ * 从前两件事共用 `INTIMATE_BOND`(70)，而且提示词里**羁绊不到 70 连 `date`
+ * 这个字段都不写** —— 于是短信这一路永远不会长出约会来（主人报的
+ * 「短信没有触发约会事件」）。门槛拆开之后，那一路才真的通。
+ */
+export const ACTIVE_DATE_BOND = 30
+
 /** 部位的四栏顺序（界面与提示词都照它排列，别各自再写一套） */
 export const INTIMATE_SLOTS: IntimateSlot[] = ['mouth', 'breast', 'vagina', 'anus']
 

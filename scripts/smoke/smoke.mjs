@@ -3643,6 +3643,211 @@ try {
   await ev(wClear)
   await reloadFresh(); await boot()
 
+  /* ============ Phase Z：手机档（390×844 · 触控）============
+     这一相是**唯一**一相不跑在 1440×1000 上：它自己套一层设备仿真切到 390×844，
+     跑完当场 `clearDeviceMetricsOverride()` 还回去 —— 所以它必须摆在最后
+     （也正因为摆在最后，前面十相那套按 1440 标定的几何断言一个字都不用动）。
+
+     量的是三件手机档的承诺：
+       M1 外壳     —— 竖屏下页面**不横向溢出**，且侧栏真的搬到了屏幕底部；
+       M2 十一个视图 —— 一屏一屏走，每一屏都没有元素探出视口（横滑条里的不算）；
+       M3 顶栏     —— 读数那一簇折到了第二行，且它自己横滑得起来；
+       M4 底部导航 —— 横滑到最右那一枚也点得动、点了真的换页；
+       M5 梅芙气泡 —— 贴底整宽卡片：每一步的气泡与「下一步」都在屏幕里；
+       M6 触控目标 —— 粗指针那一套（`@media (pointer: coarse)`）确实生效了。
+
+     ⚠️ M2 的判据与 `tools/pv/mobile-probe.mjs` 里那条 `overflowSrc` **同源**：
+     判的是「它把**页面**撑宽了」，不是「它这会儿不在屏上」——
+     手机档把侧栏改成底部**可横滑**的导航之后，条里排在右边的格子天然落在视口外，
+     那是设计。所以先看 `documentElement.scrollWidth`，再逐条排掉住在
+     `overflow-x: auto|scroll` 祖先里的元素（横滑条、代码块那种）。 */
+  console.log('\n[Phase Z] 手机档（390×844 · 触控）：底条外壳 / 不越界 / 顶栏折两行 / 气泡贴底')
+  /* 先把这一相进来之前的视口记下来 —— 前面那十相跑的是**窗口** 1440×1000 的自然视口
+     （headless 里要让出浏览器那一圈，实测 1406×903），收尾要还回**这一个**，
+     不是还一个写死的数。 */
+  const zVp0 = await ev(`({iw:innerWidth,ih:innerHeight})`)
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true })
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+  await sleep(400)
+  await reloadFresh(); await boot()
+
+  const zOverSrc = `(()=>{
+    const vw = document.documentElement.clientWidth
+    const vh = document.documentElement.clientHeight
+    const inScroller = (el) => {
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const s = getComputedStyle(p)
+        if (s.overflowX === 'auto' || s.overflowX === 'scroll') return true
+      }
+      return false
+    }
+    const out = []
+    for (const el of [...document.querySelectorAll('body *')]) {
+      const r = el.getBoundingClientRect()
+      if (r.width <= 0 || r.height <= 0) continue
+      if (r.right > vw + 1 || r.left < -1) {
+        if (inScroller(el)) continue
+        out.push(el.tagName.toLowerCase() + '.' + String(el.className || '').split(/\\s+/).slice(0,2).join('.'))
+      }
+    }
+    return JSON.stringify({ vw, vh, scrollW: document.documentElement.scrollWidth, n: out.length, top: out.slice(0, 6) })
+  })()`
+
+  /* M1 外壳：视口真的是 390 宽（仿真挂上了）· 页面不横向溢出 · 侧栏搬到了屏幕底部。
+     `[data-guide="rail"]` 是侧栏那一枚**不许删**的把手（冒烟 L1 钉着它）。
+     底条那一档它的 `border-right` 换成 `border-top`，且整条落在视口内 ——
+     从前它贴的是左缘，390 上还照旧吃掉 74px。 */
+  const zShell = await ev(`(()=>{
+    const rail=document.querySelector('[data-guide="rail"]')
+    if(!rail)return {err:'no rail'}
+    const r=rail.getBoundingClientRect(), s=getComputedStyle(rail)
+    return {iw:innerWidth, ih:innerHeight, scrollW:document.documentElement.scrollWidth,
+      railTop:Math.round(r.top), railBottom:Math.round(r.bottom), railLeft:Math.round(r.left), railRight:Math.round(r.right),
+      railW:Math.round(r.width), borderTop:s.borderTopWidth, borderRight:s.borderRightWidth,
+      rootW:Math.round((document.querySelector('.app--stage')||document.body).getBoundingClientRect().width),
+      dir:s.flexDirection, vh:innerHeight, strip:getComputedStyle(document.documentElement).getPropertyValue('--strip-h').trim()}})()`)
+  ok('Z1 手机档仿真真的挂上了（视口 390×844）', zShell.iw === 390 && zShell.ih === 844,
+    JSON.stringify({ iw: zShell.iw, ih: zShell.ih }))
+  ok('Z1b 竖屏下页面不横向溢出（`scrollWidth` === 390，一个像素都不多）',
+    zShell.scrollW === 390, `scrollWidth=${zShell.scrollW}`)
+  /* 量的是**位置**不是像素级的内缩：只要它躺在下半屏、横着、几乎占满整幅、
+     右缘那根竖边换成了上沿那根横边，就是「侧栏搬到底部」这件事。
+     （不必钉死左右各差几像素 —— 那个数会随滚动条与安全区浮动，钉它只会
+     换来一条随风倒的断言。） */
+  ok('Z1c 侧栏搬到了屏幕**底部**：整条落在视口内 · 横躺 · 右边框换成上边框',
+    zShell.railTop > zShell.vh / 2 && zShell.railBottom <= zShell.vh + 1
+    && zShell.railW >= zShell.rootW * 0.92 && zShell.railLeft < zShell.iw / 2
+    && zShell.dir === 'row' && zShell.borderRight === '0px' && parseFloat(zShell.borderTop) > 0,
+    JSON.stringify(zShell))
+  ok('Z1d `--strip-h` 抬到 56（「让开底条」那几处 calc 吃的就是它；桌面恒 0）',
+    zShell.strip === '56px', `--strip-h=${zShell.strip}`)
+  const zOverShell = JSON.parse(await ev(zOverSrc))
+  ok('Z1e 外壳这一屏没有元素探出视口', zOverShell.n === 0, JSON.stringify(zOverShell.top))
+
+  /* M2 十一个视图：一屏一屏走，每屏都不许有元素探出视口。
+     这条路是**全部**手机档改动的总账 —— 任何一处漏了 `min-width: 0`、
+     少了一条窄屏规则、或者把那几处内联 px 忘在了原地，都会在这一条上现形。 */
+  const Z_NAVS = ['终端总览', '剧情推进', '低语者日志', '情景记忆库', '智库', '武装图鉴', '角色档案', '任务简报', '终末图鉴', '短信', '终端设置']
+  const zBad = []
+  for (const v of Z_NAVS) {
+    await goto(v)
+    await sleep(700)
+    const o = JSON.parse(await ev(zOverSrc))
+    if (o.n !== 0) zBad.push(v + ' → ' + JSON.stringify(o.top))
+  }
+  ok('Z2 十一个视图逐个走一遍：每一屏都没有元素探出视口（横滑条里的不算）',
+    zBad.length === 0, zBad.join(' | '))
+
+  /* M3 顶栏折两行：读数那一簇落到标题那一簇的**下面**，并且它自己横滑得起来
+     （390 上那三格读数 + R 值一屏放不下，靠横滑看全）。 */
+  await goto('终端总览')
+  await sleep(600)
+  const zTop = await ev(`(()=>{const L=document.querySelector('[data-tb="left"]'),R=document.querySelector('[data-tb="read"]')
+    if(!L||!R)return {err:'no tb handles'}
+    const rl=L.getBoundingClientRect(),rr=R.getBoundingClientRect()
+    return {leftTop:Math.round(rl.top),leftBottom:Math.round(rl.bottom),
+      readTop:Math.round(rr.top),readBottom:Math.round(rr.bottom),
+      readLeft:Math.round(rr.left),readRight:Math.round(rr.right),
+      scrollW:R.scrollWidth,clientW:R.clientWidth,ovfX:getComputedStyle(R).overflowX,vw:innerWidth}})()`)
+  ok('Z3 顶栏折两行：读数那一簇落在标题那一簇下面（不是并排）',
+    zTop.err === undefined && zTop.readTop >= zTop.leftBottom - 2
+    && zTop.readLeft < zTop.vw / 2 && zTop.readRight > zTop.vw / 2,
+    JSON.stringify(zTop))
+  ok('Z3b 读数那一簇自己横滑得起来（内容比格子宽，`overflow-x` 是 auto）',
+    zTop.err === undefined && zTop.ovfX === 'auto' && zTop.scrollW > zTop.clientW,
+    JSON.stringify({ scrollW: zTop.scrollW, clientW: zTop.clientW, ovfX: zTop.ovfX }))
+
+  /* M4 底部导航：横滑到最右那一枚**点得动**，点了真的换页。
+     这一条防的是「底条把按钮挪到屏幕外、点到别的东西上」——
+     所以不看 `.click()` 的返回值，而是看**标题真的换了**。 */
+  const zHead = () => ev(`(()=>{const h=document.querySelector('.vpage h1');return h?h.textContent.trim():''})()`)
+  const zNavHit = async (label) => {
+    const box = await ev(`(()=>{
+      const b=[...document.querySelectorAll('[data-guide^="nav-"]')].find(x=>x.textContent&&x.textContent.includes(${JSON.stringify(label)}))
+      if(!b)return null
+      b.scrollIntoView({block:'nearest',inline:'center'})
+      const r=b.getBoundingClientRect()
+      return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),
+        l:Math.round(r.left),rr:Math.round(r.right),b:Math.round(r.bottom),vw:innerWidth,vh:innerHeight}})()`)
+    if (!box) return null
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 })
+    await sleep(90)
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 })
+    return box
+  }
+  let zNavBad = []
+  for (const label of ['低语者日志', '智库', '终端设置']) {
+    const before = await zHead()
+    const box = await zNavHit(label)
+    await sleep(900)
+    const after = await zHead()
+    if (!box || box.b < 0 || box.b > 844 + 1 || box.rr <= 0 || box.l >= 390 || after === before) {
+      zNavBad.push(`${label} → 点前「${before}」点后「${after}」${JSON.stringify(box)}`)
+    }
+  }
+  ok('Z4 底条横滑到右边那几枚也点得动：真按下抬起来之后**标题真的换了页**',
+    zNavBad.length === 0, zNavBad.join(' | '))
+
+  /* M5 梅芙气泡贴底整宽卡片：从头走一遍，每一步都满足
+     「气泡底 ≤ 视口底」且「下一步那一枚 ≤ 视口底」——
+     这一条是 `.row.isSheet` 的核心承诺（从前那张 332px 的气泡压在正文上，
+     两步并排时总高能到 1650px，clamp 上下界直接倒挂）。 */
+  await ev(`(()=>{try{localStorage.removeItem('zts-guide:v1')}catch(e){}return true})()`)
+  await reloadFresh(); await boot()
+  await poll(`!!document.querySelector('[data-guide-layer]')`, 20000, 'Z guide layer')
+  const zGuideBad = []
+  let zSteps = 0
+  for (let i = 0; i < 14; i++) {
+    const g = await ev(`(()=>{const lay=document.querySelector('[data-guide-layer]');if(!lay)return null
+      const row=document.querySelector('[data-guide-row]'),next=document.querySelector('[data-guide-next]')
+      if(!row||!next)return null
+      const r=row.getBoundingClientRect(),n=next.getBoundingClientRect()
+      return {step:lay.getAttribute('data-guide-step'),layer:lay.getAttribute('data-guide-layer'),
+        rowLeft:Math.round(r.left),rowRight:Math.round(r.right),rowBottom:Math.round(r.bottom),
+        nextBottom:Math.round(n.bottom),vw:innerWidth,vh:innerHeight}})()`)
+    if (!g) break
+    zSteps++
+    if (g.rowBottom > g.vh + 1 || g.nextBottom > g.vh + 1 || g.rowLeft < -1 || g.rowRight > g.vw + 1) zGuideBad.push(g)
+    await ev(`(()=>{const b=document.querySelector('[data-guide-next]');if(b)b.click();return true})()`)
+    await sleep(280)
+  }
+  ok('Z5 梅芙气泡贴底整宽：每一步的气泡与「下一步」都整条落在屏幕里（走了一遍）',
+    zSteps >= 3 && zGuideBad.length === 0,
+    `走了 ${zSteps} 步；越界 ${zGuideBad.length} 步` + (zGuideBad.length ? ' · ' + JSON.stringify(zGuideBad[0]) : ''))
+  await ev(`(()=>{const b=document.querySelector('[data-guide-skip]');if(b)b.click();return true})()`)
+  await sleep(400)
+
+  /* M6 触控目标：粗指针那一套（全站写在 `@media (pointer: coarse)` 里，
+     桌面一个像素不动）—— 先确认这段仿真确实报**粗指针**，再抽样量高度。
+     `.linkGo` 是 tokens.css 的**全局**类（各视图的「展开详情」全走它，约 22px），
+     底条那几枚走 `[data-guide^="nav-"]`。 */
+  const zCoarse = await ev(`matchMedia('(pointer: coarse)').matches`)
+  ok('Z6 仿真报的是**粗指针**（`pointer: coarse` 那一整段的前提，不成立的话下面两条是空账）',
+    zCoarse === true, `matches=${zCoarse}`)
+  await goto('角色档案')
+  await sleep(900)
+  const zTap = await ev(`(()=>{
+    const h=(el)=>el?Math.round(el.getBoundingClientRect().height):null
+    const navs=[...document.querySelectorAll('[data-guide^="nav-"]')].map(h)
+    const links=[...document.querySelectorAll('.linkGo')].map(h)
+    return {navMin:navs.length?Math.min(...navs):null,navN:navs.length,
+      linkMin:links.length?Math.min(...links):null,linkN:links.length}})()`)
+  ok('Z6b 底条那几枚导航在手指上抬到了 44（桌面是 56×44 那一档，图标化之后只剩这枚把手量得到）',
+    zTap.navMin !== null && zTap.navMin >= 44, JSON.stringify(zTap))
+  if (zTap.linkN === 0) skip('Z6c 「展开详情」那一枚（`.linkGo`）抬到 44', '（这一屏没有 .linkGo）')
+  else ok('Z6c 「展开详情」那一枚（`.linkGo`，全站最常点的一枚）抬到了 44',
+    zTap.linkMin >= 44, `最小 ${zTap.linkMin}px · 共 ${zTap.linkN} 枚`)
+
+  /* 还原：往后（含 SHOT 那一段）回到 1440×1000 的桌面档 —— 这一相是借了设备仿真，
+     不属于它的一律当场还回去。 */
+  await cdp.send('Emulation.clearDeviceMetricsOverride')
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await sleep(300)
+  const zBack = await ev(`({iw:innerWidth,ih:innerHeight})`)
+  ok('Z7 收尾：设备仿真还回去了（回到进来时那个视口，后面的 SHOT 仍是桌面的）',
+    zBack.iw === zVp0.iw && zBack.ih === zVp0.ih,
+    `${zVp0.iw}×${zVp0.ih} → ${zBack.iw}×${zBack.ih}`)
+
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */
   if (process.env.SHOT) {

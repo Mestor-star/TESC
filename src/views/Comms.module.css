@@ -171,3 +171,10 @@
   .contactList { max-height: 260px; }
   .chatPane { min-height: 480px; }
 }
+
+/* ============ 手机档（≤720px）============
+   960 那条把两栏摞成一栏之后，`.chatPane` 那条 `min-height: 480px` 就多余了 ——
+   窄屏上整页在滚，对话框该按内容走，不该再钉一个一屏出头的地板。 */
+@media (max-width: 720px) {
+  .chatPane { min-height: 0; }
+}

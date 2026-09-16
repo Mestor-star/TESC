@@ -28,14 +28,17 @@ import css from './Boot.module.css'
  *
  * **冒烟把手**：`[data-boot-card]`（这一屏）与 `[data-start-game]`（进入按钮）。
  */
-export function Boot({ onDone, onReplay }: { onDone: () => void; onReplay: () => void }) {
+export function Boot({ onDone, onReplay, frozen }: { onDone: () => void; onReplay: () => void; frozen?: boolean }) {
   /* 右上角那枚「重看开场影像」什么时候该隐身 —— **只在确知片子放不出来**时收起来。
      `pvOk()` 是 `null`（这一趟还没放过 / 冷启动刚进来）时照常摆着：老主顾刷新页面时
      那个读数是 null，要是拿它当「没有」判，按钮就再也不出现了。读数见 `lib/pv.ts`。 */
   const canReplay = useSyncExternalStore(subscribePvOk, pvOk) !== false
 
   return (
-    <div className={css.boot} role="dialog" aria-label="开场标题屏" data-boot-card="1">
+    /* `frozen`：片子正压在上面放的时候，这一屏**停笔**（见 Boot.module.css 头上那一段）。
+       它不是「不见了」—— 元素、盒子、把手全在，只是不画、不动画。
+       片子放完（或按了跳过）`frozen` 落回 false，这一屏从暂停处接着入场。 */
+    <div className={css.boot} role="dialog" aria-label="开场标题屏" data-boot-card="1" data-pv-up={frozen ? '1' : undefined}>
       {/* 四角小件 —— 与标题菜单、终端外壳同一套：开机的时候屏幕上先摆好框 */}
       <div className={css.corner}>
         <span className={`${css.chip} ${css.chipTL}`}>

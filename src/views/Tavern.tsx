@@ -5,7 +5,6 @@ import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
 import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
-import { INTIMATE_BOND } from '../data/intimate'
 import { plotContextFor } from '../lib/crosslink'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
@@ -255,7 +254,7 @@ export function Tavern() {
         + (preset.pre ? `\n\n${preset.pre}` : '')
         + (loreBlock ? `\n\n${loreBlock}` : '')
         + (preset.post ? `\n\n${preset.post}` : '')
-        + smsBondRule(charId, bond)
+        + smsBondRule(charId)
       const messages: ChatTurn[] = [{ role: 'system', content: system }, ...smsTurns(log)]
 
       const ctrl = new AbortController()
@@ -316,11 +315,12 @@ export function Tavern() {
         }
         const flags = Object.entries(sd.flag ?? {})
         for (const [k, v] of flags) setFlag(k, v)
-        /* 她在信里把人约出去了（羁绊过线、且时间与地点都说定了才认，见 dateReady）：
+        /* 她在信里把人约出去了（**时间与地点都说定了才算**，见 dateReady）：
            落成一场**待人赴**的见面。同一时间只留一场 —— 手边还有没走完的那一场时，
-           这一条不另开。「改天一起出来嘛」那种没有落点的客气话不算数。 */
+           这一条不另开。「改天一起出来嘛」那种没有落点的客气话不算数。
+           ⚠️ 羁绊那道门槛**已撤**（主人 2026-09-16）：她开不开口归导演按情境判。 */
         let invited: Rendezvous | null = null
-        if (dateReady(sd.date) && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+        if (dateReady(sd.date) && !openDateOf(charId)) {
           const d = sd.date!
           invited = openRendezvous(charId, {
             kind: d.kind === 'intimate' ? 'intimate' : 'date',
@@ -649,7 +649,11 @@ ${preset.post}` : '')
         </div>
       </div>
 
-      <div className={comm.wrap} style={{ gridTemplateColumns: '300px 1fr' }}>
+      {/* 左栏 300 是这一页自己的口径（底座 `.wrap` 是 318）—— 从前这一句是**内联**写的，
+          内联样式媒体查询够不着，于是 `Comms.module.css` 里那条「≤960 摞成一栏」
+          永远落不到这一页上：390 屏上左栏照旧占 300，对话框只剩 46px。
+          挪进 `.wrapSms` 之后，窄屏那一条在 Tavern.module.css 末尾把它收回去。 */}
+      <div className={`${comm.wrap} ${css.wrapSms}`}>
         {/* 联系人 */}
                 {/* 电话左栏：会话 / 任务 两个页签 */}
         <aside className={`panel ${comm.contactList}`}>

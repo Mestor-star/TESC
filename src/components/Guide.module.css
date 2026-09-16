@@ -165,3 +165,45 @@
   .row { flex-direction: column }
   .bubble { width: min(332px, calc(100vw - 24px)) }
 }
+
+/* ============ 手机档（≤640px）：气泡改贴底的整宽卡片 ============
+   332px 的气泡在 390 屏上占 85%；两步并排时总高能到 1650px，
+   而 `box` 那套「挪到锚点旁边」的 clamp 上下界当场倒挂 —— 窄屏上没有解。
+   所以这一档**不算位置**：`.row` 直接钉在底边整宽铺开，高度交给 `88dvh` 那道总闸，
+   两张气泡按 flex 分。判据同数写在 `Guide.tsx` 的 `sheet` 里（`window.innerWidth <= 640`）。
+
+   为什么钉底而不是居中：拇指在下面。卡片贴着底边，「下一步」那一行本来就
+   `flex: none` 钉在气泡底，正好落在拇指够得着的地方。
+
+   ⚠️ 这个块**只作用在 `.isSheet` 上** —— 900 那一档（平板）照旧走 `box` 的算术，
+   桌面 1440 更是一个像素不动（冒烟 AG1b/AG1c/AG1d 量的就是那三个变量）。 */
+@media (max-width: 640px) {
+  .row.isSheet {
+    /* 让开底部那条导航（`--strip-h` 在 ≤860 才长出来，桌面恒 0）——
+       盖住它的话引导期间就切不了模块了。 */
+    inset: auto 0 0 0;
+    bottom: calc(var(--strip-h) + env(safe-area-inset-bottom));
+    transform: none;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    gap: 8px;
+    max-height: 88dvh;
+    padding: 0 8px 8px;
+    animation: guideInSheet 0.22s var(--ease-out) both;
+  }
+  /* 整宽那两张：宽度交给壳，`flex: 1 1 auto` + `min-height: 0` 让它们
+     一起塞进 `88dvh` 里（长的那张自己那条正文栏在滚，见 `.body`）。 */
+  .row.isSheet .bubble {
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+}
+
+/* 贴底那一版的入场：从底下升上来。基类那条 `guideIn` 是绕 `translate(-50%,-50%)`
+   写的（居中的定位），这一版没有那个位移，另起一条。 */
+@keyframes guideInSheet {
+  from { opacity: 0; transform: translateY(14px) }
+}

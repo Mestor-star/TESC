@@ -111,3 +111,10 @@
   font-size: 10px;
   line-height: 1.9;
 }
+
+/* ============ 手机档（≤720px）============
+   `.grid` 的 `minmax(330px, 1fr)` 是给桌面那一栏定的 —— 390 屏上正文只有
+   ~362px，`auto-fill` 一格都排不下，卡片会横向溢出去。窄屏直接单栏。 */
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+}

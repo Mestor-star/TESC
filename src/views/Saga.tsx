@@ -77,13 +77,15 @@ export function Saga() {
         </div>
       </div>
 
-      {/* 进度条 */}
+      {/* 进度条。两条 `min-width` 从前是**内联**的（170 / 220）——
+          内联样式媒体查询够不着，390 屏上这两格加起来就 390，正好把整条顶出去。
+          挪进类里之后，窄屏那一条在 Saga.module.css 末尾放开它们。 */}
       <div className={css.strip}>
-        <div className={css.stripCell} style={{ minWidth: 170 }}>
+        <div className={`${css.stripCell} ${css.stripCellEvent}`}>
           <span className="tiny muted" style={{ color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>当前事件</span>
           <b>{focusEv ? focusEv.title : '全部收束'}</b>
         </div>
-        <div className={css.stripCell} style={{ flex: 1, minWidth: 220 }}>
+        <div className={`${css.stripCell} ${css.stripCellPct}`}>
           <div className={css.pctLine}>
             <span>收束进度 · {doneCount}/{TIMELINE.length}</span>
             <span>{pct}%</span>

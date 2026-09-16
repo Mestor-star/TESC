@@ -33,6 +33,9 @@
   gap: 4px;
 }
 .stripCell b { font-size: 14.5px; line-height: 1.35; }
+/* 进度条那三格的下限：从前是**内联**写在 Saga.tsx 里的，媒体查询够不着 */
+.stripCellEvent { min-width: 170px; }
+.stripCellPct { flex: 1; min-width: 220px; }
 .pctLine {
   display: flex;
   justify-content: space-between;
@@ -271,4 +274,19 @@
 @media (max-width: 1080px) {
   .layout { grid-template-columns: 1fr; }
   .side { position: static; }
+}
+
+/* ============ 手机档（≤720px）============
+   变量那两栏一格（`1fr 1fr`）在 390 屏上每格只剩 ~170px，
+   键名与值都开始断行 —— 窄屏退回单栏。 */
+@media (max-width: 720px) {
+  .varGrid { grid-template-columns: 1fr; }
+  /* 进度条那三格：170 + 220 两条下限加起来正好 390，把整条顶出去。
+     放开之后 `.strip` 那一层自己会把它们摞起来。 */
+  .stripCellEvent, .stripCellPct { min-width: 0; }
+}
+
+/* 手机档 · 粗指针：人物那一行（桌面 37px）抬到 44 */
+@media (pointer: coarse) {
+  .charRow { min-height: 44px; }
 }

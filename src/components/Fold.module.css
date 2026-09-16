@@ -62,3 +62,8 @@
 .bar .btn { cursor: var(--cursor-point); }
 .bar .btn[disabled] { opacity: 0.4; cursor: default; }
 .grow { flex: 1 1 auto; }
+
+/* 手机档 · 粗指针：折叠头那枚开关（桌面 ≈20px）抬到 44 —— 手指点得着 */
+@media (pointer: coarse) {
+  .iconBtn { min-width: 44px; min-height: 44px; }
+}

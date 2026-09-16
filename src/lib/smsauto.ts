@@ -241,10 +241,12 @@ export function useProactiveSms(): void {
         markUnread(charId)
         c.push('decode', '新的角色短信', `${charOf(charId)?.name ?? charId} 发来一条消息，在「角色短信」里。`, false)
         /* 她在信里约了：落成一场待人赴的见面（「在线推演 · 约会专线」那一路上会亮起来）。
-           门槛两道：羁绊到了 INTIMATE_BOND，且这一条**真把时间与地点都说出口了**
-           （`dateReady`）—— 「改天一起出来嘛」那种没有落点的客气话不另开一场，
-           否则每封闲聊都会长出一场没头没尾的见面来。 */
-        if (dateReady(sd.date) && bond >= INTIMATE_BOND && !openDateOf(charId)) {
+           门槛**只剩一道**：这一条得**真把时间与地点都说出口**（`dateReady`）——
+           「改天一起出来嘛」那种没有落点的客气话不另开一场，否则每封闲聊都会
+           长出一场没头没尾的见面来。
+           ⚠️ 羁绊那道门槛**已撤**（主人 2026-09-16，报的是「短信没有触发约会事件」）：
+           她开不开口由导演按情境与她本人的性情判，不归这个读数管。 */
+        if (dateReady(sd.date) && !openDateOf(charId)) {
           const d = sd.date!
           const rv = openRendezvous(charId, {
             kind: d.kind === 'intimate' ? 'intimate' : 'date',

@@ -138,6 +138,22 @@ export function Guide() {
     return () => window.removeEventListener('resize', measure)
   }, [step, tour])
 
+  /* ---- 手机档：气泡改成**贴底的整宽卡片**（2026-09-16）----
+     332px 的气泡在 390 屏上占 85%，两步并排时总高能到 1650px，clamp 的上下界
+     直接倒挂 —— 那套「挪到锚点旁边」的算术在窄屏上没有解。
+     所以 ≤640px 换一副面孔：不算位置，`.row` 直接钉在底部整宽铺开（`.isSheet`），
+     高度由 `88dvh` 那道总闸控、两张气泡按 flex 分。
+
+     ⚠️ **`box` 里那套 clamp 一个字都不动** —— 它是 2026-09-14 修「气泡盖住左栏、
+     模块点不开」的成果，冒烟 AG1b/AG1c/AG1d 全按 1440 标定它。
+     这里只是窄屏下**不把 `box` 挂上去**，1420 那一档照旧走原来的算术。 */
+  const [sheet, setSheet] = useState(() => window.innerWidth <= 640)
+  useEffect(() => {
+    const onResize = () => setSheet(window.innerWidth <= 640)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   /* ---- 跟着锚点走：窗口大小 / 内部滚动 / 布局变动都要重新量 ---- */
   useEffect(() => {
     if (!step?.at) { setSpot(null); return }
@@ -234,7 +250,12 @@ export function Guide() {
           定位与入场动画挂在**这一排**上（`box` 算的也是这一排的中心），
           里头每一张各自是一整张气泡。`data-guide-bubble` 只挂在梅芙这一张上 ——
           冒烟那几条几何断言量的就是她这张与锚点的关系。 */}
-      <div className={css.row} style={box} ref={bubbleRef} data-guide-row>
+      <div
+        className={`${css.row} ${sheet ? css.isSheet : ''}`}
+        style={sheet ? undefined : box}
+        ref={bubbleRef}
+        data-guide-row
+      >
         <div className={css.bubble} data-guide-bubble>
           <span className={css.faceWrap} data-guide-face>
             <Portrait avatarId="mefisa" size={52} className={css.face} />

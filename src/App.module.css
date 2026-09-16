@@ -379,6 +379,10 @@
   flex: 0 0 auto;
 }
 .tbRight { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* 顶栏右半边那两组：读数（区域 / R 值 / 异常）与机器（时钟 / 信道 / 声音）。
+   两组的间距与从前 `.tbRight` 里那一串**都是 10px** —— 所以宽屏下分不分这一层，
+   排布一个像素都不差。分组是给手机档用的（≤720px 读数那组折到第二行横滑）。 */
+.tbRead, .tbMach { display: flex; align-items: center; gap: 10px; }
 /* 两簇之间那一条细线：读数（区域 / R 值 / 异常）｜ 机器（时钟 / 信道 / 声音） */
 .tbDiv {
   width: 1px;
@@ -447,7 +451,9 @@
 /* ---------- 内联通知 ---------- */
 .toasts {
   position: fixed;
-  right: 18px; bottom: 18px;
+  right: 18px;
+  /* 桌面 `env()` 恒 0，取到的就是 18px；横屏的刘海机上那一条指示条要另算 */
+  bottom: max(18px, env(safe-area-inset-bottom));
   z-index: 80;
   display: flex;
   flex-direction: column;
@@ -521,6 +527,169 @@
   .navLabel { justify-content: center; letter-spacing: 0; }
 }
 
+/* ============ 手机档（≤860px）：左侧轨道 → 屏幕底部横滑条 ============
+   数字与逐条理由见 `tokens.css` 末尾那一节（860 / 720 / 640 三档的分工）。
+   这一块只管**外壳**：网格翻行、轨道躺平、标题栏折两行、吐司让开底条。
+
+   两条纪律：
+   ① **一律关在 `max-width` 里** —— 冒烟跑在 1440×1000，桌面一个像素不动。
+   ② **元素一个都不删** —— 冒烟 L1 认的是 `[data-guide="rail"]` 在不在
+      `Shell` 里（SetupShell 里不许有），`[data-guide="nav"]` / `nav-*` 也全是把手。
+      这里只换长相：`display:none` 只落在 `.brand` 与几处文字上。 */
+
+/* 底条上那三枚动作按钮。桌面那一份原先是**内联样式**写在 tsx 里的
+   （`width:'100%'` 那几行）—— 内联样式媒体查询够不着，底条上就压不下去。
+   挪进类里之后：宽屏照旧撑满一列，窄屏由下面的媒体查询收回成图标方块。 */
+.footBtn {
+  width: 100%;
+  font-size: 11px;
+  padding: 7px 8px;
+}
+/* 「重置世界进度」那一枚本来没有图标（前两枚有）。桌面照旧一枚都不多长 ——
+   这一枚只在底条上（文字收起来之后）才顶上来，替文字说话。 */
+.btnIconMobile { display: none; }
+/* 手机档上底条只留图标，所以三枚的文字各包在 `.btnLabel` 里。
+   宽屏这一条是空的（文字照常显示），作用全在下面那条媒体查询里。 */
+
+@media (max-width: 860px) {
+  /* 网格翻个面：左边那条 74px 的轨道撤场，改占**最后一行**。
+     `1fr auto` 而不是 `auto 1fr` —— 主区吃掉剩下的全部高度，底条按自己那份。 */
+  .root { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .main { grid-row: 1; height: auto; min-height: 0; }
+  /* 设置专用界面（`.mainWide`）本来就横跨整行、底下没有轨道：
+     单列网格里它落第一行，第二行 auto 没有内容就是 0 高，不必另写一条。 */
+
+  .rail {
+    grid-row: 2;
+    flex-direction: row;
+    align-items: stretch;
+    border-right: 0;
+    border-top: 1px solid var(--line-2);
+    /* 刘海机上把 Home 指示条那一条让出来（`viewport-fit=cover` 已经在
+       `index.html` 里开着，否则这几行 inset 恒为 0）。 */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* 那抹青→绯的 3px 签名渐变：从轨道底边挪到**底条上沿** —— 仍然是「这一条的
+     收尾」，只是现在这条是横的。 */
+  .rail::after { left: 0; right: 0; top: 0; bottom: auto; }
+  .brand { display: none; }
+
+  /* 导航：横滑条本体。`flex: 1 1 auto` + `min-width: 0` 是关键 ——
+     没有 `min-width: 0` 的话 flex 项的最小内容宽度会把它顶开，横滑就永远用不上。 */
+  .nav {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    padding: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .navLabel { display: none; }
+
+  /* 一格：图标在上、中文名在下（英文小字与行尾序号在 56px 里放不下，
+     上一条 1120 的规则已经把它们收掉了，这里不再重复）。
+     **高度给足 44px** —— 这是底条上唯一能点的东西，触控目标不能缩水。 */
+  .navItem {
+    flex: 0 0 auto;
+    width: 56px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 3px;
+    padding: 5px 2px;
+    min-height: 44px;
+  }
+  /* 把 1120 那一条收掉的标签**放回来**（底条上有图标也有字才认得出来是哪一格）。
+     10px 是中文字号的下限：最长的「低语者日志」5 个字 = 50px，正好落在
+     56 − 4 = 52px 里，再多一个字就要溢出，别往上加。 */
+  .navItem__label { display: block; width: 100%; text-align: center; }
+  .navItem__label b { font-size: 10px; letter-spacing: 0; line-height: 1.2; }
+  .navItem__label i { display: none; }
+  .navItem__icon { width: 24px; height: 24px; font-size: 17px; }
+  .navItem__idx { display: none; }
+  /* 悬停那一手「往右挪 2px」在横条上是横向抖动，改成不动 */
+  .navItem:hover { transform: none; }
+
+  /* 操作员那一簇 + 三枚动作：**钉在右端、不参与横滑**（`flex: 0 0 auto` 即可，
+     外面 `.railFoot` 是 row 里的最后一个 flex 项，横滑发生在它左边的 `.nav` 里）。 */
+  .railFoot {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+  /* 那根分隔线跟着转 90°：从「上下之间」变成「左右之间」 */
+  .footRule { width: 1px; height: 22px; margin: 2px; flex: 0 0 auto; }
+  .opCard { gap: 6px; padding: 4px; }
+
+  .footBtn {
+    width: auto;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 6px;
+  }
+  .btnLabel { display: none; }
+  .btnIconMobile { display: inline-flex; }
+
+  /* 吐司抬过底条 —— 不抬的话它会压在导航上（底条不是一个层，是布局里的一行）。 */
+  .toasts {
+    bottom: calc(var(--strip-h) + env(safe-area-inset-bottom) + 10px);
+    right: 10px;
+    max-width: calc(100vw - 20px);
+  }
+}
+
+/* ============ 手机档（≤720px）：顶栏折两行 ============
+   顶栏那六格胶囊实测 831px（1440 上够放，390 上后四件全在屏幕外）。
+   折法：标题那一簇留第一行，**机器三格**跟在它后面，
+   **读数三格**（区域 / R 值 / 异常）整个落到第二行横滑。
+   720 这个数是量出来的：撤掉侧栏之后顶栏内容盒 = `vw − 44`，
+   机器那一簇 + 标题的 nowrap min-content 合起来 ≈ 670px，留够余量取 720。 */
+@media (max-width: 720px) {
+  .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 8px 12px 0;
+    gap: 6px 10px;
+  }
+  /* 标题那一簇**不许长**（`flex: 0 1 auto`）：它一长就会跟右半边抢那一行，
+     右半边被挤到第二行去、读数那簇又跟着塌成一团。 */
+  .tbLeft { flex: 0 1 auto; min-width: 0; }
+  /* 等宽大写那串 12px + 0.12em 字距在 390 上自己就占掉一整行 */
+  .tbTitleEn { display: none; }
+  /* 两簇已经分了行，夹在中间的那道竖线失去意义 */
+  .tbDiv { display: none; }
+  /* 右半边：**自己再折一层**。外面 `.topbar` 那一层只管标题与它分不分行；
+     里面这一层管「机器三格在上、读数三格在下」。
+     `min-width: 0` 是这里的命门 —— 不写它，flex 项的自动最小宽度会按
+     `.tbRead` 那一簇的 max-content 顶住（实测 801px），整条顶出屏幕。 */
+  .tbRight { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; row-gap: 6px; }
+  .tbMach { order: 1; margin-left: auto; }
+  /* 读数那一格：整行横滑。`order: 2` + `flex: 1 0 100%` 让它落**这一层的**第二行。 */
+  .tbRead {
+    order: 2;
+    flex: 1 0 100%;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+  .tbRead::-webkit-scrollbar { display: none; }
+  .tbRead .pill { flex: 0 0 auto; }
+  /* 那 96px 是给桌面跳动的数字留的，窄屏不需要 */
+  .clock { min-width: 0; }
+}
+
 /* ---------- 终端启动「弹出」进场 ---------- */
 /* 上一版那一下 brightness(2.7) 是给暗底准备的闪白；浅底上闪白等于闪了个空，
    改成「从虚到实 + 轻微下沉」—— 落地那一下更轻，也不刺眼。
@@ -534,4 +703,10 @@
   0%   { opacity: 0; transform: scale(0.96) translateY(18px); }
   55%  { opacity: 1; }
   100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 手机档 · 粗指针：吐司右上那枚关闭（24px）与操作员的铅笔（26px）抬到 44。
+   与 ≤860 那条底条规则同一段话：手指点得着比排得密要紧。 */
+@media (pointer: coarse) {
+  .toast__x, .opGear { min-width: 44px; min-height: 44px; }
 }

@@ -419,3 +419,8 @@
   .indexRow { width: auto; padding: 5px 9px; font-size: 12px; }
   .indexNo { display: none; }
 }
+
+/* 手机档 · 粗指针：索引那一行（33px）与编年那一行（26px）抬到 44 */
+@media (pointer: coarse) {
+  .indexRow, .chronRow { min-height: 44px; }
+}

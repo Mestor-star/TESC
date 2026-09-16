@@ -650,3 +650,17 @@
   color: var(--ink-dim);
   white-space: pre-wrap;
 }
+
+/* ============ 手机档（≤720px）============
+   980 那条把 `.cardAside` 折成了横排，但没管它那条 `min-width: 168px` ——
+   加在 390 屏上就是卡片里再撑出一条横向滚动条。 */
+@media (max-width: 720px) {
+  .cardAside { min-width: 0; }
+  /* 体力条原本是固定 190px 的独立一截：窄屏上让它把剩下的宽度吃掉 */
+  .staminaBar { width: auto; flex: 1 1 auto; }
+}
+
+/* 手机档 · 粗指针：筛选 / 读取 / 那枚拾取（桌面 32 / 21 / 31px）抬到 44 */
+@media (pointer: coarse) {
+  .filterBtn, .loadBtn, .pick { min-height: 44px; }
+}

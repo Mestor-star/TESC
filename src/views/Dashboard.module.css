@@ -564,3 +564,18 @@
   .mapNode[data-on='1'] .mapHalo { animation: none; }
   .mapHere { animation: none; }
 }
+
+/* ============ 手机档（≤720px）============
+   读数那一行（`.rRowBar` 120 + `.rRowVal` 58 + `.rRowDelta` 60 ≈ 304px）在
+   390 屏上叠出去。三处 `min-width` 全部放软 —— 条形本来就是 `flex: 1` 撑的，
+   数字各自按内容宽，这一行自己就缩回来了。 */
+@media (max-width: 720px) {
+  .rRowBar { min-width: 0; }
+  .rRowVal { min-width: 0; }
+  .rRowDelta { min-width: 0; }
+}
+
+/* 手机档 · 粗指针：短信那几行（32px）与卡片上那几枚小动作（30px）抬到 44 */
+@media (pointer: coarse) {
+  .msgRow, .miniAction { min-height: 44px; }
+}

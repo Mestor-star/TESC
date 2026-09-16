@@ -269,8 +269,15 @@
 .pickRow > span:nth-child(2) { flex: 1; }
 .modalFoot { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* 短信这一页的左栏收窄到 300（底座 `.wrap` 是 318：联系人名短，318 是给…留的）。
+   这一条从前是**内联**写在 Tavern.tsx 上的 —— 内联样式媒体查询够不着，
+   `Comms.module.css` 那条「≤960 摞成一栏」就永远落不到这一页，390 屏上
+   左栏照旧吃 300、对话框只剩 46px（实测：`.chatHead` 44px、正文全部探出面板）。
+   ⚠️ 折叠那一条必须**跟着**这一个类写在同处：两个选择器同特异度，
+   谁写在后面谁赢 —— 光靠 Comms 里那条，会被这里的 `300px 1fr` 按源码序压过去。 */
+.wrapSms { grid-template-columns: 300px 1fr; }
 @media (max-width: 960px) {
-  .wrapExtra { grid-template-columns: 1fr !important; }
+  .wrapSms { grid-template-columns: 1fr; }
 }
 
 /* ---------------- 多女同场（1 男多女那一场）的选人面板 ----------------
@@ -329,4 +336,11 @@
   .chatMain {
     min-height: 380px;
   }
+}
+
+/* 手机档 · 粗指针：顶部页签 / 情景那一行 / 小节按钮 / 任务小方块
+   （桌面 30 / 28 / 21 / 17×17）—— 一律抬到 44，方块那枚两轴都抬 */
+@media (pointer: coarse) {
+  .tab, .pickRow, .sectBtn { min-height: 44px; }
+  .taskBox { width: 44px; height: 44px; }
 }

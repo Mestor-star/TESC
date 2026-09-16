@@ -1085,9 +1085,16 @@ export function Archive() {
         </div>
 
         {/* 能力五轴说明 */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 16 }}>
+        {/* 五轴那五格。栅格与格子都从前是**内联**写的：栅格那一条媒体查询够不着，
+            而 `.tag` 本体是**全局**的（`tokens.css` 里 `.badge, .chip, .tag` 那一条
+            `inline-flex` + `nowrap`）—— 短信 / 剧情那两处的小标签也用着它，动不得。
+            实测：390 屏上 auto-fit 给出 177px 一格，而「轴名 + 释义」两行 nowrap
+            并排的最小宽是 236px，整格探出面板。所以拆成两个类：
+            `.axisGrid` 管栅格（窄屏单栏），`.axisTag` 管**竖排**（那本来就是这里的
+            写法 —— JSX 里那个 `display:'block'` 的意图如此，只是被全局的 flex 盖住了）。 */}
+        <div className={css.axisGrid}>
           {AXIS_ORDER.map((k) => (
-            <div key={k} className="tag" style={{ lineHeight: 1.5, padding: '8px 10px' }}>
+            <div key={k} className={`tag ${css.axisTag}`}>
               <b style={{ color: 'var(--ink)' }}>{k}</b>
               <span style={{ display: 'block', marginTop: 2, fontSize: 10.5 }}>{STAT_HINT[k]}</span>
             </div>

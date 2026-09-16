@@ -435,3 +435,29 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ============ 手机档（≤720px）：四角小件落进流里 ============
+   980 那条把 `.autoCard` 限成 `100vw − 120px`、名字也收了，但四件仍是
+   **绝对定位挤在四角**：`.autoMeta` 又写着 `nowrap` 且无处可滚，实测冲出卡片
+   50–110px，正好压在右上那枚操作员胶囊上。
+   窄屏没有「角落」可言 —— 这一档把那一层从绝对定位放回普通流，
+   两件竖着摞在标题上方，各自整宽。
+
+   ⚠️ `.autoCard` 上挂着 `[data-autosave-card]`，冒烟 Phase J0b / L3 / L4 按它找人。
+   这里只动它的定位与宽度，元素一个都不挪。 */
+@media (max-width: 720px) {
+  .corner {
+    inset: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .autoCard { position: static; max-width: 100%; }
+  .cornerR { position: static; align-self: flex-end; }
+  /* 让那句读数自己折行，别顶着卡片边往外冲 */
+  .autoMeta { white-space: normal; }
+  /* 那一层从绝对定位回到流里之后，标题要往下让出它的高度
+     （两件摞起来 ≈ 96px + 上下各 10px 的 inset）。 */
+  .inner { padding: 128px 10px 40px; }
+}

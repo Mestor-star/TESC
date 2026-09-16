@@ -712,7 +712,10 @@
 .opLine li b { font-size: 12.5px; }
 
 @media (max-width: 700px) {
-  .opAbilRow, .opLine li { grid-template-columns: auto auto 1fr; }
+  /* 被动那一行（`.opPas`）本来漏在外面 —— 它与 `.opAbilRow` / `.opLine li`
+     是**同一套三栏**（名目 │ 那一段读数 │ 说明），只是少一栏图标。
+     从前只收了两处，被动那一行仍按 `minmax(120px, auto)` 走，窄屏上自己顶出去。 */
+  .opAbilRow, .opLine li, .opPas { grid-template-columns: auto auto 1fr; }
 }
 
 /* —— 主角专档 · 档案头 —— */
@@ -1053,4 +1056,47 @@
   .intimStat .stat { grid-template-columns: 40px 1fr 26px max-content; }
   .intimState { margin-left: 40px; }
   .intimFoot { grid-template-columns: 1fr; }
+}
+
+/* —— 能力五轴那五格（轴名 + 释义）——
+   这两条从前都是**内联**写在 Archive.tsx 上的，媒体查询够不着；而 `.tag` 本体是全局的
+   （`tokens.css` 的 `.badge, .chip, .tag`：`inline-flex` + `nowrap`），短信 / 剧情
+   那两处小标签也用它，动不得。拆成两个类之后：
+     · `.axisGrid` 管栅格 —— 窄屏单栏；宽屏仍是 auto-fit，一格至少 150；
+     · `.axisTag` 管**竖排** —— 这才是这里的本意（那个释义 <span> 本来就写着
+       `display:'block'` + `marginTop`，只是被全局的 inline-flex 排成了横的）。
+   不这么改的话，`white-space: nowrap` 会把「轴名 + 释义」咬成一整条 236px 的
+   最小宽，而 auto-fit 在 1440 上也不过给到 ~250 —— 每一档都悬在越界边上。 */
+.axisGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.axisTag {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  white-space: normal;
+  line-height: 1.5;
+  padding: 8px 10px;
+}
+
+/* ============ 手机档（≤720px）============
+   档案页里两处**定死列数**的栅格在 390 屏上排不下，各退一档。 */
+@media (max-width: 720px) {
+  /* 五轴那五格：auto-fit 在 390 上给到两列 × 177px，释义那一行折得只剩几个字 ——
+     窄屏退回单栏，一格 362 才读得下去。 */
+  .axisGrid { grid-template-columns: 1fr; }
+  /* 四列两行 → 两列四行：八栏的名字都是中文词（「内射次数」四个字），
+     窄屏上四列会把每一格压到只剩 80px 出头、名目全折行。 */
+  .actGrid { grid-template-columns: repeat(2, 1fr); }
+  /* 五轴读数那一行：三栏（标签 44 │ 条 1fr │ 数 58）压到 36 / 46，
+     省下的 20px 全给中间那条，条形才看得出长短。 */
+  .stat { grid-template-columns: 36px 1fr 46px; }
+}
+
+/* 手机档 · 粗指针：齿轮那一行（28px）抬到 44 */
+@media (pointer: coarse) {
+  .gearRow { min-height: 44px; }
 }

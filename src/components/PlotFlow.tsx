@@ -33,8 +33,12 @@ export function opNameOf(name?: string): string {
   return t || OP_FALLBACK
 }
 
-/** 立绘方块在台词框里的那一份固定尺寸 / 圆角（两条路必须一致，抽成常量） */
-const framePortrait = { width: 64, height: '100%', borderRadius: 0 } as const
+/** 立绘方块在台词框里的那一份固定尺寸 / 圆角（两条路必须一致，抽成常量）。
+ *  宽度走一枚**变量**而不是字面 64：这一句是行内样式（`Portrait` 会把它铺在
+ *  `box` 最后一层，比任何类都硬），媒体查询够不着 —— 写成 `var()` 之后，
+ *  窄屏那条规则在 `.framePortrait` 上改 `--frame-portrait-w` 就管得住它。
+ *  宽屏取到的仍是兜底那 64px，一个像素不动。 */
+const framePortrait = { width: 'var(--frame-portrait-w, 64px)', height: '100%', borderRadius: 0 } as const
 
 /* ---------- 台词框 ---------- */
 

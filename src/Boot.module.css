@@ -31,6 +31,30 @@
     var(--bg-0);
 }
 
+/* ===== 片子压在上面放的时候，这一屏**停笔**（2026-09-16）=====
+ *
+ * 开场 PV 是**盖在**这一屏之上放的一层（`components/PvScreen`，z-index 300），
+ * 这一屏整段时间都还挂在 DOM 里、还在**自己跑**。它身上有两支永不停的动画：
+ * 左上那枚指示灯的 `pulseGlow`（2.2s，动的是 **box-shadow** —— 合成不了，
+ * 每帧都得重画一次）与右上那枚四角星的 `ornSpin`（9s 自转）。片子每帧要在
+ * 同一个合成层上跟这两支抢，1080p 那会儿就卡得看得见。
+ *
+ * 两条一起上才够：
+ *   · `visibility: hidden` —— 这一屏不画了（元素、盒子、把手全都在，
+ *     `[data-boot-card]` / `[data-start-game]` 照旧查得到、量得着，
+ *     只是手点不着 —— 反正这会儿上面盖着片子，本来也没得点）；
+ *   · `animation-play-state: paused` —— 连样式都不再逐帧算了。
+ *
+ * 停的是**进度**不是内容：片子放完或按了跳过，`frozen` 一落回 false，
+ * 这一屏就从暂停处接着入场（入场那几支的延迟都还没走完，正好补上）。
+ * 冒烟那边等的是 `skipPv()` —— 它一直等到 `[data-pv]` 退场才返回，
+ * 所以按「点击进入游戏」那一下，这一屏早就恢复可见了。 */
+.boot[data-pv-up],
+.boot[data-pv-up] * {
+  visibility: hidden;
+  animation-play-state: paused !important;
+}
+
 /* 入场斜扫光：一道青紫的光band从左掠到右，放完即走（一次性） */
 .boot::after {
   content: "";
