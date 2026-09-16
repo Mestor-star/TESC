@@ -25,9 +25,9 @@
 }
 .contact:hover { background: var(--bg-2); transform: translateX(2px); }
 .contact.isActive {
-  /* 选中那一条走身份色（青→紫），不是警戒色 —— 上一版这里是粉，粉进了警戒那一档。 */
+  /* 选中那一条走身份那一对（青→绯），不是警戒色 —— 上一版这里是粉，粉进了警戒那一档。 */
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--steel) 15%, transparent), color-mix(in srgb, var(--violet) 6%, transparent));
+    linear-gradient(90deg, color-mix(in srgb, var(--steel) 15%, transparent), color-mix(in srgb, var(--red) 5%, transparent));
   border-color: color-mix(in srgb, var(--steel) 35%, transparent);
 }
 .contactMain { min-width: 0; }
@@ -102,10 +102,10 @@
   border-radius: 4px var(--radius) var(--radius) var(--radius);
 }
 .msg--user .bubble {
-  /* 自己那一侧是彩色底 —— 底亮的这一头，字就跟着走墨（白字在这条渐变上只有 3.14→3.61，
+  /* 自己那一侧是彩色底 —— 底亮的这一头，字就跟着走墨（白字在这条渐变上只有 3.16→3.33，
      而气泡里是 13px 的正文，不是大字）。渐变也只往提亮那头走，不落回 --steel-deep
      （墨压在 steel-deep 上只有 3.37:1）。与 tokens 的 .btn--primary 同一个配方。 */
-  background: linear-gradient(160deg, var(--steel), var(--violet-lift));
+  background: linear-gradient(160deg, var(--steel), var(--red-lift));
   color: var(--on-accent);
   box-shadow: 0 8px 22px color-mix(in srgb, var(--steel) 26%, transparent);
   border-radius: var(--radius) 4px var(--radius) var(--radius);

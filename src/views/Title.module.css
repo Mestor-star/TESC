@@ -146,9 +146,9 @@
 }
 .brand h1 em {
   font-style: normal;
-  /* 醒目处走主调渐变（青→紫，反現実那一侧到次元那一侧）；
+  /* 醒目处走身份那一对（青→绯，反現実那一侧到标题那枚心）；
      渐变裁字吃不了 text-shadow，故关掉 */
-  background: linear-gradient(120deg, var(--steel), var(--violet));
+  background: linear-gradient(120deg, var(--steel), var(--red));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -163,7 +163,7 @@
   width: 10px;
   height: 10px;
   margin-top: -5px;
-  background: linear-gradient(140deg, var(--steel), var(--violet));
+  background: linear-gradient(140deg, var(--steel), var(--red));
   box-shadow: 0 0 12px color-mix(in srgb, var(--steel) 45%, transparent);
   opacity: 0.85;
   pointer-events: none;
@@ -269,13 +269,13 @@
   border-radius: var(--radius-sm);
   transition: color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
 }
-/* 主按钮就是这一版的名字：青那一头是「反現実」，紫那一头是「次元」。
-   与 tokens 的 .btn--primary 同一套：紫那头走提亮档，字走墨（原色上墨字只有 4.13:1） */
+/* 主按钮就是这一版的名字：青那一头是「反現実」，绯那一头是标题那枚心。
+   与 tokens 的 .btn--primary 同一套：绯那头走提亮档，字走墨（原色上墨字只有 5.11:1） */
 .menuBtn.menuPrimary {
   border-color: transparent;
-  background: linear-gradient(135deg, var(--steel), var(--violet-lift));
+  background: linear-gradient(135deg, var(--steel), var(--red-lift));
   color: var(--on-accent);
-  box-shadow: var(--glow-violet);
+  box-shadow: var(--glow-red);
 }
 .menuBtn.menuPrimary:disabled { background: var(--bg-3); border-color: var(--line-2); color: var(--ink-faint); box-shadow: none; }
 .menuBtn.menuPrimary:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }

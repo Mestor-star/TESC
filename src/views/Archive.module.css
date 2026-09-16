@@ -45,7 +45,11 @@
 .opGlyph {
   width: 84px; height: 84px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(150deg, var(--steel-deep), var(--violet-deep));
+  /* 全站唯一一处白字（mech §41 的具名例外表就这一条）。
+     底是**身份那一对**：青那头 steel-deep、绯那头 red-deep ——
+     白字两头 5.04 / 5.07，连正文的 4.5 线都过（不只是大字的 3:1）。
+     （第一稿这一对是 steel-deep → violet-deep；紫退回点缀后跟着换成绯。） */
+  background: linear-gradient(150deg, var(--steel-deep), var(--red-deep));
   color: #fff;
   font-family: var(--font-mono);
   font-weight: 800;

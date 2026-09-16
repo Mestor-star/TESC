@@ -7682,12 +7682,15 @@ export function run(): MechReport {
 
     /* 运行时那把尺（lib/hue.ts 的 inkOf）与上面这条线同源：
          够色的原样放回、不够的退到过线、不认得的输入不动它（hue 允许是 var(...) / 空）。 */
-    /* 拿**主调那一支**当探针：`--steel` 是六支里最浅的（对白底 2.14:1），
-       要退到过线得兑得最狠 —— 它过了，其余五支没有不过的道理。 */
-    const inked = inkOf('#00c2e0')
-    ok('配色两档：inkOf() 把不够色的本色退到 4.5:1 以上（界面侧与 tokens 侧同一把尺）',
-      /^#[0-9a-f]{6}$/.test(inked) && ratioOf(inked) >= 4.5,
-      `inkOf('#00c2e0') → ${inked} ${ratioOf(inked).toFixed(2)}:1`)
+    /* 拿**六支本色**各过一遍 —— 早先图省事只挑了最浅的那一支当代表，
+       可兑墨是朝 --ink（深藏蓝）兑的，色相不同、落点未必随亮度单调，
+       一支过了不等于其余五支都过。六支全过才算数（这也是底档那些本色
+       当字时的真实路径）。值随 tokens 那一稿走：2026-09-16 照官方 CSS 校过。 */
+    const BASES = ['#008eff', '#ff366d', '#ffbf00', '#00ffba', '#7d5cff', '#d9457a']
+    const inked = BASES.map((b) => inkOf(b))
+    ok('配色两档：inkOf() 把六支本色都退到 4.5:1 以上（界面侧与 tokens 侧同一把尺）',
+      inked.every((v) => /^#[0-9a-f]{6}$/.test(v) && ratioOf(v) >= 4.5),
+      inked.map((v, i) => `${BASES[i]}→${v} ${ratioOf(v).toFixed(2)}`).join(' · '))
     ok('配色两档（对照）：已经够色的本色原样放回；不认得的输入一个字不动',
       inkOf('#0e1729') === '#0e1729' && inkOf('var(--x)') === 'var(--x)' && inkOf(undefined) === '',
       `inkOf('#0e1729') → ${inkOf('#0e1729')} · inkOf('var(--x)') → ${inkOf('var(--x)')}`)
@@ -7837,7 +7840,7 @@ export function run(): MechReport {
        不在此列，那种靠人看，落不进这条机械尺。 */
     const WHITE_OK: Record<string, string> = {
       'src/views/Archive.module.css .opGlyph':
-        '84px 方块里 30px/800 的姓字 —— 底走 steel-deep → violet-deep，白字两头 5.14 / 5.07，'
+        '84px 方块里 30px/800 的姓字 —— 底走身份那一对 steel-deep → red-deep，白字两头 5.04 / 5.07，'
         + '连正文那条 4.5 都过（不只是大字线 3:1）',
     }
     const whiteOnFill: string[] = []

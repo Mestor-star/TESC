@@ -4,10 +4,13 @@
    2026-09-16 语汇重排：这一版改用**菱形**当记号 —— 角标、行尾序号、
    激活态、顶栏标题前那一枚，全是同一颗菱形的不同用法；配色一律走 tokens
    （从前有十一处把主题色拆成 rgba 硬写，见下面各处的 color-mix）。
-   2026-09-16 二次换皮：主调从 --red 交到 --steel（霓虹青）——
+   2026-09-16 二次换皮：主调从 --red 交到 --steel ——
    下面所有身份记号（轨道底条、角标菱形、激活态、未读角标）一并换手。
-   ⚠️ 留在 --red 上的只有「危险」那一簇（.pill--danger / .toast--danger，
-   .toast 的基色也走青了），别把身份色再挂回去。 */
+   ⚠️ 留在 --red 上的只有「危险」那一簇（.pill--danger / .toast--danger），
+   别把身份色再挂回去。
+   2026-09-16 三次校准（照官方 CSS）：--steel 落到 #008eff（蔚蓝）、
+   身份那一对从「青→紫」改成「**青→绯**」（紫退回点缀）。
+   所以下面渐变里的暖端一律是 var(--red) / var(--red-lift)，别再换回紫。 */
 
 .root {
   position: relative;
@@ -33,13 +36,15 @@
 }
 
 /* 底部一抹主调渐变（上一版是糖果斜纹警戒带 —— 工业期的遗留，
-   换成这一版的签名渐变：青→紫 —— 反現実那一侧到次元那一侧）。 */
+   换成这一版的签名渐变：青→绯 —— 反現実那一侧的天蓝，到标题 logo 那枚心的绯红。
+   第二稿改的：第一稿暖端是电紫，看过官方主视觉才知道紫只长在瞳色里，
+   真正跳出来的第二支是绯红（见 tokens.css 头上那三条）。 */
 .rail::after {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--steel), var(--violet));
+  background: linear-gradient(90deg, var(--steel), var(--red));
   opacity: 0.9;
 }
 
@@ -50,15 +55,15 @@
   padding: 20px 16px 18px;
   border-bottom: 1px solid var(--line);
 }
-/* 角标：青→紫的渐变，落在**旋转 45° 的圆角方块**上 —— 一颗菱形，
+/* 角标：青→绯的渐变，落在**旋转 45° 的圆角方块**上 —— 一颗菱形，
    四角微圆（这一版圆角收到 6px，比上一版挺）。字要转回来
    （转正的方块压在斜着的底上才是「错位」那一下）。
-   17px 的「終」是正文字号 —— 字走墨、紫那头走提亮档（见 tokens 的 --on-accent） */
+   17px 的「終」是正文字号 —— 字走墨、绯那头走提亮档（见 tokens 的 --on-accent） */
 .brandMark {
   flex: 0 0 auto;
   width: 38px; height: 38px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(140deg, var(--steel), var(--violet-lift));
+  background: linear-gradient(140deg, var(--steel), var(--red-lift));
   border-radius: var(--radius-sm);
   box-shadow: var(--glow-steel);
   transform: rotate(45deg);
@@ -78,7 +83,7 @@
   font-weight: 900;
   letter-spacing: 0.06em;
   white-space: nowrap;
-  text-shadow: var(--duo-shadow);   /* 「次元错位」的签名：青与紫各错开两像素，读作全息色散 */
+  text-shadow: var(--duo-shadow);   /* 「次元错位」的签名：青与绯各错开两像素，读作全息色散 */
 }
 .brandText i {
   display: block;
@@ -197,7 +202,7 @@
   color: var(--steel-deep);
   background: linear-gradient(90deg,
     color-mix(in srgb, var(--steel) 16%, transparent),
-    color-mix(in srgb, var(--violet) 6%, transparent));
+    color-mix(in srgb, var(--red) 5%, transparent));
   border-color: color-mix(in srgb, var(--steel) 34%, transparent);
 }
 .navItem.isActive::before { opacity: 1; transform: translateY(-50%) rotate(45deg) scale(1); }
@@ -360,7 +365,7 @@
 /* 标题前那一枚：竖条 → 菱形（与角标、行尾记号同一颗） */
 .tbTitleSlash {
   width: 9px; height: 9px;
-  background: linear-gradient(140deg, var(--steel), var(--violet));
+  background: linear-gradient(140deg, var(--steel), var(--red));
   transform: rotate(45deg);
   flex: 0 0 auto;
 }

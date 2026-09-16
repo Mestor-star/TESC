@@ -1,16 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
   <!-- 悬停指针（可点的东西上）：与常驻那枚**同一条箭形、同一个箭尖 (4,2)**，
-       所以从别处移到按钮上时瞄点是钉住不动的，只是多出一圈光晕与尾上一点紫 ✦。
-       共用一个热点值，`tokens.css` 里两枚的两串数字因此一模一样。 -->
+       所以从别处移到按钮上时瞄点是钉住不动的，只是多出一圈光晕与尾上一点绯 ✦。
+       共用一个热点值，`tokens.css` 里两枚的两串数字因此一模一样。
+       （色值沿革与 cursor-arrow.svg 同一笔：2026-09-16 照官方 CSS 校成青→绯。） -->
   <defs>
     <linearGradient id="pg" x1="4" y1="2" x2="19" y2="24" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00c2e0"/>
-      <stop offset="1" stop-color="#7d5cff"/>
+      <stop offset="0" stop-color="#008eff"/>
+      <stop offset="1" stop-color="#ff366d"/>
     </linearGradient>
     <radialGradient id="ph" cx="11" cy="12" r="11" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00c2e0" stop-opacity=".34"/>
-      <stop offset=".55" stop-color="#7d5cff" stop-opacity=".18"/>
-      <stop offset="1" stop-color="#7d5cff" stop-opacity="0"/>
+      <stop offset="0" stop-color="#008eff" stop-opacity=".34"/>
+      <stop offset=".55" stop-color="#ff366d" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#ff366d" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <circle cx="11" cy="12" r="11" fill="url(#ph)"/>
@@ -19,5 +20,5 @@
   <path d="M4 2 L4 21.5 L8.7 17 L12 23.5 L15.4 21.8 L12.2 15.4 L18.5 15.4 Z"
         fill="url(#pg)" stroke="#0e1729" stroke-opacity=".45" stroke-width=".9" stroke-linejoin="round"/>
   <path d="M22.5 17.3 L23.7 20.3 L26.7 21.5 L23.7 22.7 L22.5 25.7 L21.3 22.7 L18.3 21.5 L21.3 20.3 Z"
-        fill="#7d5cff"/>
+        fill="#ff366d"/>
 </svg>

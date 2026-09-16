@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-  <!-- 常驻指针：青→紫的菱形箭（反現実那一侧 → 次元那一侧，全站身份色那一对）。
+  <!-- 常驻指针：青→绯的菱形箭（反現実那一侧 → 标题那枚心，全站身份色那一对）。
        外面那一圈白描边是**给任何底色用的**——压在深色立绘或浅底卡片上都读得出。
        箭尖在 (4,2)，`tokens.css` 里那条 `cursor` 的热点就是照着它写的。
-       （上一版这条渐变是粉→紫；粉退位之后归青。） -->
+       （色值沿革：最早粉→紫，粉退位后归青→紫，2026-09-16 照官方 CSS 校成青→绯。） -->
   <defs>
     <linearGradient id="cg" x1="4" y1="2" x2="19" y2="24" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00c2e0"/>
-      <stop offset="1" stop-color="#7d5cff"/>
+      <stop offset="0" stop-color="#008eff"/>
+      <stop offset="1" stop-color="#ff366d"/>
     </linearGradient>
   </defs>
   <path d="M4 2 L4 21.5 L8.7 17 L12 23.5 L15.4 21.8 L12.2 15.4 L18.5 15.4 Z"

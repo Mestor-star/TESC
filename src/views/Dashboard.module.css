@@ -74,7 +74,7 @@
   width: 9px;
   height: 9px;
   margin-top: -4px;
-  background: linear-gradient(140deg, var(--steel), var(--violet));
+  background: linear-gradient(140deg, var(--steel), var(--red));
   opacity: 0.75;
   pointer-events: none;
 }

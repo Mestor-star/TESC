@@ -98,7 +98,7 @@
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--violet) 55%, transparent),
+    color-mix(in srgb, var(--red) 55%, transparent),
     color-mix(in srgb, var(--steel) 65%, transparent),
     transparent
   );
@@ -203,9 +203,9 @@
 }
 .bootTitle em {
   font-style: normal;
-  /* 醒目处走主调渐变：青那一头是「反現実」，紫那一头是「次元」。
+  /* 醒目处走身份那一对：青那一头是「反現実」，绯那一头是标题那枚心。
      渐变裁字不能同时吃 text-shadow（会从透明字里透出一团糊影），所以关掉。 */
-  background: linear-gradient(120deg, var(--steel), var(--violet));
+  background: linear-gradient(120deg, var(--steel), var(--red));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -220,7 +220,7 @@
   width: 11px;
   height: 11px;
   margin-top: -5.5px;
-  background: linear-gradient(140deg, var(--steel), var(--violet));
+  background: linear-gradient(140deg, var(--steel), var(--red));
   box-shadow: 0 0 12px color-mix(in srgb, var(--steel) 45%, transparent);
   opacity: 0.85;
   pointer-events: none;
@@ -578,7 +578,7 @@
   display: block;
   height: 100%;
   overflow: hidden;
-  background: linear-gradient(90deg, var(--steel), var(--violet));
+  background: linear-gradient(90deg, var(--steel), var(--red));
   transition: width 200ms var(--ease-out);
 }
 /* 填充条上再走一道流光 */

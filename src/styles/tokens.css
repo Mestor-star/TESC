@@ -1,26 +1,44 @@
 /* ============================================================
    终末停滞委员会 · 停滞观测终端 — 设计系统 / 全局样式
-   视觉语言：冷白全息底 + 霓虹青主调 × 电紫 + 绯红警戒 + 全息 HUD 细线框
+   视觉语言：冷白全息底 + 蔚蓝主调 × 绯红 + 锐角斜切 + 全息 HUD 细线框
    参考：学园异能战斗 / 反现实灾害 / 近未来学园组织 / 全息仪表
 
-   —— 2026-09-16 整体改版（「反现实学园」那一版）——
+   —— 2026-09-16 换皮（「反现实学园」那一版）· 同日晚些时候又校过一稿 ——
    上一版是「晨光浅底 + 樱粉×次元紫 + 圆角贴纸 + 错位重影」（次元错位恋人）。
    这一版把**外形**整个换掉，**一个字文案都没动**（主人 2026-09-15 拍的口径）。
 
    口径来源：CRYSTALiA《ディメンション凸ラバース!!》—— 剧本同是逢縁奇演
    （《こちら、終末停滞委員会。》的作者），世界观同一挂：「黒列車」撒下反現実怪獣、
    人类灭绝 99%，200 年后由「学園」这个对反現実组织重建日本，舞台在学園第二横滨市分部。
-   取色三件事因此对上：
-     反現実 ＝ 霓虹青（--steel）· 次元 ＝ 电紫（--violet）· 学园系统 ＝ 冷白全息底。
-   樱粉**从主调退位**，只守「危险 / 高警戒」那一档（--red）。
 
-   两条约定，改这一页的人先读：
+   **这一稿不是目测的，是从官方那套里量出来的。** 主人 2026-09-16 把官网整页存了下来
+   （`ディメンション凸ラバース！！ _ CRYSTALiA.html` 连它旁边那包 css），
+   第一稿凭截图估的偏差，这一稿按**真 CSS** 校死 —— 三处：
+
+     ① 主调那个青。第一稿定 #00c2e0（绿松石，偏绿），第二稿目测改到 #1ea8e8。
+        **官方 `object.css` 里直接躺着一套文字色档**：`.o-tc-bl{color:#008eff}` ——
+        这才是主调，一支很正的**蔚蓝**，比目测那两稿都更饱和、更偏蓝。
+     ② 第一稿把**电紫**抬成了「主调的另一半」。官方那套色档里**根本没有紫**
+        （紫在这部作品里只长在瞳色与一处洋装边上）。第二支是 `.o-tc-re{color:#ff366d}`
+        **绯红**，第三支 `.o-tc-ye{color:#ffbf00}` **金**，外加正文链接那支 `#00ffba` **薄荷** ——
+        四支正好就是本仓六支里带语义的那四支（steel / red / amber / jade），
+        于是这一稿把这四支**照官方值定死**；--violet 与 --rose 官方没有对应，留作点缀。
+     ③ 官方按钮的签名写法是 `box-shadow: 0 5px 0 #008eff` —— **硬位移、零模糊**的实心
+        投影（贴纸感），配标题那种粗几何斜切。第一稿整套走的是柔光弥散，方向反了 ——
+        这一稿加回 `--offset-*` 那一族（见下面「投影」一节）。
+
+     另：官方站点本身是**藏蓝底**（`background-color:#081a45`）。本仓的底是主人早先
+     拍下的**冷白全息**，这一条没跟 —— 但官方的墨色认得出就是这个藏蓝，见 `--ink` 那条注。
+
+   三条约定，改这一页的人先读：
    1. **变量名与类名一律照旧** —— `--red` 仍叫 `--red`、`.slant` 仍叫 `.slant`，
-      哪怕名字在今天已经名不副实（绯红不叫主调、斜切早就不斜了）。
-      全仓三百多处引用靠这些名字活着，改名是另一件事，别顺手做。
-      名字与今天的含义对不上的，就地加一行注释说清「它此刻是什么」。
+      哪怕名字在今天已经名不副实。全仓三百多处引用靠这些名字活着，
+      改名是另一件事，别顺手做。名字与今天含义对不上的，就地加注释说清。
    2. **新代码别再硬写颜色** —— 散在三十个 module 里的硬写色已经收回来一批，
       剩下的也都有对应的变量可用（见下面「语义别名」一栏）。
+   3. **主调与警戒同一支绯红，是有意的** —— 原作那枚心既是标题、也是「危险与恋」。
+      分得开靠的是**形状**：身份那一对永远是「青→绯」的**渐变**（带青那头），
+      危险那一档永远是**纯绯红 + 斜纹/实心块**，两者不出现在同一处。
    ============================================================ */
 
 :root {
@@ -53,36 +71,59 @@
 
        -deep 档（下面那六支）
          当**字**用。原色都是为了暗底挑的，直接拿来写白底上的小字会糊
-         （量过：--amber 2.04:1、--steel 2.14:1、--jade 2.35:1，连 --red 都只有 3.61:1）。
+         （量过：--jade 1.31:1、--amber 1.65:1、--steel 3.33:1，连 --red 都只有 3.50:1）。
          deep 档是**同色相朝 --ink 退到 4.6:1 以上**的那一档 —— 量法与取值的账
          见 `src/lib/hue.ts` 的 inkOf()（运行时同一把尺）与
          `scripts/mech/run.ts` §41（把「deep 档必须过线」钉成断言）。
          底再深一档（--bg-2 / --bg-3）时会掉到 4.2 上下，仍高于粗体小字的 3:1 线。
 
-     ⚠️ **主调这一棒从 --red 交到了 --steel。** 身份记号（菱形、主按钮渐变、
-     轨道底条、导航激活态、光标）一律走 --steel × --violet 那一对；--red 只剩
-     「危险 / 高警戒 / 不可逆操作」。改这一版时别再把新的身份色挂回 --red ——
-     它会和 `format.ts` 里 sev-hi 那一档（高 / 极危 / 重度异常）撞在一起。 */
-  --steel: #00c2e0;      /* 霓虹青：**主调**。反現実 / 学园系统 / 信息 / R值稳定。
-                            与 --violet 配成一对「错位的两界」—— 重影、渐变、
-                            棱镜都从这两个色里取 */
-  --steel-deep: #0c7794;
-  --violet: #7d5cff;     /* 电紫：次元的另一侧。异能 / 低语者 / 角色那一侧（操作员归 --steel） */
+     ⚠️ **主调这一棒从 --red 交到了 --steel，而身份那一对的另一半是 --red。**
+
+     听着绕，但原作就是这么摆的：标题那枚心既是主视觉的记号、也是「危险与恋」。
+     分得开靠**形状**不靠色相 —— 身份那一对永远是「青 → 绯」的**渐变**（青那一头
+     必在），危险那一档永远是**纯绯红**（实心块 / 斜纹 / 单色字）。两者不同处。
+     另外 `format.ts` 的 sev 阶梯是 **sev-ok 走 --steel-deep**（天蓝）、
+     sev-hi 走 --red-deep（绯），那三档仍是三个色相，没糊。
+
+     改这一版时：新的**身份**记号走 `var(--steel)`（或青→绯渐变）；
+     新的**危险**记号走 `var(--red)`。别再往渐变里塞第三个色。 */
+  --steel: #008eff;      /* 蔚蓝：**主调**。反現実 / 天空 / 学园系统 / 信息 / R值稳定。
+                            =官方 `.o-tc-bl`，逐字。第一稿的 #00c2e0 偏绿、第二稿目测的
+                            #1ea8e8 偏灰，真值比那两个都更饱和、更偏蓝。
+                            与 --red 配成身份那一对（见上面那条注释）。 */
+  --steel-deep: #0470c9; /* 对白底 5.04:1 —— 与其余五支的 deep 同档（都瞄 ~5.05，不是
+                            贴着 4.5 的底线值；底线那档由 hue.ts 的 inkOf() 现算，是另一件事） */
+  --violet: #7d5cff;     /* 电紫：**点缀**，官方色档里没有它，是本仓自己留着的那一支。
+                            只长在「角色 / 异能 / 瞳色」那一侧（Plot 的角色侧名牌、
+                            Arms 的 AWAKENED、仪表与通报里角色那一类的记号）。
+                            操作员归 --steel，两边分得开。 */
   --violet-deep: #7250f2;
-  --red: #ff2e63;        /* 警戒绯（旧名「樱粉」）：这个名字里的「红」如今名副其实了。
-                            **已不是主调** —— 只用在危险 / 高警戒 / 不可逆操作上 */
-  --red-deep: #d6204f;
-  --red-soft: rgba(255, 46, 99, 0.12);
-  --amber: #f5a524;      /* 琥珀：提醒 / 待办 —— 满屏冷色里唯一的暖信号，别拿去当装饰 */
-  --amber-deep: #98631a;
-  --jade: #0fbf9a;       /* 薄荷：达成 / 收容 / 通行 */
-  --jade-deep: #10806a;
+  --red: #ff366d;        /* 绯红（旧名「樱粉」）：**身份那一对的暖端 + 危险那一档**。
+                            =官方 `.o-tc-re`，逐字。第一稿目测的 #ff2e63 已经八九不离十，
+                            真值比它再偏粉一点点。两件事合流是有意的，分法见上面那条注释
+                            （形状分，不是色相分）。 */
+  --red-deep: #cc2f5f;
+  --red-soft: rgba(255, 54, 109, 0.12);
+  --amber: #ffbf00;      /* 金：提醒 / 待办 —— 满屏冷色里唯一的暖信号，别拿去当装饰。
+                            =官方 `.o-tc-ye`，逐字。第一稿拍的 #f5a524（琥珀，偏橙）
+                            其实方向对了、只是脏；真值是一支很干净的**纯金**。
+                            本鱼先前担心「原作的黄是柠檬色，压白底太弱」—— 是看截图看错了，
+                            官方的黄是这支金，量下来对白底 1.65:1，当底完全立得住。 */
+  --amber-deep: #876b14; /* 对白底 5.07:1 */
+  --jade: #00ffba;       /* 薄荷：达成 / 收容 / 通行。=官方正文链接那一支 `a{color:#00ffba}`，
+                            是官方色档里的第四支。第一稿的 #0fbf9a 偏墨绿，这支亮得多。 */
+  --jade-deep: #087d69;  /* 对白底 5.06:1 */
 
   /* —— 本色当底时，压在底上的字 ——
      上面那条规矩说的是「本色当字」；这里是它的**镜面那一半**，同样是量出来的：
      本色当**底**、白字压上去，在冷白全息底下几乎全线塌掉
-     （量过：--amber 上白字 2.04:1、--steel 上白字 2.14:1、--red 上白字 3.61:1、
-      青→紫渐变两头 2.14 / 3.14）。
+     （量过：--jade 上白字 1.31:1、--amber 1.65:1、--steel 3.33:1、--red 3.50:1 ——
+      官方站点恰恰是配白字的（问答条的 dt 就是青底白字）；
+      本仓不跟这一条，四支一律走墨。这是**故意分道**，不是漏掉）。
+      ⚠️ 这段话里**不许写成像一条真 CSS 规则的样子**（例如把选择器加大括号、
+      里头再带 background 与 color 两样）—— mech §41 那把扫「自带彩底 + 白字」
+      的尺子是拿大括号切块的，会把注释读成规则，然后报一处没登记的白字。
+      本鱼在这里栽过一次，别再栽。
      旧版之所以配白字，是因为底本来是暗的 —— 换成浅底后这个搭配就作废了。
 
      所以这一版：**本色一律走亮的那一头，压在上面的字走墨。**
@@ -94,10 +135,11 @@
          这个数是量出来的，不是拍的：掺到 42% 时深色相只给到 3.9:1，
          掺到 62% 连纯黑当底都有 5.9:1。要更浓的本色就得回到上面那两支固定档。
      白字全站只剩一处：`.opGlyph`（84px 方块里 30px/800 的姓字）——
-     那是**大字**，线是 3:1，白字在它那两头 3.61 / 5.03 都过。 */
+     这一稿把那块的底换成了**身份那一对**（steel-deep → red-deep，即青→绯），
+     白字两头 5.04 / 5.07，连正文的 4.5 线都过（不只是大字的 3:1）。 */
   --on-accent: #0e1729;                        /* 亮底上的字色＝墨，与 --ink 同值但各管一段 */
-  --red-lift: color-mix(in srgb, var(--red) 88%, #fff);      /* 墨 5.89:1 */
-  --violet-lift: color-mix(in srgb, var(--violet) 80%, #fff); /* 墨 5.00:1 */
+  --red-lift: color-mix(in srgb, var(--red) 88%, #fff);      /* = #ff4e7f，墨 5.67:1 */
+  --violet-lift: color-mix(in srgb, var(--violet) 80%, #fff); /* = #977dff，墨 5.70:1（旧注写的 5.00 是量错了） */
 
   /* 私密（翻页后的私密档案那一页）：玫瑰一系 —— 比 --red 沉、比 --violet 暖。
      只用在那一页：底光、抬头、分隔线、读数条。冷白全息底上翻过去，
@@ -107,9 +149,9 @@
   --rose-soft: rgba(217, 69, 122, 0.10);
 
   /* —— 辉光 → 柔影（浅底的「发光」是彩色投影，不是暗底上的霓虹） —— */
-  --glow-red: 0 10px 28px rgba(255, 46, 99, 0.28);
-  --glow-amber: 0 10px 28px rgba(245, 165, 36, 0.26);
-  --glow-steel: 0 10px 26px rgba(0, 194, 224, 0.30);
+  --glow-red: 0 10px 28px rgba(255, 54, 109, 0.28);
+  --glow-amber: 0 10px 28px rgba(255, 191, 0, 0.26);
+  --glow-steel: 0 10px 26px rgba(0, 142, 255, 0.30);
   --glow-violet: 0 10px 28px rgba(125, 92, 255, 0.26);
 
   /* 通用投影 / 错位重影 —— 新代码优先用这几把，别再手写 rgba(0,0,0,…)。
@@ -117,20 +159,30 @@
   --shadow-1: 0 2px 8px rgba(14, 23, 41, 0.06);
   --shadow-2: 0 10px 28px rgba(14, 23, 41, 0.10);
   --shadow-3: 0 18px 48px rgba(14, 23, 41, 0.14);
-  /* 「次元错位」的签名 —— 这一版它换了名字也换了身份：青与紫各偏两像素叠在字上，
+  /* 「次元错位」的签名 —— 这一版它换了名字也换了身份：青与绯各偏两像素叠在字上，
      读起来就是**全息投影的色散**（两条光没对齐那一层毛边）。
-     反过来正好是这套世界观的两个人：反現実那一侧的青、次元那一侧的紫。 */
-  --duo-shadow: -2px 0 0 rgba(0, 194, 224, 0.34), 2px 0 0 rgba(125, 92, 255, 0.34);
+     青是主调那一支，绯是身份那一对的暖端（也是原作标题那枚心的色）。 */
+  --duo-shadow: -2px 0 0 rgba(0, 142, 255, 0.34), 2px 0 0 rgba(255, 54, 109, 0.30);
+
+  /* —— 实心位移投影（官方那套的签名）——
+     官方按钮与卡片一律写 `box-shadow: 0 5px 0 #008eff` / `0 7px 0 #008eff`：
+     **零模糊、零扩散**的一条实心色块垫在下沿，像贴纸翘起来一条边。
+     与上面那一族柔影是两种话：柔影说「浮起来」，这一族说「贴上去、压住」。
+     这一稿把它捡回来，圆角收窄（6/3）之后才搭得住 —— 圆角一大，实心边就散。
+     只给**主按钮与角标**用；大面积卡片仍走柔影，否则整屏会吵。 */
+  --offset-sm: 0 3px 0 var(--steel);
+  --offset: 0 5px 0 var(--steel);
+  --offset-lg: 0 7px 0 var(--steel);
 
   /* —— 全息 HUD 那几件 ——
      网格底纹、细线框与角括号、玻璃面、玻璃上沿的高光、扫描线。
      都走 --steel 那一族（系统的颜色），透明度一律压得很低：
      HUD 的力气在「细」，一条线喊出来就不是 HUD 了。 */
-  --holo-grid: rgba(0, 194, 224, 0.055);
-  --holo-line: rgba(0, 194, 224, 0.42);
+  --holo-grid: rgba(0, 142, 255, 0.06);
+  --holo-line: rgba(0, 142, 255, 0.42);
   --holo-glass: color-mix(in srgb, var(--bg-1) 88%, transparent);
   --holo-edge: rgba(255, 255, 255, 0.9);
-  --holo-scan: rgba(0, 194, 224, 0.09);
+  --holo-scan: rgba(0, 142, 255, 0.09);
 
   /* —— 指针 ——
      两枚 SVG 就摆在同目录（`cursor-arrow.svg` / `cursor-point.svg`）：
@@ -169,8 +221,8 @@
      块面要**挺**一点，但又不能方得像旧工业期 —— 10px 是「精密」那一档。 */
   --rail-w: 236px;
   --topbar-h: 56px;
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 6px;
+  --radius-sm: 3px;
   --radius-pill: 999px;
 }
 
@@ -185,7 +237,7 @@ body {
      与上一版正好对调 —— 那版是暖粉落在右上，这一版把暖的那一支整个撤了
      （暖只留 --amber 一处，当提醒用）。 */
   background:
-    radial-gradient(1100px 640px at 82% -12%, rgba(0, 194, 224, 0.13), transparent 62%),
+    radial-gradient(1100px 640px at 82% -12%, rgba(0, 142, 255, 0.13), transparent 62%),
     radial-gradient(900px 620px at -6% 106%, rgba(125, 92, 255, 0.10), transparent 58%),
     var(--bg-0);
   color: var(--ink);
@@ -262,8 +314,10 @@ select { font-family: inherit; cursor: var(--cursor-point); }
 .duo { text-shadow: var(--duo-shadow); }
 
 /* 标题：仪表标签（上一版是歪着的圆角小贴纸，再上一版是斜切块）。
-   这一版把那一歪**扶正**了 —— 全息 HUD 的记号是「精密」，歪一点就散了。
-   记号改由左沿一道 2px 的主调竖条担：与侧栏激活态、`.slash` 是同一手。 */
+   **斜切在这一稿捡回来了** —— 中间那一版把它当「旧工业期」扶正，
+   可原作标题那一手本来就是斜的。切的是右下那一角（45° 倒角），
+   不切满一条斜边：倒角那三边描边照旧画得出来，整块不至于「只剩三条线」。
+   左沿那道 2px 主调竖条留着 —— 与侧栏激活态、`.slash` 是同一手。 */
 .block-tag {
   display: inline-block;
   font-family: var(--font-mono);
@@ -276,8 +330,9 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   border: 1px solid var(--holo-line);
   border-left-width: 2px;
   border-left-color: var(--steel);
-  padding: 3px 10px;
-  border-radius: 3px;
+  padding: 3px 12px 3px 10px;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%);
 }
 
 /* ============ 通用面板 ============ */
@@ -346,7 +401,8 @@ select { font-family: inherit; cursor: var(--cursor-point); }
 .brc--violet::before, .brc--violet::after { border-color: var(--violet); }
 
 /* ============ 文本条（导航 / 徽标等） ============
-   名字里的「斜切」是旧账：当初它是平行四边形的一刀，这一版不再切了。
+   名字里的「斜切」是旧账，如今**又对上了**：它当初就是平行四边形的一刀，
+   中间那一版把它扶正过（那时嫌它像旧工业期），这一稿照官方标题又切了回来。
    留着这个名字是因为各页都按它写，改名要动三十个文件 —— 不值当。 */
 .slant {
   display: inline-flex;
@@ -377,14 +433,23 @@ select { font-family: inherit; cursor: var(--cursor-point); }
 .btn:active { transform: translateY(0) scale(0.97); }
 
 .btn--primary {
-  /* 主按钮就是这一版的名字：青那一头是「反現実」，紫那一头是「次元」。
-     紫那头走提亮档 —— 原色上墨字只有 4.13:1（见 --on-accent 那段）。 */
-  background: linear-gradient(135deg, var(--steel), var(--violet-lift));
+  /* 主按钮就是这一稿的名字：青那一头是「反現実 / 天空」，绯那一头是标题那枚心。
+     绯那头走提亮档 —— 原色上墨字只有 5.11:1，提亮档是 5.67:1（见 --on-accent 那段）。
+     投影走官方那一手 `box-shadow: 0 Npx 0 <色>` —— 一条**实心蔚蓝**垫在下沿，
+     零模糊，和官方 `.p-shop-gouka{box-shadow: 0 5px 0 #008eff}` 是同一句话。
+     悬停再抬高一档、垫片跟着长（那一下读起来就是贴纸被掀起来一点）；
+     按下去反过来 —— 垫片缩回、按钮落地。 */
+  background: linear-gradient(135deg, var(--steel), var(--red-lift));
   border-color: transparent;
   color: var(--on-accent);
-  box-shadow: 0 8px 22px rgba(0, 194, 224, 0.30);
+  box-shadow: var(--offset);
 }
-.btn--primary:hover { box-shadow: 0 12px 30px rgba(125, 92, 255, 0.34); filter: brightness(1.05); }
+.btn--primary:hover {
+  box-shadow: 0 8px 0 var(--red);
+  filter: brightness(1.05);
+  transform: translateY(-3px);
+}
+.btn--primary:active { box-shadow: var(--offset-sm); transform: translateY(2px) scale(0.99); }
 
 .btn--amber {
   /* 琥珀上是全站最差的一处（白字 2.05:1）—— 这一支从此只走墨字，
@@ -392,7 +457,7 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   background: linear-gradient(135deg, var(--amber), color-mix(in srgb, var(--amber) 78%, #fff));
   border-color: transparent;
   color: var(--on-accent);
-  box-shadow: 0 8px 22px rgba(245, 165, 36, 0.30);
+  box-shadow: 0 8px 22px rgba(255, 191, 0, 0.30);
 }
 .btn--amber:hover { box-shadow: var(--glow-amber); filter: brightness(1.05); }
 
@@ -434,10 +499,10 @@ select { font-family: inherit; cursor: var(--cursor-point); }
   width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
-.chip--on { color: var(--jade-deep); border-color: rgba(22, 192, 138, 0.45); background: rgba(22, 192, 138, 0.10); }
+.chip--on { color: var(--jade-deep); border-color: rgba(0, 255, 186, 0.45); background: rgba(0, 255, 186, 0.10); }
 .chip--off { color: var(--ink-mute); }
-.chip--warn { color: var(--amber-deep); border-color: rgba(245, 165, 36, 0.5); background: rgba(245, 165, 36, 0.12); }
-.chip--danger { color: var(--red-deep); border-color: rgba(255, 46, 99, 0.45); background: var(--red-soft); animation: pulseGlow 1.6s infinite; }
+.chip--warn { color: var(--amber-deep); border-color: rgba(255, 191, 0, 0.5); background: rgba(255, 191, 0, 0.12); }
+.chip--danger { color: var(--red-deep); border-color: rgba(255, 54, 109, 0.45); background: var(--red-soft); animation: pulseGlow 1.6s infinite; }
 
 /* R值正常/异常着色（读数都是小字 → 一律走 -deep 档） */
 .sev-ok { color: var(--steel-deep); }
@@ -485,13 +550,13 @@ select { font-family: inherit; cursor: var(--cursor-point); }
 /* 透明斜纹（强调块底色）。`diag-steel` 是这一版新加的 —— 上一版只有粉与琥珀两支，
    而这两个色现在都归了「警戒」那一侧，身份块要用的话得有一支青的。 */
 .diag-red {
-  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 46, 99, 0.07) 14px 28px);
+  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 54, 109, 0.07) 14px 28px);
 }
 .diag-amber {
-  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(245, 165, 36, 0.08) 14px 28px);
+  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 191, 0, 0.08) 14px 28px);
 }
 .diag-steel {
-  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(0, 194, 224, 0.08) 14px 28px);
+  background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(0, 142, 255, 0.08) 14px 28px);
 }
 
 /* ============ 表单 ============ */
@@ -619,8 +684,8 @@ input[type='range']::-moz-range-thumb {
 /* 这一支只伺候「危险」那一档（.chip--danger / .pill--danger / .sev-hi .pulse /
    .toast--danger），所以它跟着 --red 走，不跟主调。 */
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 46, 99, 0); }
-  50% { box-shadow: 0 0 0 6px rgba(255, 46, 99, 0.18); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 54, 109, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 54, 109, 0.18); }
 }
 @keyframes blink {
   0%, 49% { opacity: 1; }
@@ -723,11 +788,12 @@ input[type='range']::-moz-range-thumb {
 .vhead__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* ---- 页头升到「进门三段」那一套话（2026-09-16）----
-   菱形夹标题 · 细线夹 kicker · 细线收底 —— 与开屏 / 标题页 / 顶栏同一枚记号。
+   **斜杠**夹标题 · 细线夹 kicker · 细线收底 —— 与开屏 / 标题页 / 顶栏同一族的锐角记号。
+   （标题两厢那一对从菱形改成了斜杠，是照官方标题两头那两道斜笔；见下面 h1 那条注。）
    ⚠️ 装饰**一律挂 `.vhead` 后代**，不写进 `.vhead__kicker` 本体：
    那个类在 Archive 的立绘卡里还有三处**脱离页头**的小角标用法（`PORTRAIT / 全身`），
    改本体就会让那三处也长出两条线来。
-   （改色那一版只动了下面 h1 两枚菱形的渐变与那一点辉光，位置与尺寸一个字没动。） */
+   （2026-09-16 这一稿只动了下面 h1 那两道斜杠的形状、渐变与辉光，位置与尺寸一个字没动。） */
 .vhead .vhead__kicker {
   gap: 12px;
   font-size: 10px;
@@ -742,22 +808,46 @@ input[type='range']::-moz-range-thumb {
   background: var(--line-3);
   border-radius: 0;
 }
-.vhead h1 { position: relative; margin: 10px 0 0; padding: 0 26px; letter-spacing: 0.02em; }
+.vhead h1 { position: relative; margin: 10px 0 0; padding: 0 20px; letter-spacing: 0.02em; }
+/* 标题两厢那一对记号：上一稿是 9px 的菱形，这一稿改成**斜杠**（照原作标题两头的
+   那两道斜笔）。菱形是「旋转 45° 的方」，斜杠是「切了一刀的竖」——
+   同一族的锐角，但斜杠读起来更快、更像标题的括号。
+   （侧栏角标 / 开屏 / 标题页那三处仍是菱形：那几处要的是「一枚记号」，
+     不是「一对括号」。） */
 .vhead h1::before,
 .vhead h1::after {
   content: "";
   position: absolute;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  margin-top: -4px;
-  background: linear-gradient(140deg, var(--steel), var(--violet-lift));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--steel) 45%, transparent);
-  opacity: 0.85;
+  width: 5px;
+  height: 22px;
+  margin-top: -11px;
+  background: linear-gradient(180deg, var(--steel), var(--red));
+  transform: skewX(-18deg);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--steel) 42%, transparent);
+  opacity: 0.9;
   pointer-events: none;
 }
 .vhead h1::before { left: 0; }
 .vhead h1::after { right: 0; }
+/* 页头左上角那一组斜线 —— 照原作标题左上角那一组平行斜杠。
+   挂 `.vhead::before`（`.vhead` 本体没别的伪元素在用）。
+   ⚠️ 不挂 `.vhead__kicker` 本体：那个类在 Archive 立绘卡里还有三处脱离页头的用法。 */
+.vhead { position: relative; }
+.vhead::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: -10px;
+  width: 52px;
+  height: 40px;
+  pointer-events: none;
+  background: repeating-linear-gradient(115deg,
+    color-mix(in srgb, var(--steel) 55%, transparent) 0 2px,
+    transparent 2px 9px);
+  mask-image: linear-gradient(160deg, #000 8%, transparent 76%);
+  opacity: 0.5;
+}
 .vhead .vhead__sub { margin-top: 9px; max-width: 640px; line-height: 1.75; }
 
 @media (max-width: 720px) {
