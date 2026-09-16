@@ -3,7 +3,7 @@
    — 供「羁绊全员 / 性别化称谓 / 头像与立绘 / 台词识别 /
      关键词跳转」共同消费的稳定表；不替代 chars / sidecast / roster，
      它们仍是唯一内容源，这里只做聚合与查表。
-   — 20 名在册登场者（SIDECAST 子集，随 roster）的性别按各卷卷首「登场人物」彩页 /
+   — 21 名在册登场者（SIDECAST 子集，随 roster）的性别按各卷卷首「登场人物」彩页 /
      正文逐字措辞考据（她／他／少女／千金／姐姐／少年…）；确实无法判定的标 '?'，
      UI 依 '?' 走无性别文案。拉法仅在 SIDECAST 世界书保留，不入本表。
    — 羁绊「起步值」为终端近似（非正文原文）：初见≈20、随性格小幅浮动；
@@ -56,6 +56,7 @@ const GENDER: Record<string, Gender> = {
   reiya: 'f',             // 名门千金
   emei: 'f',              // 蕾雅的姐姐
   'isis-halid': 'f',
+  'majina-abram': 'f',    // 原文「娇小的黑发少女——玛吉娜・阿布拉姆」「玛吉娜学姐」（v1 第4话）
   // Corporations
   katherine: 'f',
   'alex-cave': 'm',       // 「他的片羽」
@@ -71,7 +72,7 @@ const GENDER: Record<string, Gender> = {
   'yuina-yoshito': 'm',   // 野性派少年
 }
 
-/* 20 名在册登场者的羁绊「起步值」—— 皆按初见（陌生≈20、因性格小有浮动）标定。
+/* 21 名在册登场者的羁绊「起步值」—— 皆按初见（陌生≈20、因性格小有浮动）标定。
    此值只在主角尚未与之深交时作为基线；升高一律由「主角行为」驱动：
    在线推演中的抉择/导演好感回执、短信往来等 → 写入 world.offset 累积，
    绝不因单纯读过剧情段就自动抬升。（core 主役另由已读段的原著快照随剧情推进。） */
@@ -90,6 +91,7 @@ const SIDE_BOND: Record<string, number> = {
   reiya: 26,             // 名门千金 · 重逢即雀跃的旧识
   emei: 24,              // 姐姐式照拂 · 评议会副议长
   'isis-halid': 16,      // 盯上独家新闻、寸步不让的记者
+  'majina-abram': 22,    // 初见即毒舌、坏笑看人的学姐；共过脏器公寓那一场之后是熟络的口吻
   'xiaochai-lin': 22,    // 喵呜的天才妹妹 · 初见就机灵
   'touyi-caojiro': 24,   // 自来熟、爱开玩笑的共战友人
   'huda-nayume': 14,     // 对外毫不留情、纪律严明的领队
@@ -166,10 +168,10 @@ function coreNames(id: string): string[] {
   }
 }
 
-/** 全员（24 人，按档案页分组顺序；不含操作员） */
+/** 全员（25 人，按档案页分组顺序；不含操作员） */
 export const CAST: CastPerson[] = buildCast()
 
-/** 24 位档案角色 id（供羁绊/图鉴白名单遍历） */
+/** 25 位档案角色 id（供羁绊/图鉴白名单遍历） */
 export const PERSON_IDS: string[] = CAST.map((p) => p.id)
 
 /**
@@ -189,14 +191,14 @@ export const OPERATOR_PERSON: CastPerson = {
   hue: '#58c6ff', sigil: '心', avatarId: OPERATOR_ID,
 }
 
-/** 查角色（含操作员）—— **只认在册的那 24 位**；台词表另见 speakerOf */
+/** 查角色（含操作员）—— **只认在册的那 25 位**；台词表另见 speakerOf */
 export function personOf(id: string): CastPerson | undefined {
   if (id === OPERATOR_ID) return OPERATOR_PERSON
   return CAST.find((p) => p.id === id)
 }
 
 /* 「开口说话但不在册」的人 —— 目前只有序章的拉法（SIDECAST 里唯一不进 ROSTER_GROUPS 的）。
-   为什么不并进 CAST：CAST 是 24 位在册登场者，图鉴/羁绊/人物关系三处都按它遍历
+   为什么不并进 CAST：CAST 是 25 位在册登场者，图鉴/羁绊/人物关系三处都按它遍历
    （PERSON_IDS），塞进去他就凭空多一张档案卡、一条羁绊线 —— 那是另一件事，
    不该由「序章要能切出气泡」顺手带出来。但他在序章整段里都在开口，台词行要认得
    出他、气泡头要有名字与主题色，所以这里补一份**只供台词识别与气泡显示**的条目。

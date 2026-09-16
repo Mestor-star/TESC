@@ -602,6 +602,12 @@ export const NAMED_BOSSES: Record<string, NamedBoss> = {
           + '唤上来的每一位，技能与能力都还是本人那一份。',
         // 名单取自 roster 的「卡乌斯学院」一组：与脏器公寓那一役
         // 「需与卡乌斯学院放逐部队协同」是同一批人（codex 的 counter 栏）。
+        // ⚠️ 这一栏**只放得下五人** —— `TUNING.enemyCap` 是 6，本体自己占一格，
+        // 多写一位，最后那位永远喊不上来（`summonFoe` 到顶即收手），
+        // 而 mech §14 那条「名单依次出场、一人一次」是**逐位相等**的判据，
+        // 会当场红。玛吉娜（v4-7 里那场钉雨的幽灵形态）要进这一栏，
+        // 得先动 enemyCap 或从这五人里挪走一位 —— 两样都不是顺手能定的，
+        // 所以 2026-09-16 补录她时**没有**动这里。
         summon: true,
         summonPack: ['danae-whitmore', 'nana-kamiru', 'reiya', 'emei', 'isis-halid'],
         line: '「一个人打不完的仗 —— 那就都回来吧。」',

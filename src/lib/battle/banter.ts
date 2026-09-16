@@ -105,6 +105,9 @@ export const LINE_POOL: Record<string, string[]> = {
   'isis-scoop': ['「这条新闻，我收下了☆」', '「拍到了☆」', '「真相可不会等你。」'],
   'isis-live': ['「实况解说——开始！」', '「请看这里☆」', '「这是直播哦☆」'],
   'isis-end': ['「这是十分钟前的记录世界♪」', '「头版，我拿定了。」', '「定格。」'],
+  // 玛吉娜：招牌那一手是「禁止命令」——原文的规矩就一条「句子越长钉子越长」，
+  // 这几句是照那条规矩写的战斗短句，不是引文。
+  'majina-ban': ['「禁止。你就这样钉着吧。」', '「禁止出声。」', '「钉住你了。别动。」'],
   // 达娜厄：原句点着艾梅的名字（那一场才成立）
   'danae-mode': ['「认真模式SSS。」', '「我，要动真格了。」', '「变身——三分钟，够了。」'],
   // 蕾雅 / 菲德拉：原句点着心叶（那一场才成立）
@@ -147,7 +150,7 @@ export const PINNED_LINES: Record<string, string> = {
  * 招式 id 会随时期变（操作员的手枪与戒指各是一份表），角色却是同一个人 ——
  * 所以「这个人平时怎么说话」挂在这里，同一手每次挑一句，不至于句句复读。
  *
- * 名册二十四位一人一组，外加操作员。每组三到四句，条条都是**任何一场都说得出口**的
+ * 名册二十五位一人一组，外加操作员。每组三到四句，条条都是**任何一场都说得出口**的
  * 战斗短句（见头注第 3 条）—— 谁的名字都不点，谁的场都不指。
  */
 export const CHAR_LINES: Record<string, string[]> = {
@@ -234,6 +237,12 @@ export const CHAR_LINES: Record<string, string[]> = {
     '「这是独家新闻☆」',
     '「绝对公平——取材开始！」',
     '「拍下来了哦☆」',
+  ],
+  'majina-abram': [
+    '「禁止。你就这样钉着吧。」',
+    '「话说得越长，钉子扎得越深哦。」',
+    '「拔不出来的。别挣扎了。」',
+    '「哼。好恶心。」',
   ],
   katherine: [
     '「振翅高飞！」',
@@ -370,6 +379,12 @@ export const FOLLOW_LINES: FollowLine[] = [
   { by: 'reiya', after: 'isis-halid', when: 'any', line: '「好的！——热沃当的少女！」' },
   { by: 'isis-halid', after: 'emei', when: 'any', line: '「副议长，这条我要写进头版。」' },
   { by: 'emei', after: 'isis-halid', when: 'any', line: '「随你写。」' },
+  /* 玛吉娜 ↔ 蕾雅 / 艾梅：同一场仗里她负责把人钉住、别人负责收 ——
+     v1 第 4 话「脏器公寓」那一场，她就是和蕾雅一起在场的。 */
+  { by: 'majina-abram', after: 'reiya', when: 'any', line: '「先钉住。你再锯。」' },
+  { by: 'reiya', after: 'majina-abram', when: 'any', line: '「钉好了？那我上了！」' },
+  { by: 'majina-abram', after: 'emei', when: 'any', line: '「副议长。钉子已经埋好了。」' },
+  { by: 'emei', after: 'majina-abram', when: 'any', line: '「做得好。剩下的交给我们。」' },
   /* Corporations：警备队长与她的部下 / 互为仇敌的那两位 */
   { by: 'alex-cave', after: 'katherine', when: 'any', line: '「来吧，大姐。让我打个稀巴烂。」' },
   { by: 'katherine', after: 'alex-cave', when: 'any', line: '「跟上，亚历克斯。」' },

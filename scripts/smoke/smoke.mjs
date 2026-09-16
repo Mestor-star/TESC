@@ -558,9 +558,9 @@ try {
   ok('A5 v1-3 完成 → 已解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
   // A5b：门禁既开，角色档案随之可调阅
   await goto('角色档案')
-  await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'A5b archive after unlock')
+  await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'A5b archive after unlock')
   const a5b = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色档案'));return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length}})()`)
-  ok('A5b 解锁后角色档案开放（导航脱锁 · 24 卡）', a5b.navLock === false && a5b.cards === 24, JSON.stringify(a5b))
+  ok('A5b 解锁后角色档案开放（导航脱锁 · 25 卡）', a5b.navLock === false && a5b.cards === 25, JSON.stringify(a5b))
   // 低语者日志
   await goto('低语者日志')
   await poll(`document.body.innerText.includes('记录流')`, 20000, 'A saga')
@@ -798,7 +798,7 @@ try {
   ok('E1 播种幂等：多轮重载后 canon 仍为 7 库', true)
   const canonChar = await loreBook('book-canon-char')
   ok('E2 canon 主库齐备（角色/图鉴/世界/事件）', !!canonChar && (await loreBook('book-canon-codex')) !== null && (await loreBook('book-canon-lore')) !== null && (await loreBook('book-canon-events')) !== null)
-  ok('E2b 角色档案世界书已并入全员 25 词条', !!canonChar && canonChar.count === 25, 'count=' + (canonChar && canonChar.count))
+  ok('E2b 角色档案世界书已并入全员 26 词条', !!canonChar && canonChar.count === 26, 'count=' + (canonChar && canonChar.count))
   ok('E2c 旧「登场者登记」世界书已迁移移除', (await loreBook('book-canon-sidecast')) === null, '')
   // E2d 文风库：四条常驻词条（底色 / 句法 / 术语与称呼 / 私密场面）
   const styBook = await loreBook('book-canon-style')
@@ -1139,15 +1139,15 @@ try {
   await boot()
 
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
-  console.log('\n[Phase G] P2 Archive：24卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
+  console.log('\n[Phase G] P2 Archive：25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
   // 档案页已在门禁之后（Phase E 清过 localStorage，此处重新置位），本相聚焦档案本体
   await ev(`(()=>{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');s.unlocked=true;localStorage.setItem(k,JSON.stringify(s));return true})()`)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'G dash after unlock')
   await goto('角色档案')
-  await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'G archive 24 cards')
-  ok('G1 全员 24 张档案卡（解锁后开放）', true)
+  await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'G archive 25 cards')
+  ok('G1 全员 25 张档案卡（解锁后开放）', true)
   // P3b：未遇见 → 锁定保密。封存卡不得泄露姓名 / 武装 / 五轴 / 羁绊
   const lockProbe = await ev(`(()=>{const all=[...document.querySelectorAll('[data-archive-card]')];const lock=all.filter(c=>c.hasAttribute('data-locked-id'));return {all:all.length,lock:lock.length,named:lock.filter(c=>!c.innerText.includes('？？？')).length,axis:lock.filter(c=>c.querySelector('[data-axis-num],[data-axis-normal],[data-axis-limit]')).length,bond:lock.filter(c=>c.innerText.includes('当前羁绊')).length}})()`)
   ok('G1b 未遇见者一律封存（且封存卡不显姓名/五轴/羁绊）',
@@ -1155,12 +1155,12 @@ try {
     JSON.stringify(lockProbe))
   // 后续断言需看全卡内容：把名录全体登记为「已遇见」后重载（封存门禁另由 G1b 覆盖）
   const seedMet = await ev(`(()=>{try{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');const ids=[...document.querySelectorAll('[data-archive-card]')].map(c=>c.getAttribute('data-archive-card'));s.world=Object.assign({},s.world||{},{met:Object.fromEntries(ids.map(i=>[i,true]))});localStorage.setItem(k,JSON.stringify(s));return ids.length}catch(e){return String(e)}})()`)
-  ok('G1c 播种「已遇见」名录（供全卡断言）', seedMet === 24, 'seed=' + seedMet)
+  ok('G1c 播种「已遇见」名录（供全卡断言）', seedMet === 25, 'seed=' + seedMet)
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('角色档案')
-  await poll(`document.querySelectorAll('[data-archive-card]:not([data-locked-id])').length===24`, 20000, 'G archive unlocked')
-  ok('G1d 全员已遇见后封存解除（24/24 可读）', true)
+  await poll(`document.querySelectorAll('[data-archive-card]:not([data-locked-id])').length===25`, 20000, 'G archive unlocked')
+  ok('G1d 全员已遇见后封存解除（25/25 可读）', true)
   // P2 起读数改为「常态/极限」双值，故不再数 ∞ 字符数，改按 data 属性判定语义。
   // 判据以 chars.ts 的逐条原文锚为准：常态判 '∞' 者如今**一处也没有** —— 顶格的那一条
   // （恋兔光的破坏力）取量程顶端 200，只把**极限**判不可测（「它，就是混沌与暴力本身」
@@ -1182,7 +1182,7 @@ try {
   const badLimit = await ev(`(()=>{const bad=[];document.querySelectorAll('[data-archive-card]').forEach(c=>{c.querySelectorAll('[data-axis-num]').forEach(s=>{const n=s.getAttribute('data-axis-normal'),l=s.getAttribute('data-axis-limit');if(!l)return;if(n==='∞'){if(l!=='∞')bad.push(c.getAttribute('data-archive-card')+':inf/'+l);return}if(l!=='∞'&&Number(l)<Number(n))bad.push(c.getAttribute('data-archive-card')+':'+n+'/'+l)})});return bad})()`)
   ok('G2c 全员极限 ≥ 常态（P2 双值不变式）', Array.isArray(badLimit) && badLimit.length === 0, JSON.stringify(badLimit))
   const bondChips = await ev(`(()=>[...document.querySelectorAll('[data-archive-card]')].filter(c=>c.innerText.includes('当前羁绊')).length)()`)
-  ok('G3 24 张卡均带「当前羁绊」chip', bondChips === 24, 'n=' + bondChips)
+  ok('G3 25 张卡均带「当前羁绊」chip', bondChips === 25, 'n=' + bondChips)
   // 名称/数值都有实义：chip 文本形如「当前羁绊 <称谓> · <0-100>」，且数值在界内
   const lunaChip = await ev(`(()=>{const c=document.querySelector('[data-archive-card="luna"]');const m=c?c.innerText.match(/当前羁绊\\s*([^·\\n]+?)\\s*·\\s*(\\d+)/):null;return m?{label:m[1].trim(),val:Number(m[2])}:null})()`)
   ok('G4 档案羁绊 chip 有实义称谓与界内数值', !!lunaChip && lunaChip.val >= 0 && lunaChip.val <= 100 && lunaChip.label.length > 0, JSON.stringify(lunaChip))
@@ -1237,7 +1237,7 @@ try {
   const hp = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');const t=p?p.innerText:'';return {hasA:t.includes('命名变量'),hasB:t.includes('终端派生')}})()`)
   ok('H1 变量面板开启（命名变量 + 终端派生两分区）', hp.hasA === true && hp.hasB === true, JSON.stringify(hp))
   const sysProbe = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');return {op:!!p.querySelector('[data-var-sys="operatorName"]'),bond:p.querySelectorAll('[data-var-sys^="bond:"]').length,met:!!p.querySelector('[data-var-sys="met"]'),cur:!!p.querySelector('[data-var-sys="cur"]')}})()`)
-  ok('H2 系统派生列示 operatorName/24×bond/met/cur', sysProbe.op === true && sysProbe.bond === 24 && sysProbe.met === true && sysProbe.cur === true, JSON.stringify(sysProbe))
+  ok('H2 系统派生列示 operatorName/25×bond/met/cur', sysProbe.op === true && sysProbe.bond === 25 && sysProbe.met === true && sysProbe.cur === true, JSON.stringify(sysProbe))
   await ev(`(()=>{const b=[...document.querySelectorAll('[data-vars-panel] button')].find(x=>x.textContent&&x.textContent.includes('新增变量'));if(!b)return false;b.click();return true})()`)
   await poll(`!!document.querySelector('[data-vars-panel] input[aria-label="新变量名"]')`, 8000, 'H add row')
   const fillAdd = await ev(`(()=>{const p=document.querySelector('[data-vars-panel]');const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;const k=p.querySelector('input[aria-label="新变量名"]');const v=p.querySelector('input[aria-label="变量值"]');if(!k||!v)return false;set.call(k,'smoke_var');k.dispatchEvent(new Event('input',{bubbles:true}));set.call(v,'七');v.dispatchEvent(new Event('input',{bubbles:true}));return true})()`)
@@ -2571,7 +2571,7 @@ try {
   const o1 = await ev(`(()=>{const b=document.querySelector('[data-archive-card]');
     const t=document.querySelector('[data-op-arc-toggle]');if(t)t.click();
     return {cards:document.querySelectorAll('[data-archive-card]').length,toggle:!!t,txt:b?b.innerText.slice(0,80):''}})()`)
-  ok('O1 主角专档入口存在，且未混进 24 张档案卡计数', o1.toggle === true && o1.cards === 24, JSON.stringify({ cards: o1.cards, toggle: o1.toggle }))
+  ok('O1 主角专档入口存在，且未混进 25 张档案卡计数', o1.toggle === true && o1.cards === 25, JSON.stringify({ cards: o1.cards, toggle: o1.toggle }))
   await poll(`!!document.querySelector('[data-op-arc-panel]')`, 8000, 'O panel open')
   const o2 = await ev(`(()=>{const p=document.querySelector('[data-op-arc-panel]');const t=p?p.innerText:'';
     return {kv:!!document.querySelector('[data-op-kv]'),card:p?p.getAttribute('data-op-card'):null,
@@ -2697,7 +2697,7 @@ try {
   await cdp.send('Page.reload', { ignoreCache: true })
   await boot()
   await goto('角色档案')
-  await poll(`document.querySelectorAll('[data-archive-card]').length===24`, 20000, 'P archive 24 cards')
+  await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'P archive 25 cards')
 
   /* 开一个人的卡 → 量正面那一节 → 翻过去 → 量背面。三个人走的是同一段，
      写成一处省得三份各走各的样。正面那一节量三样：门在不在（`ready`）、

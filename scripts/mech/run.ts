@@ -44,7 +44,7 @@
      16  背景音     —— 六段床各自成曲、且不跑调（半音表比对）
      17  首启       —— 自带预设要**真的启动**，输出预算够一轮真实回执
      18  台词行契约   —— 气泡版式是契约，换预设也不许破
-     18b 战斗语音     —— 二十四张嘴一个不缺 · 池子的键都是真技能 id ·
+     18b 战斗语音     —— 二十五张嘴一个不缺 · 池子的键都是真技能 id ·
                         短句且不点别人的名 · 联动表没有死条 · 认人不认边
      19  梅芙引导     —— 作战屏那一段导览的步序与终点
    · 推演与提示词
@@ -1517,7 +1517,7 @@ export function run(): MechReport {
        `assertDutySlots` 在 roster 里导入即跑，越界当场抛；这里再摊开念一遍读数，
        并**造一个越界的假人来证明它真的会抛** —— 不然「一个都没抛」也可能只是它没在跑。 */
     const slotBad = assertDutySlots()
-    ok('职能 · 二十四人战技格全落在「本职 ＋ 一手通用」里', slotBad.length === 0,
+    ok('职能 · 二十五人战技格全落在「本职 ＋ 一手通用」里', slotBad.length === 0,
       slotBad.length ? slotBad.join('；') : '没有越界的手')
 
     const tally = ids.filter((id) => !ROSTER[id]!.dutyExempt).map((id) => {
@@ -1539,7 +1539,7 @@ export function run(): MechReport {
       return arts.length > 0 && !arts.some((k) => d.arch.includes(k.arch ?? ''))
     })
     ok('职能 · 每人至少留一手本职（不许全挑通用手）', noOwn.length === 0,
-      noOwn.length ? noOwn.join('、') : '二十四人都留着本职')
+      noOwn.length ? noOwn.join('、') : '二十五人都留着本职')
 
     /* 通用手的名额只有一手 —— 这一条要是松了，「一手通用」就变回「想挑几手挑几手」 */
     ok('职能 · 通用手的名额只有一手（UNIVERSAL_MAX）', UNIVERSAL_MAX === 1,
@@ -3973,7 +3973,7 @@ export function run(): MechReport {
      台词只影响观感，所以最没有东西会因为它坏了而报错 —— 恰恰因此要钉。
      这里钉四件，每一件都是「抄错一个字就静默失效」的那一类：
 
-       ① 二十四张嘴一个不缺。少一位不是崩，是这个人在场上永远哑着，
+       ① 二十五张嘴一个不缺。少一位不是崩，是这个人在场上永远哑着，
           日志里只剩技能自带那一句在复读；
        ② LINE_POOL 的键都还是真技能 id。技能 id 换过一次（四格制那一期），
           键一旦对不上，整组台词就变成**死键** —— 不报错、不生效、也没人发现；
