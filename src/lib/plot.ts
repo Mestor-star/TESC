@@ -190,8 +190,11 @@ export interface PlotBattle {
   place?: string
   /** 在场参战者（角色 id；缺省 = 已遇见的成员） */
   squad?: string[]
-  /** true = 本段必然开打（收束正文之后立刻进入交战） */
-  force?: boolean
+  /* 这里原先还有一个 `force`（"true = 本段必然开打"）：**全仓零处消费** ——
+     提示词写着它、类型里躺着它，界面那边却永远只有「点进入战斗」一条路，
+     等于向模型承诺了一个不存在的语义。2026-09-16 随「battle 触发面收窄」
+     那一刀一并撤走。真要做「回执一到就开场」，那是另加一层，别拿这个名字
+     复活 —— 名字还在，语义却不是那个了。 */
 }
 
 /** 档案角色 id 白名单（角色档案全员 24 人，不含操作员） */
@@ -463,7 +466,6 @@ export function sanitizeDirective(v: unknown): PlotDirective {
     const name = typeof b.name === 'string' ? b.name.trim().slice(0, 40) : ''
     if (name) {
       const out2: PlotBattle = { name }
-      if (b.force === true) out2.force = true
       const nature = typeof b.nature === 'string' ? b.nature.trim().slice(0, 40) : ''
       if (nature) out2.nature = nature
       const place = typeof b.place === 'string' ? b.place.trim().slice(0, 40) : ''
@@ -1811,15 +1813,14 @@ ${free ? '' : `  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊
   "diverged": true,                           // 已与原著相异（否则省略）
 ${free ? '' : `  "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
   "digest": "第三人称收官记录两三句",
-`}  "battle": {                                 // 本回合触发交战（否则省略整个字段，勿写空对象）
+`}  "battle": {                                 // **只有这一回合的正文真的写到交手那一刻**才给：有人已经出手、或某只实体已经压到眼前，才是交战。只是对峙、威压、被威胁、听说某物要来、气氛紧张 —— 一律不算（那是叙述，不是战场）。不给就省略整个字段，勿写空对象
     "name": "敌方名称",                        // 也是这场作战的标题；用原文指称
     "nature": "异端 / 残渣 / 机械 / 低语 / 魔王",// 决定敌阵档案与演出，从这五类里选最贴的一个
     "stage": 1,                                // 危险度 1~10；照本段原文的规模给，别一律给高
     "place": "交战地点",
-    "squad": ["在场的参战者id"],                // 只列此刻确实在场的人；空 = 由已遇见者里挑
+    "squad": ["在场的参战者id"]                 // 只列此刻确实在场的人；空 = 由已遇见者里挑
                                                // **言万心叶本人就是 "${OPERATOR_ID}"** —— 这一场他在场就把他写进去
                                                // （他不在场就别写，别为了凑人把他领来）
-    "force": true                              // true = 本段必然开打
   }${intimIds.length ? `,
   "intim": [                                  // 私密档案推进（仅【私密往来】名单上的人；本回合确实推进了才给）
     { "char": "角色id", "slot": "mouth|breast|vagina|anus",

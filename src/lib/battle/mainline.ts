@@ -125,6 +125,31 @@ export function isMainlineEvent(evId: string): boolean {
   return !!e && (e.entities ?? []).some((x) => x && x !== NO_FOE)
 }
 
+/**
+ * 这一段在正史里**明写着没有对手** —— 于是模型在这儿报的交战是幻觉。
+ *
+ * 判据是上面那一条的反面，但**只在认得出来的时候才成立**：
+ *   · 这一段在时间线上、且原文一个实体都没列（`——` 或空）→ true，交战指令丢弃；
+ *   · 这一段根本不在时间线上 → false，**放行**。
+ * 后者是有意放开的：自由时间那一格（`free:`）与自创遭遇本来就没有大纲可对，
+ * FREE_FRAME 也明说自由时间里 battle 照常给（见 lib/freetime.ts）。拿它当闸门
+ * 会连「卷间那几仗」一起拦掉。
+ *
+ * 为什么要有这一道（主人 2026-09-16 拍的窄闸）：提示词那一层已经把触发面收窄了
+ * （见 plot.ts 的 battle 那一段），但模型偶尔还会冒一次。而一次误触发的代价不是
+ * 多一条横幅 —— 立了牌就**卡住推进**（Plot 的 advanceFromConcluded：
+ * 「尚有交战未了 —— 打赢它，这一段才继续」），主线当场走不动。
+ *
+ * ⚠️ 不把 NO_FIGHT（s1-4 那几段）并进来：那几段的 entities 栏**是写着东西的**
+ * （写的是「不是对手」这个结论），不归「明写着没有对手」这一条管。要收它，
+ * 是另开一档，别顺手并进来 —— 那会把「实体栏为空」这条判据弄浑。
+ */
+export function eventHasNoFoe(evId: string): boolean {
+  const e = TIMELINE.find((x) => x.id === evId)
+  if (!e) return false
+  return !(e.entities ?? []).some((x) => x && x !== NO_FOE)
+}
+
 /** 那几段「登了实体但不是一场仗」的事件与它们的理由（复核读它） */
 export const NON_FIGHT_EVENTS = NO_FIGHT
 

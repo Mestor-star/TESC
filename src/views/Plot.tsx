@@ -22,6 +22,7 @@ import {
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
 import { battleMissionOf, plotSquadOf } from '../lib/battle/from-directive'
+import { eventHasNoFoe } from '../lib/battle/mainline'
 import { periodProgress } from '../lib/battle/derive'
 import { TUNING } from '../lib/battle/tuning'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
@@ -657,7 +658,14 @@ export function Plot() {
         push('info', '变量已自动更新', fx.flags.length > 3 ? `${shown} 等 ${fx.flags.length} 项` : shown, false)
       }
       // 交战先于收束结算：本段打完，再由操作员点「进入下一事件」推进
-      if (d.battle?.name) {
+      /* 窄闸（主人 2026-09-16 拍）：这一段**正史里明写着没有对手**时，交战指令一律丢弃 ——
+         模型在那儿报交战是幻觉（提示词那一层已经收窄过一轮，见 plot.ts 的 battle 那一段），
+         而一次误触发的代价不是多一条横幅：立了牌就卡住推进（见 advanceFromConcluded 的
+         「尚有交战未了」），主线当场走不动。
+         自由时间与自创遭遇不在时间线上，判据放行 —— 那几仗照打。 */
+      if (d.battle?.name && eventHasNoFoe(evId)) {
+        push('warn', '交战不成立', `${d.battle.name} —— 这一段原文里没有对手，这一条交战指令已丢弃。`, false)
+      } else if (d.battle?.name) {
         /* 参战名单由模型点（`plotSquadOf` 只放行不保送），点空了才退回「已遇见者里挑」。
            上限读 TUNING.squadMax —— 与作战屏编队同一个数（从前这儿硬写 4）。 */
         const want = plotSquadOf(d.battle.squad ?? [], isMet)

@@ -126,7 +126,7 @@ import { TIMELINE } from '../../src/data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../../src/data/codex'
 import { AXIS_SCALE, COIN_SCALE, EFF_BAND, TUNING, enemyAxesAt } from '../../src/lib/battle/tuning'
 import { END_FOES } from '../../src/lib/battle/endfoes'
-import { EVENT_HEAD, NON_FIGHT_EVENTS, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
+import { EVENT_HEAD, NON_FIGHT_EVENTS, eventHasNoFoe, headFoeOf, isMainlineEvent, mainlineMissions } from '../../src/lib/battle/mainline'
 import { battleMissionOf, plotSquadOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { assertDutySlots, passiveText, ROSTER } from '../../src/lib/battle/roster'
@@ -3133,6 +3133,19 @@ export function run(): MechReport {
       && (!plotPlain || plotPlain.mainline === undefined),
       `v6-3 → mainline=${plotMain.mainline ?? '（无）'}`
       + `　${foeLess ?? '（找不到没实体的事件）'} → ${plotPlain ? (plotPlain.mainline ?? '（无）') : '（跳过）'}`)
+
+    /* ④a3 窄闸（主人 2026-09-16 拍）：模型报的交战指令，只在**这一段正史里明写着
+       没有对手**时丢弃。判据必须两头都对 ——
+         · 原文列着实体那几段（v6-3）放行：那儿本来就该打；
+         · 不在时间线上的（自由时间 free:v1、自创遭遇）也放行：FREE_FRAME 明说
+           自由时间里 battle 照常给，拿它当闸门会把卷间那几仗一起拦掉，
+           而那正是「一场误触发卡死主线」之外唯一还该留着的口子。 */
+    ok('现场触发 · 窄闸：原文没有对手的那几段丢交战，有对手的与不在时间线上的照放',
+      !!foeLess && eventHasNoFoe(foeLess) === true
+      && eventHasNoFoe('v6-3') === false
+      && eventHasNoFoe('free:v1') === false,
+      `${foeLess ?? '（找不到）'} → ${foeLess ? eventHasNoFoe(foeLess) : '?'}`
+      + `　v6-3 → ${eventHasNoFoe('v6-3')}　free:v1 → ${eventHasNoFoe('free:v1')}`)
 
     /* ④b 牌面是一段**窗口**，不是一张牌 —— 打赢即「已完成」（不等领取），
        领取只把这一条收走。旧写法把「打赢」与「领了没」绑在一起，
