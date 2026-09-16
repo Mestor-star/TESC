@@ -131,6 +131,12 @@ node scripts/smoke/smoke.mjs   # 全链路冒烟
   翻过来是色情状态栏（`IntimateHud`）。车道本体在 `src/components/DateLane.tsx`。
   开一场只看**对话**：短信回执或推演回执里 `dateReady` 认了**时间与地点**才算数，
   没有「约 TA」那一枚。跨视图意图走 `Terminal` 的 `dateRequest` / `requestDate()`。
+  ⚠️ **色情状态栏在主线那一整路一处都不摆**（主人 2026-09-14 从正文挪进右栏；
+  2026-09-16 再收一刀：**整路撤走**）。主线右栏（`Plot.tsx` 的 `<aside>`，只在
+  `lane === 'main'` 挂）里只剩事件卡。要看读数只有两条路：约会专线翻一面，
+  或档案页翻那一份账。**别在主线把它加回来** —— 冒烟 R11 钉的是反面
+  （`[data-intim-hud]` 数出 0 且正文里没有「色情状态栏」五个字），读数那两条
+  （色情度 / 贴身衣物）量在 V5c/V5d 那一面。
 - **约会 CG 的节拍门槛已落地（2026-09-15）。** `dateCgPalette` 由两道窄法变三道
   （档位 `kind` → 认人 `cast` → **认节拍 `needs`**，三道叠着、没写的等于不管）。
   节拍登记在 `rendezvous.ts` 的 `DATE_BEATS`（闭集，只有登记过的 id 能落），

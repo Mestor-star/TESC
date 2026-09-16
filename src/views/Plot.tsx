@@ -42,9 +42,8 @@ import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, 
 import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import { smsContextFor } from '../lib/crosslink'
-import { INTIMATE_BOND, hasIntimate, intimAdvanceLabel } from '../data/intimate'
+import { intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
-import { IntimateHud } from '../components/IntimateHud'
 import { DateLane } from '../components/DateLane'
 import { DateArchive } from '../components/DateArchive'
 import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
@@ -519,16 +518,6 @@ export function Plot() {
     requestProfile(id)
     navigate('archive')
   }, [requestProfile, navigate])
-
-  /**
-   * 色情状态栏摆谁 —— 与导演那张【私密往来】名单同一条判据：**在场**、女角色、
-   * 且羁绊已经走到那一步（`INTIMATE_BOND`）。名单为空整栏不摆（没到那一步的人
-   * 不该看见这一栏）。与提示词那边各算各的、但口径同一处：`hasIntimate` + `bondNow`。
-   */
-  const hudIds = useMemo(
-    () => (focusEv ? castOfEvent(focusEv).filter((id) => hasIntimate(id) && bondNow(id) >= INTIMATE_BOND) : []),
-    [focusEv, castOfEvent, bondNow],
-  )
 
   /**
    * 某一段此刻算不算「自由时间」。两处入口合流成这一个判据：
@@ -2064,9 +2053,9 @@ export function Plot() {
                     </div>
                   ) : null}
                   {draftErr ? <div className={css.draftErr}>{draftErr}</div> : null}
-                  {/* 色情状态栏**不在这儿** —— 它归右栏那一列（见下面 `<aside>`）。
-                      主人 2026-09-14：「正文推演界面不要出现色情状态栏」——
-                      正文里只有叙述、台词与输入带，读数去右边看。 */}
+                  {/* 色情状态栏**不在这儿** —— 也不在主线这一路的任何地方
+                      （主人 2026-09-14 从正文挪走，2026-09-16 从整路撤走）：
+                      正文里只有叙述、台词与输入带。 */}
                   {/* 输入带（排法在 components/PlotFlow.tsx，与约会专线同一条）。
                       空着也送得出去：那一趟是「这一回合他不发话」（见 send 的说明）——
                       所以 `sendWhenEmpty`，按钮不按「有没有字」置灰。 */}
@@ -2153,19 +2142,14 @@ export function Plot() {
         </section>
         )}
 
-        {/* 右栏只在主线那一路挂：约会专线自己出右栏，约会记录横跨整两格 */}
+        {/* 右栏只在主线那一路挂：约会专线自己出右栏，约会记录横跨整两格。
+            栏里只有事件卡 —— **色情状态栏在主线这一路一处都不摆**
+            （主人 2026-09-14：「正文推演界面不要出现色情状态栏」，先是从正文挪进
+             这一栏；2026-09-16 再收一刀：主线整路撤走，**只在约会专线那一格翻面见**）。
+            要看读数：约会专线翻一面，或去档案页翻那一份账。 */}
         {lane === 'main' ? (
         <aside className={css.aside}>
           {eventCard}
-          {/* 色情状态栏：在场且关系走到那一步的人，此刻的情欲值 / 最近一回 /
-              贴身衣物（含内裤湿几分）。实时 —— 读数一动它当场就变。
-              **挂在右栏，不在正文里**（主人 2026-09-14：「正文推演界面不要出现
-              色情状态栏」）；与约会专线那一栏同一格 —— 那边是翻一面才见它，
-              两边正文里都是一行都不出现。
-              门还是那一道：与输入框同挂在 `ready`（主通道已配）之后。 */}
-          {showOnline && ready ? (
-            <IntimateHud ids={hudIds} hint="此刻 · 主线在场 · 随推进实时变化" />
-          ) : null}
         </aside>
         ) : null}
       </div>

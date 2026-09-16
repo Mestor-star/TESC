@@ -2954,14 +2954,17 @@ try {
     JSON.stringify({ phys: dan.back && dan.back.phys }))
   await closeCard('danae-whitmore')
 
-  /* 色情状态栏（components/IntimateHud.tsx）：上屏的那一行「此刻」。
-     同一份账，换到**主线那一页**再看一遍 —— 这一栏与档案页的分工正是：
-     档案翻的是账（看不看都一样），这一栏摆的是此刻（谁在场、她此刻到哪儿）。
-     露娜在（在场名册里有她 · 羁绊满 · 有推进）→ 摆；恋兔光羁绊压到底 → 不摆。
+  /* 色情状态栏（components/IntimateHud.tsx）**在主线这一路一处都不摆**。
+     主人 2026-09-14 先把它从正文挪进右栏；2026-09-16 再收一刀：**整路撤走** ——
+     主线右栏里只剩事件卡。要看读数：约会专线翻一面（Phase V 的 V5c/V5d），
+     或进档案页翻那一份账（R 这一段前面量的那些）。
+     从前这一条钉的是「摆出来了、露娜在名单里、读数是账里那一份」——那一组读数随
+     这一刀搬去了 V5c/V5d；原来「不够格的那位不摆」那一条没了落脚处（主线连栏都没有了），
+     那条筛子现在只剩机读那一层（mech）。
 
-     它和输入框挂在**同一道门**后（Plot 的 ready = 主通道已配）：R 这一段全程离线通读，
-     中途「清除通道」那个用例把 api:main 拿掉了，于是先补一把再量。补的是**没人听的
-     端口** —— 门开得了，请求一个字也落不了地，量到的就还是播进去的那一份账。
+     它本来与输入框挂在**同一道门**后（Plot 的 ready = 主通道已配）：R 这一段全程离线
+     通读，中途「清除通道」那个用例把 api:main 拿掉了，于是先补一把 —— 门得开着，
+     「没摆」才不是「门没开」的假象。补的是**没人听的端口**，请求一个字也落不了地。
      量完再把那把钥匙收回去（后面几段踩的是「没配通道」那个前提）。 */
   await seedApi('main', 'http://127.0.0.1:4999', 'silent')
   await cdp.send('Page.reload', { ignoreCache: true })
@@ -2969,39 +2972,19 @@ try {
   await goto('剧情推进')
   await poll(`!!document.querySelector('[data-event]')`, 20000, 'R11 plot view').catch(() => {})
   /* 主通道那一份存在 IndexedDB 里，是异步读回来的；页面也是切过去才挂上 ——
-     等这一栏真的上屏再量，否则量到的是「还没就绪」的那一帧，不是「这一栏没摆」。 */
-  await poll(`document.querySelectorAll('[data-intim-hud]').length>0`, 12000, 'R11 hud').catch(() => {})
-  const hud = await ev(`(()=>{const h=document.querySelector('[data-intim-hud]');
-    /* 量不到时这几样一并报出来：落在哪一段、这一栏在不在、连栏头都没渲染 —— 免得
-       把「还没就绪」误读成「不该摆」（R11 之前就是这么栽的一回）。 */
-    const probe={ev:(document.querySelector('[data-event]')||{getAttribute:()=>null}).getAttribute('data-event'),
-      hudNodes:document.querySelectorAll('[data-intim-hud]').length,
-      head:document.body.innerText.includes('色情状态栏')};
-    if(!h)return {hud:false,probe};
-    const row=document.querySelector('[data-intim-hud="luna"]');
-    if(!row)return {hud:true,probe,rows:[...h.querySelectorAll('[data-intim-hud]')].map(x=>x.getAttribute('data-intim-hud'))};
-    const wear=row.querySelector('[data-hud-wear="luna"]');
-    const pants=wear?wear.querySelector('[data-hud-slot="panties"]'):null;
-    const wetRow=pants?pants.querySelector('[data-hud-wet]'):null;
-    return {hud:true,rows:[...h.querySelectorAll('[data-intim-hud]')].map(x=>x.getAttribute('data-intim-hud')),
-      lewd:(row.querySelector('[data-hud-lewd]')||{innerText:''}).innerText.trim(),
-      act:(row.querySelector('[data-hud-act]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
-      slots:wear?[...wear.querySelectorAll('[data-hud-slot]')].map(x=>x.getAttribute('data-hud-slot')):[],
-      pantiesWear:pants?pants.getAttribute('data-hud-slot-wear'):null,
-      pantiesTxt:pants?pants.innerText.replace(/\\s+/g,' ').trim():null,
-      wet:wetRow?Number(wetRow.getAttribute('data-hud-wet')):null,
-      wetWord:wetRow?wetRow.getAttribute('data-hud-wet-word'):null}})()`)
-  ok('R11 色情状态栏摆出来了：露娜在名单里（此刻在场 · 满羁绊 · 有推进），读数是账里那一份',
-    !!hud.hud && hud.rows.includes('luna') && hud.lewd === '30'
-    && /旅馆/.test(hud.act || ''),
-    JSON.stringify(hud))
-  ok('R11b 贴身衣物也照账读（内裤半褪 · 湿润 45 洇湿），而不是把底档贴一遍',
-    hud.slots && hud.slots.join(',') === 'bra,panties' && hud.pantiesWear === 'half'
-    && hud.wet === 45 && hud.wetWord === '洇湿'
-    && /内裤/.test(hud.pantiesTxt || '') && /半褪/.test(hud.pantiesTxt || ''),
-    JSON.stringify({ slots: hud.slots, wear: hud.pantiesWear, wet: hud.wet, word: hud.wetWord, txt: hud.pantiesTxt }))
-  ok('R11c 不够格的那位不在这一栏里（羁绊压到底 → 她此刻不摆；名单是筛过的，不是把在场名册抄一遍）',
-    !!hud.rows && !hud.rows.includes('hikari'), JSON.stringify(hud.rows || hud))
+     等这一格真的起来再量，否则量到的是「还没就绪」的那一帧。 */
+  await poll(`document.body.innerText.includes('当前事件')`, 12000, 'R11 aside ready').catch(() => {})
+  const hudGone = await ev(`(()=>{return {
+    ev:(document.querySelector('[data-event]')||{getAttribute:()=>null}).getAttribute('data-event'),
+    aside:document.body.innerText.includes('当前事件'),
+    hudNodes:document.querySelectorAll('[data-intim-hud]').length,
+    head:document.body.innerText.includes('色情状态栏')}})()`)
+  /* 正向对照 `aside` 是必须的：一个白屏也能让 querySelectorAll 数出 0 来。
+     露娜此刻是够格的（在场 · 羁绊满 · 有推进），所以 0 不是「没人够格」，
+     是「这一栏根本不在这条路上」—— 与档案页那一份账形成对照。 */
+  ok('R11 主线这一路不摆色情状态栏（右栏在、事件卡在，但这一栏一处都没有，连栏头那几个字都不出现）',
+    hudGone.aside === true && hudGone.hudNodes === 0 && hudGone.head === false,
+    JSON.stringify(hudGone))
 
   /* 量完把这把钥匙收回去：R 这一段之前「掐掉接口存根」那个用例把 api:main 删了，
      后面几段走的是**那个**前提（离线那一档的用例正踩在它上面 —— 主通道一配好，
@@ -3243,7 +3226,18 @@ try {
       operatorName:'约会观察员', focusId:'gcn',
       world:{offset:{hikari:100,luna:100,nyau:100},locked:{},flags:{},
         met:{hikari:true,luna:true,nyau:true},ends:{},own:[],records:[],
-        intim:{},attire:{},acts:{},
+        /* 露娜那一份私密账照 Phase R 播一份同样数目的（色情度 30 · 内裤半褪 ·
+           湿润 45 · 最近一回在旅馆）—— 从前这一组读数是在**主线那一栏**上量的
+           （旧 R11b/R11c）。主线整路撤掉色情状态栏之后，量它的地方只剩这一格
+           翻过来的那一面（见 V5c/V5d），所以账要在这儿也播一份。
+           ① hudIds 筛的是 hasIntimate + 羁绊过线，不看她账里写了什么 ——
+              播这些**不会**改动在场三位的行数（V5 那一条照旧）。 */
+        intim:{luna:{dev:{mouth:22,vagina:40},lewd:30,
+          lastAct:'在港区的旅馆里做了一整晚，从玄关一路做到床上，中间没停过。',
+          view:'做得越多越清楚自己要什么 —— 她不再只是「可以一起做的活动」，是只要你在就得做。'}},
+        attire:{luna:{wear:{panties:'half'},wet:45,
+          log:[{ts:2,text:'内裤褪到膝弯 · 湿润到洇湿'},{ts:1,text:'内衣脱了'}]}},
+        acts:{},
         rel:{hikari:'close',luna:'heart'}}}));
     localStorage.removeItem('zts-terminal-store');
     localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
@@ -3383,6 +3377,32 @@ try {
     && vHud.side === 0, JSON.stringify({rows:vHud.rows,side:vHud.side}))
   ok('V5b 这一栏把「此刻」说清楚（读的是这一场的人，不是主线在场）',
     vHud.txt.includes('这一场'), vHud.txt.slice(0, 80))
+  /* V5c/V5d 读数照账读，而不是把底档贴一遍 —— 这一组原来量在**主线那一栏**上
+     （旧 R11b/R11c）。主线整路撤掉色情状态栏之后，量它的地方只剩这一格翻过来的这一面，
+     账在上面的播种里补了同样数目的一份。 */
+  const vHudAcct = await ev(`(()=>{const h=document.querySelector('[data-intim-hud]');
+    if(!h)return {hud:false};
+    const row=document.querySelector('[data-intim-hud="luna"]');
+    if(!row)return {hud:true,rows:[...h.querySelectorAll('[data-intim-hud]')].map(x=>x.getAttribute('data-intim-hud'))};
+    const wear=row.querySelector('[data-hud-wear="luna"]');
+    const pants=wear?wear.querySelector('[data-hud-slot="panties"]'):null;
+    const wetRow=pants?pants.querySelector('[data-hud-wet]'):null;
+    return {hud:true,
+      lewd:(row.querySelector('[data-hud-lewd]')||{innerText:''}).innerText.trim(),
+      act:(row.querySelector('[data-hud-act]')||{innerText:''}).innerText.replace(/\\s+/g,' ').trim(),
+      slots:wear?[...wear.querySelectorAll('[data-hud-slot]')].map(x=>x.getAttribute('data-hud-slot')):[],
+      pantiesWear:pants?pants.getAttribute('data-hud-slot-wear'):null,
+      pantiesTxt:pants?pants.innerText.replace(/\\s+/g,' ').trim():null,
+      wet:wetRow?Number(wetRow.getAttribute('data-hud-wet')):null,
+      wetWord:wetRow?wetRow.getAttribute('data-hud-wet-word'):null}})()`)
+  ok('V5c 这一面读的是账里那一份（色情度 30 · 最近一回在旅馆），不是把底档贴一遍',
+    !!vHudAcct.hud && vHudAcct.lewd === '30' && /旅馆/.test(vHudAcct.act || ''),
+    JSON.stringify(vHudAcct))
+  ok('V5d 贴身衣物也照账读（内裤半褪 · 湿润 45 洇湿）',
+    vHudAcct.slots && vHudAcct.slots.join(',') === 'bra,panties' && vHudAcct.pantiesWear === 'half'
+    && vHudAcct.wet === 45 && vHudAcct.wetWord === '洇湿'
+    && /内裤/.test(vHudAcct.pantiesTxt || '') && /半褪/.test(vHudAcct.pantiesTxt || ''),
+    JSON.stringify({ slots: vHudAcct.slots, wear: vHudAcct.pantiesWear, wet: vHudAcct.wet, word: vHudAcct.wetWord, txt: vHudAcct.pantiesTxt }))
   await ev(`(()=>{const b=document.querySelector('[data-date-face="scene"]');if(b)b.click();return !!b})()`)
   await poll(`!!document.querySelector('[data-date-side]')`, 12000, 'V scene face back')
 
