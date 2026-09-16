@@ -1,0 +1,109 @@
+/* ============================================================
+   开场影像那一层（2026-09-16）
+   ------------------------------------------------------------
+   全屏压在最上面：底走 `--ink`（本仓自己那支深藏蓝，不是纯黑 ——
+   片子四边留出来的信箱边跟界面对得上色），片子 `contain` 居中。
+   `z-index: 300` 卡在 `.boot` 的 200 之上、Guide 的 900 之下：
+   PV 放的时候开屏一刻都不该露头，但兜底错屏（9999）仍压得住它。
+
+   控件**只用白贴纸那一档**（`color: var(--ink)` + `background: var(--bg-1)`），
+   全站没有「彩底白字」那一条，也就不必往 mech 的 WHITE_OK 册子里添名字 ——
+   深底上那块白贴纸，本来就是这一稿最好认的记号。
+   ============================================================ */
+
+.pv {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  animation: pvIn 380ms var(--ease-out) both;
+}
+.pv.isLeaving {
+  animation: pvOut 400ms var(--ease-out) both;
+}
+
+.vid {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--ink);
+}
+
+/* 载入那一下垫一行字，别让黑底先愣着 */
+.loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: color-mix(in srgb, var(--bg-1) 58%, transparent);
+  animation: pvBlink 1.6s ease-in-out infinite;
+}
+
+/* 跳过：右上角，避让刘海/状态栏 */
+.skip {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  right: max(20px, env(safe-area-inset-right));
+  z-index: 2;
+  font-size: 12px;
+  padding: 7px 13px;
+  animation: pvIn 380ms var(--ease-out) 600ms backwards;
+}
+
+/* 「点击任意处开启声音」：静音起播时压在底下提醒一句，出声了自会消失 */
+.sound {
+  position: absolute;
+  left: 50%;
+  bottom: max(30px, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  color: var(--ink-dim);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  animation: pvNudge 2.4s var(--ease-out) infinite;
+}
+
+@keyframes pvIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pvOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes pvBlink {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+@keyframes pvNudge {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* 窄屏：跳过键往回收一点，别贴到圆角上 */
+@media (max-width: 640px) {
+  .skip { top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); }
+  .sound { bottom: max(18px, env(safe-area-inset-bottom)); }
+}
+
+/* 减少动效：淡入淡出一律瞬时到位（全局那条只压 duration，延迟还在，
+   这里连延迟一起按住 —— 跳过的 600ms 延迟留着会「空白一下才冒出来」）。 */
+@media (prefers-reduced-motion: reduce) {
+  .pv, .pv.isLeaving, .skip, .sound, .loading {
+    animation: none;
+  }
+}

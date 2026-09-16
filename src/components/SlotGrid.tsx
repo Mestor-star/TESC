@@ -11,8 +11,13 @@ import css from './SlotGrid.module.css'
  * 8 槽存档网格。
  *  - mode='load'   标题菜单用：只读，点「读取此档」进游戏（读档即全量重挂载）；
  *  - mode='manage' 游戏内「存读档」用：读取 + 保存（占用槽覆盖需行内二次确认）。
+ *
+ * `beforeLoad`（2026-09-16）：标题菜单要**先过一趟「接入序列」再落读档**，
+ * 而读档这一下是网格自己按的、外面插不上手。所以给它开一个口子 ——
+ * 有这一枚就交出去、由调用方决定什么时候真读，没有就照旧直接读。
+ * 游戏内那一枚（`mode='manage'`）不传，行为一点没变。
  */
-export function SlotGrid({ mode }: { mode: 'load' | 'manage' }) {
+export function SlotGrid({ mode, beforeLoad }: { mode: 'load' | 'manage'; beforeLoad?: (go: () => void) => void }) {
   const { loadSlot, saveSlot } = useTerminal()
   const [list, setList] = useState<(SaveSlot | null)[]>(readSlotsList)
   const [editing, setEditing] = useState<number | null>(null)
@@ -109,7 +114,10 @@ export function SlotGrid({ mode }: { mode: 'load' | 'manage' }) {
                   <button
                     className="btn btn--ghost"
                     style={{ clipPath: 'none' }}
-                    onClick={() => loadSlot(i)}
+                    onClick={() => {
+                      if (beforeLoad) beforeLoad(() => loadSlot(i))
+                      else loadSlot(i)
+                    }}
                     title="以此档续接观测 · 覆盖当前运行进度"
                   >
                     <FolderOpen size={12} weight="bold" /> 读取

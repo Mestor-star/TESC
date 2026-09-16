@@ -16,7 +16,11 @@
   position: relative;
   display: grid;
   grid-template-columns: var(--rail-w) 1fr;
+  /* `100dvh` 是手机档的地基：`100vh` 在手机上量的是**浏览器收起地址栏之后**的高度，
+     页面一落地就比可视区高出一截 —— 屏幕上那一行（这里是底部导航条）被推到底下够不着。
+     两行一起写：不认 `dvh` 的老浏览器取前一行，行为与改动前一致。 */
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   background: var(--bg-0);
@@ -327,6 +331,7 @@
   flex-direction: column;
   min-width: 0;
   height: 100vh;
+  height: 100dvh;   /* 与 `.root` 同一手，理由见那儿 */
 }
 
 /* 设置专用界面（终端连接）无左侧导航轨道：

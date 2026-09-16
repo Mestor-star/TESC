@@ -60,13 +60,13 @@ export function bedForView(view: string): BedName {
  * 「眼下这个状态该放哪一段底」—— null 就是**一段都不放**（收声）。
  *
  * 之所以要把它收成一处：背景音同时有三层想决定它 —— 模块（按 view 换）、
- * 标题菜单与设置专用界面（压在 menu 上）、以及指纹认证开屏。
+ * 标题菜单与设置专用界面（压在 menu 上）、以及开场标题屏。
  * 前两层以前各写各的 `if`，而**开屏那一层没人写**：用户点「退出终端」回到开屏之后，
  * 上一段 menu 照旧一直放着 —— 界面已经关了、声音还在，只能去关浏览器声音。
  * 现在「该放什么」只在这里判一次，界面按它的返回值决定 setBed 还是 stopBed。
  */
 export function bedForState(s: { authed: boolean; stage: string; setupMode: boolean; view: string }): BedName | null {
-  if (!s.authed) return null                                // 终端已退出（指纹认证开屏）：收声
+  if (!s.authed) return null                                // 终端已退出（开场标题屏）：收声
   if (s.stage !== 'game' || s.setupMode) return 'menu'      // 标题菜单 / 设置专用界面
   return bedForView(s.view)                                 // 终端本体：按模块
 }

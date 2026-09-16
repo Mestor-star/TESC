@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { ArrowLeft, Brain, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowCounterClockwise, Brain, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -10,6 +10,7 @@ import { rFactor } from './lib/battle/rvalue'
 import { clearRemount, registerRemount } from './lib/remount'
 import { browserStore, chunkError, clearRetry, reloadFresh, takeRetryOnce } from './lib/chunkretry'
 import { resetGuide } from './lib/guide'
+import { hasSeenPv } from './lib/pv'
 import { bedForState, bedForView, installAudio, setAudio, setBed, stopBed, useAudioSettings } from './lib/audio'
 import { subscribeUnread, totalUnread } from './lib/sms'
 import { useProactiveSms } from './lib/smsauto'
@@ -17,6 +18,7 @@ import { useProactiveSms } from './lib/smsauto'
 import { Boot } from './Boot'
 import { TitleMenu } from './views/Title'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { PvScreen } from './components/PvScreen'
 import { Portrait, useCharImg } from './components/Portrait'
 import { VariablePanel } from './components/VariablePanel'
 import { SaveDialog } from './components/SaveDialog'
@@ -287,14 +289,20 @@ function NavRail() {
         )}
         {/* 操作员卡与底下这三枚之间的一道细线：上面是「你是谁」，下面是「动这台机器」 */}
         <span className={css.footRule} />
+        {/* 三枚动作的文字都包在 `.btnLabel` 里 —— 手机档（≤860px）底条上要**只留图标**，
+            而它们是裸文本节点，不包一层 CSS 够不着（`display:none` 只吃元素）。
+            图标化之后读屏只剩图标，所以每枚都补上 `aria-label`；`title` 照旧留给指针。
+            二次确认那一句也跟着换短的：底条上放不下「再次点击确认重置」。 */}
         <button
           className="btn btn--ghost"
           style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           data-guide="slot"
           onClick={() => setSlotsOpen(true)}
           title="手动存档 / 读档（独立于当前进度，重置不影响）"
+          aria-label="存读档"
         >
-          <FloppyDisk size={13} weight="bold" /> 存读档
+          <FloppyDisk size={13} weight="bold" />
+          <span className={css.btnLabel}>存读档</span>
         </button>
         <button
           className="btn btn--ghost"
@@ -302,16 +310,24 @@ function NavRail() {
           data-guide="vars"
           onClick={() => setVarsOpen(true)}
           title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
+          aria-label="查看 / 编辑变量"
         >
-          <SlidersHorizontal size={13} weight="bold" /> 查看 / 编辑变量
+          <SlidersHorizontal size={13} weight="bold" />
+          <span className={css.btnLabel}>查看 / 编辑变量</span>
         </button>
         <button
           data-guide="reset"
           className={confirmReset ? 'btn btn--amber' : 'btn btn--ghost'}
           style={{ width: '100%', fontSize: 11, padding: '7px 8px', clipPath: 'none' }}
           onClick={handleReset}
+          aria-label="重置世界进度"
         >
-          {confirmReset ? '再次点击确认重置' : '重置世界进度'}
+          {/* 这一枚本来**没有图标**（前两枚有）—— 桌面照旧，一枚都不多长：
+              `.btnIconMobile` 在宽屏是 `display:none`，只有底条上文字收起来之后才顶上来。 */}
+          <span className={css.btnIconMobile}>
+            {confirmReset ? <Check size={13} weight="bold" /> : <ArrowCounterClockwise size={13} weight="bold" />}
+          </span>
+          <span className={css.btnLabel}>{confirmReset ? '再次点击确认重置' : '重置世界进度'}</span>
         </button>
       </div>
     </aside>
@@ -339,7 +355,14 @@ function TopStatus({ view }: { view: ViewId }) {
         <span className={css.tbTitleEn}>{t.en}</span>
         <span className={css.tbTitleCn}>{t.cn}</span>
       </span>
+      {/* 顶栏右半边分两组：读数（区域 / R值 / 异常）｜ 机器（时钟 / 信道 / 声音）。
+          分组是为了手机档 —— ≤720px 时读数那一组折到**第二行**去横滑
+          （那一簇 six 件实测 831px，390 屏上后四件全在屏幕外）。
+          宽屏下两组仍是紧挨着的一排：`.tbRead` / `.tbMach` 的基础间距都写 10px，
+          与从前 `.tbRight` 里那一串完全一致，一个像素都不动。
+          两行之间的分隔线 `.tbDiv` 照旧夹在它们中间。 */}
       <div className={css.tbRight}>
+        <div className={css.tbRead}>
         <button className={css.pill} title="当前监测区域" onClick={() => push('info', '监测区域', `当前焦点：${focus.name} · ${focus.code}`, false)}>
           <span data-guide="region-pill" />区域&nbsp;<span className="muted tiny">{focus.code}</span>&nbsp;{focus.name.split(' · ').pop()}
         </button>
@@ -366,9 +389,11 @@ function TopStatus({ view }: { view: ViewId }) {
             本区观测平稳
           </button>
         )}
+        </div>
         {/* 两簇之间那一道细线：左边三格是**读数**（区域 / R 值 / 异常），
             右边三格是**机器**（时钟 / 信道 / 声音）。 */}
         <span className={css.tbDiv} />
+        <div className={css.tbMach}>
         <button className={`${css.pill} ${css.clock}`} title="弗尔克图斯本地时间">
           <span className="num">{clock(now)}</span>
         </button>
@@ -376,6 +401,7 @@ function TopStatus({ view }: { view: ViewId }) {
           <Bell size={14} weight="bold" />
         </button>
         <AudioPill />
+        </div>
       </div>
     </header>
   )
@@ -492,7 +518,7 @@ function Gate() {
   /*
     标题菜单与设置专用界面不在 Shell 里，底在这里补上；
     进了终端本体就照模块那一份（按 view 判，Shell 那边也一样）。
-    「该放哪一段」由 bedForState 一处决定 —— 关键的一份是**指纹认证开屏**：
+    「该放哪一段」由 bedForState 一处决定 —— 关键的一份是**开场标题屏**：
     「退出终端」之后那一段底必须停，否则界面关了、声音还在。
   */
   useEffect(() => {
@@ -500,8 +526,27 @@ function Gate() {
     if (want === null) stopBed()
     else setBed(want)
   }, [authed, stage, setupMode, view])
-  // 认证开屏 → 标题菜单 → 终端本体 / 设置专用界面（读档/重置经 key 重挂载后按阶段直达）
-  if (!authed) return <Boot onDone={enter} />
+
+  /*
+    开场影像（2026-09-16）：**只有开场标题屏才摆**。
+    初值直接读「这一台看过没」（`zts-pv-seen`，见 `lib/pv.ts`）—— 写成
+    `useState(false)` 再拿 effect 去开，会先闪一帧指纹开屏、再被 380ms 的淡入压住，
+    那一下白闪很难看。初值里定下来，第一帧就是片子。
+    看过之后就不再自动出现，改由开屏右上角那枚播放键点开（`Boot` 的 `data-pv-replay`）。
+    底这边不用额外照看：`bedForState` 在 `!authed` 时本就返回 null（开屏收声），
+    PV 放的时候正好压在那一段上。
+  */
+  const [pvOpen, setPvOpen] = useState(() => !hasSeenPv())
+
+  // 开场标题屏 →（接入序列）→ 标题菜单 → 终端本体 / 设置专用界面（读档/重置经 key 重挂载后按阶段直达）
+  if (!authed) {
+    return (
+      <>
+        <Boot onDone={enter} onReplay={() => setPvOpen(true)} />
+        {pvOpen ? <PvScreen onClose={() => setPvOpen(false)} /> : null}
+      </>
+    )
+  }
   if (stage !== 'game') return <TitleMenu />
   if (setupMode) return <SetupShell />
   return <Shell />

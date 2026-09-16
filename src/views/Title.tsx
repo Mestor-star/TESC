@@ -5,6 +5,8 @@ import { ArrowClockwise, FolderOpen, Plug, Play, SignOut, X } from '@phosphor-ic
 import { useTerminal } from '../terminal/Terminal'
 import { canContinue, fmtSlotTime, readAutosave, readSlotsList } from '../lib/slots'
 import { SlotGrid } from '../components/SlotGrid'
+import { BootSeq } from '../components/BootSeq'
+import { TitleCard } from '../components/TitleCard'
 
 import css from './Title.module.css'
 
@@ -12,7 +14,9 @@ import css from './Title.module.css'
  * 标题菜单（认证通过后、进游戏前）—— 2026-09-16 重排成**单列居中**的游戏标题页：
  *
  *   ┌ 左上：自动档条 [data-autosave-card]       右上：操作员胶囊 ● ┐
- *   │            ◆ 这里是，终末停滞委员会 ◆                        │
+ *   │      ┌ 官方 PV 那张标题卡（こちら、／終末停滞／委員会。）┐     │
+ *   │      │        + TIME IS THE END / STAGNATION COMMITTEE. │     │
+ *   │      └ 淡灰格纸 · 白方贴 · 品红大字 · 逐帧复刻的入场 ────┘     │
  *   │                ── 停滞观测终端 v4.2 ──                       │
  *   │                        ✦                                     │
  *   │              行动继续（渐变实心 · 首枚高亮）                  │
@@ -25,6 +29,12 @@ import css from './Title.module.css'
  * 8 格手动档收进「读取存档」那枚按钮后面的浮层（`data-title-slots`）——
  * 格子本身还是 `<SlotGrid mode="load" />`，只是从正文挪到了一层幕布后面，
  * 每次开都重新读一遍 `readSlotsList()`，比常驻着一份陈的更准。
+ *
+ * **进终端之前要过一趟「接入序列」**（2026-09-16）。那一段原来长在认证开屏里
+ * （指纹认完就自检），现在挪到这儿 —— 按下去的**那一下之后**才开始：
+ * 行动继续 / 行动开始 / 自动档「读取」/ 手动档「读取」四条都先起 `BootSeq`，
+ * 它跑完再执行真动作。所以这一屏多了一枚 `pending` 状态，四处入口共用。
+ * 没被 gate 的只有「终端连接」—— 它进的是设置专用界面，不是终端本体。
  *
  * **被冒烟逐字钉住、不许动的**（Phase J / L / Q）：
  *   · 根上的 `data-title="1"`；
@@ -42,6 +52,13 @@ export function TitleMenu() {
   const displayOp = operatorName.trim() ? operatorName : '言万心叶'
 
   const [slotsOpen, setSlotsOpen] = useState(false)
+
+  /* 进终端之前那一趟「接入序列」。存的是**动作本身**，不是布尔的旗子 ——
+     跑完照着它执行，动作与入口天然对得上，不必再拿一串 if 去认是谁按的。
+     包一层对象是为了绕开 `setState(fn)` 的更新器语义：直接存函数会被 React
+     当成 updater 调掉，存进去的就成了它的**返回值**。 */
+  const [pending, setPending] = useState<{ run: () => void } | null>(null)
+  const gate = (run: () => void) => setPending({ run })
 
   /* 开了浮层就把 Esc 收作「关」—— 幕布点一下也能关。 */
   useEffect(() => {
@@ -75,7 +92,7 @@ export function TitleMenu() {
             className="btn btn--ghost"
             style={{ fontSize: 11, padding: '5px 11px' }}
             disabled={!auto}
-            onClick={loadAutosave}
+            onClick={() => gate(loadAutosave)}
             title="以自动存档覆盖当前进度并进入终端"
           >
             读取
@@ -91,9 +108,12 @@ export function TitleMenu() {
       <div className={css.inner}>
         <header className={css.brand}>
           <span className={css.kicker}>STAGNATION COMMITTEE · OBSERVER TERMINAL</span>
-          <h1>
-            这里是，<em>终末停滞委员会</em>
-          </h1>
+          {/* —— 标题：**官方 PV 收尾那张卡**（2026-09-16）——
+              主人要「开始界面这行标题和 PV 里那张完全一样，还要一样动起来」。
+              那份卡现在只有一处 —— `components/TitleCard`，开场标题屏（`Boot`）
+              用的是同一份：PV 放完停的那张脸，与这一屏是同一张。
+              取色、逐段尺寸、以及「为什么它自带底色」都在那个模块的头上。 */}
+          <TitleCard />
           <span className={css.sub}>停滞观测终端 v4.2 · 委员制式配备</span>
           <span className={css.tag}>
             欢迎回来，<b>{displayOp}</b> · 停滞观测操作员
@@ -102,7 +122,7 @@ export function TitleMenu() {
         </header>
 
         <nav className={css.menu} aria-label="终端菜单">
-          <button className={`${css.menuBtn} ${css.menuPrimary}`} onClick={resume} disabled={!canGo}>
+          <button className={`${css.menuBtn} ${css.menuPrimary}`} onClick={() => gate(resume)} disabled={!canGo}>
             <span className={css.ic}><ArrowClockwise size={17} weight="bold" /></span>
             <span className={css.menuTxt}>
               行动继续
@@ -114,7 +134,7 @@ export function TitleMenu() {
             </span>
           </button>
 
-          <button className={css.menuBtn} onClick={startNew}>
+          <button className={css.menuBtn} onClick={() => gate(startNew)}>
             <span className={css.ic}><Play size={16} weight="bold" /></span>
             <span className={css.menuTxt}>
               行动开始
@@ -144,7 +164,7 @@ export function TitleMenu() {
             <span className={css.ic}><SignOut size={17} weight="bold" /></span>
             <span className={css.menuTxt}>
               退出终端
-              <i>回到指纹认证开屏</i>
+              <i>回到开场标题屏</i>
             </span>
           </button>
         </nav>
@@ -186,13 +206,25 @@ export function TitleMenu() {
                     按「读取」以该档续接观测 —— 会覆盖当前运行进度。
                     写档在终端内进行：左侧底部「存读档」可把当前进度写入任一槽。
                   </div>
-                  <SlotGrid mode="load" />
+                  <SlotGrid mode="load" beforeLoad={gate} />
                 </div>
               </div>
             </div>,
             document.body,
           )
         : null}
+
+      {/* 接入序列 —— 按下去之后、真动作之前的那一趟。它是 `position: fixed`
+          · z-index 300，压得住上面那层存档幕布（130），所以读档那条路也在它底下走。 */}
+      {pending ? (
+        <BootSeq
+          onDone={() => {
+            const { run } = pending
+            setPending(null)
+            run()
+          }}
+        />
+      ) : null}
     </div>
   )
 }

@@ -1,0 +1,274 @@
+/* ===== 接入序列（逐行显现 + 一条进度）=====
+ *
+ * 从 `Boot.module.css` 搬出来的（2026-09-16）。原来的「认证开屏」拆成了两件：
+ * 开场标题屏（`Boot`）与这一段自检。搬家顺带把位置也换了 ——
+ * 从「进开始界面**之前**」挪到「开始界面上按下去**之后**」，
+ * 所以它现在是一层盖在开始界面上的浮层，不再是「开场第一屏」。
+ *
+ * 「跑起来」这件事全交给进度条本身：面板上原来盖的两层（CRT 横纹、
+ * 扫描线）已随 2026-09-16 方贴纸稿撤走（`global(scanline)` 的两处消费者
+ * 一起走，否则会留下「引用一个不存在的关键帧」—— 那种错在 CSS Modules 下
+ * **不报错、lint 也不报**，只是那一处永远不动）。 */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 300;                 /* 盖住开始界面整页 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--ink);
+  /* 认证通过后整页瞬时切到一张干净的纸 */
+  background: var(--bg-1);
+  animation: flashWash 620ms var(--ease-out) both;
+}
+/* 通过的这一瞬，整页过一道白 —— 比硬切更像「换场」 */
+@keyframes flashWash {
+  0% { filter: brightness(1.9); }
+  100% { filter: none; }
+}
+/* 入射序列这一层不留扫光，改成从正中炸开的一圈白光 */
+.boot::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60vmax;
+  height: 60vmax;
+  margin: -30vmax 0 0 -30vmax;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--steel) 38%, transparent), transparent 62%);
+  animation: flashOut 780ms var(--ease-out) both;
+}
+@keyframes flashOut {
+  from { opacity: 0.95; transform: scale(0.08); }
+  to { opacity: 0; transform: scale(2.6); }
+}
+
+/* ---- 四角小件（与开场标题屏、终端外壳同一套语汇）---- */
+.corner {
+  position: absolute;
+  inset: 22px;
+  pointer-events: none;
+  z-index: 3;
+}
+.chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--bg-1) 72%, transparent);
+  border: 1px solid var(--line-2);
+  white-space: nowrap;
+  animation: chipIn 480ms var(--ease-out) backwards;
+}
+/* 各自从自己那一角滑进来：--fx/--fy 由变体给方向 */
+@keyframes chipIn {
+  from { opacity: 0; transform: translate(var(--fx, 0), var(--fy, 0)); }
+  to { opacity: 1; transform: none; }
+}
+.chipTL { top: 0; left: 0; --fx: -16px; --fy: -10px; animation-delay: 90ms; }
+.chipBR { bottom: 0; right: 0; --fx: 16px; --fy: 10px; animation-delay: 300ms; }
+.chipDot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--jade);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--jade) 22%, transparent);
+  animation: global(pulseGlow) 2.2s infinite;
+}
+
+/* ---- 那一块自检面板 ---- */
+.seq {
+  position: relative;
+  z-index: 2;
+  width: min(760px, 88vw);
+  min-height: 320px;
+  font-family: var(--font-mono);
+  text-align: left;
+  color: var(--ink-dim);
+  /* 从一条压扁的横缝里撑开 */
+  animation: seqIn 620ms var(--ease-out) 120ms backwards;
+}
+@keyframes seqIn {
+  from { opacity: 0; clip-path: inset(46% 0 46% 0); }
+  to { opacity: 1; clip-path: inset(-20% 0 -20% 0); }
+}
+
+.seqKicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  animation: kickIn 560ms var(--ease-out) 240ms backwards;
+}
+@keyframes kickIn {
+  from { opacity: 0; letter-spacing: 0.62em; }
+  to { opacity: 1; letter-spacing: 0.22em; }
+}
+.seqKicker::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.seqTitle {
+  margin: 12px 0 14px;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  text-shadow: var(--duo-shadow);
+  animation: global(riseIn) 520ms var(--ease-out) 340ms backwards;
+}
+/* 一条进度：行显现到哪儿，它填到哪儿 */
+.seqMeter {
+  position: relative;
+  height: 3px;
+  margin-bottom: 22px;
+  background: var(--bg-3);
+  overflow: hidden;
+  animation: ruleGrow 520ms var(--ease-out) 440ms backwards;
+}
+@keyframes ruleGrow {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+.seqMeter > span {
+  position: relative;
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--steel), var(--red));
+  transition: width 200ms var(--ease-out);
+}
+/* 填充条上再走一道流光 */
+.seqMeter > span::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--bg-0) 72%, transparent), transparent);
+  animation: global(sweep) 1.7s linear infinite;
+}
+
+.termLines {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+}
+
+.line {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  animation: lineIn 240ms var(--ease-out) both;
+}
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.line b {
+  color: var(--jade-deep);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.line span {
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+}
+.line em {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  /* 「OK」这一枚当成小徽章：判定成立时自己弹出来 */
+  color: var(--jade-deep);
+  align-self: center;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
+  border-radius: var(--radius-pill);
+  animation: okPop 300ms var(--ease-out) 140ms backwards;
+}
+@keyframes okPop {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: none; }
+}
+
+.line.ready {
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px dashed color-mix(in srgb, var(--jade) 28%, transparent);
+}
+.line.ready b {
+  color: var(--steel-deep);
+}
+.line.ready span {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* 闪烁光标 —— 一条薄荷色的实心竖条本身就是光标，不用再发光 */
+.caret {
+  margin-left: 10px;
+  display: inline-block;
+  width: 9px;
+  height: 1.05em;
+  background: var(--jade);
+  animation: caretBlink 0.9s steps(1) infinite;
+  align-self: center;
+  padding: 0;
+  border: none;
+}
+@keyframes caretBlink {
+  50% { opacity: 0; }
+}
+
+/* ---- 窄屏：四角小件收掉外侧两枚 ---- */
+@media (max-width: 720px) {
+  .corner { inset: 12px; }
+  .chipBR { display: none; }
+  .seq { width: 92vw; }
+}
+
+/* ---- 减少动效：入场一律瞬时到位 ----
+ * 全局那条 `prefers-reduced-motion` 只把 duration 压到 0.01ms，**延迟还在** ——
+ * 于是这一屏会先白着站一秒多。这里连延迟一起清掉。 */
+@media (prefers-reduced-motion: reduce) {
+  .boot::after,
+  .chip,
+  .seq,
+  .seqKicker,
+  .seqTitle,
+  .seqMeter,
+  .seqMeter > span::after,
+  .line,
+  .line em {
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+  .boot { animation: none; }
+}

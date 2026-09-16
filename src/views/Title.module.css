@@ -118,46 +118,15 @@
   width: 30px; height: 1px;
   background: var(--line-3);
 }
-.brand h1 {
-  position: relative;
-  margin: 16px 0 0;
-  padding: 4px 40px;            /* 两侧留出菱形的位置 */
-  font-size: clamp(28px, 5vw, 48px);
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  line-height: 1.16;
-  color: var(--ink);
-  /* 「次元错位」：青与紫各偏两像素叠在字后 —— 读起来是全息投影的色散
-     （再上一版这里是暗底上的红色辉光） */
-  text-shadow: var(--duo-shadow);
-  animation: ttTitleIn 760ms var(--ease-out) 90ms backwards;
-}
-.brand h1 em {
-  font-style: normal;
-  /* 醒目处走身份那一对（青→绯，反現実那一侧到标题那枚心）；
-     渐变裁字吃不了 text-shadow，故关掉 */
-  background: linear-gradient(120deg, var(--steel), var(--red));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: none;
-}
-/* 标题两侧各一枚菱形 —— 与开屏、侧栏角标、顶栏那一枚同一个记号 */
-.brand h1::before,
-.brand h1::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 10px;
-  height: 10px;
-  margin-top: -5px;
-  background: linear-gradient(140deg, var(--steel), var(--red));
-  opacity: 0.85;
-  pointer-events: none;
-  animation: ttDiaIn 520ms var(--ease-out) 300ms backwards;
-}
-.brand h1::before { left: 6px; }
-.brand h1::after { right: 6px; }
+/* ============================================================
+   标题卡 —— **官方 PV 收尾那张**
+   ------------------------------------------------------------
+   2026-09-16 **搬走了**，去 `components/TitleCard.module.css`。
+   搬家的理由不是整理：开场标题屏（`Boot`）现在也用这一张 ——
+   PV 放完停的那张脸与这一屏是同一张，两处必须一模一样，
+   各写一份迟早会漂。取色、逐段尺寸、「为什么它自带底」全在那儿。
+   ============================================================ */
+
 
 /* 副标夹在两条细线中间 */
 .sub {
@@ -417,15 +386,9 @@
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
 }
-/* 中缝向两侧揭开（与开屏同一手），但更快 */
-@keyframes ttTitleIn {
-  from { opacity: 0; clip-path: inset(-30% 50% -30% 50%); transform: scale(1.05); }
-  to { opacity: 1; clip-path: inset(-30% -10%); transform: none; }
-}
-@keyframes ttDiaIn {
-  from { opacity: 0; transform: rotate(0deg) scale(0.2); }
-  to { opacity: 0.8; transform: rotate(45deg) scale(1); }
-}
+/* `ttTitleIn`（中缝向两侧揭开）与 `ttDiaIn`（菱形转进来）**已随 2026-09-16
+   标题换成 PV 那张卡而删** —— 它俩的消费者只有旧那行 h1 与它两侧的菱形。
+   新标题的入场走上面那四条 pv*，别再引回来。 */
 @keyframes ttRuleGrow {
   from { opacity: 0; transform: scaleX(0); }
   to { opacity: 1; transform: scaleX(1); }
@@ -450,9 +413,6 @@
   .corner { inset: 12px; }
   .autoCard { max-width: calc(100vw - 120px); }
   .autoName { display: none; }
-  .brand h1 { padding: 4px 26px; }
-  .brand h1::before { left: 0; }
-  .brand h1::after { right: 0; }
   .sub::before, .sub::after { width: 24px; }
   .menu { width: 100%; }
 }
@@ -463,9 +423,6 @@
   .cornerR,
   .autoCard,
   .kicker,
-  .brand h1,
-  .brand h1::before,
-  .brand h1::after,
   .sub,
   .sub::before,
   .sub::after,

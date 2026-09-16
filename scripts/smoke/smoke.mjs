@@ -120,6 +120,32 @@ async function poll(expr, ms = 45000, label = 'poll') {
   }
   throw new Error('poll timeout: ' + label + ' -> ' + expr.slice(0, 140))
 }
+/* 重载并**等新文档真的接上**。
+   ---------------------------------------------------------------
+   从前各处写的是裸的 `cdp.send('Page.reload')` —— CDP 那个调用只是**发起**
+   重载、当即返回，旧文档还挂在屏上。紧接着的 poll 很可能命中的还是**上一份
+   文档**（上一趟它正好也停在同一个界面上，相位一样、问什么都像对的），
+   几个毫秒之后新文档才提交，此刻 `body` 还是空的。
+   Phase W 臂二就是这么倒的：`poll('开场标题屏')` 与 `skipPv()` 问的是旧文档，
+   等问「点击进入游戏」那一枚时新文档刚接上、什么都还没画，返回 null →
+   报「那一枚不在」。
+
+   判据用**文档自己的时间原点** —— `performance.timeOrigin` 是新文档被创建的
+   时刻，重载后必严格增大。它比「等某个元素出现」硬：元素可能在旧文档里也有，
+   时间原点不会。换文档那一瞬间没有执行上下文，`ev` 会抛，吃掉等下一轮即可。 */
+async function reloadFresh() {
+  const t0 = await ev(`performance.timeOrigin`)
+  await cdp.send('Page.reload', { ignoreCache: true })
+  const deadline = Date.now() + 30000
+  while (Date.now() < deadline) {
+    try {
+      const t = await ev(`document.readyState !== 'loading' ? performance.timeOrigin : -1`)
+      if (t > t0) return
+    } catch { /* 换文档那一瞬 —— 等下一轮 */ }
+    await sleep(120)
+  }
+  throw new Error('reloadFresh: 重载之后新文档一直没接上')
+}
 /* Node 侧等待 stub 收到第 n 个剧情请求（eStub 的 eSeq 已到位） */
 async function waitSeq(target) {
   for (let i = 0; i < 150; i++) {
@@ -133,22 +159,74 @@ const clickTxt = (t) => `(()=>{const b=[...document.querySelectorAll('button')].
 /* P2（改动A）：收束栏出现 → 点「进入下一事件」才写记录并推进 */
 const concludedGo = () => ev(`(()=>{const b=[...document.querySelectorAll('[data-concluded] button')].find(x=>x.textContent&&x.textContent.includes('进入下一事件'));if(!b)return false;b.click();return true})()`)
 
-/* 开屏：长按指纹 1.5s → 自检约 3s → 标题菜单/终端挂载（用 CDP 真实鼠标事件）
-   P7：认证通过后先进「标题菜单」；有进度走「行动继续」沿用，无进度走「行动开始」开新档。 */
-async function boot() {
-  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'boot screen')
-  const rect = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
-  if (!rect) throw new Error('boot: fingerprint button not found')
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1 })
-  await sleep(2200)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1 })
-  await poll(`!!document.querySelector('.app--stage') || !!document.querySelector('[data-title="1"]')`, 30000, 'post-boot title/shell')
-  const inTitle = await ev(`!!document.querySelector('[data-title="1"]')`)
-  if (inTitle) {
-    const action = await ev(`(()=>{const cont=[...document.querySelectorAll('button')].find(b=>b.textContent&&b.textContent.includes('行动继续'));if(cont&&!cont.disabled){cont.click();return 'continue'}const start=[...document.querySelectorAll('button')].find(b=>b.textContent&&b.textContent.includes('行动开始'));if(start){start.click();return 'start'}return 'none'})()`)
-    if (action === 'none') throw new Error('boot: title screen has no usable action')
-    await poll(`!!document.querySelector('.app--stage')`, 30000, 'shell mount after ' + action)
+/* 开屏（2026-09-16 后段流程改版）：开场标题屏 →「点击进入游戏」→ 标题菜单
+   →（接入序列约 2s）→ 终端挂载。
+
+   从前那套「长按指纹 1.5s」的把手整条撤掉了：指纹那一下已经不在流程里，
+   现在手头有三枚 —— `[data-boot-card]`（开场标题屏）、`[data-start-game]`
+   （进游戏）、`[data-boot-seq]`（接入序列那层浮层）。
+   P7 那条分流没变：到了标题菜单，有进度走「行动继续」沿用，无进度走
+   「行动开始」开新档。 */
+/* 开场影像（2026-09-16）：头一遍进终端是自动放的，它盖在开场标题屏上面（z-index 300），
+   不按掉的话底下那枚「点击进入游戏」根本点不着 —— 真实鼠标事件会全被它接走。
+   冒烟的 profile 每趟都是新的 tmp 目录，所以**第一趟进终端必然撞上**；
+   之后各趟因为 `zts-pv-seen` 已经写上了（跳过也算看过，见 PvScreen），
+   这一句进门就返回，什么都不做。
+   等开场标题屏出现之后再问 `[data-pv]`：两者是同一趟 React 提交画出来的，
+   那会儿要么都在、要么都没有，不必靠 sleep 猜。 */
+async function skipPv() {
+  for (let i = 0; i < 60; i++) {
+    const r = await ev(`(()=>{
+      if (!document.querySelector('[data-pv]')) return 'clear'
+      const b = document.querySelector('[data-pv-skip]')
+      if (b) { b.click(); return 'skip' }
+      return 'wait'
+    })()`)
+    if (r === 'clear') return
+    await sleep(120)
   }
+  throw new Error('skipPv: 开场影像按下跳过后仍未退场')
+}
+
+/* 真鼠标点击（CDP 派发的事件是 trusted 的，`element.click()` 不是）。
+   音轨解锁认的就是 trusted 手势 —— 这一版流程里「点击进入游戏」那一枚
+   是整条链上头一个真正的手势（从前是那下长按指纹），所以它得是真的。
+   给的是元素中心的屏坐标，调用方自己决定按多久。 */
+async function pressAt(sel) {
+  const r = await ev(`(()=>{const el=document.querySelector(${JSON.stringify(sel)});if(!el)return null;const b=el.getBoundingClientRect();return {x:Math.round(b.x+b.width/2),y:Math.round(b.y+b.height/2)}})()`)
+  if (!r) return null
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 })
+  await sleep(80)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 })
+  return r
+}
+
+/* 走到标题菜单：开场标题屏 →（跳过/放完开场影像）→「点击进入游戏」→ 标题菜单。
+   已经在标题菜单上的话（比如同一份文档里回过头再叫一次）原样返回。 */
+async function reachTitle() {
+  await poll(`!!document.querySelector('[data-boot-card]') || !!document.querySelector('[data-title="1"]')`, 25000, 'boot card')
+  await skipPv()
+  if (await ev(`!!document.querySelector('[data-title="1"]')`)) return
+  if (!(await pressAt('[data-start-game]'))) throw new Error('reachTitle: 「点击进入游戏」不在')
+  await poll(`!!document.querySelector('[data-title="1"]')`, 25000, 'title menu after 点击进入游戏')
+}
+
+/* 标题菜单 → 真动作（行动继续 / 行动开始）→ 接入序列 → 终端挂载。 */
+async function boot() {
+  await reachTitle()
+  const pick = await ev(`(()=>{const bs=[...document.querySelectorAll('[data-title="1"] button')];
+    const cont=bs.find(b=>b.textContent&&b.textContent.includes('行动继续'));
+    const el=(cont&&!cont.disabled)?cont:bs.find(b=>b.textContent&&b.textContent.includes('行动开始'));
+    if(!el)return null;const r=el.getBoundingClientRect();
+    return {kind:el===cont?'continue':'start',x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
+  if (!pick) throw new Error('boot: title screen has no usable action')
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pick.x, y: pick.y, button: 'left', clickCount: 1 })
+  await sleep(80)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pick.x, y: pick.y, button: 'left', clickCount: 1 })
+  /* 接入序列那一层必须先上屏：它约 2s 才交还，比 poll 的 220ms 粒度长一个量级，
+     等得到。这一步顺带把「按下去之后确实先过一遍接入序列」也钉住了。 */
+  await poll(`!!document.querySelector('[data-boot-seq]')`, 20000, '接入序列 mount after ' + pick.kind)
+  await poll(`!!document.querySelector('.app--stage')`, 30000, 'shell mount after ' + pick.kind)
 }
 async function goto(viewTxt) {
   const c = await ev(clickTxt(viewTxt))
@@ -576,7 +654,7 @@ try {
   // 等 Phase A 的 toast（5.4s 自动消退）先落完，避免 React 再用旧 world 覆盖存档
   await sleep(6500)
   await ev(`localStorage.setItem('zts-terminal:v3', JSON.stringify({unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true},cur:'v1-4',operatorName:'迁移测试员',focusId:'gcn'}))`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'B dash')
   await poll(`(${wState}).rec.length===4`, 15000, 'B records backfill')
@@ -596,7 +674,7 @@ try {
   await clearIDB()
   await seedApi('main', `http://127.0.0.1:${STUB_PORT}`, 'stub')
   await seedApi('sms', `http://127.0.0.1:${STUB_PORT}`, 'stub-sms')
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('剧情推进')
   // v1-1 开场白自足完整（standby）→ 注入原文后原地待命，不自动发导演请求
@@ -738,7 +816,7 @@ try {
      那一骰根本掷不着），否则它在这条断言跑之前插一条进来，验的就不是「初始」了。 */
   await ev(`(()=>{localStorage.setItem('zts-tavern:v1', JSON.stringify({}));
     localStorage.setItem('zts-sms-auto:v1', JSON.stringify({roll: Date.now(), per: {}}));return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('短信')
   await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D sms view')
@@ -750,7 +828,7 @@ try {
     dEmpty.n === 0 && (dEmpty.txt || '').includes('还没有消息'), JSON.stringify(dEmpty))
 
   await ev(`localStorage.setItem('zts-tavern:v1', JSON.stringify({luna:[{id:'old::1',from:'them',text:'旧档开场白：今晚天台的风有点大，小心着凉。',time:'01:02'},{id:'old::2',from:'user',text:'布丁给你，趁热。',time:'01:03'}]}))`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('短信')
   await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D sms view')
@@ -772,7 +850,7 @@ try {
     const l=o['luna']||[];const m=l.filter(x=>x.from==='user'&&String(x.text||'').includes('【D3】'));
     return {n:m.length,total:l.length}})()`)
   ok('D3a 发出去的那句当趟落盘（不再只活在 state 里）', d3Store.n === 1, JSON.stringify(d3Store))
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('短信')
   await poll(`document.body.innerText.includes('角色短信')`, 20000, 'D3 sms view')
@@ -790,7 +868,7 @@ try {
   await ev(`localStorage.clear()`)
   await seedApi('main', `http://127.0.0.1:${ESTUB_PORT}`, 'stub')
   await seedApi('sms', `http://127.0.0.1:${ESTUB_PORT}`, 'stub-sms')
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'E dash')
   // E1 播种幂等：A–D 已多次重载，canon 仍为 7 库、无重复累积（「登场者登记」已并入「角色档案」）
@@ -959,7 +1037,7 @@ try {
   // 播种非破坏：外插用户自建库 + 强制重播 canon（删种子标记 → 重载）
   const insUser = await ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-lore');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const tx=db.transaction(['lorebooks','meta'],'readwrite');tx.objectStore('lorebooks').put({id:'user-book-test-1',name:'E测试库',description:'user-sentinel-7',entries:[],createdAt:Date.now(),updatedAt:Date.now()});tx.objectStore('meta').delete('zts-lore-seed-v1');tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)})})()`)
   ok('E22 外插用户库并清除种子标记', insUser === true, 'ins=' + insUser)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await poll(`${loreCountSrc()}.then(n=>n===8)`, 15000, 'E user book preserved (7 canon + 1 user)')
   const ub = await loreBook('user-book-test-1')
@@ -1020,7 +1098,7 @@ try {
     `removed=${removed} ` + JSON.stringify(afterDel))
 
   // 重启：若少了「删了不重播」这层记账，ensureBuiltinPresets 会以为没播过而重新灌回去
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('终端设置')
   await poll(`document.body.innerText.includes('世界书数据管理')`, 20000, 'F2f settings after reload')
@@ -1092,7 +1170,7 @@ try {
 
   /* ============ Phase Q：关了界面就得收声 ============
      用户报的原话是「关闭界面还会有音乐，我关掉了浏览器声音才好」。
-     走的是标题菜单那条**退出终端**：回到指纹认证开屏之后，上一段底照旧一直放。
+     走的是标题菜单那条**退出终端**：回到开场标题屏之后，上一段底照旧一直放。
      这里量的还是**真的合成**（createOscillator 计数），不是把音量拧到 0 ——
      音量的事看不出来「还在不在响」，音符数看得见。
      底噪在 P3 打开过、P6 又关掉了，这里直接把本机设置写成「开」再重载：
@@ -1100,9 +1178,12 @@ try {
   console.log('\n[Phase Q] 关了界面就得收声：标题有音乐 · 退出终端之后一段都不再排')
   await ev(`(()=>{try{const s=JSON.parse(localStorage.getItem('zts-audio:v1')||'{}');
     localStorage.setItem('zts-audio:v1',JSON.stringify(Object.assign({},s,{beds:true,muted:false})))}catch(e){}return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
-  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'Q boot screen')
-  // 计数要在**起音之前**挂上 —— 长按指纹那一下既是手势、也是解锁
+  await reloadFresh()
+  await poll(`!!document.querySelector('[data-boot-card]')`, 25000, 'Q boot card')
+  await skipPv()
+  /* 计数要在**起音之前**挂上 ——「点击进入游戏」那一下既是手势、也是解锁。
+     跳过开场影像那一下不算：`element.click()` 派发的事件不 trusted，
+     浏览器不认它当手势，音轨照样解不开。 */
   const qArm = await ev(`(()=>{window.__au={src:0,err:[]};
     const A=window.AudioContext||window.webkitAudioContext;if(!A)return {ac:false};
     const co=A.prototype.createOscillator,cb=A.prototype.createBufferSource;
@@ -1110,14 +1191,10 @@ try {
     A.prototype.createBufferSource=function(){window.__au.src++;return cb.apply(this,arguments)};
     window.addEventListener('error',e=>window.__au.err.push(String(e.message)));
     return {ac:true}})()`)
-  const qr = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
-  ok('Q0 退出终端那一路能走到（认证开屏 + 指纹键都在，真 Web Audio 在场）',
-    qArm.ac === true && !!qr, JSON.stringify({ ...qArm, finger: !!qr }))
-  if (qr) {
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: qr.x, y: qr.y, button: 'left', clickCount: 1 })
-    await sleep(2200)
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: qr.x, y: qr.y, button: 'left', clickCount: 1 })
-  }
+  const qStart = await ev(`!!document.querySelector('[data-start-game]')`)
+  ok('Q0 退出终端那一路能走到（开场标题屏 + 「点击进入游戏」都在，真 Web Audio 在场）',
+    qArm.ac === true && qStart === true, JSON.stringify({ ...qArm, start: qStart }))
+  await pressAt('[data-start-game]')
   await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'Q title menu')
   const qOn0 = await ev(`window.__au.src`)
   await sleep(2000)
@@ -1127,22 +1204,23 @@ try {
 
   const qExit = await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('退出终端'));
     if(!b)return false;b.click();return true})()`)
-  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 12000, 'Q back to boot screen')
+  await poll(`!!document.querySelector('[data-boot-card]')`, 12000, 'Q back to boot card')
+  await skipPv()
   const qOff0 = await ev(`window.__au.src`)
   await sleep(2500)
   const qOff1 = await ev(`window.__au.src`)
   const qErrs = await ev(`window.__au.err`)
-  ok('Q2 退出终端回到认证开屏后，一个音都不再合成 —— 关了界面，声音就停',
+  ok('Q2 退出终端回到开场标题屏后，一个音都不再合成 —— 关了界面，声音就停',
     qExit === true && qOff1 - qOff0 === 0, `退出=${qExit} Δ=${qOff1 - qOff0}`)
   ok('Q3 这一路调度器一条都没抛错', Array.isArray(qErrs) && qErrs.length === 0, JSON.stringify(qErrs))
-  // Q 跑完停在认证开屏 —— 重新认证并回到运行（后面的相接在这里继续）
+  // Q 跑完停在开场标题屏 —— 重新进游戏并回到运行（后面的相接在这里继续）
   await boot()
 
   /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
   console.log('\n[Phase G] P2 Archive：25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
   // 档案页已在门禁之后（Phase E 清过 localStorage，此处重新置位），本相聚焦档案本体
   await ev(`(()=>{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');s.unlocked=true;localStorage.setItem(k,JSON.stringify(s));return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'G dash after unlock')
   await goto('角色档案')
@@ -1156,7 +1234,7 @@ try {
   // 后续断言需看全卡内容：把名录全体登记为「已遇见」后重载（封存门禁另由 G1b 覆盖）
   const seedMet = await ev(`(()=>{try{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');const ids=[...document.querySelectorAll('[data-archive-card]')].map(c=>c.getAttribute('data-archive-card'));s.world=Object.assign({},s.world||{},{met:Object.fromEntries(ids.map(i=>[i,true]))});localStorage.setItem(k,JSON.stringify(s));return ids.length}catch(e){return String(e)}})()`)
   ok('G1c 播种「已遇见」名录（供全卡断言）', seedMet === 25, 'seed=' + seedMet)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('角色档案')
   await poll(`document.querySelectorAll('[data-archive-card]:not([data-locked-id])').length===25`, 20000, 'G archive unlocked')
@@ -1263,7 +1341,7 @@ try {
   console.log('\n[Phase I] P6 台词气泡 + 关键词跳转：解锁后 点正文图鉴名 → 图鉴页展开对应条目')
   // 冒烟本地放行图鉴子系统（不动剧情本体）：仅用于验证「可点词 → requestCodex」闭环
   await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-terminal:v3')||'{}');o.unlocked=true;localStorage.setItem('zts-terminal:v3',JSON.stringify(o));return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   // 进剧情视图，读出当前聚焦事件 id（用于把一段「带台词+图鉴名」的叙述预置进该会话）
   await goto('剧情推进')
@@ -1279,7 +1357,7 @@ try {
   const youShort = '言万：「别装傻，我问你话呢。」'
   const seedOk = await ev(`(()=>{try{const k=${JSON.stringify(fid)};if(!k)return 'no-key';const text=['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。',${JSON.stringify(sayLong)},${JSON.stringify(youShort)},'她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n');const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');o[k]=[{id:'p6-'+Date.now().toString(36),from:'them',text:text,time:'20:00'}];localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true}catch(e){return String(e)}})()`)
   ok('I1 预置含台词行的叙述到当前会话（露娜的台词 + 主角的缩写署名「言万：」）', seedOk === true, 'seed=' + seedOk)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('剧情推进')
   // 在线线程渲染：旁白 + 「露娜：……」→ 左头像 say 气泡；气泡带说话人头像
@@ -1342,7 +1420,7 @@ try {
       'v1-1':[{id:'fold-a1',from:'them',text:'【折A1】夜风穿过甲板。',time:'20:01'}],
       'v1-2':[{id:'fold-b1',from:'them',text:'【折B1】她把终端搁在膝上。',time:'20:02'}]}));
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('剧情推进')
   await poll(`document.querySelectorAll('[data-past]').length===2`, 20000, 'I2 past blocks')
@@ -1376,15 +1454,10 @@ try {
 
   /* ============ Phase J：P7 标题菜单 + 8 槽存档读档 ============ */
   console.log('\n[Phase J] P7 标题菜单：无档禁用行动继续 / 存读档 / 覆盖二次确认 / 读取恢复含会话')
-  // 全新态：清 storage（含可能残留的 zts-slots:v1）→ 重载 → 长按指纹 → 标题菜单
+  // 全新态：清 storage（含可能残留的 zts-slots:v1）→ 重载 → 开场标题屏 → 标题菜单
   await ev(`localStorage.clear()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
-  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'J boot screen')
-  const jr = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: jr.x, y: jr.y, button: 'left', clickCount: 1 })
-  await sleep(2200)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: jr.x, y: jr.y, button: 'left', clickCount: 1 })
-  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'J title menu')
+  await reloadFresh()
+  await reachTitle()
   const contDisabled = await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('行动继续'));return b?b.disabled:null})()`)
   ok('J0 全新无档 → 标题「行动继续」禁用', contDisabled === true, 'disabled=' + contDisabled)
   // P10：自动存档在标题页单独成条（有档可直读，无档禁用）
@@ -1394,7 +1467,7 @@ try {
   // 直接在标题态预置 run A（先不进 Plot：全新档 Plot 自动开场会消费陈旧 stub 回包、覆写 v1-1 会话）
   const seedA = await ev(`(()=>{localStorage.setItem('zts-terminal:v3',JSON.stringify({unlocked:false,epDone:{'v1-1':true},cur:'v1-1',operatorName:'存A',focusId:'gcn'}));localStorage.setItem('zts-plot:v1',JSON.stringify({'v1-1':[{id:'pa::1',from:'them',text:'【存A标记】夜风穿过甲板，她按下发送。',time:'20:01'}]}));localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
   ok('J1 预置 存A 档（运行 + plot 会话）', seedA === true, '')
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()   // 有进度 → 行动继续 → 直达终端总览（dashboard，Plot 不挂载）
   await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='存A'}catch(e){return false}})()`, 12000, 'J continue keeps 存A')
   ok('J2 有进度重载 → 行动继续沿用当前 run（存A）', true)
@@ -1463,15 +1536,11 @@ try {
   await poll(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));return !!(f.autosave&&f.autosave.records===1&&f.autosave.snapshot.operatorName==='存A')}catch(e){return false}})()`, 12000, 'J autosave present')
   ok('J9 自动档随运行生成（records=1 · op 存A）', true)
 
-  // 行动开始 → 全新档：手动档保留、运行归零（重载冷启 → 指纹 → 标题 → 行动开始）
-  await cdp.send('Page.reload', { ignoreCache: true })
-  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'J10 boot screen')
-  const jr10 = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: jr10.x, y: jr10.y, button: 'left', clickCount: 1 })
-  await sleep(2200)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: jr10.x, y: jr10.y, button: 'left', clickCount: 1 })
-  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'J10 title menu')
+  // 行动开始 → 全新档：手动档保留、运行归零（重载冷启 → 开场标题屏 → 标题 → 行动开始）
+  await reloadFresh()
+  await reachTitle()
   await ev(`(()=>{const b=[...document.querySelectorAll('[data-title="1"] button')].find(x=>x.textContent&&x.textContent.includes('行动开始'));if(!b)return false;b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-boot-seq]')`, 20000, 'J10 接入序列 after 行动开始')
   await poll(`!!document.querySelector('.app--stage')`, 30000, 'J10 shell after 行动开始')
   ok('J10 标题「行动开始」→ 进入全新档', true)
   const keepSlots = await ev(`(()=>{try{const f=JSON.parse(localStorage.getItem('zts-slots:v1'));return {s0:f.slots[0]?f.slots[0].name:null,s1:f.slots[1]?f.slots[1].name:null}}catch(e){return {err:String(e)}}})()`)
@@ -1487,7 +1556,7 @@ try {
   // 播种：系统已解锁（读完 v1-3），但操作员双武装的揭示事件 v2-2 / v4-5 尚未完成 → 应灰卡
   const kSeed = await ev(`(()=>{localStorage.setItem('zts-terminal:v3',JSON.stringify({unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true},cur:'v1-3',operatorName:'图鉴观察员',focusId:'gcn'}));localStorage.setItem('zts-plot:v1',JSON.stringify({}));localStorage.setItem('zts-tavern:v1',JSON.stringify({}));return true})()`)
   ok('K0 播种「已解锁 v1-3 · 未达 v2-2/v4-5」的运行', kSeed === true, 'seed=' + kSeed)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()   // 行动继续 → 直达总览（Plot 不挂载，不消耗任何 stub 回包）
   await goto('武装图鉴')
   await poll(`!!document.querySelector('[data-arm-id]') || !!document.querySelector('[data-locked-id]')`, 20000, 'K arms mounted')
@@ -1499,7 +1568,7 @@ try {
   // 补齐揭示事件（模拟读毕 v2-2 / v4-5）→ 两武装应点亮为实卡并显示本体
   const kReveal = await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-terminal:v3'));o.epDone['v2-2']=true;o.epDone['v4-5']=true;o.cur='v4-5';localStorage.setItem('zts-terminal:v3',JSON.stringify(o));return true})()`)
   ok('K4 播种已读 v2-2/v4-5', kReveal === true, '')
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('武装图鉴')
   await poll(`!!document.querySelector('[data-arm-id="kokoro-noapusa"]') && !!document.querySelector('[data-arm-id="kokoro-session"]')`, 20000, 'K arms lit after reveal')
@@ -1527,7 +1596,7 @@ try {
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
   ok('K2-0 播种：走过 v1-1（走的是非原著那条路）· 应下一件托付', k2Seed === true, 'seed=' + k2Seed)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('情景记忆库')
   await poll(`!!document.querySelector('[data-mem]') && document.querySelectorAll('[data-mem-section]').length===7`, 20000, 'K2 mem mounted')
@@ -1640,13 +1709,8 @@ try {
 
   /* ============ Phase L：标题「终端连接」→ 设置专用界面（无侧边栏）+ 返回标题按钮 ============ */
   console.log('\n[Phase L] P9 标题「终端连接」：仅设置一页（无侧边栏）· 返回标题按钮回标题')
-  await cdp.send('Page.reload', { ignoreCache: true })
-  await poll(`!!document.querySelector('[aria-label="认证开屏"]')`, 25000, 'L boot screen')
-  const lr = await ev(`(()=>{const el=document.querySelector('[aria-label="长按指纹以完成认证"]');if(!el)return null;const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: lr.x, y: lr.y, button: 'left', clickCount: 1 })
-  await sleep(2200)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: lr.x, y: lr.y, button: 'left', clickCount: 1 })
-  await poll(`!!document.querySelector('[data-title="1"]')`, 30000, 'L title menu')
+  await reloadFresh()
+  await reachTitle()
   await goto('终端连接')
   await poll(`document.body.innerText.includes('返回标题') && !document.querySelector('[data-title="1"]')`, 15000, 'L setup shell mounts')
   /* 侧边栏在不在，认**结构**（`[data-guide="rail"]`），不认它标题那一行字 ——
@@ -1683,7 +1747,7 @@ try {
     localStorage.setItem('zts-tavern:v1',JSON.stringify({}));
     return true})()`)
   ok('M0 播种一份带指令条目的预设（并使其生效）', mSeed === true, 'seed=' + mSeed)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('终端设置')
   await poll(`document.body.innerText.includes('管理预设')`, 15000, 'M settings mounted')
@@ -1726,7 +1790,7 @@ try {
       world:{offset:{},flags:{},met:{hikari:true,luna:true,mefisa:true,nyau:true},ends:{},own:[],records:[]}
     }));
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('任务简报')
   await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N patrol-lock mounted')
@@ -1758,7 +1822,7 @@ try {
     await new Promise((res,rej)=>{const tx=db.transaction('meta','readwrite');
       tx.objectStore('meta').put({key:'gear',value:{brace:1,scope:1,filter:1}});tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('任务简报')
   await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N missions mounted')
@@ -2694,7 +2758,7 @@ try {
     return true})()`)
   ok('R0 播种：露娜羁绊顶到满（offset +100）· 恋兔光压到底（-100）· 美菲莎过线（+100）· 私密推进（露娜 口腔+22 / 小穴+40 / 色情度+30 · 美菲莎 口腔+90）· 关系档位（露娜 恋人 · 恋兔光 朋友 · 美菲莎 未定下）· 次数账（露娜那本 20 回）· 贴身衣物（露娜 内裤半褪 · 湿润 45 · 流水两条）· 达娜厄一并显影（身量未补录的那一位）',
     pSeed === true, 'seed=' + pSeed)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('角色档案')
   await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'P archive 25 cards')
@@ -2967,7 +3031,7 @@ try {
      「没摆」才不是「门没开」的假象。补的是**没人听的端口**，请求一个字也落不了地。
      量完再把那把钥匙收回去（后面几段踩的是「没配通道」那个前提）。 */
   await seedApi('main', 'http://127.0.0.1:4999', 'silent')
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('剧情推进')
   await poll(`!!document.querySelector('[data-event]')`, 20000, 'R11 plot view').catch(() => {})
@@ -3018,7 +3082,7 @@ try {
         digest:'',turns:[],narrative:'',narrativeBy:'模板',loot:[],coin:12,mainline:true});
       t.oncomplete=()=>res(true)});
     return true}catch(e){return String(e)}})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('任务简报')
   await poll(`document.querySelectorAll('[data-mainline-mission]').length>=2`, 20000, 'S mainline window')
@@ -3044,7 +3108,7 @@ try {
     sAfter.n === 1 && sAfter.ids[0] === 'main-v1-5', JSON.stringify(sAfter))
 
   // 落库：重载之后不会又冒出来
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('任务简报')
   /* 等**账读进来**再读牌面，不是「牌面出现了就行」。
@@ -3078,7 +3142,7 @@ try {
         records:[{eventId:'v1-3',mode:'online',digest:'第三段收束',ts:1},
                  {eventId:'v1-4',mode:'online',digest:'第四段收束',ts:2}]}}));
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('剧情推进')
   await poll(`!!document.querySelector('[data-focus-ev]')`, 20000, 'T plot bar')
@@ -3133,7 +3197,7 @@ try {
       world:{offset:{},locked:{},flags:{},met:{luna:true,hikari:true},ends:{},own:[],cast:{},
         records:[{eventId:'v1-9',mode:'offline',digest:'第九段收束',ts:9}]}}));
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true })
+  await reloadFresh()
   await boot()
   await goto('剧情推进')
   await poll(`!!document.querySelector('[data-focus-ev]')`, 20000, 'U plot bar')
@@ -3251,7 +3315,7 @@ try {
           + '她把手里的烟按灭在栏杆上。',time:'15:00'}]}));
     localStorage.setItem('zts-sms-auto:v1', JSON.stringify({roll: Date.now(), per: {}}));
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   await goto('短信')
   await poll(pageHas('角色短信'), 20000, 'V sms view')
 
@@ -3429,7 +3493,7 @@ try {
     localStorage.setItem('zts-tavern:v1', JSON.stringify({
       'd:smoke-date-2':[{id:'sd::2',from:'them',text:'【V7】她把伞往你那边偏了偏。',time:'16:00'}]}));
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   await goto('剧情推进')
   await poll(`!!document.querySelector('[data-plot-lane="date"]')`, 20000, 'V7 lane tab')
   await ev(`(()=>{const b=document.querySelector('[data-plot-lane="date"]');if(b)b.click();return !!b})()`)
@@ -3470,7 +3534,7 @@ try {
     t.world.cg={'d:smoke-date-3':'cg-date-shop-luna'};
     localStorage.setItem('zts-terminal:v3', JSON.stringify(t));
     return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   const vShopNo = await v8Probe('V8')
   ok('V8 导演点了名、但这一场还没走到那一步 → 那张 CG 不摆（节拍没到，点名也不算数）',
     vShopNo.shop === 0 && vShopNo.wear === 1 && vShopNo.named === 'cg-date-shop-luna',
@@ -3480,7 +3544,7 @@ try {
   await ev(`(()=>{const a=JSON.parse(localStorage.getItem('zts-rendezvous:v1'));
     a[0].beats=['outfit-tryon'];
     localStorage.setItem('zts-rendezvous:v1', JSON.stringify(a));return true})()`)
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   const vShopYes = await v8Probe('V8b')
   ok('V8b 走到那一步之后（beats 落了 outfit-tryon）→ 同一张当场摆上（对照：上一条的 0 不是探针瞎了）',
     vShopYes.shop === 1 && vShopYes.wear === 1, JSON.stringify(vShopYes))
@@ -3509,7 +3573,7 @@ try {
     .find(x=>x.textContent&&x.textContent.includes('低语者日志'));if(!b)return false;b.click();return true})()`)
   const wShot = () => ev(`(()=>{const eb=document.querySelector('[data-error-boundary]');
     const box=document.querySelector('[data-error-kind]');
-    return {href:location.href, boot:!!document.querySelector('[aria-label="认证开屏"]'),
+    return {href:location.href, boot:!!document.querySelector('[data-boot-card]'),
       eb:!!eb, kind:box?box.getAttribute('data-error-kind'):null,
       title:eb?(eb.querySelector('b')||{}).textContent:null,
       btns:eb?[...eb.querySelectorAll('button')].map(x=>x.textContent):[],
@@ -3525,10 +3589,10 @@ try {
     return null
   }
 
-  /* 臂一：拦住 —— 点进去该**自己带 ?v= 整页重来一趟**，落回指纹开屏，且**不闪兜底** */
+  /* 臂一：拦住 —— 点进去该**自己带 ?v= 整页重来一趟**，落回开场标题屏，且**不闪兜底** */
   await cdp.send('Network.setBlockedURLs', { urls: W_BLOCK })
   await ev(wClear)
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   const wHref0 = await ev('location.href')
   const w1 = await wClickUntilReload(wHref0)
   ok('W1 那一块拉不到 → 自己带 ?v= 整页重来一趟（绕开缓存里那份旧入口），中途不闪兜底',
@@ -3540,7 +3604,7 @@ try {
   /* 臂二：放开 —— 同一块这下该**真的开得起来**，并且它那一笔账当场销掉。
      这一臂是臂一的意义所在：重来不是为了转圈，是为了这一下能成。 */
   await cdp.send('Network.setBlockedURLs', { urls: [] })
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   await goto('低语者日志')
   const w2 = await wShot()
   ok('W2 放开之后同一块真的开得起来，且它那一笔账当场销掉（下一回撞上还能自动重取）',
@@ -3550,7 +3614,7 @@ try {
   /* 臂三：**一直**拦着，走主人真会走的那条路 —— 再点一次，这回该**停下来摊兜底**
      （说得准、给的路按得动），而不是又重载一次。这是防「点一次、重载一次」那个圈的关键。 */
   await cdp.send('Network.setBlockedURLs', { urls: W_BLOCK })
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
   const wHref1 = await ev('location.href')
   const w3a = await wClickUntilReload(wHref1)
   ok('W3 再走一趟仍然拉不到 → 还是先自动重来一次（账是新的一笔：上一趟 Saga 成功时销过）',
@@ -3577,7 +3641,7 @@ try {
   /* 收尾：放开网络、把账清掉、重来一趟干净的，别把状态漏给后面的 SHOT 那一段 */
   await cdp.send('Network.setBlockedURLs', { urls: [] })
   await ev(wClear)
-  await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+  await reloadFresh(); await boot()
 
   /* 需要看版式时：SHOT=<目录> 把这一趟改过的几屏各截一张（默认不跑）
      —— 折起来与摊开各来一张，好对着看「折起来时到底省掉了多少版面」。 */
@@ -3611,7 +3675,7 @@ try {
         o[k]=[{id:'shot-'+Date.now().toString(36),from:'them',time:'20:00',
         text:['夜风穿过甲板，她把终端搁在膝上，屏幕亮着。',${JSON.stringify(shotLine)},'她又提起那台「灵魂蓄积器TM」，说它不该再出现。'].join('\\n')}];
         localStorage.setItem('zts-plot:v1',JSON.stringify(o));return true})()`)
-      await cdp.send('Page.reload', { ignoreCache: true }); await boot()
+      await reloadFresh(); await boot()
       await goto('剧情推进')
       await poll(`!!document.querySelector('[data-say]')`, 15000, 'shot say bubble')
       await ev(`(()=>{const el=[...document.querySelectorAll('[data-say]')].find(x=>x.innerText.includes('别走神'));

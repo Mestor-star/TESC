@@ -44,6 +44,7 @@
   /* 一步的字多了也不许把气泡顶出屏幕：封顶之后由条目自己滚，
      「下一步」那一行始终挂在屏幕里点得到 */
   max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);   /* 手机上 `100vh` 会把底下一截推进地址栏背后 */
   overflow: hidden;
   display: flex;
   /* 不能用 flex-start：正文那一栏要拿到气泡的确定高度，

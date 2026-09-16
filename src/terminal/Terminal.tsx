@@ -91,7 +91,7 @@ export interface TerminalState {
   setupMode: boolean
   /** 从设置专用界面返回标题菜单 */
   exitSetup: () => void
-  /** 退出终端：回到指纹认证开屏 */
+  /** 退出终端：回到开场标题屏 */
   exitToBoot: () => void
   /** 读档：写入第 i 槽快照后全量重挂载 */
   loadSlot: (i: number) => void

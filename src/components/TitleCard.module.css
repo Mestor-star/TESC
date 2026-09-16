@@ -1,0 +1,137 @@
+/* ===== 官方 PV 收尾那张标题卡 =====
+ *
+ * 从 `views/Title.module.css` 搬出来的（2026-09-16）。搬家的理由不是整理：
+ * 这张卡现在**两处都在用** —— 开场标题屏（`Boot`，PV 放完停的那一屏）
+ * 与开始界面（`views/Title`）。主人要的是「PV 里那张卡」，两处必须一模一样；
+ * 各写一份，改一处忘一处，迟早漂成两张。
+ *
+ * 尺寸、取色、错位全是从原片第 29.5 秒那一帧上量的，不是配的：
+ *
+ *   段            字号（占画幅高）   位置（相对整块）
+ *   こちら、          7.0%         大字那一行的**左上**，左缘再探出一点
+ *   終末 / 停滞       19.6%        两组咬在一起，各偏一档
+ *   委員会。          15.4%        最低、最右
+ *   英文两行          3.1%         左缘与大字那一行对齐
+ *
+ * ⚠️ **这张卡自带底（格纸）** —— 不是装饰贪多。四段之所以读得出「各贴一张
+ * 白方贴」，全靠底色把白贴托出来；换回本仓的冷白底，白方贴与底同色，整块会糊成
+ * 一片白，错位也就没了。那行黄英文同理（对格纸只有 1.08:1，本来就是暗纹）。
+ * 所以这一块**不跟全站底色走**，是「贴进来的一张卡」。
+ * 底与格线 2026-09-16 挪进冷调（同明度换色相），理由记在 `tokens.css` 那四支头上。
+ * ============================================================ */
+.pvCard {
+  display: block;
+  margin: 16px 0 0;
+  padding: 26px 22px 22px;
+  text-align: center;
+  background-color: var(--pv-paper);
+  /* 格纸：60px 一格、1px 线（原片量出来的间隔） */
+  background-image:
+    repeating-linear-gradient(to right, var(--pv-grid) 0 1px, transparent 1px 60px),
+    repeating-linear-gradient(to bottom, var(--pv-grid) 0 1px, transparent 1px 60px);
+  /* 白闪 → 落定：原片 26.2s 那一下整幅过曝，然后收回来 */
+  animation: pvCardIn 640ms var(--ease-out) 60ms backwards;
+}
+/* 三行字共用一条左缘 —— 卡片居中、块内左对齐（原片就是这关系） */
+.pvStack { display: inline-block; text-align: left; }
+
+/* こちら、 —— 纯黑小字，压在左上 */
+.pvHere {
+  display: block;
+  width: max-content;
+  margin: 0 0 6px -14px;        /* 往左探出大字那一行一点 */
+  padding: 1px 8px 3px;
+  font-size: clamp(13px, 1.45vw, 19px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--pv-ink);
+  animation: pvSplit 620ms var(--ease-out) backwards,
+             pvPatch 620ms var(--ease-out) backwards;
+}
+/* 大字那一行：終末／停滞／委員会。三张白方贴，各错一档 */
+.pvBig {
+  display: block;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pvPair,
+.pvRest {
+  display: inline-block;
+  padding: 0 6px 6px;
+  line-height: 1;
+  background-color: var(--bg-1);
+  animation: pvSplit 620ms var(--ease-out) backwards,
+             pvPatch 620ms var(--ease-out) backwards;
+}
+.pvPair {
+  font-size: clamp(40px, 8.2vw, 78px);
+  color: var(--pv-magenta);
+}
+.pvPair[data-i="0"] { translate: 0 0.06em; animation-delay: 120ms; }
+.pvPair[data-i="1"] { translate: 0 -0.03em; animation-delay: 200ms; }
+.pvRest {
+  margin-left: -4px;            /* 与停滞咬在一起 */
+  font-size: clamp(30px, 6.2vw, 58px);
+  color: var(--pv-ink);
+  translate: 0 0.14em;
+  animation-delay: 300ms;
+}
+/* 底下那行英文：黄字暗纹，左缘与大字对齐，从左往右擦出来 */
+.pvEn {
+  display: block;
+  margin-top: 20px;
+  font-family: var(--font-mono);
+  font-size: clamp(9px, 1.05vw, 13px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.5;
+  color: var(--pv-yellow);
+  animation: pvWipe 620ms var(--ease-out) 560ms backwards;
+}
+
+/* 白闪 → 色散 → 落定（整张卡）：过曝、缩回来、静下来 */
+@keyframes pvCardIn {
+  0%   { opacity: 0; transform: scale(1.014); filter: brightness(2.4) blur(7px); }
+  24%  { opacity: 1; filter: brightness(1.55) blur(2.2px); }
+  48%  { filter: brightness(1.10) blur(0.7px); }
+  72%  { transform: scale(1.002); filter: brightness(1.01); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+/* 每一段自己那一条色散：青／品红／荧绿三色错位，几拍后归位 */
+@keyframes pvSplit {
+  0%   { opacity: 0; text-shadow: 0 0 0 transparent; }
+  26%  { opacity: 1; text-shadow: -0.085em 0 #12d7e8, 0.085em 0 #e01e8c; }
+  48%  { text-shadow: 0.07em 0 #35e07a, -0.07em 0 #e01e8c; }
+  72%  { text-shadow: 0.03em 0 #12d7e8, -0.03em 0 transparent; }
+  100% { text-shadow: none; }
+}
+/* 白方贴比字晚一步贴上来（原片里是「字先浮出、贴纸随后压上」） */
+@keyframes pvPatch {
+  0%, 34% { background-color: transparent; }
+  62%, 100% { background-color: var(--bg-1); }
+}
+/* 黄英文从左往右擦出 */
+@keyframes pvWipe {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* 窄屏：卡自己收一圈，「委員会。」允许折下去 */
+@media (max-width: 980px) {
+  .pvCard { padding: 18px 12px 16px; }
+  .pvHere { margin-left: -6px; }
+  .pvBig { white-space: normal; }
+}
+
+/* —— 减少动效：入场一律瞬时到位 ——
+   全局那条只压 duration、**不动 delay**，留着延迟会先白站一秒多。 */
+@media (prefers-reduced-motion: reduce) {
+  .pvCard,
+  .pvHere,
+  .pvPair,
+  .pvRest,
+  .pvEn {
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,24 +1,19 @@
-/* ===== 开屏 · 终端开机流程 =====
- * 指纹认证页(长按扫描) → 认证通过 → 接入序列(逐行显现 + 进度条)
- * → 就绪提示符 → 终端本体以「启动弹出」挂载进场(见 App.module.css .bootPop)
+/* ===== 开场标题屏 =====
  *
- * 2026-09-15 整体改版：这一屏不再是「黑屏里亮起红字」，改成浅底上的
- * 深墨大字 + 主调双色的渐变与错位重影。
- * 2026-09-16 二次换皮：主调换成霓虹青×电紫（粉退到警戒那一档），
- * 底纹由点阵换成全息网格，扫描与指纹那些「在跑」的光一律走青。
- * 2026-09-16 语汇重排：改成**游戏启动**那一路 —— 屏幕四角先摆好描边小件，
- * 标题两侧各一枚菱形，副标夹在两条细线中间，底下压一枚四角星；
- * 自检那一段本来是一块黑终端，现在是同一套浅底语汇的「接入序列」+ 一条进度。
- * 记号与外壳同源：菱形、细线、四角小件。
+ * 2026-09-16 由「认证开屏（长按指纹）」改成这一屏。改的缘由是主人那一路：
+ * 指纹那一段整个不要了，片子放完就停在**官方 PV 收尾那张卡**上，
+ * 卡底下挂着「点击进入游戏」—— 它得能点，点进开始界面。
  *
- * 2026-09-16 入场动效（同日后半段）：整屏按节拍逐件「装配」——
- *   斜扫光过场 → 四角小件各自滑入 → 标题中缝揭开 → 菱形旋入 → 细线展开
- *   → 副标 / 标语 / 四角星 → 指纹核心弹入 → 提示语与署名。
- * 节拍表（认证页，ms）：
- *   0 扫光／点阵 · 90/160/230/300 四角 · 320 kicker · 420 标题 · 620 菱形
- *   · 660 细线 · 760 副标 · 840 标语 · 920 四角星 · 1000 指纹 · 1080 提示 · 1160 署名
- * 入场件一律用 `backwards` 填充（少数用 `both`）：动画放完就把 transform 交还给基础
- * 样式，免得 `fill: both` 把终帧钉死、让 `:hover` 那点位移再也抬不起来。 */
+ * 所以这一屏现在是：四角小件 + 那张标题卡（`components/TitleCard`，与开始
+ * 界面共用同一份）+ 细线夹副标 + 一枚进入按钮。原来那套「指纹扫描」的样式
+ * （`.fp*` / `.isScanning` / `.fpHint`）与「接入序列」那一块（`.seq*` /
+ * `.termLines` / `.line`）**都不在这儿了** —— 前者的功能没了，
+ * 后者搬去了 `components/BootSeq.module.css`（位置也换到开始界面按下去之后）。
+ *
+ * 入场节拍（ms）：0 扫光 · 90/160/230/300 四角 · 卡自己走 `pvCardIn`
+ * · 760 副标 · 920 四角星 · 1060 进入按钮。
+ * 入场件一律用 `backwards` 填充：动画放完就把 transform 交还给基础样式，
+ * 免得 `fill: both` 把终帧钉死、让 `:hover` 那点位移再也抬不起来。 */
 
 .boot {
   position: fixed;
@@ -61,12 +56,6 @@
   100% { transform: translateX(340%) skewX(-14deg); opacity: 0; }
 }
 
-/* 认证页整体的底纹（全息网格）**已删**（2026-09-16 方贴纸稿）——
-   与 tokens 那两层同一批撤走。开屏现在靠四角小件、菱形夹标题与「接入序列」
-   那条进度自己把版面撑起来，底下不留纹。
-   （它唯一的消费者走了之后，`@keyframes dotIn` 也成了死代码，一并删。） */
-
-
 /* ---- 四角小件（游戏开屏的第一眼：框先摆好）---- */
 .corner {
   position: absolute;
@@ -74,10 +63,6 @@
   pointer-events: none;
   z-index: 3;
 }
-/* 框内那条扫描线**已删**（2026-09-16 方贴纸稿）。它是 `global(scanline)` 的
-   两处消费者之一 —— 撤它的时候连着 tokens 里 `@keyframes scanline` 的定义
-   一起收了，否则会留下「引用一个不存在的关键帧」：CSS Modules 下那种错
-   **不报错、lint 也不报**，只是那一处永远不动（tokens 的「动画」一节记着这个病）。 */
 .chip {
   position: absolute;
   display: inline-flex;
@@ -112,7 +97,41 @@
   animation: global(pulseGlow) 2.2s infinite;
 }
 
-/* ---- 认证页(指纹扫描) ---- */
+/* ---- 右上角那一簇：播放键 + VER --------------
+   `.chip` 自己是 `position: absolute`（四角各靠 `chipTL/TR/BL/BR` 一档定位），
+   进了这一簇要退回文档流、交给 flex 排 —— 不然两个 absolute 会叠在同一处。 */
+.cornerR {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cornerR > .chip {
+  position: static;
+  /* 顶上这一行原本是 `chipTR` 那一档（右 16px / 上 -10px 滑入），挪进簇里补回来 */
+  --fx: 16px;
+  --fy: -10px;
+  animation-delay: 160ms;
+}
+/* 「重看开场影像」——形状与 VER 那枚同款，只是它能按：
+   `.corner` 整块是 `pointer-events: none`（四角小件本就不吃点击），这儿单独打开。 */
+.cornerR > .pvBtn {
+  pointer-events: auto;
+  cursor: pointer;
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  animation-delay: 210ms;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.cornerR > .pvBtn:hover {
+  color: var(--steel-deep);
+  border-color: var(--steel);
+  background: var(--bg-2);
+}
+
+/* ---- 中间那一列：卡 · 副标 · 四角星 · 进入按钮 ---- */
 .bootInner {
   position: relative;
   z-index: 2;
@@ -120,99 +139,15 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
+  max-width: min(760px, 92vw);
 }
 
-.bootKicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  margin-bottom: 20px;
-  animation: kickIn 640ms var(--ease-out) 320ms backwards;
-}
-/* 字距从散到拢 —— 像是远处的信号慢慢对准 */
-@keyframes kickIn {
-  from { opacity: 0; letter-spacing: 0.62em; }
-  to { opacity: 1; letter-spacing: 0.22em; }
-}
-.bootKicker::before,
-.bootKicker::after {
-  content: "";
-  width: 38px;
-  height: 1px;
-  background: var(--line-3);
-}
-
-.bootTitle {
-  position: relative;
-  margin: 0;
-  padding: 8px 42px;             /* 两侧留出菱形的位置 */
-  font-size: clamp(30px, 6vw, 58px);
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  line-height: 1.18;
-  color: var(--ink);
-  /* 「次元错位」：青与粉各偏两像素叠在字后 */
-  text-shadow: var(--duo-shadow);
-  /* 中缝向两侧揭开 —— 比单纯淡入更像「开机」 */
-  animation: titleIn 820ms var(--ease-out) 420ms backwards;
-}
-@keyframes titleIn {
-  from {
-    opacity: 0;
-    clip-path: inset(-30% 50% -30% 50%);
-    transform: scale(1.07);
-    letter-spacing: 0.24em;
-  }
-  to {
-    opacity: 1;
-    clip-path: inset(-30% -12%);
-    transform: none;
-    letter-spacing: 0.08em;
-  }
-}
-.bootTitle em {
-  font-style: normal;
-  /* 醒目处走身份那一对：青那一头是「反現実」，绯那一头是标题那枚心。
-     渐变裁字不能同时吃 text-shadow（会从透明字里透出一团糊影），所以关掉。 */
-  background: linear-gradient(120deg, var(--steel), var(--red));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: none;
-}
-/* 标题两侧各一枚菱形（上一版是圆头小竖条）—— 与侧栏角标、顶栏那一枚同一个记号 */
-.bootTitle::before,
-.bootTitle::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 11px;
-  height: 11px;
-  margin-top: -5.5px;
-  background: linear-gradient(140deg, var(--steel), var(--red));
-  opacity: 0.85;
-  pointer-events: none;
-  /* 从正着躺平一路转到 45° 立起来 —— 收尾与基础样式的写法对齐 */
-  animation: diaIn 560ms var(--ease-out) 620ms backwards;
-}
-@keyframes diaIn {
-  from { opacity: 0; transform: rotate(0deg) scale(0.2); }
-  to { opacity: 0.8; transform: rotate(45deg) scale(1); }
-}
-.bootTitle::before { left: 8px; }
-.bootTitle::after { right: 8px; }
-
-/* 副标夹在两条细线中间 —— 参考图那一版标题页的第四件 */
+/* 副标夹在两条细线中间 */
 .bootSub {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 22px;
   font-family: var(--font-mono);
   font-size: 11.5px;
   letter-spacing: 0.24em;
@@ -239,16 +174,7 @@
   to { opacity: 1; transform: scaleX(1); }
 }
 
-/* 标语（第五件） */
-.bootTag {
-  margin-top: 14px;
-  font-size: 11.5px;
-  letter-spacing: 0.1em;
-  color: var(--ink-faint);
-  animation: global(riseIn) 520ms var(--ease-out) 840ms backwards;
-}
-
-/* 四角星装饰（第六件）—— 压住标题那一块与指纹之间的空 */
+/* 四角星装饰 —— 压住副标与按钮之间的空 */
 .orn {
   margin-top: 16px;
   font-size: 13px;
@@ -267,381 +193,26 @@
   to { transform: rotate(360deg); }
 }
 
-.bootBrand {
-  margin-top: 20px;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: var(--ink-mute);
-  animation: global(riseIn) 520ms var(--ease-out) 1160ms backwards;
-}
-.bootBrand b {
-  color: var(--steel-deep);
-  font-weight: 800;
-}
-
-/* ---- 指纹扫描区 ---- */
-.fp {
-  position: relative;
-  margin-top: 26px;
-  width: 172px;
-  height: 172px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
-  border: 1px solid var(--line-3);
-  user-select: none;
-  touch-action: none;
-  cursor: var(--cursor-point);
-  transition: transform var(--t-fast), box-shadow var(--t-fast);
-  animation: fpIn 640ms var(--ease-out) 1000ms backwards;
-}
-@keyframes fpIn {
-  from { opacity: 0; transform: scale(0.72); }
-  to { opacity: 1; transform: none; }
-}
-.fp:hover {
-  transform: translateY(-2px);
-}
-.fp::before {
-  content: "";
-  position: absolute;
-  inset: -10px;
-  border-radius: 50%;
-  border: 1px dashed color-mix(in srgb, var(--steel) 38%, transparent);
-  animation: fpSpin 26s linear infinite;
-}
-/* 外圈再套一枚菱形 —— 圆形核心 + 菱形轮廓，两套记号在这儿咬合 */
-.fp::after {
-  content: "";
-  position: absolute;
-  inset: -26px;
-  border: 1px solid color-mix(in srgb, var(--violet) 24%, transparent);
-  transform: rotate(45deg);
-  pointer-events: none;
-}
-@keyframes fpSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.fpRing {
-  position: absolute;
-  inset: 6px;
-  border-radius: 50%;
-  background: conic-gradient(var(--steel) calc(var(--p, 0) * 1%), transparent 0);
-  /* 蒙版里的黑＝「露出来」，与配色无关，用关键字 black 免得看着像硬写色 */
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), black calc(100% - 4px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), black calc(100% - 4px));
-  opacity: 0.9;
-  transition: opacity var(--t-fast);
-}
-
-.fpIcon {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 84px;
-  height: 84px;
-  color: var(--steel-deep);
-  transition: color var(--t-fast), transform var(--t-fast);
-}
-/* 扫描中的呼吸 —— 这一支**硬化**了（2026-09-16 方贴纸稿）。
-   它原本是两帧的柔影：落下时 `0 4px 8px`、抬起时 `0 12px 20px`，
-   靠影子的糊与不糊说「浮起来又落下去」。新的写法是**零模糊的实心垫片** ——
-   影子随身子一起错开（落下 3px、抬起 9px），呼吸那一拍一个字没丢，
-   但话从「浮」改成了「贴纸翘起来一条边」，与全站同一句。
-   `.fpIcon` 自己那条常驻的 `drop-shadow(0 8px 16px)` 一并撤：颜色已经由
-   `--steel-deep` 说清楚了，再叠一层糊影只是 HUD 时期的习惯。 */
-@keyframes fpScan {
-  0%, 100% {
-    transform: translateY(-6px);
-    filter: drop-shadow(0 3px 0 color-mix(in srgb, var(--steel-deep) 38%, transparent));
-  }
-  50% {
-    transform: translateY(6px);
-    filter: drop-shadow(0 9px 0 color-mix(in srgb, var(--steel) 58%, transparent));
-  }
-}
-
-/* 扫描光束 */
-.fpBeam {
-  position: absolute;
-  z-index: 1;
-  left: 10px;
-  right: 10px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--steel), transparent);
-  opacity: 0;
-}
-.isScanning .fpBeam {
-  opacity: 1;
-  animation: beamDrop 1.05s ease-in-out infinite;
-}
-@keyframes beamDrop {
-  0% {
-    top: 14%;
-  }
-  50% {
-    top: 84%;
-  }
-  100% {
-    top: 14%;
-  }
-}
-
-/* ---- 扫描中：整块核心「通电」---- */
-.isScanning .fp {
-  /* 只留发抖这一条：入场那条 fpIn 若一并排在这儿，晚 1000ms 才起步，
-     手快的人会在按下之后对着一枚「透明的按钮」按满一秒。顶掉它反而安全 ——
-     元素立刻回到基础样式的满不透明度。 */
-  animation: fpShake 1.05s ease-in-out infinite;
-  /* 三层影只留中间那条**硬环**（`0 0 0 7px`：偏移 0、模糊 0，是实心的一圈）——
-     它本来就是零模糊，不用改。另外两层（`0 0 34px` 那团糊光、`--shadow-2`
-     那层浮影）随方贴纸稿撤走：按下指纹时该看见的是「按钮被点亮了一圈」，
-     不是「按钮浮起来了」。 */
-  box-shadow: 0 0 0 7px color-mix(in srgb, var(--steel) 15%, transparent);
-}
-/* 握着的这一会儿轻轻发抖 —— 震幅小到不晃眼，只当是「在读」 */
-@keyframes fpShake {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  25% { transform: translate(-1.2px, 0.8px) rotate(-0.5deg); }
-  75% { transform: translate(1.2px, -0.8px) rotate(0.5deg); }
-}
-.isScanning .fpIcon {
-  color: var(--steel-deep);
-  animation: fpScan 0.9s ease-in-out infinite;
-}
-/* 外圈那枚菱形反向转起来（45° 起、45° 收，转一整圈） */
-.isScanning .fp::after {
-  border-color: color-mix(in srgb, var(--violet) 48%, transparent);
-  animation: diaSpin 5.6s linear infinite;
-}
-@keyframes diaSpin {
-  from { transform: rotate(45deg); }
-  to { transform: rotate(405deg); }
-}
-.isScanning .fpRing {
-  opacity: 1;
-}
-
-.fpHint {
-  margin-top: 18px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  min-height: 1.4em;
-  animation: global(riseIn) 520ms var(--ease-out) 1080ms backwards;
-}
-.fpHint.isLive {
-  color: var(--steel-deep);
-}
-
-/* 认证通过后整页瞬时切到一张干净的纸 */
-.boot.isBoot {
-  background: var(--bg-1);
-  animation: flashWash 620ms var(--ease-out) both;
-}
-/* 通过的这一瞬，整页过一道白 —— 比硬切更像「换场」 */
-@keyframes flashWash {
-  0% { filter: brightness(1.9); }
-  100% { filter: none; }
-}
-/* 入射序列那一版不留扫光，改成从正中炸开的一圈白光 */
-.boot.isBoot::after {
-  top: 50%;
-  bottom: auto;
-  left: 50%;
-  width: 60vmax;
-  height: 60vmax;
-  margin: -30vmax 0 0 -30vmax;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--steel) 38%, transparent), transparent 62%);
-  animation: flashOut 780ms var(--ease-out) both;
-}
-@keyframes flashOut {
-  from { opacity: 0.95; transform: scale(0.08); }
-  to { opacity: 0; transform: scale(2.6); }
-}
-
-/* ---- 接入序列（上一版是一块黑终端）---- */
-.seq {
-  position: relative;
-  z-index: 2;
-  width: min(760px, 88vw);
-  min-height: 320px;
-  font-family: var(--font-mono);
-  text-align: left;
-  color: var(--ink-dim);
-  /* 从一条压扁的横缝里撑开 */
-  animation: seqIn 620ms var(--ease-out) 120ms backwards;
-}
-@keyframes seqIn {
-  from { opacity: 0; clip-path: inset(46% 0 46% 0); }
-  to { opacity: 1; clip-path: inset(-20% 0 -20% 0); }
-}
-/* 「接入序列」面板上原本盖着两层（2026-09-16 方贴纸稿全撤）：
-   一层 CRT 逐行扫描的横纹（`::after`），一层与四角那条同支的扫描线（`::before`）。
-   横纹是「这是块屏」的话，扫描线是 `global(scanline)` 的另一处消费者 ——
-   与四角那条一起走。面板现在是干净的实心白卡，「在跑」这件事交给进度条本身。 */
-
-.seqKicker {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 9.5px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  animation: kickIn 560ms var(--ease-out) 240ms backwards;
-}
-.seqKicker::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-.seqTitle {
-  margin: 12px 0 14px;
-  font-size: 20px;
+/* 「点击进入游戏」—— 这一屏唯一的动作，所以要够显眼。
+   配色与垫片全走全局 `.btn .btn--primary`（方贴纸稿那套：实心位移垫片、
+   零模糊），这里只补尺寸与节拍，**不碰任何颜色**。 */
+.startBtn {
+  margin-top: 22px;
+  min-width: 232px;
+  padding: 14px 30px;
+  font-size: 15px;
   font-weight: 900;
-  letter-spacing: 0.18em;
-  color: var(--ink);
-  text-shadow: var(--duo-shadow);
-  animation: global(riseIn) 520ms var(--ease-out) 340ms backwards;
-}
-/* 一条进度：行显现到哪儿，它填到哪儿 */
-.seqMeter {
-  position: relative;
-  height: 3px;
-  margin-bottom: 22px;
-  background: var(--bg-3);
-  overflow: hidden;
-  animation: ruleGrow 520ms var(--ease-out) 440ms backwards;
-}
-.seqMeter > span {
-  position: relative;
-  display: block;
-  height: 100%;
-  overflow: hidden;
-  background: linear-gradient(90deg, var(--steel), var(--red));
-  transition: width 200ms var(--ease-out);
-}
-/* 填充条上再走一道流光 */
-.seqMeter > span::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 40%;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--bg-0) 72%, transparent), transparent);
-  animation: global(sweep) 1.7s linear infinite;
+  letter-spacing: 0.2em;
+  animation: global(riseIn) 520ms var(--ease-out) 1060ms backwards;
 }
 
-.termLines {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-  font-size: 13.5px;
-  letter-spacing: 0.04em;
-}
-
-.line {
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  animation: lineIn 240ms var(--ease-out) both;
-}
-@keyframes lineIn {
-  from {
-    opacity: 0;
-    transform: translateX(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.line b {
-  color: var(--jade-deep);
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-.line span {
-  color: var(--ink-dim);
-  white-space: pre-wrap;
-}
-.line em {
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-style: normal;
-  font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  /* 「OK」这一枚当成小徽章：判定成立时自己弹出来 */
-  color: var(--jade-deep);
-  align-self: center;
-  padding: 1px 7px;
-  border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
-  border-radius: var(--radius-pill);
-  animation: okPop 300ms var(--ease-out) 140ms backwards;
-}
-@keyframes okPop {
-  from { opacity: 0; transform: scale(0.4); }
-  to { opacity: 1; transform: none; }
-}
-
-.line.ready {
-  margin-top: 10px;
-  padding-top: 14px;
-  border-top: 1px dashed color-mix(in srgb, var(--jade) 28%, transparent);
-}
-.line.ready b {
-  color: var(--steel-deep);
-}
-.line.ready span {
-  color: var(--ink);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-/* 闪烁光标 */
-.caret {
-  margin-left: 10px;
-  display: inline-block;
-  width: 9px;
-  height: 1.05em;
-  background: var(--jade);
-  /* 光标原来还带一圈糊光（`0 0 10px`）—— 像老式 CRT 上那个亮点。
-     方贴纸稿撤了它：一条薄荷色的实心竖条本身就是光标，不用再发光。 */
-  animation: caretBlink 0.9s steps(1) infinite;
-  align-self: center;
-  padding: 0;
-  border: none;
-}
-@keyframes caretBlink {
-  50% {
-    opacity: 0;
-  }
-}
-
-/* ---- 窄屏：四角小件收掉外侧两枚，标题的菱形跟着收进去 ---- */
+/* ---- 窄屏：四角小件收掉外侧两枚，卡与按钮各收一圈 ---- */
 @media (max-width: 720px) {
   .corner { inset: 12px; }
   .chipBL, .chipBR { display: none; }
-  .bootTitle { padding: 8px 30px; }
-  .bootTitle::before { left: 2px; }
-  .bootTitle::after { right: 2px; }
   .bootSub::before, .bootSub::after { width: 26px; }
-  .fp { width: 140px; height: 140px; margin-top: 20px; }
-  .seq { width: 92vw; }
+  .bootInner { max-width: 94vw; }
+  .startBtn { min-width: 0; width: 100%; }
 }
 
 /* ---- 减少动效：入场一律瞬时到位 ----
@@ -649,33 +220,13 @@
  * 于是这一屏会先白着站一秒多。这里连延迟一起清掉。 */
 @media (prefers-reduced-motion: reduce) {
   .boot::after,
-  .boot::before,
-  .corner::before,
   .chip,
-  .bootKicker,
-  .bootTitle,
-  .bootTitle::before,
-  .bootTitle::after,
   .bootSub,
   .bootSub::before,
   .bootSub::after,
-  .bootTag,
   .orn,
-  .bootBrand,
-  .fp,
-  .fp::before,
-  .fp::after,
-  .fpHint,
-  .seq,
-  .seq::before,
-  .seqKicker,
-  .seqTitle,
-  .seqMeter,
-  .seqMeter > span::after,
-  .line,
-  .line em {
+  .startBtn {
     animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
   }
-  .boot.isBoot { animation: none; }
 }

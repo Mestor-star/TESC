@@ -5,6 +5,7 @@
   grid-template-columns: 318px 1fr;
   gap: 16px;
   height: calc(100vh - var(--topbar-h) - 118px);
+  height: calc(100dvh - var(--topbar-h) - 118px);   /* 与外壳同一手：手机上 `vh` 偏大 */
   min-height: 480px;
 }
 
