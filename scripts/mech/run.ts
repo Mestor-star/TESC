@@ -75,7 +75,7 @@
                         没走到那一档就不生效；另带「镜头要推近」（世界书文风册第四条
                         + 预设 ts-intim-depth）
    · 此刻（不是账）
-     34  贴身衣物     —— 底档 18 位各一套（照性格、不许撞款）· 穿着三档后写覆盖 ·
+     34  贴身衣物     —— 底档 19 位各一套（照性格、不许撞款）· 穿着三档后写覆盖 ·
                         湿润可上可下 · 发情那一半的耦合 · 流水只记真变了的
      35  湿润回落     —— 没人管它时湿润自己退一步，退到 0 就停（此刻，不是勋章）
    · 图
@@ -5487,7 +5487,7 @@ export function run(): MechReport {
        谁要把它写成一句「其实她也想要」，这里就红。 */
     const viewRestraint = /克制|害羞|保守|不肯|不许|不该|按住|按回去|别开脸|推开|缩肩|移开|脸红|安静|反问|规矩|底线|不解释|避开|错开/
     const looseView = femaleIds.filter((id) => !viewRestraint.test(INTIMATE[id]!.view))
-    ok('私密 · 「对性行为的看法」起初一律是克制 / 害羞 / 保守的口径（18 位逐句量过）',
+    ok('私密 · 「对性行为的看法」起初一律是克制 / 害羞 / 保守的口径（19 位逐句量过）',
       looseView.length === 0, looseView.length ? looseView.join('、') : `${femaleIds.length} 位都写着克制`)
 
     const sample = femaleIds.find((id) => id === 'luna') ?? femaleIds[0]!
@@ -5499,7 +5499,7 @@ export function run(): MechReport {
       `${sample} @0 / @${INTIMATE_BOND - 1} / @${INTIMATE_BOND}`)
 
     /* 状态句是一条**四档**的梯子（DEV_STAGES）—— 逐位逐处量三件事：
-       · 句数 = 档数：一句不缺、一句不空（改梯子就要补齐 18 × 4 处）；
+       · 句数 = 档数：一句不缺、一句不空（改梯子就要补齐 19 × 4 处）；
        · 四句互不相同：不是同一句话换几个词（「状态是动的」）；
        · 第 0 档一律写着「未开发」这件事 —— 谁都不是带着开发度登场的。 */
     const shortLadder: string[] = []
@@ -5691,11 +5691,11 @@ export function run(): MechReport {
       })
     }
     ok('底层 · 紧致：小穴四句都不写「松了 / 能容 / 软下来」那一类松开的说法（紧是体质，不随开发度走）',
-      badTight.length === 0, badTight.length ? badTight.join(' / ') : '18 位 × 4 句都干净')
+      badTight.length === 0, badTight.length ? badTight.join(' / ') : '19 位 × 4 句都干净')
     ok('底层 · 颜色：小穴的颜色不随开发度走 —— 颜色只在第 0 档写一次，后三句一个「颜色」都不提',
       badColor.length === 0, badColor.length ? badColor.join(' / ') : '后三句没有一处提到颜色')
     ok('底层 · 形状：小穴后三句都写到「里头照他的形状定型」（专用穴那一路说法），不是只写湿与热',
-      badShape.length === 0, badShape.length ? badShape.join(' / ') : '18 位 × 3 句都写了形状')
+      badShape.length === 0, badShape.length ? badShape.join(' / ') : '19 位 × 3 句都写了形状')
 
     /* 不上屏：界面那几层一个字都不许引用它（改规矩只改提示词，不动呈现） */
     const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
@@ -6509,7 +6509,7 @@ export function run(): MechReport {
        · 穿着档位**后写覆盖**（她可以又穿回去），湿润增量**可正可负**（缓过来了就回落）；
        对照：开发度与色情度那两样只增不减（§27 已量），这一栏偏不。
        · 底档只在**没有推进**时读得出来（穿着 / 干爽），谁都不许带着读数登场。
-       · 底档十八套**照性格各写各的、不许撞款**（名字 / 样子 / 湿润四句都得是独一份）。
+       · 底档十九套**照性格各写各的、不许撞款**（名字 / 样子 / 湿润四句都得是独一份）。
      界面那一半（档案第七栏摆不摆得出来）归冒烟；这里量的是底下这几条规矩本身。 */
   try {
     const femaleIds = Object.keys(INTIMATE)
@@ -6517,8 +6517,8 @@ export function run(): MechReport {
     /* 汉字数：量的是「几句」，不是「几个字符」—— 标点与空格不掺进来 */
     const han = (s: string) => (s.match(/[一-鿿]/g) ?? []).length
 
-    /* —— 名录：与私密档案同一批人（十八位女角色），一个不多一个不少 —— */
-    ok('衣物 · 底档与私密档案同一批人（十八位女角色：多一个少一个都算漏）',
+    /* —— 名录：与私密档案同一批人（十九位女角色），一个不多一个不少 —— */
+    ok('衣物 · 底档与私密档案同一批人（十九位女角色：多一个少一个都算漏）',
       ids.length === femaleIds.length && femaleIds.every((id) => !!ATTIRE[id]),
       `衣物 ${ids.length} 位 / 私密档案 ${femaleIds.length} 位`)
 
@@ -6569,11 +6569,11 @@ export function run(): MechReport {
     const looks = ids.flatMap((id) => ATTIRE_SLOTS.map((s) => ATTIRE[id]![s]!.look.trim()))
     /* 湿润句按「四句折成一句」比 —— 逐句比会被「干着 / 湿了」这类共用语骗过去 */
     const wets = ids.map((id) => (ATTIRE[id]!.panties!.wet ?? []).join('|'))
-    ok('衣物 · 三十六件的名字各不相同（不许两个人撞款 —— 每人一份，各自照性格来）',
+    ok('衣物 · 三十八件的名字各不相同（不许两个人撞款 —— 每人一份，各自照性格来）',
       new Set(names).size === names.length, `${names.length} 个名字 / ${new Set(names).size} 个不重`)
-    ok('衣物 · 三十六条样子也各不相同（换了名字照抄一段话，这一条就红）',
+    ok('衣物 · 三十八条样子也各不相同（换了名字照抄一段话，这一条就红）',
       new Set(looks).size === looks.length, `${looks.length} 条 / ${new Set(looks).size} 条不重`)
-    ok('衣物 · 十八位的内裤四句各写各的（不是同一条内裤换个人名）',
+    ok('衣物 · 十九位的内裤四句各写各的（不是同一条内裤换个人名）',
       new Set(wets).size === wets.length, `${wets.length} 位 / ${new Set(wets).size} 位不重`)
 
     /* 底档写的是**物件**：料子 / 颜色 / 新旧 / 贴身程度 —— 颜色那一样得说出来，
@@ -6582,7 +6582,7 @@ export function run(): MechReport {
     const COLOR_CHARS = '黑白灰粉樱青靛杏银棕紫红蓝绿米金藕驼咖'.split('')
     const colorsOf = (s: string) => new Set(COLOR_CHARS.filter((c) => s.includes(c)))
     const noColor = ids.filter((id) => ATTIRE_SLOTS.some((s) => colorsOf(ATTIRE[id]![s]!.look).size === 0))
-    ok('衣物 · 三十六条样子都说得出颜色（料子 / 颜色 / 新旧 —— 物件该有的那样样得有）',
+    ok('衣物 · 三十八条样子都说得出颜色（料子 / 颜色 / 新旧 —— 物件该有的那样样得有）',
       noColor.length === 0, noColor.length ? `${noColor.join('、')} 没提颜色` : `${ids.length * 2} 条都提了`)
 
     /* —— 禁字：写的是物件，不许写她，也不许写原文 —— */
@@ -6778,7 +6778,7 @@ export function run(): MechReport {
     info.push('贴身衣物：记的是**此刻**而不是账 —— 穿着三档后写覆盖（脱了能穿回去）、'
       + '湿润增量可正可负（缓过来了就回落）；唯一一处自动的是耦合：同一次里色情度涨了，'
       + `湿润跟着涨 ${WET_PER_LEWD} 分之一（「因为发情而湿润」），模型不必报第二遍`)
-    info.push('底档十八套照性格各写各的（名字 / 样子 / 湿润四句三样都不许撞款、两件颜色成套）；'
+    info.push('底档十九套照性格各写各的（名字 / 样子 / 湿润四句三样都不许撞款、两件颜色成套）；'
       + `界面那一半（私密档案第七栏「此刻的衣物」+「这一场的变化」）归冒烟`)
   } catch (e) {
     fail.push('贴身衣物段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
