@@ -316,7 +316,7 @@
   border-radius: var(--radius);
 }
 .armHead { display: flex; align-items: center; gap: 8px; color: var(--ink); }
-.armHead svg { color: var(--red-deep); }
+.armHead svg { color: var(--steel-deep); }
 .armHead b { font-size: 14.5px; }
 .armNote {
   margin: 6px 0 0;

@@ -25,9 +25,10 @@
 }
 .contact:hover { background: var(--bg-2); transform: translateX(2px); }
 .contact.isActive {
+  /* 选中那一条走身份色（青→紫），不是警戒色 —— 上一版这里是粉，粉进了警戒那一档。 */
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--red) 15%, transparent), color-mix(in srgb, var(--violet) 6%, transparent));
-  border-color: color-mix(in srgb, var(--red) 35%, transparent);
+    linear-gradient(90deg, color-mix(in srgb, var(--steel) 15%, transparent), color-mix(in srgb, var(--violet) 6%, transparent));
+  border-color: color-mix(in srgb, var(--steel) 35%, transparent);
 }
 .contactMain { min-width: 0; }
 .contactMain b { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 800; }
@@ -37,13 +38,15 @@
 .unread {
   min-width: 17px; height: 17px; padding: 0 5px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--red);
-  color: var(--on-accent);         /* 10px 的小字，白压在樱粉上只有 3.19:1 */
+  /* 未读是**提醒**不是危险 —— 冷底上唯一的暖信号留给它（琥珀 = 提醒 / 待办）。
+     10px 的小字，白压在琥珀上只有 2.04:1，故走墨（--on-accent 在琥珀上 8.77:1）。 */
+  background: var(--amber);
+  color: var(--on-accent);
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 800;
   border-radius: var(--radius-pill);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--red) 35%, transparent);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--amber) 35%, transparent);
 }
 
 /* 会话区 */
@@ -99,11 +102,12 @@
   border-radius: 4px var(--radius) var(--radius) var(--radius);
 }
 .msg--user .bubble {
-  /* 自己那一侧是彩色底 —— 底亮的这一头，字就跟着走墨（白字在这条渐变上只有 3.19→4.64，
-     而气泡里是 13px 的正文，不是大字）。渐变也只往提亮那头走，不落回 --red-deep */
-  background: linear-gradient(160deg, var(--red-lift), var(--red));
+  /* 自己那一侧是彩色底 —— 底亮的这一头，字就跟着走墨（白字在这条渐变上只有 3.14→3.61，
+     而气泡里是 13px 的正文，不是大字）。渐变也只往提亮那头走，不落回 --steel-deep
+     （墨压在 steel-deep 上只有 3.37:1）。与 tokens 的 .btn--primary 同一个配方。 */
+  background: linear-gradient(160deg, var(--steel), var(--violet-lift));
   color: var(--on-accent);
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--red) 26%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--steel) 26%, transparent);
   border-radius: var(--radius) 4px var(--radius) var(--radius);
 }
 .msgTime { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); margin-top: 4px; padding: 0 4px; }

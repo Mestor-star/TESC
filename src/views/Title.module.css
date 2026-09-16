@@ -4,7 +4,8 @@
    标语 + ✦、竖排菜单（首枚渐变实心、其余细描边）、中缝一枚 ✦、底部版本行。
    上一版的两栏（左菜单 270px + 右存档格）与那张「手动存档位」卡片一并撤走 ——
    8 格挪进「读取存档」按钮后面的浮层（`data-title-slots`）；底部那条糖果斜纹也删了。
-   入场节拍与开屏同一路数，但更快更轻（这一屏是常驻菜单，不是一次性开屏）。 */
+   入场节拍与开屏同一路数，但更快更轻（这一屏是常驻菜单，不是一次性开屏）。
+   2026-09-16 二次换皮：底光与所有身份记号从粉→紫换成青→紫，底纹换成全息网格。 */
 
 .root {
   position: fixed;
@@ -13,22 +14,25 @@
   overflow: hidden;
   color: var(--ink);
   background:
-    radial-gradient(1100px 620px at 82% -12%, color-mix(in srgb, var(--red) 11%, transparent), transparent 60%),
-    radial-gradient(820px 540px at -6% 106%, color-mix(in srgb, var(--violet) 9%, transparent), transparent 55%),
+    radial-gradient(1100px 620px at 82% -12%, color-mix(in srgb, var(--steel) 13%, transparent), transparent 60%),
+    radial-gradient(820px 540px at -6% 106%, color-mix(in srgb, var(--violet) 10%, transparent), transparent 55%),
     var(--bg-0);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-/* 点阵底纹（Title 阶段无 .app--stage 覆盖层，自备）——
-   上一版这里是工业网格 + 扫描线，浅底上换成课桌手账那一层点阵。 */
+/* 全息网格底纹（Title 阶段无 .app--stage 覆盖层，自备）——
+   与 tokens 里 `.app--stage::after` 同一套：两组正交细线，中间实、四周化开。
+   上一版这里是课桌手账那一层点阵，再上一版是工业网格 + 扫描线。 */
 .root::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.7;
-  background: radial-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1.2px) 0 0 / 22px 22px;
+  background-image:
+    linear-gradient(var(--holo-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--holo-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
   mask-image: radial-gradient(ellipse 84% 74% at 50% 46%, black 38%, transparent 100%);
 }
 
@@ -135,14 +139,16 @@
   letter-spacing: 0.08em;
   line-height: 1.16;
   color: var(--ink);
-  /* 「次元错位」：青与粉各偏两像素叠在字后（上一版是暗底上的红色辉光） */
+  /* 「次元错位」：青与紫各偏两像素叠在字后 —— 读起来是全息投影的色散
+     （再上一版这里是暗底上的红色辉光） */
   text-shadow: var(--duo-shadow);
   animation: ttTitleIn 760ms var(--ease-out) 90ms backwards;
 }
 .brand h1 em {
   font-style: normal;
-  /* 醒目处走主调渐变（粉→紫）；渐变裁字吃不了 text-shadow，故关掉 */
-  background: linear-gradient(120deg, var(--red), var(--violet));
+  /* 醒目处走主调渐变（青→紫，反現実那一侧到次元那一侧）；
+     渐变裁字吃不了 text-shadow，故关掉 */
+  background: linear-gradient(120deg, var(--steel), var(--violet));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -157,8 +163,9 @@
   width: 10px;
   height: 10px;
   margin-top: -5px;
-  background: linear-gradient(140deg, var(--red), var(--violet));
-  opacity: 0.8;
+  background: linear-gradient(140deg, var(--steel), var(--violet));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--steel) 45%, transparent);
+  opacity: 0.85;
   pointer-events: none;
   animation: ttDiaIn 520ms var(--ease-out) 300ms backwards;
 }
@@ -193,13 +200,13 @@
   color: var(--ink-mute);
   animation: ttIn 520ms var(--ease-out) 320ms backwards;
 }
-.tag b { color: var(--red-deep); font-weight: 800; }
+.tag b { color: var(--steel-deep); font-weight: 800; }
 .orn {
   display: block;
   margin-top: 12px;
   font-size: 13px;
   line-height: 1;
-  color: var(--red-deep);
+  color: var(--violet-deep);
   opacity: 0.75;
   animation: ttOrnIn 620ms var(--ease-out) 400ms backwards;
 }
@@ -237,7 +244,7 @@
   top: 50%;
   width: 6px;
   height: 6px;
-  background: var(--red);
+  background: var(--steel);
   transform: translateY(-50%) rotate(45deg) scale(0.4);
   opacity: 0;
   transition: opacity var(--t-fast), transform var(--t-mid) var(--ease-out);
@@ -256,17 +263,17 @@
   align-items: center;
   justify-content: center;
   width: 30px; height: 30px;
-  color: var(--red-deep);
-  background: var(--red-soft);
-  border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+  color: var(--steel-deep);
+  background: color-mix(in srgb, var(--steel) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--steel) 38%, transparent);
   border-radius: var(--radius-sm);
   transition: color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
 }
-/* 主按钮就是这一版的名字：粉那一头是「恋人」，紫那一头是「次元」。
-   与 tokens 的 .btn--primary 同一套：紫那头走提亮档，字走墨（原色上墨字只有 3.62:1） */
+/* 主按钮就是这一版的名字：青那一头是「反現実」，紫那一头是「次元」。
+   与 tokens 的 .btn--primary 同一套：紫那头走提亮档，字走墨（原色上墨字只有 4.13:1） */
 .menuBtn.menuPrimary {
   border-color: transparent;
-  background: linear-gradient(135deg, var(--red), var(--violet-lift));
+  background: linear-gradient(135deg, var(--steel), var(--violet-lift));
   color: var(--on-accent);
   box-shadow: var(--glow-violet);
 }
@@ -299,7 +306,7 @@
   gap: 10px;
   margin: 3px 0;
   font-size: 10px;
-  color: var(--red-deep);
+  color: var(--violet-deep);
   opacity: 0.7;
   animation: ttIn 520ms var(--ease-out) backwards;
 }
@@ -340,7 +347,7 @@
   letter-spacing: 0.04em;
   color: var(--ink-faint);
 }
-.verNote b { color: var(--red-deep); font-weight: 800; }
+.verNote b { color: var(--steel-deep); font-weight: 800; }
 
 /* —— 读档浮层（`data-title-slots`）——
    版式照 components/SaveDialog 的幕布 + 面板，但把手另起一个：

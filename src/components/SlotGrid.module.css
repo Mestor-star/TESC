@@ -40,7 +40,7 @@
   letter-spacing: 0.1em;
   color: var(--ink-faint);
 }
-.card.filled .no { color: var(--red-deep); }
+.card.filled .no { color: var(--steel-deep); }
 .stamp {
   display: inline-flex;
   align-items: center;

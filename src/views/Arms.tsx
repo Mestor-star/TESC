@@ -225,7 +225,7 @@ export function Arms() {
                         <p className={css.expText}>{a.power}</p>
                         {a.awakened ? (
                           <>
-                            <div className={css.expLabel} style={{ color: 'var(--red-deep)' }}>○ 到达点 · AWAKENED</div>
+                            <div className={css.expLabel} style={{ color: 'var(--violet-deep)' }}>○ 到达点 · AWAKENED</div>
                             <p className={css.expText}>{a.awakened}</p>
                           </>
                         ) : null}

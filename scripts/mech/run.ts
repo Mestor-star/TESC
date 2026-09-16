@@ -7682,13 +7682,15 @@ export function run(): MechReport {
 
     /* 运行时那把尺（lib/hue.ts 的 inkOf）与上面这条线同源：
          够色的原样放回、不够的退到过线、不认得的输入不动它（hue 允许是 var(...) / 空）。 */
-    const inked = inkOf('#ff4d79')
+    /* 拿**主调那一支**当探针：`--steel` 是六支里最浅的（对白底 2.14:1），
+       要退到过线得兑得最狠 —— 它过了，其余五支没有不过的道理。 */
+    const inked = inkOf('#00c2e0')
     ok('配色两档：inkOf() 把不够色的本色退到 4.5:1 以上（界面侧与 tokens 侧同一把尺）',
       /^#[0-9a-f]{6}$/.test(inked) && ratioOf(inked) >= 4.5,
-      `inkOf('#ff4d79') → ${inked} ${ratioOf(inked).toFixed(2)}:1`)
+      `inkOf('#00c2e0') → ${inked} ${ratioOf(inked).toFixed(2)}:1`)
     ok('配色两档（对照）：已经够色的本色原样放回；不认得的输入一个字不动',
-      inkOf('#241f3a') === '#241f3a' && inkOf('var(--x)') === 'var(--x)' && inkOf(undefined) === '',
-      `inkOf('#241f3a') → ${inkOf('#241f3a')} · inkOf('var(--x)') → ${inkOf('var(--x)')}`)
+      inkOf('#0e1729') === '#0e1729' && inkOf('var(--x)') === 'var(--x)' && inkOf(undefined) === '',
+      `inkOf('#0e1729') → ${inkOf('#0e1729')} · inkOf('var(--x)') → ${inkOf('var(--x)')}`)
 
     /* 界面那一半：当字用的地方不许直接挂**非 deep 档**的主题色。三样都算「字」：
          · CSS 的 `color:`
@@ -7835,7 +7837,8 @@ export function run(): MechReport {
        不在此列，那种靠人看，落不进这条机械尺。 */
     const WHITE_OK: Record<string, string> = {
       'src/views/Archive.module.css .opGlyph':
-        '84px 方块里 30px/800 的姓字 —— 大字线是 3:1，白字在它那两头 3.19 / 4.64 都过',
+        '84px 方块里 30px/800 的姓字 —— 底走 steel-deep → violet-deep，白字两头 5.14 / 5.07，'
+        + '连正文那条 4.5 都过（不只是大字线 3:1）',
     }
     const whiteOnFill: string[] = []
     const cssFiles: string[] = ['src/styles/tokens.css']

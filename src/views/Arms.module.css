@@ -15,8 +15,8 @@
 .metric:hover { border-color: var(--line-3); transform: translateY(-1px); }
 .metric small { display: block; color: var(--ink-mute); font-size: 11px; letter-spacing: 0.14em; }
 .metric b { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 24px; font-weight: 800; line-height: 1; color: var(--ink-dim); transition: color var(--t-fast); }
-.metric.isOn { border-color: var(--red); background: var(--red-soft); }
-.metric.isOn b { color: var(--red-deep); }
+.metric.isOn { border-color: var(--steel); background: color-mix(in srgb, var(--steel) 10%, transparent); }
+.metric.isOn b { color: var(--steel-deep); }
 
 .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 6px; }
 .kindChip {

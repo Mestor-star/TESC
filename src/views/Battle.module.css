@@ -13,7 +13,9 @@
   justify-content: center;
   padding: 12px 14px;
   background:
-    radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--red) 10%, transparent), transparent 70%),
+    /* 幕布底光：反現実那一侧的电紫 + 学园系统的霓虹青 —— 冷的一对。
+       红在这屏只剩「伤 / 敌方 / 低血」那些**记号**，不再铺底。 */
+    radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--violet) 10%, transparent), transparent 70%),
     radial-gradient(880px 560px at 6% 106%, color-mix(in srgb, var(--steel) 9%, transparent), transparent 60%),
     var(--bg-0);
   color: var(--ink);
@@ -47,7 +49,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--red) 7%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--violet) 7%, transparent), transparent 34%),
     var(--bg-0);
   box-shadow: var(--shadow-3);
 }
@@ -96,7 +98,7 @@
   top: 50%;
   width: 160%;
   height: 5px;
-  background: linear-gradient(90deg, transparent, var(--violet), var(--red), transparent);
+  background: linear-gradient(90deg, transparent, var(--violet), var(--steel), transparent);
   box-shadow: 0 0 26px 6px color-mix(in srgb, var(--violet) 55%, transparent);
   transform: rotate(-19deg);
   animation: slashCut 0.42s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;

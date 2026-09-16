@@ -6,7 +6,7 @@
 
 /* 联系人列表项内多行 */
 .castName { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 800; }
-.bondMini { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--red-deep); }
+.bondMini { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--steel-deep); }
 .castSub { color: var(--ink-mute); font-size: 11px; line-height: 1.45; margin-top: 2px; }
 .castLock { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
 

@@ -16,7 +16,7 @@
   flex-direction: column;
   justify-content: center;
   background:
-    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--red) 7%, transparent) 26px 52px),
+    repeating-linear-gradient(115deg, transparent 0 26px, color-mix(in srgb, var(--steel) 7%, transparent) 26px 52px),
     linear-gradient(180deg, color-mix(in srgb, var(--violet) 6%, transparent), transparent 45%),
     var(--bg-1);
   border: 1px solid var(--line);
@@ -31,7 +31,7 @@
   font-weight: 800;
   font-size: 86px;
   letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--red) 10%, transparent);
+  color: color-mix(in srgb, var(--steel) 10%, transparent);
   line-height: 1;
   pointer-events: none;
   user-select: none;
@@ -74,7 +74,7 @@
   width: 9px;
   height: 9px;
   margin-top: -4px;
-  background: linear-gradient(140deg, var(--red), var(--violet-lift));
+  background: linear-gradient(140deg, var(--steel), var(--violet));
   opacity: 0.75;
   pointer-events: none;
 }
@@ -82,7 +82,7 @@
 .heroGreet::after { right: 0; }
 .heroGreet em {
   font-style: normal;
-  color: var(--red-deep);
+  color: var(--steel-deep);
   /* 名字上也错开两像素 —— 全站「次元错位」那一手的同一个写法 */
   text-shadow: var(--duo-shadow);
 }
@@ -199,7 +199,7 @@
   background: var(--bg-1);
   transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-mid) var(--ease-out);
 }
-.squadRow:hover { background: var(--bg-2); border-left-color: var(--red); transform: translateX(3px); }
+.squadRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
 .squadMeta { flex: 1; min-width: 0; }
 .squadMeta b { display: block; font-size: 13.5px; font-weight: 800; }
 .squadMeta small { display: block; color: var(--ink-mute); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -214,7 +214,7 @@
   font-size: 15px;
   transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
 }
-.miniAction:hover { color: var(--red-deep); border-color: color-mix(in srgb, var(--red) 50%, transparent); background: var(--red-soft); }
+.miniAction:hover { color: var(--steel-deep); border-color: color-mix(in srgb, var(--steel) 50%, transparent); background: color-mix(in srgb, var(--steel) 10%, transparent); }
 
 .stack { display: flex; flex-direction: column; gap: 8px; }
 
@@ -301,7 +301,7 @@
 .stat[data-stat='coin'] { border-left-color: var(--amber); }
 .stat[data-stat='stamina'] { border-left-color: var(--jade); }
 .stat[data-stat='records'] { border-left-color: var(--steel); }
-.stat[data-stat='progress'] { border-left-color: var(--red); }
+.stat[data-stat='progress'] { border-left-color: var(--violet); }
 
 /* 下一段：一张窄条，直接给出「去哪儿、那地方什么成色」 */
 .nextUp {
@@ -369,7 +369,8 @@
   transition: background 0.12s, border-color 0.12s, transform 0.12s;
 }
 .msgRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
-.msgRow[data-unread='1'] { border-left-color: var(--red); }
+/* 未读 = 提醒那一档，与 Comms 的未读圆牌同一支琥珀 */
+.msgRow[data-unread='1'] { border-left-color: var(--amber); }
 .msgRowBody { flex: 1; min-width: 0; }
 .msgRowBody b { display: block; font-size: 13px; font-weight: 800; }
 .msgRowBody small {
@@ -378,7 +379,7 @@
 }
 .badgeUnread {
   flex: 0 0 auto; min-width: 20px; padding: 1px 6px; border-radius: var(--radius-pill);
-  background: var(--red); color: var(--on-accent); font-family: var(--font-mono);
+  background: var(--amber); color: var(--on-accent); font-family: var(--font-mono);
   font-size: 10.5px; font-weight: 700; text-align: center;
 }
 
@@ -413,7 +414,7 @@
 .feedRow { display: flex; gap: 10px; padding: 7px 2px; border-bottom: 1px dashed var(--line); }
 .feedRow:last-child { border-bottom: 0; }
 .feedMark { flex: 0 0 auto; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--steel); }
-.feedMark[data-k='story'] { background: var(--red); }
+.feedMark[data-k='story'] { background: var(--violet); }
 .feedMark[data-k='battle'] { background: var(--amber); }
 .feedBody { flex: 1; min-width: 0; }
 .feedBody b { display: block; font-size: 12.5px; font-weight: 700; }

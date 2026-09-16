@@ -295,7 +295,9 @@
 }
 
 /* 名字铭牌：跨骑顶边、贴近靠外一侧（角色左 / 操作员右），
-   一枚圆头小贴纸 —— 角色那侧樱粉、操作员那侧天青，以所在底色遮断其下边框段 */
+   一枚圆头小贴纸 —— 角色那侧电紫（次元/异能那一侧）、操作员那侧霓虹青（学园系统那一侧），
+   以所在底色遮断其下边框段。上一版是「角色樱粉 / 操作员天青」——粉退位后角色侧改吃紫，
+   青那一侧原样留下（青本来就是操作员的位置，与 App 的 .opAvatar 同一支）。 */
 .dlgName {
   position: absolute;
   top: -9px;
@@ -305,9 +307,9 @@
   line-height: 17px;
   letter-spacing: 0.12em;
   white-space: nowrap;
-  color: var(--red-deep);
+  color: var(--violet-deep);
   background: var(--bg-1);
-  border: 1px solid color-mix(in srgb, var(--red) 34%, transparent);
+  border: 1px solid color-mix(in srgb, var(--violet) 34%, transparent);
   border-radius: var(--radius-pill);
 }
 .sayFrame .dlgName { left: 16px; }
@@ -390,9 +392,10 @@
   gap: 12px;
   font-size: 12px;
   color: var(--ink-mute);
-  border-left: 3px solid var(--red);
+  /* 「指令已落地」是提醒，不是危险 —— 与收束栏同一档琥珀 */
+  border-left: 3px solid var(--amber);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--red) 7%, var(--bg-1));
+  background: color-mix(in srgb, var(--amber) 7%, var(--bg-1));
   padding: 8px 12px;
   margin-top: 2px;
 }

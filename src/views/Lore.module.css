@@ -21,10 +21,11 @@
 /* 选中态：底是 16% 的淡彩，字就不能再是白的（浅底上的白字等于没有）——
    同一个 --c 收深一档当字色，框仍由 inset 那道描边撑住。 */
 .catBtn.isOn {
-  color: color-mix(in srgb, var(--c, var(--red)) 82%, var(--ink));
-  border-color: var(--c, var(--red));
-  background: color-mix(in srgb, var(--c, var(--red)) 16%, transparent);
-  box-shadow: inset 0 0 0 1px var(--c, var(--red));
+  /* 兜底那一支跟着主调走：没有身份色时吃霓虹青（上一版兜的是粉） */
+  color: color-mix(in srgb, var(--c, var(--steel)) 82%, var(--ink));
+  border-color: var(--c, var(--steel));
+  background: color-mix(in srgb, var(--c, var(--steel)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--c, var(--steel));
 }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }

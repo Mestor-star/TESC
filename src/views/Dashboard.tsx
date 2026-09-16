@@ -669,7 +669,7 @@ export function Dashboard() {
             <span className="panel__title">通讯中枢 <span className="slash" /></span>
             <span className="muted tiny" style={{ marginLeft: 'auto' }}>
               {unreadTotal > 0
-                ? <span style={{ color: 'var(--red-deep)' }}>{unreadTotal} 条未读</span>
+                ? <span style={{ color: 'var(--amber-deep)' }}>{unreadTotal} 条未读</span>
                 : `${metCount} 位可联络`}
             </span>
           </PanelHead>

@@ -116,7 +116,8 @@
 
 .sideTabOn {
   color: var(--ink);
-  border-bottom-color: var(--red);
+  /* 约会专线自己那一支是玫（`--rose`，与 DateSide / IntimateHud 同一支） */
+  border-bottom-color: var(--rose);
 }
 
 .sideBody {

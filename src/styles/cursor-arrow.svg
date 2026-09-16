@@ -1,15 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-  <!-- 常驻指针：粉→紫的菱形箭（「次元错位」那一版的主调渐变）。
+  <!-- 常驻指针：青→紫的菱形箭（反現実那一侧 → 次元那一侧，全站身份色那一对）。
        外面那一圈白描边是**给任何底色用的**——压在深色立绘或浅底卡片上都读得出。
-       箭尖在 (4,2)，`tokens.css` 里那条 `cursor` 的热点就是照着它写的。 -->
+       箭尖在 (4,2)，`tokens.css` 里那条 `cursor` 的热点就是照着它写的。
+       （上一版这条渐变是粉→紫；粉退位之后归青。） -->
   <defs>
     <linearGradient id="cg" x1="4" y1="2" x2="19" y2="24" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ff4d79"/>
-      <stop offset="1" stop-color="#7b5cff"/>
+      <stop offset="0" stop-color="#00c2e0"/>
+      <stop offset="1" stop-color="#7d5cff"/>
     </linearGradient>
   </defs>
   <path d="M4 2 L4 21.5 L8.7 17 L12 23.5 L15.4 21.8 L12.2 15.4 L18.5 15.4 Z"
         fill="#fff" stroke="#fff" stroke-width="3.2" stroke-linejoin="round"/>
   <path d="M4 2 L4 21.5 L8.7 17 L12 23.5 L15.4 21.8 L12.2 15.4 L18.5 15.4 Z"
-        fill="url(#cg)" stroke="#241f3a" stroke-opacity=".45" stroke-width=".9" stroke-linejoin="round"/>
+        fill="url(#cg)" stroke="#0e1729" stroke-opacity=".45" stroke-width=".9" stroke-linejoin="round"/>
 </svg>

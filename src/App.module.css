@@ -3,7 +3,11 @@
    字距从「宽得像编号」收回到正常读得下去的档。
    2026-09-16 语汇重排：这一版改用**菱形**当记号 —— 角标、行尾序号、
    激活态、顶栏标题前那一枚，全是同一颗菱形的不同用法；配色一律走 tokens
-   （从前有十一处把主题色拆成 rgba 硬写，见下面各处的 color-mix）。 */
+   （从前有十一处把主题色拆成 rgba 硬写，见下面各处的 color-mix）。
+   2026-09-16 二次换皮：主调从 --red 交到 --steel（霓虹青）——
+   下面所有身份记号（轨道底条、角标菱形、激活态、未读角标）一并换手。
+   ⚠️ 留在 --red 上的只有「危险」那一簇（.pill--danger / .toast--danger，
+   .toast 的基色也走青了），别把身份色再挂回去。 */
 
 .root {
   position: relative;
@@ -22,21 +26,21 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--red) 7%, transparent), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 8%, transparent), transparent 26%),
     var(--bg-1);
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--line-2);
   overflow: hidden;
 }
 
 /* 底部一抹主调渐变（上一版是糖果斜纹警戒带 —— 工业期的遗留，
-   换成这一版的签名渐变：粉→紫）。 */
+   换成这一版的签名渐变：青→紫 —— 反現実那一侧到次元那一侧）。 */
 .rail::after {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 4px;
-  background: linear-gradient(90deg, var(--red), var(--violet));
-  opacity: 0.85;
+  height: 3px;
+  background: linear-gradient(90deg, var(--steel), var(--violet));
+  opacity: 0.9;
 }
 
 .brand {
@@ -46,17 +50,17 @@
   padding: 20px 16px 18px;
   border-bottom: 1px solid var(--line);
 }
-/* 角标：粉→紫的渐变，落在**旋转 45° 的圆角方块**上 —— 一颗菱形，
-   四角微圆，与这一版「斜切换圆角」的口径不打架。
-   字要转回来（转正的方块压在斜着的底上才是「错位」那一下）。
-   18px 的「終」是正文字号 —— 字走墨、紫那头走提亮档（见 tokens 的 --on-accent） */
+/* 角标：青→紫的渐变，落在**旋转 45° 的圆角方块**上 —— 一颗菱形，
+   四角微圆（这一版圆角收到 6px，比上一版挺）。字要转回来
+   （转正的方块压在斜着的底上才是「错位」那一下）。
+   17px 的「終」是正文字号 —— 字走墨、紫那头走提亮档（见 tokens 的 --on-accent） */
 .brandMark {
   flex: 0 0 auto;
   width: 38px; height: 38px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(140deg, var(--red), var(--violet-lift));
+  background: linear-gradient(140deg, var(--steel), var(--violet-lift));
   border-radius: var(--radius-sm);
-  box-shadow: var(--glow-red);
+  box-shadow: var(--glow-steel);
   transform: rotate(45deg);
 }
 .brandMark > span {
@@ -74,7 +78,7 @@
   font-weight: 900;
   letter-spacing: 0.06em;
   white-space: nowrap;
-  text-shadow: var(--duo-shadow);   /* 「次元错位」的签名：天青与樱粉各错开两像素 */
+  text-shadow: var(--duo-shadow);   /* 「次元错位」的签名：青与紫各错开两像素，读作全息色散 */
 }
 .brandText i {
   display: block;
@@ -178,30 +182,30 @@
   opacity: 0.65;
 }
 
-/* 激活态：左侧一颗菱形 + 淡粉底块（上一版是竖条；底块改用 --red-soft） */
+/* 激活态：左侧一颗菱形 + 淡青底块（上一版是竖条 + --red-soft 的淡粉底块） */
 .navItem::before {
   content: "";
   position: absolute;
   left: 5px; top: 50%;
   width: 7px; height: 7px;
-  background: var(--red);
+  background: var(--steel);
   transform: translateY(-50%) rotate(45deg) scale(0.4);
   opacity: 0;
   transition: opacity var(--t-fast), transform var(--t-mid) var(--ease-out);
 }
 .navItem.isActive {
-  color: var(--red-deep);
+  color: var(--steel-deep);
   background: linear-gradient(90deg,
-    color-mix(in srgb, var(--red) 14%, transparent),
-    color-mix(in srgb, var(--violet) 5%, transparent));
-  border-color: color-mix(in srgb, var(--red) 24%, transparent);
+    color-mix(in srgb, var(--steel) 16%, transparent),
+    color-mix(in srgb, var(--violet) 6%, transparent));
+  border-color: color-mix(in srgb, var(--steel) 34%, transparent);
 }
 .navItem.isActive::before { opacity: 1; transform: translateY(-50%) rotate(45deg) scale(1); }
 .navItem.isActive .navItem__icon {
-  color: var(--red-deep);
-  filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--red) 40%, transparent));
+  color: var(--steel-deep);
+  filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--steel) 45%, transparent));
 }
-.navItem.isActive .navItem__idx { opacity: 1; color: var(--red-deep); }
+.navItem.isActive .navItem__idx { opacity: 1; color: var(--steel-deep); }
 
 /* 未读短信角标：压在行尾，选中态与未选中态都看得见 */
 .navBadge {
@@ -213,8 +217,8 @@
   height: 17px;
   padding: 0 5px;
   border-radius: var(--radius-pill);
-  background: var(--red);
-  color: var(--on-accent);          /* 10px 的小字，白压在樱粉上只有 3.19:1 */
+  background: var(--steel);
+  color: var(--on-accent);          /* 10px 的小字，白压在霓虹青上只有 2.14:1 */
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
@@ -265,15 +269,19 @@
   transition: border-color var(--t-fast), background var(--t-fast);
 }
 .opCard:hover { border-color: var(--line-3); background: var(--bg-3); }
+/* 操作员那枚代号块走**霓虹青** —— 与 Archive 的操作员横幅（.opBanner）、
+   Plot 的操作员名牌（.youFrame .dlgName）同一支：操作员＝学园系统那一侧。
+   电紫留给「次元 / 异能 / 角色那一侧」，两边才分得开。
+   上一版这一枚挂的是主调粉。 */
 .opAvatar {
   flex: 0 0 auto;
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono);
   font-weight: 800;
-  color: var(--red-deep);
-  background: var(--red-soft);
-  border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+  color: var(--steel-deep);
+  background: color-mix(in srgb, var(--steel) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--steel) 38%, transparent);
   border-radius: var(--radius-sm);
   font-size: 13px;
   letter-spacing: 0;
@@ -327,7 +335,10 @@
   padding: 0 22px;
   background: color-mix(in srgb, var(--bg-1) 78%, transparent);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-2);
+  /* 细线底下托一层极淡的青光 —— 顶栏因此「浮」在内容之上，
+     而不是拿一条线把上面切下来。这是全息 HUD 那一版给顶栏留的记号。 */
+  box-shadow: 0 10px 26px -20px color-mix(in srgb, var(--steel) 70%, transparent);
   z-index: 4;
 }
 .tbLeft { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
@@ -337,7 +348,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--red-deep);
+  color: var(--steel-deep);
 }
 .tbTitleCn {
   font-size: 15px;
@@ -349,7 +360,7 @@
 /* 标题前那一枚：竖条 → 菱形（与角标、行尾记号同一颗） */
 .tbTitleSlash {
   width: 9px; height: 9px;
-  background: linear-gradient(140deg, var(--red), var(--violet));
+  background: linear-gradient(140deg, var(--steel), var(--violet));
   transform: rotate(45deg);
   flex: 0 0 auto;
 }
@@ -440,21 +451,23 @@
   align-items: start;
   padding: 12px 12px 12px 14px;
   color: var(--ink);
-  background: var(--bg-1);
+  background: var(--holo-glass);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-3);
+  box-shadow: var(--shadow-3), inset 0 1px 0 var(--holo-edge);
   animation: toastIn 340ms var(--ease-out) both;
   overflow: hidden;
 }
+/* 基色是**主调青**，不是红 —— 五种 kind 里各自覆盖（danger 才回 --red） */
 .toast::before {
   content: "";
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: var(--red);
+  width: 3px;
+  background: var(--steel);
 }
-.toast__ic { font-size: 20px; line-height: 1; color: var(--red-deep); }
+.toast__ic { font-size: 20px; line-height: 1; color: var(--steel-deep); }
 .toast__txt b { display: block; font-size: 13.5px; font-weight: 800; letter-spacing: 0.01em; }
 .toast__txt span { display: block; font-size: 12px; color: var(--ink-mute); margin-top: 2px; line-height: 1.5; }
 .toast__x {

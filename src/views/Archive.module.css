@@ -6,7 +6,9 @@
   gap: 20px;
 }
 
-/* ---- 操作员横幅 ---- */
+/* ---- 操作员横幅 ----
+   操作员这一支＝霓虹青（学园系统 / 信息那一侧）——与 App 的 .opAvatar、
+   Plot 的 .youFrame .dlgName 同一支。上一版这里是主调樱粉，粉退位后归青。 */
 .opBanner {
   position: relative;
   display: grid;
@@ -16,11 +18,11 @@
   padding: 22px 26px;
   margin-bottom: 22px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--red) 38%, transparent);
+  border: 1px solid color-mix(in srgb, var(--steel) 38%, transparent);
   border-radius: var(--radius);
   background:
-    repeating-linear-gradient(115deg, transparent 0 34px, color-mix(in srgb, var(--red) 5%, transparent) 34px 68px),
-    linear-gradient(180deg, color-mix(in srgb, var(--red) 10%, transparent), transparent 60%),
+    repeating-linear-gradient(115deg, transparent 0 34px, color-mix(in srgb, var(--steel) 5%, transparent) 34px 68px),
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 10%, transparent), transparent 60%),
     var(--bg-1);
 }
 /* 右上那枚大写的底纹字：浅底上不能靠透明度压，只能拿主调调淡了当水印 */
@@ -32,32 +34,36 @@
   font-weight: 800;
   font-size: 74px;
   letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--red) 9%, transparent);
+  color: color-mix(in srgb, var(--steel) 9%, transparent);
   pointer-events: none;
   user-select: none;
 }
+/* 白字只剩这一处（mech §41 的 WHITE_OK 具名例外表里独一条）：
+   底走**两档深色**（steel-deep → violet-deep），白字在两头是 5.14 / 5.07 ——
+   比 4.5 的正文线还高，「84px 方块」里那枚 30px/800 的姓字自然更稳。
+   上一版底是 red → red-deep（白字 3.19 / 4.64，靠大字线 3:1 才勉强站住）。 */
 .opGlyph {
   width: 84px; height: 84px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(150deg, var(--red), var(--red-deep));
+  background: linear-gradient(150deg, var(--steel-deep), var(--violet-deep));
   color: #fff;
   font-family: var(--font-mono);
   font-weight: 800;
   font-size: 30px;
-  box-shadow: var(--glow-red);
+  box-shadow: var(--glow-steel);
   border-radius: var(--radius);
 }
-/* 那一格换成他的头像时：外形照旧（同一个圆角、同一圈粉光），只是字换成人。
+/* 那一格换成他的头像时：外形照旧（同一个圆角、同一圈青光），只是字换成人。
    用的是 operator-face 方图，方框对方图，取景不用另外对位。
    （这一条从前要写 `!important` —— Portrait 那一头压着一句行内的
    `borderRadius: 0`，是旧版「方角配斜切」留下的。那句话随改版一并删了，
    行内让位之后这里按常规权重就能盖住 Portrait 自己的兜底圆角。） */
 .opFace {
-  box-shadow: var(--glow-red);
+  box-shadow: var(--glow-steel);
   border-radius: var(--radius);
 }
 .opBannerMain h2 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.02em; }
-.opBannerMain h2 em { font-style: normal; color: var(--red-deep); }
+.opBannerMain h2 em { font-style: normal; color: var(--steel-deep); }
 .opBannerMain p { margin: 6px 0 12px; color: var(--ink-mute); font-size: 13.5px; max-width: 640px; }
 .opChips { display: flex; flex-wrap: wrap; gap: 8px; }
 .opNameEditor { display: flex; gap: 8px; align-items: center; }
@@ -589,7 +595,7 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--red) 14%, transparent), transparent 72%),
+    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--steel) 14%, transparent), transparent 72%),
     var(--bg-2);
 }
 /* 整身完整可见（contain），铺满这一栏靠栏宽，不靠 Portrait 的像素尺寸 */

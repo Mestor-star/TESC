@@ -47,7 +47,7 @@ export function IntimateHud({ ids, hint }: { ids: string[]; hint?: string }) {
               <div className="meter">
                 <div
                   className="meter__fill"
-                  style={{ width: `${prof.lewd}%`, background: 'linear-gradient(90deg, color-mix(in srgb, var(--red) 35%, transparent), var(--red))' }}
+                  style={{ width: `${prof.lewd}%`, background: 'linear-gradient(90deg, color-mix(in srgb, var(--rose) 35%, transparent), var(--rose))' }}
                 />
               </div>
               <div className={css.state}>

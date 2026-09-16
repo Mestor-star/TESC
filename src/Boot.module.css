@@ -2,8 +2,10 @@
  * 指纹认证页(长按扫描) → 认证通过 → 接入序列(逐行显现 + 进度条)
  * → 就绪提示符 → 终端本体以「启动弹出」挂载进场(见 App.module.css .bootPop)
  *
- * 2026-09-15 整体改版：这一屏不再是「黑屏里亮起红字」，改成晨光浅底上的
- * 深墨大字 + 樱粉／次元紫的渐变与错位重影。
+ * 2026-09-15 整体改版：这一屏不再是「黑屏里亮起红字」，改成浅底上的
+ * 深墨大字 + 主调双色的渐变与错位重影。
+ * 2026-09-16 二次换皮：主调换成霓虹青×电紫（粉退到警戒那一档），
+ * 底纹由点阵换成全息网格，扫描与指纹那些「在跑」的光一律走青。
  * 2026-09-16 语汇重排：改成**游戏启动**那一路 —— 屏幕四角先摆好描边小件，
  * 标题两侧各一枚菱形，副标夹在两条细线中间，底下压一枚四角星；
  * 自检那一段本来是一块黑终端，现在是同一套浅底语汇的「接入序列」+ 一条进度。
@@ -27,14 +29,14 @@
   justify-content: center;
   overflow: hidden;
   color: var(--ink);
-  /* 晨光落进来：右上一点暖粉、左下一点天青，底下托一层白 —— 与全局底同调 */
+  /* 冷光落进来：右上一点反現実的青、左下一点次元的紫，底下托一层冰白 —— 与全局底同调 */
   background:
-    radial-gradient(1000px 600px at 80% -10%, color-mix(in srgb, var(--red) 12%, transparent), transparent 62%),
-    radial-gradient(820px 560px at -6% 106%, color-mix(in srgb, var(--steel) 10%, transparent), transparent 58%),
+    radial-gradient(1000px 600px at 80% -10%, color-mix(in srgb, var(--steel) 14%, transparent), transparent 62%),
+    radial-gradient(820px 560px at -6% 106%, color-mix(in srgb, var(--violet) 10%, transparent), transparent 58%),
     var(--bg-0);
 }
 
-/* 入场斜扫光：一道粉紫的光band从左掠到右，放完即走（一次性） */
+/* 入场斜扫光：一道青紫的光band从左掠到右，放完即走（一次性） */
 .boot::after {
   content: "";
   position: absolute;
@@ -48,7 +50,7 @@
     90deg,
     transparent,
     color-mix(in srgb, var(--violet) 15%, transparent) 34%,
-    color-mix(in srgb, var(--red) 22%, transparent) 56%,
+    color-mix(in srgb, var(--steel) 24%, transparent) 56%,
     transparent
   );
   animation: bootSweep 1100ms var(--ease-out) 60ms both;
@@ -59,20 +61,23 @@
   100% { transform: translateX(340%) skewX(-14deg); opacity: 0; }
 }
 
-/* 认证页整体的底纹：一层点阵（课桌 / 手账的那一层），中间实、四周淡。 */
+/* 认证页整体的底纹：全息网格（与 tokens 的 `.app--stage::after` 同一套），
+   中间实、四周淡。上一版这一层是点阵（课桌 / 手账那一层）。 */
 .boot::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.7;
-  background: radial-gradient(color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1.2px) 0 0 / 24px 24px;
+  background-image:
+    linear-gradient(var(--holo-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--holo-grid) 1px, transparent 1px);
+  background-size: 34px 34px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 46%, black 40%, transparent 100%);
   animation: dotIn 900ms var(--ease-out) backwards;
 }
 @keyframes dotIn {
   from { opacity: 0; }
-  to { opacity: 0.7; }
+  to { opacity: 1; }
 }
 
 /* ---- 四角小件（游戏开屏的第一眼：框先摆好）---- */
@@ -94,7 +99,7 @@
     90deg,
     transparent,
     color-mix(in srgb, var(--violet) 55%, transparent),
-    color-mix(in srgb, var(--red) 55%, transparent),
+    color-mix(in srgb, var(--steel) 65%, transparent),
     transparent
   );
   animation: global(scanline) 5.4s linear 1.6s infinite;
@@ -198,9 +203,9 @@
 }
 .bootTitle em {
   font-style: normal;
-  /* 醒目处走主调渐变：粉那一头是「恋人」，紫那一头是「次元」。
+  /* 醒目处走主调渐变：青那一头是「反現実」，紫那一头是「次元」。
      渐变裁字不能同时吃 text-shadow（会从透明字里透出一团糊影），所以关掉。 */
-  background: linear-gradient(120deg, var(--red), var(--violet));
+  background: linear-gradient(120deg, var(--steel), var(--violet));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -215,8 +220,9 @@
   width: 11px;
   height: 11px;
   margin-top: -5.5px;
-  background: linear-gradient(140deg, var(--red), var(--violet));
-  opacity: 0.8;
+  background: linear-gradient(140deg, var(--steel), var(--violet));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--steel) 45%, transparent);
+  opacity: 0.85;
   pointer-events: none;
   /* 从正着躺平一路转到 45° 立起来 —— 收尾与基础样式的写法对齐 */
   animation: diaIn 560ms var(--ease-out) 620ms backwards;
@@ -274,7 +280,7 @@
   margin-top: 16px;
   font-size: 13px;
   line-height: 1;
-  color: var(--red-deep);
+  color: var(--violet-deep);
   opacity: 0.75;
   /* 先转着飞进来、落到位置上，再从那儿起慢慢自转 */
   animation: ornIn 700ms var(--ease-out) 920ms backwards,
@@ -296,7 +302,7 @@
   animation: global(riseIn) 520ms var(--ease-out) 1160ms backwards;
 }
 .bootBrand b {
-  color: var(--red-deep);
+  color: var(--steel-deep);
   font-weight: 800;
 }
 
@@ -331,7 +337,7 @@
   position: absolute;
   inset: -10px;
   border-radius: 50%;
-  border: 1px dashed color-mix(in srgb, var(--red) 35%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--steel) 38%, transparent);
   animation: fpSpin 26s linear infinite;
 }
 /* 外圈再套一枚菱形 —— 圆形核心 + 菱形轮廓，两套记号在这儿咬合 */
@@ -353,7 +359,7 @@
   position: absolute;
   inset: 6px;
   border-radius: 50%;
-  background: conic-gradient(var(--red) calc(var(--p, 0) * 1%), transparent 0);
+  background: conic-gradient(var(--steel) calc(var(--p, 0) * 1%), transparent 0);
   /* 蒙版里的黑＝「露出来」，与配色无关，用关键字 black 免得看着像硬写色 */
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), black calc(100% - 4px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 5px), black calc(100% - 4px));
@@ -369,19 +375,19 @@
   justify-content: center;
   width: 84px;
   height: 84px;
-  color: var(--red-deep);
-  filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--red) 42%, transparent));
+  color: var(--steel-deep);
+  filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--steel) 45%, transparent));
   transition: color var(--t-fast), transform var(--t-fast);
 }
 /* 扫描中的呼吸：浅底上的「发光」是彩色投影，不是暗底上的霓虹。 */
 @keyframes fpScan {
   0%, 100% {
     transform: translateY(-6px);
-    filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--red-deep) 38%, transparent));
+    filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--steel-deep) 38%, transparent));
   }
   50% {
     transform: translateY(6px);
-    filter: drop-shadow(0 12px 20px color-mix(in srgb, var(--red) 58%, transparent));
+    filter: drop-shadow(0 12px 20px color-mix(in srgb, var(--steel) 58%, transparent));
   }
 }
 
@@ -392,8 +398,8 @@
   left: 10px;
   right: 10px;
   height: 2px;
-  background: linear-gradient(90deg, transparent, var(--red), transparent);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--red) 55%, transparent);
+  background: linear-gradient(90deg, transparent, var(--steel), transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--steel) 60%, transparent);
   opacity: 0;
 }
 .isScanning .fpBeam {
@@ -419,8 +425,8 @@
      元素立刻回到基础样式的满不透明度。 */
   animation: fpShake 1.05s ease-in-out infinite;
   box-shadow:
-    0 0 0 7px color-mix(in srgb, var(--red) 13%, transparent),
-    0 0 34px color-mix(in srgb, var(--red) 30%, transparent),
+    0 0 0 7px color-mix(in srgb, var(--steel) 15%, transparent),
+    0 0 34px color-mix(in srgb, var(--steel) 34%, transparent),
     var(--shadow-2);
 }
 /* 握着的这一会儿轻轻发抖 —— 震幅小到不晃眼，只当是「在读」 */
@@ -430,7 +436,7 @@
   75% { transform: translate(1.2px, -0.8px) rotate(0.5deg); }
 }
 .isScanning .fpIcon {
-  color: var(--red-deep);
+  color: var(--steel-deep);
   animation: fpScan 0.9s ease-in-out infinite;
 }
 /* 外圈那枚菱形反向转起来（45° 起、45° 收，转一整圈） */
@@ -444,7 +450,7 @@
 }
 .isScanning .fpRing {
   opacity: 1;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--red) 62%, transparent));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--steel) 68%, transparent));
 }
 
 .fpHint {
@@ -458,7 +464,7 @@
   animation: global(riseIn) 520ms var(--ease-out) 1080ms backwards;
 }
 .fpHint.isLive {
-  color: var(--red-deep);
+  color: var(--steel-deep);
 }
 
 /* 认证通过后整页瞬时切到一张干净的纸 */
@@ -480,7 +486,7 @@
   height: 60vmax;
   margin: -30vmax 0 0 -30vmax;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--red) 34%, transparent), transparent 62%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--steel) 38%, transparent), transparent 62%);
   animation: flashOut 780ms var(--ease-out) both;
 }
 @keyframes flashOut {
@@ -505,13 +511,16 @@
   to { opacity: 1; clip-path: inset(-20% 0 -20% 0); }
 }
 .seq::after {
-  /* 横格纸的那一道 */
+  /* 细密横格 —— 上一版这条是「横格纸的那一道」（浅底手账），
+     这一版改成 CRT 那种逐行扫描的纹：横格还在，但格子变成了屏的。 */
   content: "";
   position: absolute;
   inset: -60px;
   pointer-events: none;
-  opacity: 0.5;
-  background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--ink) 5%, transparent) 0 1px, transparent 1px 3px);
+  opacity: 0.6;
+  background: repeating-linear-gradient(0deg,
+    color-mix(in srgb, var(--steel) 7%, transparent) 0 1px,
+    transparent 1px 4px);
 }
 /* 面板里也淌一条扫描线（与四角那条同一支） */
 .seq::before {
@@ -569,7 +578,7 @@
   display: block;
   height: 100%;
   overflow: hidden;
-  background: linear-gradient(90deg, var(--red), var(--violet));
+  background: linear-gradient(90deg, var(--steel), var(--violet));
   transition: width 200ms var(--ease-out);
 }
 /* 填充条上再走一道流光 */
@@ -643,7 +652,7 @@
   border-top: 1px dashed color-mix(in srgb, var(--jade) 28%, transparent);
 }
 .line.ready b {
-  color: var(--red-deep);
+  color: var(--steel-deep);
 }
 .line.ready span {
   color: var(--ink);
