@@ -24,10 +24,43 @@ import type { NamedBoss } from './bosses'
 import { critMulOf, critOf } from './duty'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { AXIS_SCALE, START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
+import { battleAxisOf } from './battle-axis'
 import { rFactor, rOfPlace } from './rvalue'
-import type { AxisKey, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target } from './types'
+import type {
+  AxisKey, AxisRef, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target,
+} from './types'
 
 const AXES: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
+
+/* ---------- 一手吃哪条轴（`AxisRef` 那三把尺，全仓只此一处） ---------- */
+
+/**
+ * 这一手按哪条轴读出力 —— 单轴直接读，混合轴取**算术平均**。
+ * ⚠️ 别在别处再写 `axes[k.axis]`：混合轴那样读会读出 `undefined`，
+ * 而 `undefined * power` 是 NaN —— 一路 NaN 下去不报错，只是这一手打不动人。
+ */
+export function axisReadOf(axes: AxisSheet, ref: AxisRef): number {
+  if (typeof ref === 'string') return axes[ref] ?? 0
+  if (ref.length === 0) return 0
+  let sum = 0
+  for (const k of ref) sum += axes[k] ?? 0
+  return sum / ref.length
+}
+
+/**
+ * 破绽那一层：混合轴里**含**守卫那条轴就算对上，单轴照旧一条对一条。
+ * 口径是「你打中它护着的那一处」—— 两轴各半也有半下落在那一处，故放行；
+ * 两条轴都对不上的混合（例如对上 破坏力 的守卫、而这一手吃 意志力）照旧削不动。
+ */
+export function axisHits(guard: AxisKey | undefined, ref: AxisRef): boolean {
+  if (!guard) return false
+  return typeof ref === 'string' ? ref === guard : ref.includes(guard)
+}
+
+/** 一手吃哪条轴，给提示词与界面读的那个**名字**（单轴就是它自己，混合写成「甲+乙」） */
+export function axisNameOf(ref: AxisRef): string {
+  return typeof ref === 'string' ? ref : ref.join('+')
+}
 
 const CORE: Record<string, Character> = Object.fromEntries(CHARACTERS.map((c) => [c.id, c]))
 
@@ -115,9 +148,9 @@ function scaleAxes(a: AxisSheet): AxisSheet {
   return out
 }
 
-/** 某人此刻的五轴（**评定尺**：常态评定 × 时期系数 × 任务成长；不含装具）。
-    对外用 `axisSheetOf` —— 那一个才是上场的口径。 */
-function rawAxisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
+/** 档案那一侧的五轴（**评定尺**：常态评定 × 时期系数 × 任务成长；不含装具）。
+    这一份是「档案上写多少」——**战斗侧那份要再过 `battleAxisOf`**（见下）。 */
+function baseAxisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
   // 言万心叶：他不走「档案 × 时期系数」那一套——原文里每个时期的面板本身就不一样
   if (id === OPERATOR_ID) {
     const per = opPeriodAtProgress(progress)
@@ -147,6 +180,15 @@ function rawAxisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet 
     out[k] = Math.round(numOf(c.stats.find((s) => s.key === k)?.value) * f)
   }
   return out
+}
+
+/**
+ * 某人此刻的五轴（**评定尺**，战斗侧）—— 档案读数过一道 `battle-axis` 那张表。
+ * 那张表默认是空的，只有「量程重标定漏了转换」的人才挂在上面；
+ * 挂上去的只影响战场，档案页（`Archive.tsx` 直接读 chars / SIDE_AXIS）一个字不动。
+ */
+function rawAxisSheetOf(id: string, progress: number, growthPct = 0): AxisSheet {
+  return battleAxisOf(id, baseAxisSheetOf(id, progress, growthPct))
 }
 
 /** 某人此刻的五轴（**面板尺**：见 tuning 的 AXIS_SCALE）。造人用这一个。 */

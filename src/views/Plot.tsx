@@ -17,7 +17,7 @@ import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
 import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
 import { EPISODES, isFreeId, nextEpisodeAfter } from '../lib/freetime'
 import {
-  effectiveGrowth, listRecords, readBag, readCoin, readEquip, readGearBag, readGrowth,
+  effectiveGrowth, listRecords, readBag, readEquip, readGearBag, readGrowth,
   readLevels, readStamina,
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
@@ -388,21 +388,21 @@ export function Plot() {
   const [growth, setGrowth] = useState<Record<string, number>>({})
   /** 买来的终末等级（与任务成长合流后才进战斗 —— 见 store 的 effectiveGrowth） */
   const [levels, setLevels] = useState<Record<string, number>>({})
-  const [coin, setCoin] = useState(0)
+  /* 这里从前有一格 `coin`（钱包余额）—— 只为喂给作战屏那一口，而那一口
+     2026-09-16 拆了（见 Battle 的 Props）。主线这一路从不显示余额，一并清掉。 */
   const [gearBag, setGearBag] = useState<Record<string, number>>({})
   const [equip, setEquip] = useState<Record<string, string>>({})
   const [bag, setBag] = useState<Record<string, number>>({ ...TUNING.bagDefault })
   const eventsDone = Object.keys(epDone).length
 
   const loadKit = useCallback(async () => {
-    const [sp, g, c, gb, eq, bg, lv] = await Promise.all([
-      readStamina(eventsDone), readGrowth(), readCoin(), readGearBag(), readEquip(), readBag(),
+    const [sp, g, gb, eq, bg, lv] = await Promise.all([
+      readStamina(eventsDone), readGrowth(), readGearBag(), readEquip(), readBag(),
       readLevels(),
     ])
     setStamina(sp)
     setGrowth(g)
     setLevels(lv)
-    setCoin(c)
     setGearBag(gb)
     setEquip(eq)
     setBag(bg)
@@ -2178,7 +2178,6 @@ export function Plot() {
           bag={bag}
           /* 上阵这几个人跟你的羁绊 —— 连携接得多快、本人多硬气都看它 */
           bond={bondOfSquad(plotBattle.squad)}
-          coin={coin}
           /* 撤退或战败：回到正文，这一仗还没了结 —— pendingBattle 留着，按钮还在 */
           onExit={async (spLeft, eq) => {
             await settleExit(spLeft, eq, stamina)

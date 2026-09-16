@@ -78,8 +78,10 @@ interface Props {
   morphPool?: string[]
   /** 每人与你的羁绊读数（0~100）—— 决定连携接得多快、本人多硬气 */
   bond: Record<string, number>
-  /** 终末点数（结算后写回） */
-  coin: number
+  /* 这里从前有一个 `coin`（玩家的终末点数余额）。2026-09-16 拆了 ——
+     它唯一的去处是被塞进 createBattle，于是「本场战果」变成「钱包 + 战果」，
+     结算再把这一整笔加回钱包（见 engine 的 `coin: 0` 那一处说明）。
+     作战屏里一处都不显示余额，所以拆掉它什么也不缺。 */
   /** 撤出：消耗已扣，不结算任务 */
   onExit: (spLeft: number, equip: Record<string, string>) => void
   /** 归档：把已写完作战记录的一场交回上层落库 */
@@ -220,13 +222,13 @@ const SFX_OF_FX: Record<FxKind, SfxName> = {
 }
 
 export function Battle({
-  mission, squad, progress, growth, stamina, equip, owned, bag, coin, morphPool, bond,
+  mission, squad, progress, growth, stamina, equip, owned, bag, morphPool, bond,
   onExit, onSettled,
 }: Props) {
   const [st, setSt] = useState<BattleState>(() =>
     createBattle({
       mission, squad, progress, growth, gear: equip,
-      sp: stamina.cur, spMax: stamina.max, bag, coin, morphPool, bond,
+      sp: stamina.cur, spMax: stamina.max, bag, morphPool, bond,
     }),
   )
   const [shown, setShown] = useState(0)

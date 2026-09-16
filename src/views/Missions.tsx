@@ -1287,7 +1287,6 @@ ${rb.f.word}`}
           bag={bag}
           /* 上阵这几个人跟你的羁绊 —— 连携接得多快、本人多硬气都看它 */
           bond={bondOfSquad(live.squad)}
-          coin={coin}
           onExit={async (spLeft, eq) => {
             await settleExit(spLeft, eq, stamina)
             setEquip(eq)

@@ -35,7 +35,7 @@
 import { TIMELINE } from '../data/timeline'
 import { furthestDone } from './operator'
 import type {
-  AxisKey, AxisSheet, DutyId, FxKind, PassiveSpec, SkillEffect, SkillKind, Target,
+  AxisKey, AxisRef, AxisSheet, DutyId, FxKind, PassiveSpec, SkillEffect, SkillKind, Target,
 } from './battle/types'
 import { OPERATOR_ID } from '../data/castmeta'
 /** 与名册同一口径：power 以「对应轴的百分之多少」计（带里的数就是最终倍率，见 atlas.ts 的 band） */
@@ -63,7 +63,8 @@ export interface OpAbility {
   gate?: boolean
   desc: string
   pow: number
-  axis: AxisKey
+  /** 乘区：单轴一个名字，混合轴一条（见 battle/types 的 `AxisRef`） */
+  axis: AxisRef
   fx: FxKind
   target?: Target
   cost?: number
@@ -137,8 +138,22 @@ const A = (
 /** 第一卷的最后一节：走完它，露娜的丝线才算真的系在他手腕上 */
 export const VOL1_END = 'v1-9'
 
+/**
+ * 「拳法」那一门的乘区 —— **破坏力与意志力各一半**（2026-09-16 主人定的）。
+ *
+ * 他五轴里破坏力最低、意志力最高：时期一 破 20 对志 78，时期三 破 82 对志 88。
+ * 一双手只是形状，把拳头推出去的是「低语者」—— 出手之前对方心里那句
+ * 「往左躲」已经先到了。挂在单轴『破坏力』上等于把这个人写成全队最弱的拳头，
+ * 与那一句「拳头总比对方先到半步」对不上。
+ *
+ * 口径：**只给「拳法」这一类**（直 / 狮子，三个时期共六处）。
+ * 终结技（「停滞观测 · 宣告」吃意志力、「noapusa · 万物皆我」吃反现实亲和）
+ * 与狮形那一整份都不动 —— 那些本来就吃他最好的栏，混进来反而是砍。
+ */
+const MIX_FIST: AxisRef = ['破坏力', '意志力']
+
 const ab = (
-  name: string, kind: SkillKind, desc: string, pow: number, axis: AxisKey, fx: FxKind,
+  name: string, kind: SkillKind, desc: string, pow: number, axis: AxisRef, fx: FxKind,
   o: Omit<OpAbility, 'name' | 'kind' | 'desc' | 'pow' | 'axis' | 'fx'> = {},
 ) : OpAbility => ({
   name, kind, desc, pow, axis, fx,
@@ -247,11 +262,11 @@ export const OP_PERIODS: OpPeriod[] = [
     },
     abilities: [
       ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
-        1.8, '破坏力', 'slash'),
+        1.8, MIX_FIST, 'slash'),
       ab('拳法 · 狮子', '普攻',
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
-        2.6, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
+        2.6, MIX_FIST, 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
       ab('低语 · 读心', '战技', '他把听见的东西念给全队听——对方的「往左躲」不再是秘密。'
         + '自身回避率上升，全队命中率一并上升。',
         0, '反现实亲和', 'seal',
@@ -292,11 +307,11 @@ export const OP_PERIODS: OpPeriod[] = [
     },
     abilities: [
       ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
-        1.8, '破坏力', 'slash'),
+        1.8, MIX_FIST, 'slash'),
       ab('拳法 · 狮子', '普攻',
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
-        2.6, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
+        2.6, MIX_FIST, 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
       ab('低语 · 读心', '战技', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
         + '他要喊的东西总在出手之前就到。',
         0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),
@@ -341,11 +356,11 @@ export const OP_PERIODS: OpPeriod[] = [
     },
     abilities: [
       ab('拳法 · 直', '普攻', '他没有武装，只有一双手——可拳头落下之前，他已经知道你要往哪躲。',
-        1.8, '破坏力', 'slash'),
+        1.8, MIX_FIST, 'slash'),
       ab('拳法 · 狮子', '普攻',
         '「黄金狮子」立下契约之后，丝线缠上拳面：同一记直拳，架式与出力都换了副模样。'
         + '（需已解锁「黄金狮子」，且露娜在场）',
-        2.6, '破坏力', 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
+        2.6, MIX_FIST, 'slash', { requireAlly: 'luna', unlockAt: 'v1-9' }),
       ab('低语 · 读心', '战技', '听见对方心里最响的那一句：自身闪避与命中一并上升——'
         + '他要喊的东西总在出手之前就到。',
         0, '反现实亲和', 'seal', { target: 'self', turns: 3, effect: { evade: 0.25, accUp: 0.3 } }),

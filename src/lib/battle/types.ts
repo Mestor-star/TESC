@@ -60,6 +60,17 @@ export type AxisKey = '破坏力' | '敏捷度' | '物理抗性' | '反现实亲
 export type AxisSheet = Record<AxisKey, number>
 
 /**
+ * 一手吃哪条轴 —— 单轴写一个名字；**混合轴**写一条，读的时候取算术平均。
+ *
+ * 混合是给「出力一半在这一栏、一半在那一栏」的人开的。开到今天只有一个人：
+ * 言万心叶的拳法写 `['破坏力', '意志力']` —— 他五轴里破坏力最低、意志力最高，
+ * 一双手只是形状，把拳头推出去的是「低语者」。
+ * 读的地方一律走 `derive` 那三把尺（`axisReadOf` / `axisHits` / `axisNameOf`），
+ * 别在别处再写一遍 `axes[k.axis]` —— 混合轴那样读会读出 `undefined`。
+ */
+export type AxisRef = AxisKey | readonly AxisKey[]
+
+/**
  * 技能类别（四格制）：普攻 / 战技 / 终结技 / 天赋。
  * ------------------------------------------------------------
  * 前三格是**手上点得出来的**（`legalSkills` 只吐这三个）；第四格「天赋」永远不出按钮 ——
@@ -370,7 +381,8 @@ export interface SkillSpec {
   cost: number
   /** 倍率（× 对应轴）；0 = 本手不造成伤害 */
   power: number
-  axis: AxisKey
+  /** 这一手的乘区：单轴一个名字，混合轴一条（见 `AxisRef`） */
+  axis: AxisRef
   fx: FxKind
   /** 出手时的一句台词（原作有则用原文） */
   line: string

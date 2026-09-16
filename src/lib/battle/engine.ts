@@ -16,7 +16,8 @@ import type { Bond } from './synergy'
 import { lineFor, poolFor } from './banter'
 import { AXIS_SCALE, TUNING } from './tuning'
 import {
-  RIVAL_TAG, combatantOf, enemiesOf, minionOf, nextBossOf, rivalArchiveIdOf, rivalOf, speedOf,
+  RIVAL_TAG, axisHits, axisReadOf, combatantOf, enemiesOf, minionOf, nextBossOf,
+  rivalArchiveIdOf, rivalOf, speedOf,
 } from './derive'
 import { namedBossOf } from './bosses'
 import { dutyOf } from './duty'
@@ -263,8 +264,9 @@ export interface CreateOpts {
   spMax: number
   /** 本场携带的道具（id → 个数）；缺省用补给池默认 */
   bag?: Record<string, number>
-  /** 军需点（胜利结算时追加） */
-  coin?: number
+  /* 这里从前还有一个 `coin?: number`，注释写着「军需点（胜利结算时追加）」。
+     2026-09-16 拆了 —— 见下面 `coin: 0` 那一处的说明：那个字段谁也没追加过，
+     唯一的实际用法是把玩家**打之前的钱包余额**塞进战果，于是每打一场钱包翻一倍。 */
   /** 变身可借的档案池（已解锁、且不在本场队伍里的角色 id） */
   morphPool?: string[]
   /** 敌方由谁指挥：'ai' 时引擎会停在 'think' 等视图交回这一手（见 phase 注释） */
@@ -321,7 +323,19 @@ export function createBattle(opts: CreateOpts): BattleState {
     sp: Math.max(0, sp - TUNING.spPerSortie),
     spMax,
     bag: { ...(opts.bag ?? TUNING.bagDefault) },
-    coin: opts.coin ?? 0,
+    /* **本场战果**，从零起算 —— 绝不是玩家钱包。
+       ------------------------------------------------------------
+       2026-09-16 修的旧账：这一格从前写的是 `opts.coin ?? 0`，而 Battle.tsx
+       传进来的正是**开打之前的钱包余额**；收场那一句 `st.coin += r.coin`
+       又把本场战果加上去。于是 rec.coin = 钱包 + 战果，两条后果：
+         · 作战记录上的「终末点数 +N」是**虚报**的，等于把存款也算成本场缴获；
+           解说词（narrate 的「缴获军需点 N」）跟着一起虚报。
+         · settleWin 拿 rec.coin 去 `addCoin` —— 把钱包**又加了一遍**，
+           钱包于是每打一场就翻一倍。实测一串：3750 → 7500 → 15000 → 30000
+           → 56434（这最后两笔其实只是巡逻，战果 184 / 276）。
+       自动复核一直没撞上：`scripts/battlesim.mjs` 传的是 `coin: 0`。
+       只有真人从 Missions / Plot 进作战屏，才会走进这条路径。 */
+    coin: 0,
     loot: [],
     fleeOdds: 0,
     morphPool: opts.morphPool ?? [],
@@ -416,7 +430,7 @@ function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec):
   if (k.linkUnits?.length && k.linkPow) {
     for (const id of k.linkUnits) {
       const m = find(s, id)
-      if (m && !m.down && m.gone <= 0) mate += m.axes[k.axis] * k.linkPow * atkMulOf(m)
+      if (m && !m.down && m.gone <= 0) mate += axisReadOf(m.axes, k.axis) * k.linkPow * atkMulOf(m)
     }
   }
   // 终结技能：咏唱期间被挂上的减益，一层削它一截 —— 不打不断，也能打软
@@ -427,7 +441,8 @@ function damageOf(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec):
   const sway = k.variance ? 1 + (Math.random() * 2 - 1) * k.variance : 1
   // 蓄力：攒下来的那一口，在这一手上交出去（打完即清，见 resolve）
   const chg = atk.charge > 1 ? atk.charge : 1
-  const raw = atk.axes[k.axis] * k.power * sway * (1 + basic) * atkMulOf(atk) * ultCut * chg + mate
+  // 乘区：单轴直接读，**混合轴取算术平均** —— 心叶的拳法是 破坏力＋意志力 各一半
+  const raw = axisReadOf(atk.axes, k.axis) * k.power * sway * (1 + basic) * atkMulOf(atk) * ultCut * chg + mate
   let mult = 1
   const anti = def.tags.includes('反现实')
   if (atk.scar) {
@@ -898,7 +913,7 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
 
   /* 破绽：只有**对上那条轴**的攻击才削得动这层护盾（每一段削一点，
      所以多段技天生是它的克星）；明写 breakGuard 的手另算，不看轴。 */
-  stripGuard(s, atk, def, (k.effect?.breakGuard ?? 0) + (def.guardAxis === k.axis ? 1 : 0))
+  stripGuard(s, atk, def, (k.effect?.breakGuard ?? 0) + (axisHits(def.guardAxis, k.axis) ? 1 : 0))
 
   // 蓄力被打散：攒着的那口气，挨到够重的一下就散了（轻碰不掉，重的才掉）
   if (def.charge > 1 && dmg >= def.hpMax * TUNING.chargeBreak) {

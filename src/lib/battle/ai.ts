@@ -23,6 +23,7 @@
 import { chatCompletion, isReady } from '../api'
 import type { ApiSettings, ChatTurn } from '../api'
 import { affordable, bossUltOf, evadeOf, find, legalSkills, shieldOf } from './engine'
+import { axisNameOf } from './derive'
 import type { BattleState, Combatant, EnemyIntent, SkillSpec } from './types'
 
 /** 模型若要回话，只回这一种形状 */
@@ -54,7 +55,7 @@ function skillLine(k: SkillSpec, cd: number): Record<string, unknown> {
     name: k.name,
     类: k.kind,
     倍率: Number((k.power / 2).toFixed(2)),
-    轴: k.axis,
+    轴: axisNameOf(k.axis),
     打谁: k.target,
     体力: k.cost,
     ...(cd > 0 ? { 冷却中: `还需 ${cd} 拍` } : {}),

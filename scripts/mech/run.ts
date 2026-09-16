@@ -119,7 +119,11 @@ import {
   endureCap, enemysTurn, etaOf, evadeOf, find, guardLeft, legalSkills, pendingFoe, skipOf,
   standingOf, summonFoe, rewardOf,
 } from '../../src/lib/battle/engine'
-import { combatantOf, enemiesOf, enemyFormation, minionOf } from '../../src/lib/battle/derive'
+import {
+  axisNameOf, axisReadOf, axisSheetOf, combatantOf, enemiesOf, enemyFormation, minionOf,
+  skillsOf as battleSkillsOf,
+} from '../../src/lib/battle/derive'
+import { AXIS_RESCALE, BATTLE_AXIS } from '../../src/lib/battle/battle-axis'
 import {
   effectiveGrowth, LEVEL_BASE_COST, LEVEL_RATE, LEVEL_STEP_PCT, levelCostOf,
 } from '../../src/lib/battle/store'
@@ -1974,6 +1978,82 @@ export function run(): MechReport {
     ok('AXIS_REF 不是上限：轴可以越过它并且继续长',
       far.axes.破坏力 > AXIS_REF * 4, `AXIS_REF=${AXIS_REF}，实测破坏力 ${far.axes.破坏力}`)
 
+    /* (a2) **档案与战场分家** —— 2026-09-16 主人口径。
+       ------------------------------------------------------------
+       官方档案五轴一个字不改（那是原作给出的读数，档案页印的就是它），
+       战斗系统的数值按全表那一组系数（`AXIS_RESCALE`）转化 ——
+       与她之外那 23 人一视同仁，不另外开小灶。
+
+       恋兔光那一份当时只转化到一半：破 / 敏 / 亲 走了，物 49 与志 55 还停在
+       旧读数上，于是「RANK1 · 人类最强」的物抗与意志在战场上比一整排登场者
+       还低。`battle-axis.ts` 那张表把漏的那几栏补在**战斗侧**。
+
+       三条一起钉：
+         · 档案页（`CHARACTERS`）读出来就是原样的 200/85/49/75/55；
+         · 战场（`axisSheetOf`）读出来是乘过系数的那个数 ×面板尺；
+         · 两头的差**恰好**是那一组系数 —— 谁把系数写错一位，这条当场红。 */
+    /* ⚠️ 判据要读**代码**、不读注释：这几处源码的注释里正写着「从前是 opts.coin」
+       「从前挂在破坏力上」这样的病历来，不剥的话正则吃自己的注释，条条永远红
+       （踩过一次）。本节后面 (c2-3) 与 (a3) 共用这一个。 */
+    const stripCmt = (s: string) =>
+      s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '')
+    const arc = (id: string) => {
+      const s = CHARACTERS.find((c) => c.id === id)?.stats ?? []
+      return Object.fromEntries(s.map((r) => [r.key, r.value])) as Record<string, number>
+    }
+    const hikariArc = arc('hikari')
+    const lunaArchive = arc('luna')
+    const ARCHIVE_AXES: Record<string, number> = {
+      破坏力: 200, 敏捷度: 85, 物理抗性: 49, 反现实亲和: 75, 意志力: 55,
+    }
+    ok('恋兔 · 档案页读的是官方五轴，一个字没动（200/85/49/75/55）',
+      Object.entries(ARCHIVE_AXES).every(([k, v]) => hikariArc[k] === v),
+      `档案 破${hikariArc.破坏力} 敏${hikariArc.敏捷度} 物${hikariArc.物理抗性} `
+      + `亲${hikariArc.反现实亲和} 志${hikariArc.意志力}`)
+    const hikariFix = BATTLE_AXIS.hikari ?? {}
+    const scaled = Object.fromEntries(
+      Object.entries(ARCHIVE_AXES).map(([k, v]) => [k, Math.round(v * AXIS_RESCALE[k as keyof typeof AXIS_RESCALE])]),
+    ) as Record<string, number>
+    ok('恋兔 · 战斗数值 = 官方五轴 × 全表那一组系数（和其余 23 人同一笔账）',
+      Object.entries(scaled).every(([k, v]) => hikariFix[k as keyof typeof hikariFix] === v),
+      Object.entries(scaled).map(([k, v]) => `${k} ${ARCHIVE_AXES[k]}×${AXIS_RESCALE[k as keyof typeof AXIS_RESCALE]}=${v}`).join('　'))
+    const hikariSheet = axisSheetOf('hikari', 1)
+    ok('恋兔 · 战场读的是转化过的那个数（面板尺再乘 AXIS_SCALE）',
+      Object.entries(scaled).every(([k, v]) => hikariSheet[k as keyof typeof hikariSheet] === v * AXIS_SCALE)
+      && hikariSheet.物理抗性 !== hikariArc.物理抗性 * AXIS_SCALE,
+      `战场 破${hikariSheet.破坏力} 敏${hikariSheet.敏捷度} 物${hikariSheet.物理抗性} `
+      + `亲${hikariSheet.反现实亲和} 志${hikariSheet.意志力}　（档案那一份 ×${AXIS_SCALE} 会是 `
+      + `物${hikariArc.物理抗性 * AXIS_SCALE} 志${hikariArc.意志力 * AXIS_SCALE}）`)
+    ok('恋兔（对照）：档案侧的路一条都不经过那张表 —— 表里没挂的人两边本来就一样',
+      axisSheetOf('luna', 1).破坏力 === Math.round(lunaArchive.破坏力 * AXIS_SCALE)
+      && !( 'luna' in BATTLE_AXIS ),
+      `露娜 档案${lunaArchive.破坏力} → 战场${axisSheetOf('luna', 1).破坏力}（×${AXIS_SCALE}；未挂表）`)
+
+    /* (a3) **混合乘区** —— 2026-09-16 主人把言万心叶「拳法」那一门的乘区
+       从单轴破坏力改成 `['破坏力', '意志力']` 等权平均。
+       他五轴里破坏力最低、意志力最高（时期一 破 20 对志 78）：一双手只是形状，
+       把拳头推出去的是「低语者」—— 挂在破坏力上等于把这个人写成全队最弱的拳头。
+
+       三条：运行时读得出两轴平均；同轴单轴的人照旧；引擎里没有裸读
+       `axes[k.axis]` 的地方（混合轴那样读会拿到 `undefined`，一路 NaN 不报错）。 */
+    const opNow = combatantOf(OPERATOR_ID, 0)
+    /* ⚠️ 这里要用**战斗**那一份技能表：mech 上头已经有一个同名的 `skillsOf`
+       来自 `lib/memory`（记忆条目那一套），所以这一支进来时改叫 battleSkillsOf。 */
+    const fist = battleSkillsOf(OPERATOR_ID).find((k) => k.name === '拳法 · 直')!
+    const fistWant = (opNow.axes.破坏力 + opNow.axes.意志力) / 2
+    ok('心叶 · 拳法乘区取「破坏力＋意志力」两轴平均，不是单轴破坏力',
+      axisReadOf(opNow.axes, fist.axis) === fistWant && fistWant !== opNow.axes.破坏力,
+      `「${fist.name}」轴=${axisNameOf(fist.axis)}　读数 `
+      + `(破${opNow.axes.破坏力}＋志${opNow.axes.意志力})/2=${fistWant.toFixed(0)}`
+      + `（按单轴破坏力只有 ${opNow.axes.破坏力}）`)
+    const otherFist = combatantOf('hikari', 0).skills.find((k) => k.power > 0)!
+    ok('混合乘区（对照）：只有他的拳法走这一路 —— 别的手照旧一条轴对一条轴',
+      typeof otherFist.axis === 'string',
+      `恋兔的「${otherFist.name}」轴=${axisNameOf(otherFist.axis)}（单轴）`)
+    ok('混合乘区：引擎里没有裸读 `axes[k.axis]` 的地方（那样读会得到 NaN）',
+      !/axes\[k\.axis\]/.test(stripCmt(readFileSync('src/lib/battle/engine.ts', 'utf8'))),
+      '伤害 / 连携 / 破绽三处一律走 axisReadOf / axisHits')
+
     // (b) 伤害跟着轴走，中间没有夹子
     const k = bare.skills.find((x) => x.power > 0 && !x.gate)!
     const hit = (c: Combatant) => c.axes[k.axis] * k.power * atkMulOf(c)
@@ -1998,30 +2078,68 @@ export function run(): MechReport {
        终末等级底价 80→1000，收入与军需价格同步放大。数看着大了，
        买起来的快慢必须与从前**一模一样** —— 那一份「一样」没有别的地方守着，
        就靠这一组。分三层：
-         · **主人口径**（起点 1000 / 每级 ×1.6 指数 / 每级 +10% / 整支笔 ×12.5）
+         · **主人口径**（起点 3000 / 每级 ×1.85 指数 / 每级 +10% / 整支笔 ×12.5）
            逐个数钉死。将来要改，先来改这几条，不是悄悄漂过去。
-         · **同一支笔**：军需每一件的价都是 COIN_SCALE 的整数倍 ——
+           ⚠️ 2026-09-16 主人同一天两刀，方向和落点都不一样：
+             · 「升级太简单」→ 收**曲线**（1000/×1.6 → 3000/×1.85），收入没动；
+             · 「敌人给的点数也降低」→ 收**收入**（coinPerStage 175→75、
+               coinMainlineBase 750→300），军需价主人当场拍了「不降」。
+           两个数一起看才是手感 —— 改哪一头之前，先把另一头读一遍。
+         · **同一支笔**：军需与收入每一笔都是 COIN_SCALE 的整数倍（栅格）——
            单边动一张表（比如把 coinPerStage 拨到 180）当场就红。
+           注意它守的是**栅格**，不是「收入与军需同乘同除」：只压收入、军需
+           价原样不动是合法的（2026-09-16 就是这一刀），装具相对变贵。
            **新增装具不必回来改这一条**，只要价也是按同一支笔写的。 */
-    ok('终末等级：主人定的那条曲线就是这几笔（起点 1000 · 每级 ×1.6 · 每级 +10%）',
-      LEVEL_BASE_COST === 1000 && LEVEL_RATE === 1.6 && LEVEL_STEP_PCT === 10,
+    ok('终末等级：主人定的那条曲线就是这几笔（起点 3000 · 每级 ×1.85 · 每级 +10%）',
+      LEVEL_BASE_COST === 3000 && LEVEL_RATE === 1.85 && LEVEL_STEP_PCT === 10,
       `底价 ${LEVEL_BASE_COST}　倍率 ×${LEVEL_RATE}　每级 +${LEVEL_STEP_PCT}%（第 10 级 +${LEVEL_STEP_PCT * 10}%）`)
-    ok(`终末点数是同一支笔：整支货币 ×${COIN_SCALE}（收入与军需同步放大）`,
-      COIN_SCALE === 12.5 && TUNING.coinPerStage === 175 && TUNING.coinMainlineBase === 750,
-      `×${COIN_SCALE}；阶段基数 ${TUNING.coinPerStage}（14×12.5）　剧情另加 ${TUNING.coinMainlineBase}（60×12.5）`)
+    ok(`终末点数是同一支笔：军需与收入落在同一条 ×${COIN_SCALE} 的栅格上`,
+      COIN_SCALE === 12.5 && TUNING.coinPerStage === 75 && TUNING.coinMainlineBase === 300,
+      `×${COIN_SCALE}；阶段基数 ${TUNING.coinPerStage}（6×12.5）　剧情另加 ${TUNING.coinMainlineBase}（24×12.5）`)
     const onPen = [...GEARS.map((g) => g.price), ...ITEMS.map((i) => i.price)]
       .filter((v) => v % COIN_SCALE !== 0)
     ok(`军需价位与收入共用那一支笔：每一件都是 ×${COIN_SCALE} 的整数倍`,
       onPen.length === 0, onPen.length ? `脱笔的：${onPen.join('、')}` : '逐件对上')
+    /* (c2-2) **升级的手感** —— 2026-09-16 主人收曲线（1000/×1.6 → 3000/×1.85）
+       之后，这一条跟着换了口径。从前钉的是「第一档买得起」（所以早期就能尝到
+       第一级），主人说太简单，于是反过来钉**第一级该值一场什么仗**：
+
+         · 早期主线（S1，一场 675）**买不到**第一级 —— 不再是一两场就换一级；
+         · 中期主线（S5，一场 1575）**买不到**，两场才够 —— 一场一级那一步不再白给。
+       （这两个数跟着收入那一刀走：coinPerStage 175→75、coinMainlineBase 750→300。）
+
+       两头一起钉才叫手感：只钉下界，曲线可以被改到天上去；只钉上界，
+       又会退回「一场换三级」那一版。装具那一头照旧 —— 最贵一件不用攒一年。 */
     const payAt = (stage: number) =>
       rewardOf({ stage, mainline: true } as unknown as Parameters<typeof rewardOf>[0]).coin
     const pay1 = payAt(1)
+    const pay5 = payAt(5)
     const pay10 = payAt(10)
     const topGear = Math.max(...GEARS.map((g) => g.price))
-    ok('终末点数的手感没被单边改掉：第一档买得起，最贵那一件不用攒一年',
-      LEVEL_BASE_COST < pay1 && topGear <= pay10 * 2,
-      `第一档 ${LEVEL_BASE_COST} ＜ 早期主线一场 ${pay1}；`
-      + `最贵一件 ${topGear} ≤ stage-10 主线一场 ${pay10} ×2`)
+    ok('升级的手感：一场中期主线买不到第一级，两场买得到',
+      LEVEL_BASE_COST > pay5 && LEVEL_BASE_COST <= pay5 * 2,
+      `中期主线一场 ${pay5} ＜ 第一级 ${LEVEL_BASE_COST} ≤ 两场 ${pay5 * 2}（早期一场只有 ${pay1}）`)
+    ok('终末点数的手感：最贵那一件装具约五场中期主线，不用攒一年',
+      topGear <= pay5 * 5,
+      `最贵一件 ${topGear} ≤ 中期主线五场 ${pay5 * 5}（stage-10 一场 ${pay10}）`)
+
+    /* (c2-3) **本场战果从零起算，不吃玩家钱包** —— 2026-09-16 修的那条旧账。
+       ------------------------------------------------------------
+       病灶（已拆）：Battle 把开打前的钱包当 `opts.coin` 塞进 createBattle →
+       `st.coin` = 钱包 + 本场战果 → 记录上的「终末点数 +N」虚报，
+       而 settleWin 拿这整笔去 addCoin，钱包于是每打一场就翻一倍。
+       实测一串 3750 → 7500 → 15000 → 30000 → 56434 → 112960。
+       **自动复核一直没撞上**（`scripts/battlesim.mjs` 传的是 coin: 0），
+       只有真人从 Missions / Plot 进作战屏才会走进那条路径 —— 所以这里
+       补一条，读源码钉住两头：引擎不再读 opts.coin，作战屏也不再传。 */
+    /* （剥注释那把尺在本节 (a2) 头上，两处共用。） */
+    const engSrc = stripCmt(readFileSync('src/lib/battle/engine.ts', 'utf8'))
+    const btlSrc = stripCmt(readFileSync('src/views/Battle.tsx', 'utf8'))
+    const fresh = mk()
+    ok('本场战果从零起算：作战屏不把玩家钱包塞进战果（塞了钱包每打一场翻一倍）',
+      fresh.coin === 0 && !/opts\.coin/.test(engSrc) && !/\bcoin=\{/.test(btlSrc),
+      `开局战果 ${fresh.coin}；engine 里 ${/opts\.coin/.test(engSrc) ? '仍有' : '已无'} opts.coin，`
+      + `Battle.tsx 里${/\bcoin=\{/.test(btlSrc) ? '仍有' : '已无'} coin 传参`)
 
     /* (c3) 胜利点数那一笔加成与装具**无关** —— 2026-09-15 正名，一个数没动。
        从前它是 `coinDropBonus`，注释写着「掉落装具时附带的点数比例」：
