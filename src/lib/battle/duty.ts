@@ -14,8 +14,13 @@
                       （效果带管「写多大」，这一栏管「谁能写」—— 两道一起才叫规矩）
                       本职之外还许捎**一手通用**（见 `UNIVERSAL_ARCH`）
      · `crit` 一组 —— 暴击的底子（面板 = TUNING 的常数项 + 这一份）
-     · `basicTempo` / `tempoRegen` —— 节拍怎么回来（恢复途径①②，见 engine）
+     · `basicTempo` —— 普攻回几点节拍（恢复途径①，见 engine）
      · `arts`      —— 战技格手数（2~3 手，各不相同）
+
+   ⚠️ **职能不再给空转回（2026-09-16）。** 从前这里还有一栏 `tempoRegen`（护卫 / 和音 /
+   调度各 1，主音 / 取材 0），是「恢复途径②」的职能那一半。主人拍「下一刀砍恢复路径」
+   之后整条撤走 —— 理由与读数见 engine 里恢复途径②那一段。**那一档不再回来**，
+   空转回从此只认写在人自己被动上的那一份（`PassiveSpec.tempoRegen`）。
 
    ⚠️ **恋兔光一人破例**：她归主音，但 `RoleDef.dutyExempt` 让她整个不听 `arch` 那道闸
    （六手原样挂着，数值与手感一个数不改）。她是「主音兼多手」，像星铁的主角。
@@ -59,8 +64,6 @@ export interface DutyDef {
   critMul: number
   /** 恢复途径①：这一档的普攻打出去回几点节拍（主音回得最少 —— 他是全队最大借节拍户） */
   basicTempo: number
-  /** 恢复途径②：每拍自回几点节拍（与被动 `tempoRegen` 相加） */
-  tempoRegen: number
   /**
    * **本职**：战技格许挑哪几类框架（`atlas` 的 ARCH id）。
    * 本职之外还许捎一手通用的 —— 见 `UNIVERSAL_ARCH` / `UNIVERSAL_MAX`。
@@ -81,7 +84,6 @@ export const DUTY: Record<DutyId, DutyDef> = {
     crit: 0.06,
     critMul: 0.15,
     basicTempo: 1,
-    tempoRegen: 0,
     arch: ['强袭', '扫荡', '穿甲', '连打', '乱击'],
     arts: 3,
   },
@@ -93,7 +95,6 @@ export const DUTY: Record<DutyId, DutyDef> = {
     crit: 0,
     critMul: 0.1,
     basicTempo: 1,
-    tempoRegen: 1,
     arch: ['坚守', '屏障', '震退'],
     arts: 2,
   },
@@ -105,7 +106,6 @@ export const DUTY: Record<DutyId, DutyDef> = {
     crit: 0.02,
     critMul: 0,
     basicTempo: 1,
-    tempoRegen: 1,
     arch: ['治愈', '自愈', '解厄'],
     arts: 2,
   },
@@ -117,7 +117,6 @@ export const DUTY: Record<DutyId, DutyDef> = {
     crit: 0.03,
     critMul: 0,
     basicTempo: 2,
-    tempoRegen: 1,
     arch: ['提速', '增益', '牵制'],
     arts: 3,
   },
@@ -129,7 +128,6 @@ export const DUTY: Record<DutyId, DutyDef> = {
     crit: 0.08,
     critMul: 0.25,
     basicTempo: 2,
-    tempoRegen: 0,
     arch: ['重压', '驱逐', '牵制'],
     arts: 3,
   },

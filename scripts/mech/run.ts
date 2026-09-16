@@ -1250,12 +1250,15 @@ export function run(): MechReport {
       foeB.broken > 0 && knocker.tempo === TUNING.breakTempo,
       `破绽成立=${foeB.broken > 0}　节拍 0 → ${knocker.tempo}（该回 ${TUNING.breakTempo}）`)
 
-    /* ② 每空转一格回节拍：职能那一份（护卫/和音/调度各 1，主音 0） */
-    ok('节拍 · 职能各给各的每拍自回（主音 0，护卫/和音/调度 ≥1）',
-      dutyOf('主音').tempoRegen === 0 && dutyOf('取材').tempoRegen === 0
-      && dutyOf('护卫').tempoRegen > 0 && dutyOf('和音').tempoRegen > 0
-      && dutyOf('调度').tempoRegen > 0,
-      Object.entries(DUTY).map(([k, d]) => `${k} ${d.tempoRegen}`).join('／'))
+    /* ② 每空转一格回节拍：**只认人自己被动上写的那一份**。
+       2026-09-16 主人拍「砍恢复路径」，职能那一半（`DutyDef.tempoRegen`：护卫 / 和音 /
+       调度各回 1）整条撤走 —— 它是全表唯一一处白拿的节拍：不占出手、不花代价，只等
+       行动条涨的那几格，而一回合要空转好几格（读数见 tuning 的「砍恢复路径」一段）。
+       下面两条一正一反：撤走之后职能不再各自给一份（对照：护卫空转下来一点不动），
+       而写了被动的（玛丽娅的「镇痛剂」回 2）照旧回 —— ② 没被整条删掉，只是换了主人。 */
+    ok('节拍 · 职能不再给空转回（`tempoRegen` 那一栏已经从 DutyDef 上撤走）',
+      Object.values(DUTY).every((d) => !('tempoRegen' in d)),
+      Object.entries(DUTY).map(([k, d]) => `${k} ${'tempoRegen' in d ? '还有' : '没有'}`).join('／'))
 
     const sC = mk()
     const guarder = find(sC, 'isis')!
@@ -1265,12 +1268,28 @@ export function run(): MechReport {
       c.tempo = 0
       c.bar = 0
     }
-    guarder.duty = '护卫'
+    guarder.duty = '护卫'   // 从前这一档空转一格回 1，如今与主音一样什么都不回
     lead.duty = '主音'
     advance(sC)
-    ok('节拍 · 途径②每空转一格回一拍（按职能）',
-      guarder.tempo > 0 && lead.tempo === 0,
-      `护卫 ${guarder.tempo} / 主音 ${lead.tempo}（护卫该回 ${dutyOf('护卫').tempoRegen}）`)
+    ok('节拍 · 途径②撤走对照：护卫空转下来也回不动（职能那一份没了）',
+      guarder.tempo === 0 && lead.tempo === 0,
+      `护卫 ${guarder.tempo} / 主音 ${lead.tempo}`)
+
+    const sC2 = mk()
+    const maria = find(sC2, 'maria')!
+    const bare = find(sC2, 'phidra')!
+    for (const c of [...sC2.allies, ...sC2.enemies]) {
+      c.passive = undefined
+      c.tempo = 0
+      c.bar = 0
+    }
+    maria.duty = '主音'
+    maria.passive = { ...(maria.passive ?? {}), tempoRegen: 2 }
+    bare.duty = '主音'
+    advance(sC2)
+    ok('节拍 · 途径②只认个人被动（写了回 2 的那位照样回，没写的照旧不动）',
+      maria.tempo > 0 && bare.tempo === 0,
+      `玛丽娅 ${maria.tempo}（该回 2 的整数倍）/ 对照 ${bare.tempo}`)
 
     /* 两条不耗回合：额度、不记账、不进出手簿 */
     const sF = mk()

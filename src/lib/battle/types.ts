@@ -680,7 +680,8 @@ export interface Combatant {
    * 一人一份，**不设全队共享池** —— 池一共享，谁还看自己这一份，现有的消耗系统就废了。
    * 花在技能的 `cost` 上；回的路上有四条：
    *   ① 普攻回一点（`DutyDef.basicTempo`）
-   *   ② 被动 / 天赋每拍回（`PassiveSpec.tempoRegen`）
+   *   ② 被动每空转一格回（`PassiveSpec.tempoRegen` —— **只有个别角色有**，
+   *      职能那一半已于 2026-09-16 撤走，见 tuning 的「砍恢复路径」）
    *   ③ 道具 / 打穿破绽回
    *   ④ 天赋定向给某个职能递（`TalentSpec.to` + `TalentSpec.tempo`）
    * 外加防御 / 休整自己回的那一口（一直都有）。

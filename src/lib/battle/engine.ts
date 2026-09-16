@@ -1425,11 +1425,29 @@ export function advance(s: BattleState): BattleState {
           if (p?.regen && c.hp < c.hpMax) {
             c.hp = Math.min(c.hpMax, c.hp + Math.max(1, Math.round(c.hpMax * p.regen)))
           }
-          /* 恢复途径②：每空转一格回节拍。
-             两个来源相加 —— 被动给的那个（PassiveSpec.tempoRegen）和**职能**给的
-             （DutyDef.tempoRegen：护卫 / 和音 / 调度各回 1，主音 / 取材 回 0）。
-             主音回 0 是有意的：他最缺节拍，而他的节拍只能从「打」里来（途径①③④）。 */
-          const back = (p?.tempoRegen ?? 0) + dutyOf(c.duty).tempoRegen
+          /* 恢复途径②：每空转一格回节拍 —— **只认人自己被动上写的那一份**
+             （`PassiveSpec.tempoRegen`；全表只有玛丽娅的「镇痛剂」有，回 2）。
+
+             2026-09-16 主人拍「下一刀砍恢复路径」，这一条砍的就是职能那半边
+             （`DutyDef.tempoRegen`，从前护卫 / 和音 / 调度各回 1）。它是全表唯一
+             一处**白拿**的节拍：不占出手、不花代价，只是等行动条涨的那几格。
+             一回合要空转好几格，于是一仗下来它回出来的比本人那一池还多 ——
+             那池子于是不是资源，是装饰。
+
+             隔离读数（RUNS=200，三档同一套种子矩阵，量「连普攻都出不起就防御」的
+             计数）：单砍职能那一份 → 开局 2001 → 6665、中盘 415 → 732、卷末 1828 →
+             2076；总体胜率 64%/79%/80% → 61%/78%/80%。同一把尺量「普攻回」（途径①）
+             单独砍一遍：开局 2001 → 1951（≈不动），所以 ① 没动 —— 它本来就是主音
+             那条写明的活路（见 act 里那一行）。
+
+             ⚠️ **这把尺子是蒙特卡洛的**（只有盘面种子化，暴击/浮动/闪避走 `Math.random`，
+             同版本连跑三次差 ~2%），所以标「单跑」的两个数离得够远才敢用；②+③ 那个
+             落点是各跑三次取的平均（见 tuning 的「砍恢复路径」表）。
+
+             ⚠️ 这不是「数值调小」，是**议价方式变了**：从 0 起手的人再也攒不出那 4 点
+             技能钱，只能靠防御（途径③）一口口往回喘 —— 防御于是成了攒大招的那一手。
+             要动它先重跑 `node scripts/balance.mjs`，别照着老读数改。 */
+          const back = p?.tempoRegen ?? 0
           if (back > 0 && c.tempo < c.tempoMax) {
             c.tempo = Math.min(c.tempoMax, c.tempo + back)
           }
@@ -1643,7 +1661,11 @@ export function act(s: BattleState, cmd: Command): BattleState {
        它在**本人下次出手时自动撤**（见 beginAction），所以姿态只覆盖这一轮。 */
     me.stance = true
     me.stanceBroken = false
-    // 防御回的节拍是**机制**：意志力那一项按面板尺除回去
+    /* 防御回的节拍是**机制**：意志力那一项按面板尺除回去。
+       2026-09-16 随「砍恢复路径」一并收窄（3 + 0.06×意志力 → 2 + 0.04×意志力）：
+       途径②撤走之后，防御成了从头攒一手技能钱的唯一一条路，得让它回得起、又攒不快。
+       隔离读数（RUNS=200 · 单跑）：开局 2001 → 2412、中盘 415 → 538、卷末 1828 →
+       1298，胜率 64%/79%/80% → 64%/78%/84%；②+③ 一起落的平均读数见 tuning。 */
     const rec = Math.round(TUNING.guardRecover + (me.axes.意志力 / AXIS_SCALE) * TUNING.guardRecoverPerWill)
     const got = Math.min(me.tempoMax, me.tempo + rec) - me.tempo
     me.tempo += got
