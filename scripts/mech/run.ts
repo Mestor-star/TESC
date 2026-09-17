@@ -113,7 +113,9 @@
      node scripts/mech.mjs
    ============================================================ */
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+/* 只有「开场影像」那一段用它：拿 git 对 `PV_PIN` 与 `public/pv.mp4` 的字节（见那一段的注） */
+import { execFileSync } from 'node:child_process'
 import {
   act, advance, aliveOf, atkMulOf, affordable, basicOf, brokenOf, buffOf, chargeOf, createBattle,
   endureCap, enemysTurn, etaOf, evadeOf, find, guardLeft, legalSkills, pendingFoe, skipOf,
@@ -190,6 +192,7 @@ import { BUILTIN_GROUPS, BUILTIN_GROUP_IDS, needsGroupRefresh, shouldSeedGroup }
 import { CANON_SEED_VERSION, buildCanonLorebooks } from '../../src/lib/loreseed'
 import { charOf } from '../../src/data/personas'
 import { parseChatPreset } from '../../src/lib/schemes'
+import { pvSources } from '../../src/lib/pv'
 import { ACTIVE_PRESET_KEY, snapshotActivePreset } from '../../src/lib/preset'
 /* 详纲表在应用里是**懒加载**的（主包一半是它，见 src/data/briefs/index.ts）。
    mech 是同步跑的、也没有 chunk 要等，所以直接把 generated 那份交进那个格子 ——
@@ -8116,6 +8119,69 @@ export function run(): MechReport {
       + '越过线才挂「等待签署」· 只增不减；复核（balance）跳过挂锁的牌不打')
   } catch (e) {
     fail.push('签约放行线段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* —— 开场影像：送货这条路的两笔账 ——
+     2026-09-17 主人报「电脑上视频卡」。量出来片子本身没毛病（960×540 · 30fps · faststart），
+     毛病在**送货那条路**：本机实测本站只有 15–95 KB/s，而原档要 923 kbps 才播得顺。
+     分两笔治（口径写在 `src/lib/pv.ts` 的文件头）：
+
+     ① **片子压到管子底下** —— 3.65 MB / 923 kbps → 1.74 MB / 475 kbps。
+        这一条量**字节预算**：片子是二进制，体积涨上去界面上一点都看不出来，
+        只有拿着手机看的人觉得「怎么又卡了」—— 所以钉在这儿，超了当场红。
+     ② **取源按「谁一定取得到」排** —— 本站优先、CDN 兜底。
+        ⚠ 本鱼头一版拿**一次采样**把 CDN 排在前面（那一下量到 274.7 KB/s），
+        再量三条线全 0 B/s —— 一次采样不算量。「谁快」排不出稳定次序，
+        「谁一定通」才排得出：本站那条是页面自己来的路，页面开过就一定通。
+
+     另有一条钉的是**片子的字节**：`PV_PIN` 是 CDN 上那个提交，必须与本机这一支
+     是同一个 blob。钉的是**提交**、不是分支 —— 分支地址会被 CDN 缓存十几小时，
+     重剪了片子还会端旧的；代价则是「换了片子要跟着换 `PV_PIN`」。
+     **忘了换，界面上一点都看不出来**，只有拿到片子的人觉得「怎么还是老的」
+     —— 正是挨过罚的那种静默错。所以这一条拿 git 对字节，把它变成一声响。 */
+  try {
+    const pvSrcFile = readFileSync('src/lib/pv.ts', 'utf8')
+    const pin = /const PV_PIN = '([0-9a-f]{7,40})'/.exec(pvSrcFile)?.[1] ?? ''
+    const srcs = pvSources()
+    ok('开场影像 · 取片：第①支是本站（页面自己来的那条路，页开了就一定取得到），第②支才是 CDN 上钉住提交的地址',
+      srcs[0].endsWith('pv.mp4') && !/^https?:/.test(srcs[0])
+      && /^https:\/\/cdn\.jsdelivr\.net\/gh\/[^/]+\/[^@]+@[0-9a-f]{7,40}\/public\/pv\.mp4$/.test(srcs[1])
+      && srcs[0] !== srcs[1],
+      `① ${srcs[0]} · ② ${srcs[1]}`)
+    ok('开场影像 · 钉的是提交不是分支：`PV_PIN` 是 7–40 位十六进制（写 `main` 就会被 CDN 缓存坑）',
+      /^[0-9a-f]{7,40}$/.test(pin), `PV_PIN = ${pin || '(没取到)'}`)
+
+    /* 字节预算：片子要 ~1 Mbps 才播得顺，主人那条管子实测 15–95 KB/s（≈120–760 kbps）。
+       1.74 MB / 475 kbps 是压过一轮的结果，留了一倍余量；**别再让它涨回去**。
+       2.5 MB 这条线不是拍的 —— 它意味着 ~683 kbps，已经贴着管子天花板了。 */
+    const pvBytes = statSync('public/pv.mp4').size
+    const pvKbps = Math.round((pvBytes * 8) / 29.3 / 1000)
+    ok('开场影像 · 片子体积在预算里（主人那条管子供不起大片子；要换片子就重新压，别直接塞回去）',
+      pvBytes <= 2.5 * 1024 * 1024,
+      `${(pvBytes / 1048576).toFixed(2)} MB · 约 ${pvKbps} kbps · 预算 2.5 MB`)
+
+    /* 拿 git 对字节：钉住那个提交里的 `pv.mp4` 与本机这一支，必须是同一个 blob。
+       读不到 git（不在仓库里跑 / 没装）就**跳过**，不判失败 —— 这一条只在本机判得了。 */
+    let verdict: boolean | null = null
+    let why = ''
+    try {
+      const atPin = execFileSync('git', ['rev-parse', `${pin}:public/pv.mp4`], { encoding: 'utf8' }).trim()
+      const now = execFileSync('git', ['hash-object', 'public/pv.mp4'], { encoding: 'utf8' }).trim()
+      verdict = atPin === now
+      why = `钉住那一支 ${atPin.slice(0, 7)} · 本机这一支 ${now.slice(0, 7)}`
+    } catch {
+      why = 'git 读不到（没装 git / 不在仓库里跑）：这一条这次跳过'
+    }
+    ok('开场影像 · 钉住的那一支 == 仓库里这一支（片子一换，`PV_PIN` 要跟着换；忘了换 = CDN 端旧片子）',
+      verdict !== false,
+      verdict === false ? `${why} —— 对不上：改了没提交，或提交了没换 PV_PIN` : why)
+
+    info.push('开场影像取片：`pvSources()` ① 本站 → ② jsDelivr（兜底）· '
+      + '换源两处：`onError` 与「10s 一个字节都没来过」· 两条都放不出来才不记「看过」')
+    info.push('开场影像起播：攒够再放 —— 闸门口径与那排死线（6s / 12s / 8s / 10s / 28s）'
+      + '见 `PvScreen.tsx` 顶上 ⑥ 与紧挨着的常量，不在这儿复述')
+  } catch (e) {
+    fail.push('开场影像取片段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }
