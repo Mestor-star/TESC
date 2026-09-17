@@ -1505,7 +1505,8 @@ function Bar({ c }: { c: Combatant }) {
 
 function BuffTags({ c }: { c: Combatant }) {
   const guard = c.guardAxis ? c.guardPts : 0
-  if (!c.buffs.length && !c.shield && !c.taunt && !guard && !c.broken && !c.ward && c.charge <= 1) return null
+  if (!c.buffs.length && !c.shield && !c.taunt && !guard && !c.broken && !c.guardMend
+    && !c.ward && c.charge <= 1) return null
   /* 标签表搬去 skilltext.BUFF_LABEL（天赋那一格读的也是它，两处不能各写一套） */
   const label = BUFF_LABEL
   return (
@@ -1518,6 +1519,19 @@ function BuffTags({ c }: { c: Combatant }) {
           data-guard-left={guard}
           title={`破绽护盾：只有「${c.guardAxis}」这一路的攻击削得动（每段削 1 点），削穿它停一拍且挨打更重。还剩 ${guard} 点`}>
           破绽 · {c.guardAxis}<i className={css.buffT}>{guard}</i>
+        </span>
+      ) : null}
+      {/* 尽碎：护盾被整个掀开的那一段（guardMend > 0）。
+          与上面那枚**不会同时出现** —— 这段里 guardPts 是 0，上面那枚自己就隐了。
+          所以要单独长一枚：屏幕上的「0 点破绽」有两种来源，一种是本来就没有这层，
+          一种是**有、但正被掀着**。少了这一枚，后者看着跟前者一模一样，
+          玩家会以为这场从头到尾就没有破绽层可读。轴名照旧挂上（详情点开写得更全）。 */}
+      {c.guardAxis && c.guardMend > 0 ? (
+        <span className={css.buff} data-buff="guard-clear" data-debuff="1"
+          data-guard-axis={c.guardAxis}
+          title={`破绽尽碎：整层「${c.guardAxis}」被掀开了，现在 0 防 —— 这一回合里既砸不出「打穿」、它也不会重凝，`
+            + '过完这一回合才按满点凝回来。'}>
+          破绽尽碎<i className={css.buffT}>{c.guardMend}</i>
         </span>
       ) : null}
       {c.broken > 0 ? (

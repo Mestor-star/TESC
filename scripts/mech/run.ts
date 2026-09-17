@@ -438,6 +438,16 @@ export function run(): MechReport {
       && btlGer.includes('只有对上这条轴的攻击削得动那层护盾'),
       'FoeInfoPanel 的破绽那一行分了两支：掀开 / 常路')
 
+    /* 战斗盘上那枚标签（同日第二刀）：护盾归零的那段，常路那枚挂在 guardPts > 0 上，
+       自己就隐了 —— 不另长一枚的话，屏幕上「正被掀着」与「本来就没有这层」长得一样。
+       两处都要钉：新那枚认 guardMend，且那个提前 return 也认它（漏了这句，
+       场上一枚 buff 都没有时整行直接不渲染，标签再对也出不来）。 */
+    ok('破绽尽碎（屏上）：战斗盘另长一枚标签，且提前 return 也把它算进「有东西可显示」',
+      /data-buff="guard-clear"/.test(btlGer)
+      && btlGer.includes('破绽尽碎<i className={css.buffT}>')
+      && /!guard && !c\.broken && !c\.guardMend/.test(btlGer),
+      'BuffTags 里挂着 data-buff="guard-clear"（带轴名），提前 return 那一串认 guardMend')
+
     // 破绽期间挨打更重：同一手，只翻 broken 这一个开关，各跑 600 次把抖动平均掉
     let plainSum = 0
     let ampSum = 0
