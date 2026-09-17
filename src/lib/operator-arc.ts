@@ -70,6 +70,8 @@ export interface OpAbility {
   cost?: number
   effect?: SkillEffect
   turns?: number
+  /** 这一手落下的东西**也走回合钟**（见 battle/types 的 `SkillSpec.rounds`） */
+  rounds?: number
   needsStack?: number
   /** 冷却：出手后 N 次自身行动之内不得再出 */
   cd?: number

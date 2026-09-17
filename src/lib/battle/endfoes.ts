@@ -56,6 +56,8 @@ interface KitSkill {
   axis: AxisKey
   effect?: SkillEffect
   turns?: number
+  /** 这一手落下的东西**也走回合钟**（见 types 的 SkillSpec.rounds） */
+  rounds?: number
 }
 
 interface Kit {
@@ -317,6 +319,8 @@ interface Hand {
   arch?: string
   effect?: SkillEffect
   turns?: number
+  /** 这一手落下的东西**也走回合钟**（见 types 的 SkillSpec.rounds） */
+  rounds?: number
   target?: Target
   fx?: FxKind
   /**
@@ -378,6 +382,7 @@ function handSkill(s: EndSpec, h: Hand, slot: string, arch: string, ult: boolean
     target: h.target,
     effect: h.effect,
     turns: h.turns,
+    rounds: h.rounds,
     bar: h.bar,
   })
   return ult ? { ...k, ult: TUNING.ultCharge, ultBreak: TUNING.ultBreak } : k
@@ -418,7 +423,7 @@ function endFoeOf(s: EndSpec): NamedBoss {
         // 但牌面上写的是「脏器公寓 · 亡灵 · 群起」还是「星鲸 · 亡灵 · 群起」得看得出来
         name: `${e.name} · ${k.name}`,
         desc: k.desc, line: k.line, power: k.power, axis: k.axis,
-        arch: k.arch, effect: k.effect, turns: k.turns,
+        arch: k.arch, effect: k.effect, turns: k.turns, rounds: k.rounds,
       }, `kit${i}`, k.arch, false, kit.fx)),
       handSkill(s, s.ult, 'end', s.ult.arch ?? '到达点', true, kit.fx),
     ],

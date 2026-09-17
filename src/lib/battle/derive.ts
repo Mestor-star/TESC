@@ -287,6 +287,7 @@ function opSkillsOf(per: OpPeriod, progress = 1): SkillSpec[] {
     target: a.target ?? (a.gate ? 'self' : 'one'),
     effect: a.effect,
     turns: a.turns,
+    rounds: a.rounds,
     needsStack: a.needsStack,
     // 冷却与名册同一口径：普攻 / 解封门无冷却，终结技 4 拍，其余 2 拍
     cd: a.cd ?? (a.kind === '普攻' || a.gate ? 0 : a.needsStack ? 4 : 2),
@@ -512,6 +513,8 @@ interface FoeSkill {
   target: Target
   effect?: SkillEffect
   turns?: number
+  /** 这一手落下的东西**也走回合钟**（见 types 的 SkillSpec.rounds） */
+  rounds?: number
   cd?: number
   /** 召唤：不造成伤害，出手时把一只同场性质的成形体喊上场（见 engine 的 summonFoe） */
   summon?: boolean
@@ -540,7 +543,7 @@ interface FoeProfile {
    * 终结技能（大招）：只在 boss 级任务（危险度 ≥ TUNING.ultStage）配发。
    * 详见 types.ts 的 SkillSpec.ult 与 engine 的咏唱 / 打断 / 削弱三段反制。
    */
-  ult?: { name: string; desc: string; power: number; axis: AxisKey; target: Target; line: string; effect?: SkillEffect; turns?: number }
+  ult?: { name: string; desc: string; power: number; axis: AxisKey; target: Target; line: string; effect?: SkillEffect; turns?: number; rounds?: number }
 }
 
 /**
@@ -1017,7 +1020,8 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
           cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
           // 每一手都带自己的话：普攻也算一手，缺省才退回该型那一句
           line: k.line ?? prof.line,
-          target: k.target, effect: k.effect, turns: k.turns, cd: k.cd ?? 0,
+          target: k.target, effect: k.effect, turns: k.turns, rounds: k.rounds,
+          cd: k.cd ?? 0,
         } satisfies SkillSpec)),
         // boss 级的机制包：只有「首领」这一档才配这套（见 BOSS_MOVES）——
         // 判的是头上那一档，不是危险度：低危场的精英照样是正经对手，只是不带机制包。
@@ -1026,7 +1030,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
               id: k.id, name: k.name, kind: k.kind, desc: k.desc,
               cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
               line: k.line ?? prof.line, target: k.target, effect: k.effect, turns: k.turns,
-              cd: k.cd ?? 0, echo: k.echo,
+              rounds: k.rounds, cd: k.cd ?? 0, echo: k.echo,
             } satisfies SkillSpec))
           : []),
         /* 召唤：首领与精英都带这一手（危险度底下的小兵不带 —— 见 SUMMON_MOVE）。
@@ -1059,6 +1063,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
               target: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).target,
               effect: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).effect,
               turns: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).turns,
+              rounds: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).rounds,
               cd: 0,
               ult: TUNING.ultCharge,
               ultBreak: TUNING.ultBreak,

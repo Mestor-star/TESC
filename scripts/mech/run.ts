@@ -390,19 +390,22 @@ export function run(): MechReport {
        「我方存活者各出过一手」—— 只让一个人出手是推不动的（一开始就是这么写错的：
        连着 20 次也只动同一个队友，`acted` 永远凑不齐，一拍都没收成）。
        所以这里一次把全队喂满条，再逐个交回给引擎，直到 `s.tick` 真的往上走一格。 */
-    const beat = () => {
-      for (const c of [...s3.allies, ...s3.enemies]) c.bar = -1e6
-      for (const a of s3.allies.filter((x) => !x.down && x.gone <= 0)) a.bar = TUNING.barMax
-      const before = s3.tick
-      for (let i = 0; i < 40 && s3.tick === before; i++) {
-        s3.actor = null
-        s3.phase = 'select'
-        advance(s3)
-        if (s3.phase !== 'select') break
-        if (s3.actor) act(s3, { t: 'guard' })
+    /* 收一拍。写成 `beatOf(st)` 而不是钉在 s3 上 —— 下面「掷入真空那几条一起散」
+       用的是另一场（s4），两处推的是同一件事，别各抄一份。 */
+    const beatOf = (st: BattleState) => {
+      for (const c of [...st.allies, ...st.enemies]) c.bar = -1e6
+      for (const a of st.allies.filter((x) => !x.down && x.gone <= 0)) a.bar = TUNING.barMax
+      const before = st.tick
+      for (let i = 0; i < 40 && st.tick === before; i++) {
+        st.actor = null
+        st.phase = 'select'
+        advance(st)
+        if (st.phase !== 'select') break
+        if (st.actor) act(st, { t: 'guard' })
       }
-      if (s3.tick === before) throw new Error('推不动：全队喂满也没收成拍')
+      if (st.tick === before) throw new Error('推不动：全队喂满也没收成拍')
     }
+    const beat = () => beatOf(s3)
     let held = 0
     while (foe3.guardPts === 0 && held < 20) { beat(); held++ }
     ok('破绽尽碎：归零之后**扛满一个回合**才放它重凝（主人要的就是一个回合）',
@@ -447,6 +450,74 @@ export function run(): MechReport {
       && btlGer.includes('破绽尽碎<i className={css.buffT}>')
       && /!guard && !c\.broken && !c\.guardMend/.test(btlGer),
       'BuffTags 里挂着 data-buff="guard-clear"（带轴名），提前 return 那一串认 guardMend')
+
+    /* 那一手落下的东西**共用一个钟**（`rounds`，2026-09-17 同日第三刀）。
+       由来：`mark` / `frail` / `slow` 是**负面**，天生吃不到回合闸
+       （`wearsByRound` 明写只给增益），本来只数「目标本人几次出手」——
+       而格尔一回合出手几次，要看速度差、断拍、停滞，玩家算不出来。
+       要「整整一个回合」这件事说得死，就得让它们跟回合走：
+       这一手自己点名 `rounds: 1`，落下的每一条都挂上 `rt`，与 `guardMend` 同一格。 */
+    const s4 = mk()
+    const me4 = ready(s4, 'isis')
+    const foe4 = s4.enemies[0]!
+    sureHit(me4)
+    foe4.hp = 1e9
+    foe4.hpMax = 1e9
+    foe4.guardAxis = basicOf(me4)!.axis
+    foe4.guardPts = TUNING.guardBoss
+    foe4.guardMax = TUNING.guardBoss
+    freezeFoes(s4)
+    me4.tempo = 99
+    me4.cds = {}
+    /* 两份合成技能：**只差 `rounds` 这一格**，别的一字不差 ——
+       这样跑出来的差别只可能来自它，不可能是别的东西顺带带出来的。 */
+    const VOID = '_t-void'
+    const PLAIN = '_t-plain'
+    const mkOne = (id: string, rounds?: number, effect: SkillEffect = {
+      guardClear: true, mark: 0.6, frail: 0.5, slow: 0.45,
+    }): void => {
+      me4.skills.push({
+        id, name: id, kind: '战技', desc: '', cost: 0, power: 0,
+        axis: '反现实亲和', fx: 'seal', target: 'one', turns: 2, rounds, effect,
+      })
+    }
+    mkOne(VOID, 1)
+    // 对照组：同样落一条负面，只是没点名回合钟（用的是 bleed —— 与上面三条不同键，
+    // 免得撞进 addBuff 的「同类取强」那一条，那样量到的就不是「有没有 rt」了）
+    mkOne(PLAIN, undefined, { bleed: 0.1 })
+    const fire = (id: string) => {
+      s4.actor = me4.id
+      s4.phase = 'select'
+      act(s4, { t: 'skill', skillId: id, targetId: foe4.id })
+    }
+    const b4 = (k: string) => foe4.buffs.find((b) => b.k === k)
+    fire(VOID)
+    ok('掷入真空：点名的回合钟真落进了 buff 那一栏（三条负面各挂 rt = rounds，与 guardMend 同数）',
+      b4('mark')?.rt === 1 && b4('frail')?.rt === 1 && b4('slow')?.rt === 1
+      && foe4.guardMend === TUNING.guardClearRounds,
+      `mark.rt=${b4('mark')?.rt}　frail.rt=${b4('frail')?.rt}　slow.rt=${b4('slow')?.rt}　`
+      + `guardMend=${foe4.guardMend}　rounds=1`)
+    fire(PLAIN)
+    ok('掷入真空（对照）：没点名回合钟的那一手不吃这一道 —— 同一条路上落下的负面 rt 仍是空的',
+      b4('bleed')?.rt === undefined && b4('bleed')?.t === 2 && b4('mark')?.t === 2,
+      `bleed.rt=${b4('bleed')?.rt}　bleed.t=${b4('bleed')?.t}　mark.t=${b4('mark')?.t}（拍那栏没动）　`
+      + '—— 「负面默认不吃回合钟」这条口径没被这一刀带歪')
+    /* 牌面上也得写出来（`effectLineOf` 读的是 `k.rounds`）：
+       只写「易伤 60%」看不出能挂多久，而按拍数猜是猜不准的 —— 那一句得在。 */
+    ok('掷入真空（牌面）：效果那一行把回合钟写出来了（不写就只剩一串看不出时长的百分比）',
+      effectLineOf(voidSk).includes('以上时长按回合算：整整一回合'),
+      effectLineOf(voidSk))
+
+    /* 真章在这儿：收一拍之后，**护盾凝回来**与**那三条散掉**必须是同一下。
+       分开来的话，玩家会遇到「破绽回来了但易伤还挂着」或者反过来，
+       那这一手就不是「一个回合」了，是三个各不相同的时长。 */
+    beatOf(s4)
+    ok('掷入真空：收一拍之后护盾重凝与那三条负面**同一步到点**（这才叫整整一个回合）',
+      foe4.guardPts === foe4.guardMax && foe4.guardMend === 0
+      && !b4('mark') && !b4('frail') && !b4('slow'),
+      `guardPts=${foe4.guardPts}/${foe4.guardMax}　guardMend=${foe4.guardMend}　`
+      + `mark=${b4('mark') ? '还在' : '散了'}　frail=${b4('frail') ? '还在' : '散了'}　`
+      + `slow=${b4('slow') ? '还在' : '散了'}　（对照那条 bleed 还在：${b4('bleed') ? '是' : '否'}）`)
 
     // 破绽期间挨打更重：同一手，只翻 broken 这一个开关，各跑 600 次把抖动平均掉
     let plainSum = 0

@@ -36,7 +36,12 @@ const pct = (v: number) => `${Math.round(v * 100)}%`
  * 所以这里是唯一的出处，`SkillSpec` 那一路（effectLineOf）只是多传一个 turns。
  * `turns` 只有「引仇」读它（技能手上是 `k.turns`，别的场合没有就按 2 拍）。
  */
-export function effectTextsOf(e: SkillEffect | undefined, turns?: number): string[] {
+export function effectTextsOf(
+  e: SkillEffect | undefined,
+  turns?: number,
+  /** `SkillSpec.rounds`：这一手落下的东西**也走回合钟**（见那一条的头注） */
+  rounds?: number,
+): string[] {
   const out: string[] = []
   if (!e) return out
   if (e.hits && e.hits > 1) out.push(`${e.hits} 段`)
@@ -98,6 +103,15 @@ export function effectTextsOf(e: SkillEffect | undefined, turns?: number): strin
   if (e.stasis) out.push(`停滞 ${e.stasis} 拍`)
   if (e.lockdown) out.push(`观测封锁：命中 −${pct(e.lockdown)}`)
   if (e.archive) out.push(`归档 ${e.archive} 拍`)
+  /* 回合钟（`SkillSpec.rounds`）：这一手落下的东西**一律按回合走**，
+     不再是各自数「目标本人几次出手」。摆在最后一条，读着像给上面那串加的**注** ——
+     它管的正是上面那串的时长。不写这一句的话，牌面上「易伤 60%」看不出能挂多久，
+     而按拍数猜是猜不准的（格尔一回合出手几次要看速度差）。 */
+  if (rounds) {
+    out.push(rounds === 1
+      ? '以上时长按回合算：整整一回合（我方全员各出手一次）'
+      : `以上时长按回合算：${rounds} 回合（我方全员各出手一次）`)
+  }
   return out
 }
 
@@ -106,7 +120,7 @@ export function effectTextsOf(e: SkillEffect | undefined, turns?: number): strin
  * 不造成伤害的手要把机制写全；伤害手若另有附带效果，接在倍率之后。
  */
 export function effectLineOf(k: SkillSpec): string {
-  const eff = effectTextsOf(k.effect, k.turns)
+  const eff = effectTextsOf(k.effect, k.turns, k.rounds)
   if (k.power <= 0) return eff.length ? eff.join(' · ') : '不造成伤害'
   return eff.join(' · ')
 }

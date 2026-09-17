@@ -510,17 +510,22 @@ function pushLog(s: BattleState, e: LogEntry) {
 
 /* ---------- 增益落地 ---------- */
 
-function addBuff(c: Combatant, k: BuffKey, v: number, turns: number) {
+/**
+ * @param rt 这一条**自己点名**要挂几回合（`SkillSpec.rounds`，见那一条的头注）。
+ *   不传就照旧由 `wearsByRound` 定：增益吃回合上限，负面不吃。
+ */
+function addBuff(c: Combatant, k: BuffKey, v: number, turns: number, rt?: number) {
   if (!v) return
   const t = Math.min(TUNING.buffTurnsCap, Math.max(1, turns))
   const found = c.buffs.find((b) => b.k === k)
   if (found) {
     found.v = Math.max(found.v, v) // 同类取强，不叠加（防滚雪球）
     found.t = Math.max(found.t, t)
-    // 续上时两条时限一起续：只续 t 的话，一条被续的增益可以绕开回合上限一直挂着
-    found.rt = Math.max(found.rt ?? 0, TUNING.buffRoundsCap)
+    /* 续上时两条时限一起续：只续 t 的话，一条被续的增益可以绕开回合上限一直挂着。
+       点名给了 rt 就走它（不传时 `?? buffRoundsCap` 与原来的写法逐字相同）。 */
+    found.rt = Math.max(found.rt ?? 0, rt ?? TUNING.buffRoundsCap)
   } else {
-    c.buffs.push({ k, v, t, rt: wearsByRound(k) ? TUNING.buffRoundsCap : undefined })
+    c.buffs.push({ k, v, t, rt: rt ?? (wearsByRound(k) ? TUNING.buffRoundsCap : undefined) })
   }
 }
 
@@ -696,6 +701,9 @@ function applyEffect(
   targets: Combatant[],
   hostileTargets: Combatant[],
   turns = 2,
+  /* 这一手落下的东西**也走回合钟**（`SkillSpec.rounds`，见那一条的头注）。
+     不传 = 照旧：负面只数「目标本人几次出手」，增益另有一道回合上限。 */
+  rounds?: number,
   // 技能效果倍率（旧吉他解封）：伤害之外的每一种「量」都跟着翻。
   // 道具走的是默认值 1 —— 解封放大的是使用者的技术，不是手里那件东西。
   scale = 1,
@@ -704,6 +712,10 @@ function applyEffect(
   // 整数类的量（生命回复）取整；小数类的量（护盾系数、行动条推移、命中/闪避）留两位
   const iv = (v: number) => Math.round(v * scale)
   const fv = (v: number) => Math.round(v * scale * 100) / 100
+  /* 点名要的回合钟（没写就是 undefined，落进 addBuff 走原来那两条路）。
+     一次算好：同一个技能落下的每一条挂的窗口必须**一模一样**，
+     不然「这几条一起散」就成了碰运气的事。 */
+  const rt = rounds != null ? Math.max(1, Math.round(rounds)) : undefined
   for (const t of targets) {
     if (t.down && !eff.heal) continue
     if (eff.heal) {
@@ -719,14 +731,14 @@ function applyEffect(
     // 解除负面：沉默 / 流血 / 减攻一并洗掉（见 types 的 DEBUFF_KEYS）
     if (eff.cleanse) t.buffs = t.buffs.filter((b) => !isDebuff(b.k))
     if (eff.clearBar) t.bar = 0
-    if (eff.evade) addBuff(t, 'evade', fv(eff.evade), turns)
-    if (eff.accUp) addBuff(t, 'acc', fv(eff.accUp), turns)
-    if (eff.shield) addBuff(t, 'shield', fv(eff.shield), turns)
-    if (eff.atkUp) addBuff(t, 'atk', fv(eff.atkUp), turns)
+    if (eff.evade) addBuff(t, 'evade', fv(eff.evade), turns, rt)
+    if (eff.accUp) addBuff(t, 'acc', fv(eff.accUp), turns, rt)
+    if (eff.shield) addBuff(t, 'shield', fv(eff.shield), turns, rt)
+    if (eff.atkUp) addBuff(t, 'atk', fv(eff.atkUp), turns, rt)
     // skillMul 给的是「× N」：内部存 +（N−1），读数处 1 + v 即得乘数。
     // 这条**不**跟着 scale 走 —— 否则解封叠解封会自己乘自己。
-    if (eff.skillMul && eff.skillMul > 0) addBuff(t, 'skillMul', eff.skillMul - 1, turns)
-    if (eff.spdUp) addBuff(t, 'spd', fv(eff.spdUp), turns)
+    if (eff.skillMul && eff.skillMul > 0) addBuff(t, 'skillMul', eff.skillMul - 1, turns, rt)
+    if (eff.spdUp) addBuff(t, 'spd', fv(eff.spdUp), turns, rt)
     if (eff.pushBar) t.bar = Math.min(TUNING.barMax * 1.6, t.bar + TUNING.barMax * fv(eff.pushBar))
     if (eff.taunt) t.taunt = Math.max(t.taunt, turns)
     /* 护持：还没中的负面，接下来挡掉 N 次。与 cleanse 分工 ——
@@ -791,21 +803,21 @@ function applyEffect(
        和上一行走的是**两条路**，别合并 —— 那条削穿了会即刻按满点重凝，
        这条要的恰恰是「不重凝」。见 SkillEffect.guardClear 的头注。 */
     if (eff.guardClear) clearGuard(s, src, t)
-    if (eff.mark) addBuff(t, 'mark', fv(eff.mark), turns)
-    if (eff.slow) addBuff(t, 'slow', fv(eff.slow), turns)
+    if (eff.mark) addBuff(t, 'mark', fv(eff.mark), turns, rt)
+    if (eff.slow) addBuff(t, 'slow', fv(eff.slow), turns, rt)
     if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * fv(eff.pushBack))
     // 敌方专给我方的三种：沉默 / 流血 / 减攻
-    if (eff.silence && !stanceEats(s, src, t, 'silence')) addBuff(t, 'silence', 1, turns)
-    if (eff.bleed) addBuff(t, 'bleed', fv(eff.bleed), turns)
-    if (eff.frail) addBuff(t, 'frail', fv(eff.frail), turns)
-    if (eff.lockdown) addBuff(t, 'lockdown', fv(eff.lockdown), turns)
+    if (eff.silence && !stanceEats(s, src, t, 'silence')) addBuff(t, 'silence', 1, turns, rt)
+    if (eff.bleed) addBuff(t, 'bleed', fv(eff.bleed), turns, rt)
+    if (eff.frail) addBuff(t, 'frail', fv(eff.frail), turns, rt)
+    if (eff.lockdown) addBuff(t, 'lockdown', fv(eff.lockdown), turns, rt)
     /* 断拍：取消接下来 N 次出手。条照扣 —— 所以它不是「推后」，是「划掉」，
        也因此不碰行动条那一档（见 atlas.ts 头注）。上限压在 stallCap：
        在本系统里「不出手」是复合惩罚（连携、冷却、印记、咏唱四条一起少一格），
        放开了会变成唯一解。 */
     if (eff.stall && !stanceEats(s, src, t, 'stall')) {
       const n = Math.max(1, Math.min(TUNING.stallCap, Math.round(eff.stall * scale)))
-      addBuff(t, 'stall', 1, n)
+      addBuff(t, 'stall', 1, n, rt)
       pushLog(s, {
         round: s.hand, actorId: src.id, actor: src.name, side: src.side,
         skillId: 'stall', skill: '断拍', kind: '指令', fx: 'seal',
@@ -1116,8 +1128,8 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
       }
       if (ek.effect) {
         const sp = splitEffect(ek.effect)
-        if (sp.hasFriendly) applyEffect(s, atk, sp.friendly, [atk], [], ek.turns)
-        if (sp.hasHostile) applyEffect(s, atk, sp.hostile, [], [t], ek.turns)
+        if (sp.hasFriendly) applyEffect(s, atk, sp.friendly, [atk], [], ek.turns, ek.rounds)
+        if (sp.hasHostile) applyEffect(s, atk, sp.hostile, [], [t], ek.turns, ek.rounds)
       }
     }
   }
@@ -1174,12 +1186,12 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     const { friendly, hostile, hasFriendly, hasHostile } = splitEffect(e)
 
     if (k.target === 'all' || k.target === 'one') {
-      if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, smul)
+      if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, k.rounds, smul)
       if (hasHostile) {
         const ht = k.target === 'one'
           ? (() => { const t = targetId ? find(s, targetId) : undefined; return t && !t.down && t.gone <= 0 ? [t] : aliveOf(foes).slice(0, 1) })()
           : aliveOf(foes)
-        applyEffect(s, atk, hostile, [], ht, k.turns, smul)
+        applyEffect(s, atk, hostile, [], ht, k.turns, k.rounds, smul)
       }
     } else {
       const beneficiaries = k.target === 'self'
@@ -1188,7 +1200,7 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
           ? aliveOf(friends)
           : (() => { const x = targetId ? find(s, targetId) : undefined; return x && x.side === atk.side && !x.down && x.gone <= 0 ? [x] : [atk] })()
       if (e.selfToo && !beneficiaries.includes(atk)) beneficiaries.push(atk)
-      applyEffect(s, atk, e, beneficiaries, [], k.turns, smul)
+      applyEffect(s, atk, e, beneficiaries, [], k.turns, k.rounds, smul)
     }
   }
 

@@ -273,6 +273,8 @@ export interface PlaceOpt {
   cost?: number
   cd?: number
   turns?: number
+  /** 这一手落下的东西**也走回合钟**（见 `SkillSpec.rounds` 的头注） */
+  rounds?: number
   /** 在本类骨架上追加的效果（同名键以这里为准） */
   effect?: SkillEffect
   /** 到达点的印记层数 */
@@ -418,6 +420,9 @@ export function place(archId: string, o: PlaceOpt): SkillSpec {
     target: o.target ?? a.target,
     effect,
     turns: o.turns ?? a.turns,
+    // 回合钟只有这一手自己能点名：架构骨架不带（那是「这个技能怎么打」，
+    // 不是「这一手为什么在这个人身上要挂满一个回合」）
+    rounds: o.rounds,
     needsStack: o.needsStack ?? a.needsStack,
     cd: o.cd ?? a.cd,
     openAfter: o.openAfter,
