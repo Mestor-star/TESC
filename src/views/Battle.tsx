@@ -1947,9 +1947,19 @@ function FoeInfoPanel({ c, onClose }: { c: Combatant; onClose: () => void }) {
     ['当前', `${c.hp} / ${c.hpMax} 生命　·　节拍 ${c.tempo} / ${c.tempoMax}　·　${tier}`],
   ]
   if (c.trait) rows.push(['机制', c.trait])
+  /* 破绽那一行有两种「零」，读起来必须分得开：
+     一种是**打穿**（护盾随即按满点重凝，`broken` 挂着），那是上面那条常路；
+     一种是**被掀开**（护盾一直是零、且这段里不许重凝，`guardMend` 挂着）——
+     也就是「破绽尽碎」那一手。少了这一支的话，屏上只剩一个光秃秃的「0 / 5」，
+     主人会以为它已经废了，其实一回合过完就自己凝回来了。
+     ⚠ 两栏都由引擎往下数（见 engine 的 clearGuard / endBeat），这一页只负责读，
+     一个字都不自己算。 */
   rows.push(['破绽', c.guardMax > 0 && c.guardAxis
-    ? `${c.guardAxis} —— 只有对上这条轴的攻击削得动那层护盾（现余 ${c.guardPts} / ${c.guardMax}）。` +
-      '削穿即「观测成立」：它当场停一拍，且这一拍里挨打加成。'
+    ? c.guardMend > 0
+      ? `${c.guardAxis} —— 被「破绽尽碎」整个掀开了：护盾归零（0 / ${c.guardMax}），` +
+        '这一回合里既砸不出「打穿」、它也不会重凝；过完这一回合才按满点凝回来。'
+      : `${c.guardAxis} —— 只有对上这条轴的攻击削得动那层护盾（现余 ${c.guardPts} / ${c.guardMax}）。` +
+        '削穿即「观测成立」：它当场停一拍，且这一拍里挨打加成。'
     : '没有破绽层：哪条轴打上去都一样。'])
 
   return (

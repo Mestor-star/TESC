@@ -428,6 +428,16 @@ export function run(): MechReport {
       `牵制 allow=[${(ARCH['牵制']!.allow ?? []).join('、')}]　`
       + `其余放行的框架 ${Object.entries(ARCH).filter(([n, a]) => n !== '牵制' && a.allow?.includes('guardClear')).map(([n]) => n).join('、') || '（无）'}`)
 
+    /* 屏上也得读得出来（2026-09-17，主人点头加的这一句）：
+       护盾是零的那段，详情面板要写明「被掀开」，不能只摆一个光秃秃的 0 ——
+       不然看着像它已经废了，其实过完这一回合就自己凝回来。 */
+    const btlGer = readFileSync('src/views/Battle.tsx', 'utf8')
+    ok('破绽尽碎（屏上）：详情那一行认得出「被掀开」那种零，且不与上面那条常路混着写',
+      /c\.guardMend > 0/.test(btlGer)
+      && btlGer.includes('被「破绽尽碎」整个掀开了')
+      && btlGer.includes('只有对上这条轴的攻击削得动那层护盾'),
+      'FoeInfoPanel 的破绽那一行分了两支：掀开 / 常路')
+
     // 破绽期间挨打更重：同一手，只翻 broken 这一个开关，各跑 600 次把抖动平均掉
     let plainSum = 0
     let ampSum = 0
