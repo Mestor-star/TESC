@@ -45,7 +45,7 @@ const NO_FOE = '——'
  */
 export const EVENT_HEAD: Record<string, string> = {
   'v1-2': 'soul-reservoir',   // 灵魂蓄积器TM —— 这一场就它一个
-  'v1-5': 'organ-apt',        // 脏器公寓。第一形态，倒下之后依次顶上格尔与黑曜石（三形态，见 endfoes 的 next）
+  'v1-5': 'fanatic-ger',      // 脏器公寓。**只打狂热者格尔一个** —— 公寓本体与黑曜石都撤出这一场（2026-09-17，见 endfoes 那一条）
   'v1-6': 'clay-mask',        // 泥塑面具（「丝绸小丑的残骸」图鉴未收录，进不了这一张表）
   'v1-8': 'guardian',         // 守护者 —— 深海异界里挡在路上的那一具
   'v1-9': 'death-god',        // 死骸机关之神。黄金狮子是露娜的终末，站在这边，不能算对手

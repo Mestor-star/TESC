@@ -188,7 +188,12 @@ export const ARCH: Record<string, Arch> = {
     id: '牵制', name: '牵制', slot: '战技',
     desc: '压在一个人身上：打它更重、它充得更慢，退路也一并堵上。',
     target: 'one', cost: 4, cd: 3, turns: 3, band: [0, 0], effect: { mark: 0.3, slow: 0.25 },
-    allow: [],
+    /* 放行 guardClear（破绽尽碎，2026-09-17）：这一类本来就是「**压在一个人身上**」——
+       打它更重、它充得更慢、退路一并堵上。把它的防也一并掀开，是同一句话往下说完：
+       压住它 → 它动不了 → 它也没得挡。单点、辅助手、贵且长冷却，都在这一类的本分里。
+       别的框架不放：拆盾是**专人的活**（本来就有 breakGuard 那条通用的路），
+       尽碎要的是「真的零」，给出去就没人再读首领怕哪条轴了（见 tuning 的 guardClearRounds 头注）。 */
+    allow: ['guardClear'],
     bar: true,   // 这一整类都以动条为打法
   },
   重压: {

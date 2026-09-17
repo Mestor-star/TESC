@@ -611,6 +611,38 @@ function stripGuard(s: BattleState, src: Combatant, t: Combatant, n: number) {
 }
 
 /**
+ * 破绽尽碎：把破绽**一次清到零，且这一整段时间里不准重凝**。
+ * ------------------------------------------------------------
+ * 与 `stripGuard` 的分工见 `SkillEffect.guardClear` 的头注 —— 那条是「多削几点」，
+ * 削穿了护盾会**按满点重凝**（所以它给的是一段窗口）；这条要的是**真的 0 防**，
+ * 因此立的是另一个键，而不是把 `breakGuard` 拉满（上限 3 也拉不到首领那 5 点）。
+ *
+ * 没有破绽这一层的人（`guardAxis` 没写）不受影响，也**不记这一笔** ——
+ * 他们本来就无所谓「防」，回执里冒出一行「不许重凝」只会让人看不懂。
+ *
+ * 时效不挂 buff 的 `t`：那一栏数的是**本人出手几次**，而挨了这一下的人未必还站得住、
+ * 更未必轮得到他出手 —— 挂上去就是永远不减。所以它和停滞一样走**收拍**那条钟
+ * （endBeat，一回合 = 我方全员各出手一次），数到零护盾按满点凝回来。
+ *
+ * ⚠ 清零之后 `stripGuard` 会**自己失效**（它开头那道 `guardPts <= 0` 就返回了）——
+ *    这正是「不许重凝」的实现方式：这一段里谁也别想再把它打穿一次。代价是
+ *    「打穿」那一笔（`lastBreak` 与回节拍）这段窗口里也一并停了，那是**故意**的：
+ *    护盾已经是零，再「打穿」一次没有意义。
+ */
+function clearGuard(s: BattleState, src: Combatant, t: Combatant) {
+  if (!t.guardAxis || t.down || t.gone > 0) return
+  t.guardPts = 0
+  t.guardMend = TUNING.guardClearRounds
+  pushLog(s, {
+    round: s.hand, actorId: src.id, actor: src.name, side: src.side,
+    skillId: 'guard-clear', skill: '破绽 · 尽碎', kind: '指令', fx: 'guard',
+    targetId: t.id, target: t.name,
+    note: `${t.name} 的「${t.guardAxis}」被整个掀开了 —— 破绽归零，`
+      + `这一回合里不许重凝。`,
+  })
+}
+
+/**
  * 这一手有没有「打在别人身上的那一半」。
  * 单独抽出来是因为两处都要问：resolve 用它决定要不要挑敌人当目标，
  * applyEffect 用它决定护持挡不挡得住这一手。
@@ -619,7 +651,7 @@ function hostileEffectOf(eff: SkillSpec['effect'] | undefined): boolean {
   if (!eff) return false
   return !!(eff.mark || eff.slow || eff.pushBack || eff.silence || eff.bleed
     || eff.frail || eff.stasis || eff.lockdown || eff.archive || eff.stall
-    || eff.clearBar || eff.breakGuard || eff.stanceBreak)
+    || eff.clearBar || eff.breakGuard || eff.stanceBreak || eff.guardClear)
 }
 
 /**
@@ -642,6 +674,11 @@ function splitEffect(e: NonNullable<SkillSpec['effect']>) {
     stall: e.stall, clearBar: e.clearBar, breakGuard: e.breakGuard,
     // 击溃防御姿态：拆的是**对方**架着的那面盾，与 breakGuard（削破绽）同属打在别人身上的那一半
     stanceBreak: e.stanceBreak,
+    /* 破绽尽碎：拆的也是**对方**那层防（与 breakGuard 同属那一半，只是走的另一条路）。
+       ⚠ 新加键时**这两张表与 hostileEffectOf 三处都要添** —— 漏在分表里的话，
+       效果会被安静地丢掉：place 那一关有白名单挡着会抛，这一关不抛，
+       只是「写了跟没写一样」。2026-09-17 就是这么先漏了一次（mech 当场抓住）。 */
+    guardClear: e.guardClear,
   }
   const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.accUp
     || e.atkUp || e.skillMul || e.spdUp || e.pushBar || e.taunt || e.ward || e.charge)
@@ -750,6 +787,10 @@ function applyEffect(
     /* 削破绽：辅助手拆盾的那条路 —— 不看这一手的轴，写了就削。
        （伤害手另有 hit 那条路：对上轴即削，多段多次削。） */
     if (eff.breakGuard) stripGuard(s, src, t, Math.max(1, Math.round(eff.breakGuard * scale)))
+    /* 破绽尽碎：护盾一次清到零、这一整段不许重凝。
+       和上一行走的是**两条路**，别合并 —— 那条削穿了会即刻按满点重凝，
+       这条要的恰恰是「不重凝」。见 SkillEffect.guardClear 的头注。 */
+    if (eff.guardClear) clearGuard(s, src, t)
     if (eff.mark) addBuff(t, 'mark', fv(eff.mark), turns)
     if (eff.slow) addBuff(t, 'slow', fv(eff.slow), turns)
     if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * fv(eff.pushBack))
@@ -1351,6 +1392,23 @@ function endBeat(s: BattleState) {
           skillId: 'stasis-off', skill: '停滞 · 解除', kind: '指令', fx: 'heal',
           targetId: c.id, target: c.name,
           note: `${c.name} 动了 —— 停滞解开。`,
+        })
+      }
+    }
+    /* 破绽尽碎按**回合**往下走 —— 和上面停滞同一条路，理由也一样：护盾是零的那段时间里，
+       这个人不见得会出手（他可能正被冻着、也可能刚被打穿），挂 buff 的 `t` 上会永远不减。
+       数到零 = 护盾按满点重新凝回来 —— 「不许重凝」就此结束，破绽回到正常那条路。
+       ⚠ 这儿一格是**一回合**（收拍），不是一手 —— 主人说的「一个回合（6 拍）」
+       是按满编六人算的同一件事，别照着那个 6 往这一格上写（见 tuning 那一条）。 */
+    if (c.guardMend > 0) {
+      c.guardMend -= 1
+      if (c.guardMend <= 0) {
+        c.guardPts = c.guardMax
+        pushLog(s, {
+          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+          skillId: 'guard-mend', skill: '破绽 · 重凝', kind: '指令', fx: 'guard',
+          targetId: c.id, target: c.name,
+          note: `${c.name} 的「${c.guardAxis}」重新凝起来了 —— 破绽回满（${c.guardPts} 点）。`,
         })
       }
     }

@@ -11,6 +11,7 @@
         几个字，玩家根本看不出这一手是干什么用的。
    ============================================================ */
 
+import { TUNING } from './tuning'
 import type { GearDef, SkillEffect, SkillSpec, TalentSpec } from './types'
 
 /** 倍率读数：实值 × 轴（有摇摆幅度的写成区间）。不造成伤害的手返回 null */
@@ -82,6 +83,16 @@ export function effectTextsOf(e: SkillEffect | undefined, turns?: number): strin
   /* 断拍与停滞读起来像，得把界限写死：停滞冻的是**条**，断拍删的是**那一手** */
   if (e.stall) out.push(`断拍：取消接下来 ${e.stall} 次出手（条照扣）`)
   if (e.breakGuard) out.push(`削破绽 ${e.breakGuard} 点`)
+  /* 尽碎与削点写在一起是为了让人一眼看出**不是同一个东西**：
+     上面那条是「多削几点」（削穿了护盾会按满点重凝），这条是「防直接归零、且一段里不许重凝」。
+     时长从 TUNING 取，别在这儿写字面值 —— 那栏一改，这一行得跟着改。
+     单位写「回合」不写「拍」：那一格数的是收拍（我方全员各出手一次），
+     写「1 拍」会让人以为只挂一手（见 tuning 的 guardClearRounds 那一条）。 */
+  if (e.guardClear) {
+    out.push(TUNING.guardClearRounds === 1
+      ? '破绽尽碎：防归零一回合（这期间不许重凝）'
+      : `破绽尽碎：防归零 ${TUNING.guardClearRounds} 回合（这期间不许重凝）`)
+  }
   if (e.bleed) out.push(`流血：每拍掉最大生命 ${pct(e.bleed)}`)
   if (e.frail) out.push(`减攻 ${pct(e.frail)}`)
   if (e.stasis) out.push(`停滞 ${e.stasis} 拍`)

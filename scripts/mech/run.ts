@@ -340,6 +340,94 @@ export function run(): MechReport {
     ok('破绽：轴不对就削不动（对照）', foe2.guardPts === 3 && foe2.broken === 0,
       `guardPts=${foe2.guardPts} broken=${foe2.broken}`)
 
+    /* 「破绽尽碎」（guardClear，2026-09-17 新键）—— 和上面那条**不是同一件事**：
+       上面是「多削几点」，削穿了护盾**按满点重凝**；这一条要的是**真的 0 防**，
+       而且这一整段里不许重凝。它够得到 `breakGuard` 够不到的地方：
+       首领那层是 5 点，而 breakGuard 的效果带上限只有 3。 */
+    const CLR = '_t-guard-clear'
+    const s3 = mk()
+    const me3 = ready(s3, 'isis')
+    const foe3 = s3.enemies[0]!
+    sureHit(me3)
+    foe3.hp = 1e9
+    foe3.hpMax = 1e9
+    /* 轴取**这个人**的普攻轴（和上面第一条同一个取法）：
+       下一段要拿对轴的一手去砸它，轴不对的话那条断言就没验到东西 */
+    foe3.guardAxis = basicOf(me3)!.axis
+    foe3.guardPts = TUNING.guardBoss
+    foe3.guardMax = TUNING.guardBoss
+    foe3.broken = 0
+    freezeFoes(s3)
+    me3.tempo = 99
+    me3.cds = {}
+    me3.skills = [{
+      id: CLR, name: '复核 · 破绽尽碎', kind: '战技', desc: '',
+      cost: 0, power: 0, axis: '破坏力', fx: 'seal', target: 'one',
+      effect: { guardClear: true },
+    }]
+    s3.actor = me3.id
+    s3.phase = 'select'
+    act(s3, { t: 'skill', skillId: CLR, targetId: foe3.id })
+    ok('破绽尽碎：一手把首领那 5 点破绽打到零（breakGuard 拉满也够不到 —— 它的上限是 3）',
+      foe3.guardPts === 0 && foe3.guardMend === TUNING.guardClearRounds,
+      `guardPts=${foe3.guardPts}　guardMend=${foe3.guardMend}　`
+      + `首领那一档 ${TUNING.guardBoss} 点 / breakGuard 上限 ${EFF_BAND.breakGuard![1]}`)
+    ok('破绽尽碎：跟 breakGuard 走的是**两条路** —— 这一手不写「打穿」，也就不给停拍',
+      foe3.broken === 0, `broken=${foe3.broken}`)
+
+    /* 窗口里**打不动它**（「不许重凝」的另一面）：护盾已经是零，`stripGuard` 开头那道
+       `guardPts <= 0` 就返回了 —— 于是拿对轴的一手砸上去，既削不出东西、也换不来停拍。
+       这正是「破了不重凝」的实现方式：这一段里谁也别想再把它打穿一次。 */
+    freezeFoes(s3)
+    s3.actor = me3.id
+    s3.phase = 'select'
+    act(s3, { t: 'atk', targetId: foe3.id })
+    ok('破绽尽碎：窗口里拿对轴的一手砸上去也削不动（护盾已是零，打穿那一套整个失效）',
+      foe3.guardPts === 0 && foe3.broken === 0,
+      `guardPts=${foe3.guardPts}　broken=${foe3.broken}`)
+
+    /* 推**整整一个回合**：破绽尽碎那条钟挂在 endBeat 上，而收拍的判据是
+       「我方存活者各出过一手」—— 只让一个人出手是推不动的（一开始就是这么写错的：
+       连着 20 次也只动同一个队友，`acted` 永远凑不齐，一拍都没收成）。
+       所以这里一次把全队喂满条，再逐个交回给引擎，直到 `s.tick` 真的往上走一格。 */
+    const beat = () => {
+      for (const c of [...s3.allies, ...s3.enemies]) c.bar = -1e6
+      for (const a of s3.allies.filter((x) => !x.down && x.gone <= 0)) a.bar = TUNING.barMax
+      const before = s3.tick
+      for (let i = 0; i < 40 && s3.tick === before; i++) {
+        s3.actor = null
+        s3.phase = 'select'
+        advance(s3)
+        if (s3.phase !== 'select') break
+        if (s3.actor) act(s3, { t: 'guard' })
+      }
+      if (s3.tick === before) throw new Error('推不动：全队喂满也没收成拍')
+    }
+    let held = 0
+    while (foe3.guardPts === 0 && held < 20) { beat(); held++ }
+    ok('破绽尽碎：归零之后**扛满一个回合**才放它重凝（主人要的就是一个回合）',
+      held === TUNING.guardClearRounds && foe3.guardPts === foe3.guardMax
+      && foe3.guardMend === 0,
+      `归零后第 ${held} 回合回满（guardClearRounds=${TUNING.guardClearRounds}）　`
+      + `guardPts=${foe3.guardPts}/${foe3.guardMax}　guardMend=${foe3.guardMend}　`
+      + `这一趟走了 ${s3.hand} 手 / ${s3.tick} 回合`)
+
+    /* 落到牌面上：「掷入真空」升成对格尔那一场的特攻（2026-09-17 主人点的三样）。
+       前一条查引擎、后一条查**框架放没放行** —— 不放行的话 roster 在 import 那一刻
+       就抛了（`tidyEffect` 那一道），所以「能读到这一条」本身也是断言的一部分。 */
+    const voidSk = ROSTER.nyau!.skills.find((k) => k.id === 'nyau-void')!
+    ok('掷入真空：三样一起给 —— 破绽尽碎 + 减攻顶格 + 易伤顶格（「大量」= 踩在效果带上限）',
+      voidSk.effect?.guardClear === true
+      && voidSk.effect?.frail === EFF_BAND.frail![1]
+      && voidSk.effect?.mark === EFF_BAND.mark![1],
+      `guardClear=${voidSk.effect?.guardClear}　frail=${voidSk.effect?.frail}`
+      + `（上限 ${EFF_BAND.frail![1]}）　mark=${voidSk.effect?.mark}（上限 ${EFF_BAND.mark![1]}）`)
+    ok('掷入真空：牵制这一类点名放行了 guardClear（其余的框架都不放 —— 拆盾是专人的活）',
+      ARCH['牵制']!.allow?.includes('guardClear') === true
+      && Object.entries(ARCH).filter(([n, a]) => n !== '牵制' && a.allow?.includes('guardClear')).length === 0,
+      `牵制 allow=[${(ARCH['牵制']!.allow ?? []).join('、')}]　`
+      + `其余放行的框架 ${Object.entries(ARCH).filter(([n, a]) => n !== '牵制' && a.allow?.includes('guardClear')).map(([n]) => n).join('、') || '（无）'}`)
+
     // 破绽期间挨打更重：同一手，只翻 broken 这一个开关，各跑 600 次把抖动平均掉
     let plainSum = 0
     let ampSum = 0
@@ -3421,18 +3509,25 @@ export function run(): MechReport {
       && namedBossOf('star-whale')!.axes![0] === enemyAxesAt(10, { atkMul: TUNING.bossAtkMul }).破坏力,
       `星鲸 ${namedBossOf('star-whale')!.axes![0]}／基础曲线 ${enemyAxesAt(10).破坏力}`)
 
-    /* ⑧ 多形态：三形态一路走到底、第三形态不插队、并且走得完。
-       脏器公寓 → 格尔 → 黑曜石（v1-5 这一段自己列的三个实体）。 */
-    const three: Mission = {
-      id: 'mech-three', no: 'MECH-3', title: '复核 · 三形态', place: PLACE, stage: 6,
+    /* ⑧ 单形态：脏器公寓那一场**只打狂热者格尔一个**（2026-09-17 主人改的）。
+       从前是三形态接力 —— 公寓本体 → 格尔 → 黑曜石；现在从格尔起手、倒在他这儿收场。
+       所以这一节验的是两件事：**只剩一个形态**，以及
+       **链是表里写出来的、不是引擎默认给的**（对照在末尾那一条）。 */
+    const ger: Mission = {
+      id: 'mech-ger', no: 'MECH-3', title: '复核 · 脏器公寓', place: PLACE, stage: 6,
       nature: '反现实 · 死灵操法', recommend: [], status: '压制中', deadline: '即刻',
-      desc: '', reward: [], bossId: 'organ-apt',
+      desc: '', reward: [], bossId: 'fanatic-ger',
     }
-    const w = standUp(three)
+    const w = standUp(ger)
     const dirs = (id: string) => w.enemies.filter((e) => e.namedId === id)
-    ok('形态链：开局是第一形态，链头指向第二形态',
-      w.enemies[0]?.namedId === 'organ-apt' && w.nextBoss === 'fanatic-ger',
-      `场上 ${w.enemies[0]?.name ?? '（空）'}　nextBoss=${w.nextBoss ?? '（无）'}`)
+    ok('脏器公寓：主线那一场认的就是格尔（EVENT_HEAD 那一行）',
+      EVENT_HEAD['v1-5'] === 'fanatic-ger',
+      `EVENT_HEAD['v1-5'] = ${EVENT_HEAD['v1-5'] ?? '（无）'}`)
+    ok('脏器公寓：场上只有格尔一个，身后没有排着的下一个形态',
+      dirs('fanatic-ger').length === 1
+      && w.enemies.filter((e) => e.namedId).every((e) => e.namedId === 'fanatic-ger')
+      && w.nextBoss === undefined,
+      `场上 ${w.enemies.map((e) => e.name).join('、')}　nextBoss=${w.nextBoss ?? '（链到此为止）'}`)
     const nudge = () => {
       for (const c of [...w.allies, ...w.enemies]) c.bar = -1e6
       const a = w.allies.find((x) => !x.down)!
@@ -3445,45 +3540,22 @@ export function run(): MechReport {
     const clearField = () => { for (const e of w.enemies) { e.hp = 0; e.down = true } }
     clearField()
     nudge()
-    ok('形态链：第一形态倒下，第二形态顶上来，链没有断（nextBoss 指着第三形态）',
-      dirs('fanatic-ger').length === 1 && !dirs('fanatic-ger')[0]!.down && w.nextBoss === 'obsidian',
-      `场上 ${dirs('fanatic-ger')[0]?.name ?? '（没顶上来）'}　nextBoss=${w.nextBoss ?? '（无）'}`)
-    ok('形态链：第三形态不许插队（第二形态还站着的时候它不许上场）',
-      dirs('obsidian').length === 0,
-      `场上第三形态 ${dirs('obsidian').length} 位`)
-    ok('形态链：换形态换的是**另一份档案**，不是把前一具回血',
-      dirs('fanatic-ger')[0]!.hpMax !== dirs('organ-apt')[0]!.hpMax,
-      `${dirs('organ-apt')[0]!.hpMax} → ${dirs('fanatic-ger')[0]!.hpMax}`)
-    clearField()
-    nudge()
-    ok('形态链：第二形态倒下，第三形态顶上来，这一场还没有收场',
-      dirs('obsidian').length === 1 && !dirs('obsidian')[0]!.down && w.phase !== 'won'
-      && w.nextBoss === undefined,
-      `phase=${w.phase}　场上 ${dirs('obsidian')[0]?.name ?? '（没顶上来）'}　`
-      + `nextBoss=${w.nextBoss ?? '（链到此为止）'}`)
-    ok('形态链：形态数在日志里数得出来（第二阶段 / 第三阶段各有名有姓）',
-      w.log.some((l) => l.skillId === 'phase-2') && w.log.some((l) => l.skillId === 'phase-3'),
-      w.log.filter((l) => l.skillId.startsWith('phase-')).map((l) => l.skill).join(' → '))
-    clearField()
-    nudge()
-    ok('形态链：第三形态倒下就是收场（链走得完，不会无限换形态）',
-      w.phase === 'won', `phase=${w.phase}　手数 ${w.hand}`)
+    ok('脏器公寓：格尔倒下就是收场 —— 黑曜石不再顶上来',
+      w.phase === 'won' && dirs('obsidian').length === 0 && !w.nextBoss,
+      `phase=${w.phase}　黑曜石 ${dirs('obsidian').length} 位　`
+      + `nextBoss=${w.nextBoss ?? '（无）'}`)
+    ok('脏器公寓：一场里一条「换形态」都没有（形态接力整个撤了）',
+      !w.log.some((l) => l.skillId.startsWith('phase-')),
+      w.log.filter((l) => l.skillId.startsWith('phase-')).map((l) => l.skill).join(' → ')
+      || '（一条都没有）')
 
-    /* 对照：没写 next 的图鉴实体，倒下就是收场 —— 链是写出来的，不是默认给的 */
-    const solo = standUp({ ...three, id: 'mech-solo', bossId: 'star-whale' })
-    for (const e of solo.enemies) { e.hp = 0; e.down = true }
-    {
-      for (const c of [...solo.allies, ...solo.enemies]) c.bar = -1e6
-      const a = solo.allies.find((x) => !x.down)!
-      a.bar = TUNING.barMax
-      solo.actor = null
-      solo.phase = 'select'
-      advance(solo)
-      if (solo.phase === 'select' && solo.actor === a.id) act(solo, { t: 'guard' })
-    }
-    ok('形态链（对照）：没写 next 的图鉴实体倒下就是收场',
-      solo.phase === 'won' && !solo.nextBoss,
-      `phase=${solo.phase}　nextBoss=${solo.nextBoss ?? '（无）'}`)
+    /* 对照：链是**写出来的**。公寓本体那一份仍留着 `next: 'fanatic-ger'`
+       （原文里布下这一场的次序，作资料是真的），而格尔这一份把 next 撤了 ——
+       两者一比就知道：「到不到此为止」就是那一行说了算，不是引擎按档位自己接的。 */
+    ok('形态链（对照）：撤掉那一行就到此为止 —— 链不是引擎默认给的',
+      END_FOES['organ-apt']?.next === 'fanatic-ger' && END_FOES['fanatic-ger']?.next === undefined,
+      `organ-apt.next=${END_FOES['organ-apt']?.next ?? '（无）'}　`
+      + `fanatic-ger.next=${END_FOES['fanatic-ger']?.next ?? '（无）'}`)
 
     /* ⑨ 图鉴说它不难打的那一只，牌面上确实不难打 ——
        魇视鳌虾的 counter 写着「消灭并不困难（一发吉他即可）」，
