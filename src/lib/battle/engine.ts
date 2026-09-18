@@ -648,6 +648,39 @@ function clearGuard(s: BattleState, src: Combatant, t: Combatant) {
 }
 
 /**
+ * 禁疗：把目标「回血」这两条路一起堵上，堵满一整段窗口。
+ * ------------------------------------------------------------
+ * 与 `clearGuard` 是同一副骨架（连分格的理由都一样），差别只在堵的东西：
+ * 那条掀的是**防**，这条封的是**回复**。见 `SkillEffect.noHeal` 的头注。
+ *
+ * 堵的两条路（缺一条就等于没堵，见下面两个判定点）：
+ *   · 被动回血 —— 充能窗口里按格结算的那一份（`PassiveSpec.regen`，
+ *     在 `advance` 的空转分支里，那儿有一道 `noHealRounds <= 0`）；
+ *   · 一切走 `eff.heal` 的回复 —— 就在本文件下面那个判定点上，
+ *     **技能与道具共用那一支**（道具也走 applyEffect，见 item 分支）。
+ * **复活不在其列**：那是「从失能里站起来」，不是「回血」——
+ * 它走的是道具里 `revive` 那条独立支线（`t.hp = reviveHp`），压根不经过这里。
+ *
+ * 与 `clearGuard` 的一处不同：那条要认「这个人身上有没有破绽这一层」
+ * （`guardAxis` 没写的不记这一笔，免得日志里冒出一句看不懂的「不许重凝」）；
+ * 这一条**不设那道门** —— 回复是所有活人都可能吃到的东西，谁身上都可能被队友奶一口，
+ * 所以「他没有自愈」不等于「这条命令对他没意义」。写了就记。
+ *
+ * 时效照旧不挂 buff 的 `t`，走 endBeat 那条收拍钟（见 `Combatant.noHealRounds`）。
+ */
+function blockHeal(s: BattleState, src: Combatant, t: Combatant) {
+  if (t.down || t.gone > 0) return
+  t.noHealRounds = TUNING.noHealRounds
+  pushLog(s, {
+    round: s.hand, actorId: src.id, actor: src.name, side: src.side,
+    skillId: 'no-heal', skill: '禁止 · 禁疗', kind: '指令', fx: 'seal',
+    targetId: t.id, target: t.name,
+    note: `${t.name} 被禁止回复了 —— 这一回合里一滴血也回不上来`
+      + '（自身的自愈、同伴的治疗、乃至补给道具，凡是回血的一律封住）。',
+  })
+}
+
+/**
  * 这一手有没有「打在别人身上的那一半」。
  * 单独抽出来是因为两处都要问：resolve 用它决定要不要挑敌人当目标，
  * applyEffect 用它决定护持挡不挡得住这一手。
@@ -656,7 +689,8 @@ function hostileEffectOf(eff: SkillSpec['effect'] | undefined): boolean {
   if (!eff) return false
   return !!(eff.mark || eff.slow || eff.pushBack || eff.silence || eff.bleed
     || eff.frail || eff.stasis || eff.lockdown || eff.archive || eff.stall
-    || eff.clearBar || eff.breakGuard || eff.stanceBreak || eff.guardClear)
+    || eff.clearBar || eff.breakGuard || eff.stanceBreak || eff.guardClear
+    || eff.noHeal)
 }
 
 /**
@@ -684,6 +718,8 @@ function splitEffect(e: NonNullable<SkillSpec['effect']>) {
        效果会被安静地丢掉：place 那一关有白名单挡着会抛，这一关不抛，
        只是「写了跟没写一样」。2026-09-17 就是这么先漏了一次（mech 当场抓住）。 */
     guardClear: e.guardClear,
+    /* 禁疗：堵的也是**对方**的回血（被动那一路 + 治疗那一手），同属这一半。 */
+    noHeal: e.noHeal,
   }
   const hasFriendly = !!(e.heal || e.cleanse || e.shield || e.evade || e.accUp
     || e.atkUp || e.skillMul || e.spdUp || e.pushBar || e.taunt || e.ward || e.charge)
@@ -719,14 +755,27 @@ function applyEffect(
   for (const t of targets) {
     if (t.down && !eff.heal) continue
     if (eff.heal) {
-      const n = iv(healAmount(src, t, eff.heal))
-      const hpBefore = t.hp
-      t.hp = Math.min(t.hpMax, t.hp + n)
-      pushLog(s, {
-        round: s.hand, actorId: src.id, actor: src.name, side: src.side,
-        skillId: 'heal', skill: '回复', kind: '指令', fx: 'heal',
-        targetId: t.id, target: t.name, heal: n, hpBefore,
-      })
+      /* 禁疗（SkillEffect.noHeal）：这一段里治不进去。
+         挡在**算量之前** —— 回不上血的那一下不该在日志里留一个假的回复数。
+         它**不挡住这一手别的部分**：治疗手顺带挂的护盾 / 净化照常落地，
+         被禁的只有「回血」这一件事（把整手吞掉是沉默该干的活，不是这一条）。 */
+      if (t.noHealRounds > 0) {
+        pushLog(s, {
+          round: s.hand, actorId: src.id, actor: src.name, side: src.side,
+          skillId: 'no-heal', skill: '禁止 · 禁疗', kind: '指令', fx: 'seal',
+          targetId: t.id, target: t.name,
+          note: `${t.name} 正被禁止回复 —— ${src.name} 这一手治不进去，血一滴没涨。`,
+        })
+      } else {
+        const n = iv(healAmount(src, t, eff.heal))
+        const hpBefore = t.hp
+        t.hp = Math.min(t.hpMax, t.hp + n)
+        pushLog(s, {
+          round: s.hand, actorId: src.id, actor: src.name, side: src.side,
+          skillId: 'heal', skill: '回复', kind: '指令', fx: 'heal',
+          targetId: t.id, target: t.name, heal: n, hpBefore,
+        })
+      }
     }
     // 解除负面：沉默 / 流血 / 减攻一并洗掉（见 types 的 DEBUFF_KEYS）
     if (eff.cleanse) t.buffs = t.buffs.filter((b) => !isDebuff(b.k))
@@ -803,6 +852,8 @@ function applyEffect(
        和上一行走的是**两条路**，别合并 —— 那条削穿了会即刻按满点重凝，
        这条要的恰恰是「不重凝」。见 SkillEffect.guardClear 的头注。 */
     if (eff.guardClear) clearGuard(s, src, t)
+    /* 禁疗：堵回复那两条路。和上一行走的不是同一条路 —— 它不碰护盾，只封回血。 */
+    if (eff.noHeal) blockHeal(s, src, t)
     if (eff.mark) addBuff(t, 'mark', fv(eff.mark), turns, rt)
     if (eff.slow) addBuff(t, 'slow', fv(eff.slow), turns, rt)
     if (eff.pushBack) t.bar = Math.max(0, t.bar - TUNING.barMax * fv(eff.pushBack))
@@ -1424,6 +1475,20 @@ function endBeat(s: BattleState) {
         })
       }
     }
+    /* 禁疗同样按**回合**往下走 —— 一格一回合，数到零禁令就解。
+       与上面那一段是两步路、各走各的钟，但都是 endBeat 这一拍：同一手落下的
+       两样压制（掀防 / 封回血）会在同一个收拍上一起到点，读日志时是一件事。 */
+    if (c.noHealRounds > 0) {
+      c.noHealRounds -= 1
+      if (c.noHealRounds <= 0) {
+        pushLog(s, {
+          round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+          skillId: 'no-heal-off', skill: '禁止 · 解除', kind: '指令', fx: 'heal',
+          targetId: c.id, target: c.name,
+          note: `${c.name} 的禁疗解除了 —— 自愈与治疗重新生效。`,
+        })
+      }
+    }
     /* 流血：每一拍都掉，掉到失能为止。
        它不占出手、不看减伤 —— 治不了就得一路流下去，这是这一条的用意。 */
     const bl = bleedOf(c)
@@ -1545,7 +1610,10 @@ export function advance(s: BattleState): BattleState {
         for (const c of live) {
           c.bar = Math.min(TUNING.barMax * 2, c.bar + windowGainOf(c))
           const p = c.passive
-          if (p?.regen && c.hp < c.hpMax) {
+          /* 禁疗（SkillEffect.noHeal）堵的第一条路：被动自愈。
+             这一格是**按充能脉冲**结算的，一回合下来要过好几脉冲 —— 不在这儿挡，
+             「这一回合回不上来」就只是句空话（格尔那种每拍三成的，一回合能回满两遍）。 */
+          if (p?.regen && c.hp < c.hpMax && c.noHealRounds <= 0) {
             c.hp = Math.min(c.hpMax, c.hp + Math.max(1, Math.round(c.hpMax * p.regen)))
           }
           /* 恢复途径②：每空转一格回节拍 —— **只认人自己被动上写的那一份**

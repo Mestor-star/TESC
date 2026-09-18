@@ -98,6 +98,17 @@ export function effectTextsOf(
       ? '破绽尽碎：防归零一回合（这期间不许重凝）'
       : `破绽尽碎：防归零 ${TUNING.guardClearRounds} 回合（这期间不许重凝）`)
   }
+  /* 禁疗写在尽碎后面，两条挨着 —— 它俩是同一手的两种「按住」，
+     也都是按**回合**走的（读法见上面那一句的注）。
+     把「被动自愈」与「治疗」点名列出来，是因为只写「禁疗」的话，
+     玩家不一定知道连**它自己长回来的那份**也算在内 ——
+     而那一份恰恰是这一手最值钱的地方（对面越是能自愈的，这一手越贵）。
+     复活要单独撇清：不写这一句，会有人以为它能拦着同伴被拉起来。 */
+  if (e.noHeal) {
+    out.push(TUNING.noHealRounds === 1
+      ? '禁疗：一回合内回不上血（被动自愈与治疗一并封住 · 复活不受影响）'
+      : `禁疗：${TUNING.noHealRounds} 回合内回不上血（被动自愈与治疗一并封住 · 复活不受影响）`)
+  }
   if (e.bleed) out.push(`流血：每拍掉最大生命 ${pct(e.bleed)}`)
   if (e.frail) out.push(`减攻 ${pct(e.frail)}`)
   if (e.stasis) out.push(`停滞 ${e.stasis} 拍`)

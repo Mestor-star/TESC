@@ -1605,7 +1605,7 @@ function Bar({ c }: { c: Combatant }) {
 function BuffTags({ c }: { c: Combatant }) {
   const guard = c.guardAxis ? c.guardPts : 0
   if (!c.buffs.length && !c.shield && !c.taunt && !guard && !c.broken && !c.guardMend
-    && !c.ward && c.charge <= 1) return null
+    && !c.noHealRounds && !c.ward && c.charge <= 1) return null
   /* 标签表搬去 skilltext.BUFF_LABEL（天赋那一格读的也是它，两处不能各写一套） */
   const label = BUFF_LABEL
   return (
@@ -1631,6 +1631,20 @@ function BuffTags({ c }: { c: Combatant }) {
           title={`破绽尽碎：整层「${c.guardAxis}」被掀开了，现在 0 防 —— 这一回合里既砸不出「打穿」、它也不会重凝，`
             + '过完这一回合才按满点凝回来。'}>
           破绽尽碎<i className={css.buffT}>{c.guardMend}</i>
+        </span>
+      ) : null}
+      {/* 禁疗：被「禁止命令」钉住的那一段（noHealRounds > 0）。
+          另一枚**必须单独长出来**的标签，理由和上面那枚同源但方向相反：
+          它不挂在任何一条 buff 上（那一栏数的是「本人出手几次」，而被钉的人未必轮得到出手），
+          所以它不会出现在下面那份 c.buffs 的通用清单里 ——
+          少了这一枚，「它这回合回了多少血」在屏幕上就完全无从解释：
+          玩家只会看到治疗打上去、血条纹丝不动，像是遇到了 bug（这正是主人报的那个观感的反面）。
+          上的是**还剩几回合**，与 guardMend 同一个读数单位。 */}
+      {c.noHealRounds > 0 ? (
+        <span className={css.buff} data-buff="no-heal" data-debuff="1"
+          title={'禁疗：这一整个回合里它一滴血也回不上来 —— 自身的被动自愈、同伴的治疗、'
+            + '乃至补给道具，凡是回血的一律不生效。复活不受影响。过完这一回合才解。'}>
+          禁疗<i className={css.buffT}>{c.noHealRounds}</i>
         </span>
       ) : null}
       {c.broken > 0 ? (
@@ -2074,6 +2088,22 @@ function FoeInfoPanel({ c, onClose }: { c: Combatant; onClose: () => void }) {
       : `${c.guardAxis} —— 只有对上这条轴的攻击削得动那层护盾（现余 ${c.guardPts} / ${c.guardMax}）。` +
         '削穿即「观测成立」：它当场停一拍，且这一拍里挨打加成。'
     : '没有破绽层：哪条轴打上去都一样。'])
+
+  /* 回复那一行 —— 主人 2026-09-18 报「狂热者格尔会莫名回血」之后立的。
+     那一下之所以读着像 bug，是因为屏上**一个字都没说它会回血**：
+     伤害打进去、血条却在涨，玩家只能自己猜。所以这里把两件事一起摆出来：
+     它**自己**能不能回（`passive.regen`），以及此刻是不是**正被封着**（`noHealRounds`）。
+     正被封着时压在上一支 —— 那才是当拍该读的那一句。
+     ⚠ 与破绽那一行同规矩：两栏都由引擎往下数（见 engine 的 blockHeal / endBeat），
+     这一页只负责读，一个字都不自己算。 */
+  const regen = c.passive?.regen ?? 0
+  if (c.noHealRounds > 0 || regen > 0) {
+    rows.push(['回复', c.noHealRounds > 0
+      ? '正被「禁止命令」封着：这一整个回合里一滴血也回不上来 —— 自身的被动自愈、'
+        + '同伴的治疗、乃至补给道具，凡是回血的一律不生效（复活不受影响）；过完这一回合才解。'
+      : `被动自愈：每过一格充能脉冲回最大生命 ${Math.round(regen * 100)}%，`
+        + '不占出手、也不花代价 —— 打进去的伤害要压过这一份，血条才推得动。'])
+  }
 
   return (
     <div

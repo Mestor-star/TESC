@@ -218,3 +218,20 @@ node scripts/smoke/smoke.mjs   # 全链路冒烟
   详情面板那一行 + 战斗盘那枚 `data-buff="guard-clear"` 标签（常路那枚挂在 `guardPts > 0`
   上，护盾归零时它自己会隐，所以必须另长一枚）。
 给露娜的webui生图想tag
+
+- **「禁疗」那一键（`noHeal`，2026-09-18）：玛吉娜的「钉刺 · 禁止命令」多了一笔 ——
+  被钉住的人这一整个回合**一滴血也回不上来**。** 挂 `majina-ban`（牵制），
+  时长 `TUNING.noHealRounds` = **1 回合**，与 `guardClearRounds` 同一条收拍钟
+  （`endBeat` 里一格一回合往下数，**不挂 buff 的 `t`** —— 那一栏数的是本人出手几次，
+  被钉的人未必轮得到出手）。做法的骨架逐条照抄 `guardClear`：`SkillEffect.noHeal` 布尔键 →
+  `Combatant.noHealRounds`（derive 四处建造点各补一格）→ `blockHeal()` →
+  `牵制` 的 `allow` 里点名放行。
+  ⚠️ **堵两条路，少一条就等于没堵**：① 充能窗口里那格 `passive.regen`（`advance` 的空转分支，
+  那儿有一道 `noHealRounds <= 0`）；② 一切**走 `eff.heal` 的回复** —— 技能与**道具**共用
+  那一支（道具也落 `applyEffect`，见 item 分支），所以补给袋一样治不进去。
+  **复活不在其列**（走道具里 `revive` 那条独立支线，直接写 hp，不经过回复那一行）。
+  屏上两处：详情面板多了一行「回复」（`FoeInfoPanel`）+ 战斗盘那枚 `data-buff="no-heal"`
+  （同样得单独长 —— 它不在 `c.buffs` 里，通用清单读不到它）。
+  ⚠️ **`PassiveSpec.regen` 的结算单位是「格」不是「拍」**（写着 5%，实测一拍里能回出好几倍）——
+  格尔那条「莫名回血」就是这个来路。**口径没定案，别照着字面值标平衡**；
+  详见 `types.ts` 那一栏的头注。

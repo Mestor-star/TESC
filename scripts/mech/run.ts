@@ -519,6 +519,142 @@ export function run(): MechReport {
       + `mark=${b4('mark') ? '还在' : '散了'}　frail=${b4('frail') ? '还在' : '散了'}　`
       + `slow=${b4('slow') ? '还在' : '散了'}　（对照那条 bleed 还在：${b4('bleed') ? '是' : '否'}）`)
 
+    /* 「禁疗」（noHeal，2026-09-18 主人点名给玛吉娜的那一手）。
+       与 guardClear 是同一副骨架、同一条钟（endBeat 收拍），堵的东西不同：
+       那条掀的是**防**，这条封的是**回复**。所以验的也是同一套四件事 ——
+       ① 三处登记跑通；② 两条回血路**都**堵死（少堵一条 = 没堵）；③ 整整一个回合才解；
+       ④ 屏上两处读得出。 */
+    const NHC = '_t-no-heal'
+    const s5 = mk()
+    const me5 = ready(s5, 'isis')
+    const foe5 = s5.enemies[0]!
+    sureHit(me5)
+    foe5.hp = 1e9
+    foe5.hpMax = 1e9
+    freezeFoes(s5)
+    me5.tempo = 99
+    me5.cds = {}
+    me5.skills = [{
+      id: NHC, name: '复核 · 禁止命令', kind: '战技', desc: '',
+      cost: 0, power: 0, axis: '反现实亲和', fx: 'seal', target: 'one',
+      effect: { noHeal: true },
+    }]
+    s5.actor = me5.id
+    s5.phase = 'select'
+    act(s5, { t: 'skill', skillId: NHC, targetId: foe5.id })
+    /* ① 三处登记（hostileEffectOf / splitEffect 的分表 / applyEffect）。
+       分表那一张漏掉的话是**静默丢弃** —— 这一条会红，而不是悄悄什么都没发生。 */
+    ok('禁疗：一手真的落到对方身上（三处登记缺一不可 —— 漏在 splitEffect 那张分表里会被静默丢掉）',
+      foe5.noHealRounds === TUNING.noHealRounds,
+      `noHealRounds=${foe5.noHealRounds}（TUNING.noHealRounds=${TUNING.noHealRounds}）`)
+
+    /* ②-a 走 `eff.heal` 的那一条路。**技能与道具共用这一支**
+       （道具也落到 applyEffect，见 engine 的 item 分支），所以只验这一处就够。 */
+    const HEALK = '_t-heal'
+    const healTrial = (ban: boolean) => {
+      const s = mk()
+      const m = ready(s, 'isis')
+      const t = find(s, 'phidra')!
+      freezeFoes(s)
+      t.hpMax = 100000
+      t.hp = 1000
+      if (ban) t.noHealRounds = TUNING.noHealRounds
+      m.tempo = 99
+      m.cds = {}
+      m.skills = [{
+        id: HEALK, name: '复核 · 回复', kind: '战技', desc: '',
+        cost: 0, power: 0, axis: '反现实亲和', fx: 'heal', target: 'allyAll',
+        effect: { heal: 0.5 },
+      }]
+      const before = s.log.length
+      s.actor = m.id
+      s.phase = 'select'
+      act(s, { t: 'skill', skillId: HEALK })
+      return {
+        gain: t.hp - 1000,
+        logged: s.log.slice(before).some((x) => x.skillId === 'no-heal'),
+      }
+    }
+    const healFree = healTrial(false)
+    const healBan = healTrial(true)
+    ok('禁疗：走 eff.heal 的回复被堵死（技能与道具共用这一支，堵一处就是两处）',
+      healFree.gain > 0 && healBan.gain === 0,
+      `不禁 ${healFree.gain} 点　／　被禁 ${healBan.gain} 点`)
+    ok('禁疗：治不进去的那一下在日志里留得下一笔（不然屏上只看到血条纹丝不动，像是 bug）',
+      healBan.logged && !healFree.logged,
+      `被禁那趟 ${healBan.logged ? '有' : '没有'} no-heal 那一笔　／　`
+      + `不禁那趟 ${healFree.logged ? '有' : '没有'}（本来就该没有）`)
+
+    /* ②-b 被动自愈那一条路（充能窗口里**逐格**结算）。
+       这一格是主人报「狂热者格尔会莫名回血」时挖出来的那处 ——
+       所以顺带把它量出来：`passive.regen` 上写的 5%，实际是**每格** 5%，
+       而一拍中间要过好几格。不把这条也堵上，「这一回合回不上来」就是句空话。 */
+    const regenTrial = (ban: boolean) => {
+      const s = mk()
+      const foe = s.enemies[0]!
+      foe.hpMax = 1000000
+      foe.hp = 1000
+      foe.passive = { name: '复核 · 自愈', desc: '复核用：充能每一格回最大生命 5%', regen: 0.05 }
+      // 我方全员条压到负 —— 一个都出不了手，回合收不了，禁疗不会自己到期
+      for (const a of s.allies) a.bar = -1e6
+      foe.bar = 0
+      if (ban) foe.noHealRounds = TUNING.noHealRounds
+      s.actor = null
+      s.phase = 'select'
+      advance(s)
+      return foe.hp - 1000
+    }
+    const regenFree = regenTrial(false)
+    const regenBan = regenTrial(true)
+    ok('禁疗：被动自愈也一并堵死（它按**充能脉冲**结算，只在别处挡等于没挡）',
+      regenFree > 0 && regenBan === 0,
+      `不禁 ${regenFree} 点　／　被禁 ${regenBan} 点`)
+    ok('被动自愈结算在「格」上而不是「拍」上（写在 passive 上的 5%，一拍里能回出好几倍）',
+      regenFree > 1000 * 0.05 * 2,
+      `一份 5% 的自愈，在凑满一条行动条的那几格里回了 ${regenFree} 点 `
+      + `= 最大生命的 ${(regenFree / 1e6 * 100).toFixed(1)}%　`
+      + '—— 这就是格尔那条「莫名回血」的来路（口径定案前按格读，见 PassiveSpec.regen）')
+
+    /* ③ 整整一个回合：与破绽尽碎同一条收拍钟。 */
+    beatOf(s5)
+    ok('禁疗：整整一个回合之后自己解（与破绽尽碎同一格钟，同一拍收）',
+      foe5.noHealRounds === 0,
+      `收一拍之后 noHealRounds=${foe5.noHealRounds}（落手时是 ${TUNING.noHealRounds}）`)
+
+    /* 复活不在禁疗之列（主人点名的那句「复活不算」）。
+       它走的是道具里 `revive` 那条独立支线（直接写 hp），压根不经过 eff.heal 那一支。
+       ⚠ 现在**没有任何一件道具带 revive**（表上有这一格、没人用），所以验不了行为，
+       只能钉一条源码断言：日后有人图省事把它并进回复那一支，这条会红。 */
+    const engSrc = readFileSync('src/lib/battle/engine.ts', 'utf8')
+    ok('禁疗：不拦复活 —— 复活走独立支线（revive 那一支直接写 hp，不经过回复那一行）',
+      /it\.effect\.revive/.test(engSrc)
+      && !/it\.effect\.revive[\s\S]{0,400}noHealRounds/.test(engSrc),
+      'engine 的 revive 支线里没有 noHealRounds 这一道闸')
+
+    /* ④ 落到牌面上与屏上。 */
+    const banSk = ROSTER['majina-abram']!.skills.find((k) => k.id === 'majina-ban')!
+    ok('玛吉娜 · 钉刺·禁止命令：牌面上真的带上了 noHeal（牵制这一类放行了它）',
+      banSk.effect?.noHeal === true,
+      `noHeal=${banSk.effect?.noHeal}　effect 键=[${Object.keys(banSk.effect ?? {}).join('、')}]`)
+    ok('禁疗：牵制这一类点名放行，其余框架一律不放（会改写整场节奏的压制，得专程带一个辅助手）',
+      ARCH['牵制']!.allow?.includes('noHeal') === true
+      && Object.entries(ARCH).filter(([n, a]) => n !== '牵制' && a.allow?.includes('noHeal')).length === 0,
+      `牵制 allow=[${(ARCH['牵制']!.allow ?? []).join('、')}]　`
+      + `其余放行的框架 ${Object.entries(ARCH).filter(([n, a]) => n !== '牵制' && a.allow?.includes('noHeal')).map(([n]) => n).join('、') || '（无）'}`)
+    ok('禁疗（牌面）：效果那一行把「禁疗」写出来了（不写的话牌上只剩易伤 / 减速 / 断拍）',
+      effectLineOf(banSk).includes('禁疗'), effectLineOf(banSk))
+    ok('禁疗（屏上）：战斗盘另长一枚标签，且提前 return 也把它算进「有东西可显示」',
+      /data-buff="no-heal"/.test(btlGer)
+      && btlGer.includes('禁疗<i className={css.buffT}>')
+      && btlGer.includes('&& !c.noHealRounds && !c.ward'),
+      'BuffTags 里挂着 data-buff="no-heal"，提前 return 那一串认 noHealRounds')
+    /* 详情面板那一行：既是「它会回血」的说明书，也是「正被封着」的读数 ——
+       主人报的那条 bug 之所以读着像 bug，就是因为旧版这两件事屏上一个字都没有。 */
+    ok('禁疗（屏上）：详情面板补了一行「回复」，把「它自己会回血」与「此刻正被封着」都摆出来',
+      btlGer.includes("rows.push(['回复'") && btlGer.includes('正被「禁止命令」封着')
+      && btlGer.includes('被动自愈：每过一格充能脉冲回最大生命'),
+      'FoeInfoPanel 多了一行「回复」：被封着 / 本来就能自愈，两支都写')
+
     // 破绽期间挨打更重：同一手，只翻 broken 这一个开关，各跑 600 次把抖动平均掉
     let plainSum = 0
     let ampSum = 0
