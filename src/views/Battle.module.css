@@ -1271,6 +1271,12 @@
   color: var(--amber-deep);
   writing-mode: horizontal-tb;
 }
+/* 窄屏那枚折叠把手。宽档 `display: contents` —— 按钮盒子整个消失，
+   里面的字与箭头直接参与 `.logCap` 那一行的排布，于是桌面看到的还是
+   原来那一行「观测频道 ────」，外观与可点性一个字没变。 */
+.logToggle { display: contents; }
+.logChev { display: none; }
+
 .logSlash {
   display: block;
   height: 2px;
@@ -2439,8 +2445,176 @@
   /* 撤出推到这一行最右：它是右簇里最后一件，靠边比夹在中间好点 */
   .hudR > button { margin-left: auto; }
 
-  /* 观测频道是「读」的一格，不是「点」的一格 —— 手机上把它收到最矮，
-     省下的高度全给敌阵（那才是要点的地方，且卡高 = 卡宽，最吃垂直空间）。
-     它自己 overflow-y: auto，多的往上滚得动。 */
+  /* 观测频道收成一行标题，点开才摊 —— 它是六段里唯一「只读不点」的一段，
+     而敌阵那格是 `overflow: hidden`、敌卡又「卡高 = 卡宽」：实测 390×844 上
+     战场只分到 189px 而敌卡要 232px，上下各被切 21px，切掉的正是挂着
+     onClick 的 [data-foe-body] 与脚下那排 —— 看得见、点不到。
+     收起时只有标题行，展开时仍限高内滚（它自己有 overflow-y: auto）。 */
+  .logToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    cursor: var(--cursor-point);
+  }
+  .logChev { display: inline-block; transition: transform 0.16s ease; }
+  .logStrip[data-log-open='1'] .logChev { transform: rotate(90deg); }
+  .logStrip[data-log-open='0'] .logLines { display: none; }
+  .logStrip[data-log-open='0'] { min-height: 0; }
   .logStrip { max-height: min(92px, 11vh); }
+}
+
+/* ============================================================
+   ③ 横屏（≤560 高）—— 作战屏回到「左右两栏」，按 Black Souls 那一版排
+   ------------------------------------------------------------
+   横过来之后宽度有了（iPhone 横屏 844×390），缺的全是高度：
+   900 那一档把 stage 摊成单列竖堆是**给竖着拿写的**，横屏下六段竖着摞
+   要 700 多 px，屏幕只有 390。所以这一档把两栏还回来 ——
+   左列「顺位 → 敌阵 → 指令 + 小队」竖着走，右列一整条观测频道。
+   底部的指令盘由 3×2 摊成一行六枚，小队由卡片收成一条横躺的头像条：
+   横屏里**宽度是富余的、高度是缺的**，凡是能横过来的一律横过来。
+   ⚠️ 这一块必须排在 900 档之后（同特异性谁在后谁赢），且只在
+      `orientation: landscape` 且**矮**（≤560）时生效 —— 桌面矮窗口不进来，
+      竖屏平板也不进来。
+   ⚠️ 敌阵那格仍是 overflow: hidden，敌卡「卡高 = 卡宽」——
+      横屏下敌卡也比战场高过，所以下面还给它压了一道（见 .foeBody）。
+   ============================================================ */
+@media (orientation: landscape) and (max-height: 560px) {
+  /* ⚠️ 行分配是这一档的命门，改之前先看这段。
+     竖屏那四行（hud / order / arena / console）是**横着摆**的：高度富余时
+     多一行无所谓。横屏 390 高反过来 —— 每一行都是硬开销：
+       · `auto` 行吃掉自己内容的高，剩下的才轮到 `1fr` 那一行（战场）；
+       · 战场 `overflow: hidden`，行一矮就切敌卡，而**切掉的那截是点不到的**
+         （onClick 挂在 [data-foe-body] 上）。
+     所以这里把**行动顺位从独立一行挪进右栏**（`console order` 那一行）：
+     它自己 40 高，而同一行的指令盘要 130 —— 两者取高的那个，
+     顺位等于**白蹭**，凭空还回 47px（42 + 间距）给战场。
+     ⚠️ 但 `orderStrip` 得 `align-self: start`，否则它会被拉到 130，
+       成了一个空荡荡的大盒子（它自己有底有边）。
+     ⚠️ 代价是观测频道（`log`）只跨一行了 —— 从 298 矮到与战场同高。
+       换来的是战场不再被裁，这一笔划算：战报能内滚，敌卡不能。 */
+  .stage {
+    grid-template-columns: minmax(0, 1fr) clamp(158px, 22vw, 224px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'hud     hud'
+      'arena   log'
+      'console order';
+    padding: 4px 8px 6px;
+    gap: 5px 7px;
+  }
+
+  /* HUD 压成**两行**：横屏 844 宽仍然装不下「左簇 + 右簇」一整行
+     （左簇量过 600、右簇 668，合计 1268），900 档那套自由折行在这里会折成
+     五行、吃掉 250px 高，把战场挤成 0。这一档改成：两簇各占满一行、
+     **行内不再折**（放得下就一行排开，放不下由那一行自己横滑）。 */
+  .hud { flex-wrap: wrap; align-items: center; gap: 0 10px; padding-bottom: 2px; }
+  /* 行高收紧：这两行里全是单行小件，默认行高把每行撑到 40 ——
+     两行就是 80，比 HUD 该占的多出一半。这里一路收到 1.1：
+     两行小字再怎么压也还是两行，差的只是每行白白留出的行距。 */
+  .hudL, .hudR { line-height: 1.1; }
+  /* 挂牌与徽章的内边距在竖屏是「让它们松快些」，横屏里这 2+2 是白花的 ——
+     这两行本来就只有十几像素高，一处 4px 就是 HUD 的百分之五。
+     字号跟着落半档，走的是「小字本来就该小」的路子，不是硬塞。 */
+  .no { padding: 0 6px; font-size: 10px; }
+  .traitChip { padding: 0 6px; font-size: 10.5px; line-height: 1.35; }
+  .cmdChip, .siteR { padding-block: 0; }
+  .spBar { height: 5px; }
+  .hudL { width: 100%; flex-wrap: nowrap; gap: 8px; overflow-x: auto; }
+  .hudR { width: 100%; flex-wrap: nowrap; gap: 8px; overflow: hidden; }
+  /* ⚠️ `.hudR` 是不换行 + `overflow: hidden` 的一条：里面任何一项被 flex
+     压缩，文字不会溢出、而是**在这一项内部折行**，折出来的第二行当场被
+     hudR 剪掉 —— 量到过「第 0 手 / 0 回合」竖着摞成两行、下半截没了。
+     这两项是定宽小件（一个读数、一根体力条），不给它们被压的机会；
+     真要横滑，由上面那条 `traitRow` 去滑。 */
+  .round, .spWrap { flex: 0 0 auto; white-space: nowrap; }
+  /* 羁绊挂牌在这一行里可伸可缩（900 档那支 `flex: 1 1 100%` 是竖屏的写法），
+     缩到放不下时由它自己横滑 —— 高度是一行，不跟着长 */
+  .traitRow { flex: 1 1 auto; min-width: 0; max-width: none; flex-wrap: nowrap; overflow-x: auto; }
+
+  /* 顺位卡矮一档（42 → 34）。Battle.tsx 只用 ORDER_CARD_W 算横向位移，
+     高度是这边的事，改它不影响那一头。
+     `align-self: start` 是必须的：它与指令盘同一行，默认会被拉到那一行的高
+     （130），而它本体只有 40 —— 拉出来的九十几像素是空盒子，底和边都还在。 */
+  .orderStrip { padding: 3px 10px; align-self: start; }
+  .orderCards { height: 34px; }
+  .orderCard { height: 34px; }
+
+  /* 指令盘摊成一行六枚 */
+  .seq { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+  /* ⚠️ **指令与小队并排**，不是一上一下 —— 这是这一档最要紧的一笔。
+     900 档把 `.console` 收成单列（cmd 在上、party 在下），那是给竖屏写的；
+     横屏照抄的话 console 要占「两者之和」：量到过 203px（正好顶到它自己
+     那条 `max-height: 52vh` 的天花板），把 arena 压到只剩 22px，
+     敌卡整个贴到屏幕外。并排之后只占高的那一块（指令 97），一下省出 100 多。
+     `max-height` 也要放掉 900 档那条 52vh —— 那是给竖屏内滚用的。 */
+  .console {
+    grid-template-columns: minmax(0, 1fr) auto;
+    max-height: none;
+    align-items: start;
+  }
+  .cmd { padding: 4px 6px; gap: 4px; }
+  /* 小队横躺成一条，自己在格子里横滑（6 张卡铺开有 800 多宽，右上角那格放不下）。
+     ⚠️ 宽度写**固定值**、不写百分比：`.console` 那两列是 `minmax(0,1fr) auto`，
+     而 `auto` 拿的是小队自己的 max-width —— 写 46% 时它按格子的 46% 反算，
+     回头把指令那格挤到 206px，六枚按钮一行排不下、只好换行，反而更高。
+     240 是「露得下一张半卡」的宽度，横滑跟得上。 */
+  .partyCol {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 240px;
+  }
+  .partyCol > .unit { flex: 0 0 132px; }
+
+  /* 兜底：上面几刀再怎么让，也不许把敌阵裁掉 —— `.arena` 是 overflow: hidden，
+     敌卡被切的那截既看不见也**按不到**（onClick 就挂在 [data-foe-body] 上）。
+     战场那一行是 `minmax(0, 1fr)`，拿的是「其余各行算完之后剩的」。
+     ⚠️ 这里**不能**写大数：`min-height` 撑破行时 Grid 不报错，
+     内容直接盖到下一行去 —— 量到过一次 min-height: 172 撞上只有 106 的行，
+     敌卡的名字与血量整行压在指令按钮上面。所以下限只给「敌卡真的快没了」
+     的那个坎，真正的空间交给上面几刀去省。 */
+  .arena { min-height: 150px; overflow-y: auto; }
+  .stage { overflow-y: auto; }
+
+  /* 观测频道在横屏是「窄而高」的一条，不限高 —— 但**必须剪掉它的 min-content**：
+     它现在只跨战场一行（见上面 `.stage` 的行分配），而 Grid 的算法里，
+     跨行 item 的内容要参与那几行 `auto` 高度的计算。战报一多，行被顶高，
+     战场那行（`1fr`，本来就可以压到 0）当场被挤没 —— 量到过战场只剩 22px、
+     敌卡整个贴到屏幕外。`min-height: 0` 一写，这条依赖就断了，
+     多的战报交给它自己 `.logLines` 的内滚。 */
+  .logStrip { max-height: none; min-height: 0; }
+
+  /* 敌卡在横屏**恢复宽度**（横屏缺的是高度、富余的是宽度）：卡一宽，
+     脚下那几行文字就不用折行，反而比窄卡更矮。900 档压到 64px 起是给
+     竖屏写的，横屏照抄会又窄又高 —— 越窄越高是这一屏最不该有的形状。
+     ⚠️ 上限 146 是**量出来的**，不是拍的：卡高 = 卡宽 × 9/16（画框）+
+     脚下那一坨（名字 / 血条 / 数值，量到 77，横屏已压过一道）。
+     176 宽时卡正好 176 高，比战场那行还高一截、上下各切 11px；
+     152 宽时 163，战场给 160，还差 3px；收到 146 才落到 159，装得下。
+     脚下的文字到 146 宽都没折行（176 / 152 / 146 三档量下来脚下都是 77）。 */
+  .foe { flex-basis: clamp(100px, 14vw, 146px); max-width: 146px; }
+  .foeWing { gap: 10px; }
+  .enemyRow { gap: 10px; }
+
+  /* 画框改成**横躺的 16:9**：这一屏的预算是按高度算的，
+     1:1 的画框在 176 宽的卡上要吃掉 176px —— 高度的一半还多。
+     只动比例，不动字号。 */
+  .foeBody { aspect-ratio: 16 / 9; }
+
+  /* 脚下这一坨（血条 / 名字 / 数值 / 徽标 / 信息键 / 扳条 / 破绽标签）
+     在竖屏量到过 107px，是敌卡第二大的开销。横屏下把行距与字号收一道，
+     徽标与「信息」二字也跟着收 —— 宽卡本来就更容易一行放下。 */
+  .foeFoot { gap: 3px; }
+  .foeMeta { font-size: 9px; gap: 1px 6px; }
+  .foeTier { font-size: 9px; padding: 0 5px; letter-spacing: 0.1em; }
+  .foeInfoBtn { padding: 0 4px; }
+  .foeInfoBtn span { display: none; }
 }

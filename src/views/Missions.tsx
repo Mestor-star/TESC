@@ -9,6 +9,7 @@ import { AXIS_KEYS, opPeriodAt, VOL1_END } from '../lib/operator-arc'
 import type { Mission } from '../data/types'
 import { stageSeverity } from '../lib/format'
 import { Battle } from './Battle'
+import { tryLockLandscape } from '../lib/landscape'
 import { Portrait } from '../components/Portrait'
 import { combatantOf, periodProgress, personIdOf, squadIdsFrom } from '../lib/battle/derive'
 import { dutyOf } from '../lib/battle/duty'
@@ -433,6 +434,11 @@ export function Missions() {
     if (stamina.cur <= TUNING.overdriveAt) {
       push('warn', '过载出击', `余 ${Math.round(stamina.cur)} 体力仍强行出击 · 全场输出打折`, false)
     }
+    /* 手机上把屏幕转横 —— **必须在这儿叫**，这是「出击」那一下的手势栈里，
+       晚一步（Battle 的 effect）浏览器的全屏请求就不认了。
+       桌面与转不过去的浏览器（iOS 没有 orientation.lock）静默返回 false，
+       竖屏那套折行布局照样能用，见 lib/landscape.ts 与 Battle.module.css 末尾。 */
+    void tryLockLandscape()
     setLive({ mission: briefing, squad })
     setBriefing(null)
   }

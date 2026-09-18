@@ -20,6 +20,15 @@ const VH = Number(process.argv[3] || 844)
 const OUT = process.argv[4] || path.join(tmpdir(), 'zts-mobile')
 const DBG = 9247
 const TAG = `${VW}x${VH}`
+/* 横屏档（宽 > 高）**不从横屏启动**：那是真机不会走的路径 ——
+   人是竖着拿手机把应用打开的，只有进了作战屏才转横（见 lib/landscape.ts）。
+   而且 390 高确实装不下标题菜单那几枚按钮，从横屏启动会卡在开机流程上，
+   把「作战屏的横屏排布」这条要验的事挡在后面。
+   所以先按竖屏尺寸走完开机 + 编队，**点出击之前**再切成横屏 ——
+   既照真机的次序，也顺带验证了 resize 之后的重新布局。 */
+const LAND = VW > VH
+const BOOT_VW = LAND ? VH : VW
+const BOOT_VH = LAND ? VW : VH
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 mkdirSync(OUT, { recursive: true })
 
@@ -116,6 +125,84 @@ const BOX_PROBE = (sels) => `(()=>{
   }
   return { vh: window.innerHeight, boxes: o };
 })()`
+
+/* 敌阵体检：敌卡是**要点的**（onClick 挂在自己的 [data-foe-body] 上），
+   而 .arena 是 overflow: hidden —— 卡一旦比战场高，多出来的那截既看不见、
+   也按不到（见 Battle.module.css 的 .enemyRow 注）。这里把「卡实际多高、
+   战场给了多高、上下各被切掉多少」逐张报出来，别再去猜。 */
+const FOE_PROBE = `(()=>{
+  const arena = document.querySelector('[data-enemy-field]');
+  if (!arena) return null;
+  const ar = arena.getBoundingClientRect();
+  const cards = [...document.querySelectorAll('[data-foe-card]')].map((c) => {
+    const r = c.getBoundingClientRect();
+    const body = c.querySelector('[data-foe-body]');
+    const br = body ? body.getBoundingClientRect() : null;
+    return {
+      id: c.dataset.foeCard,
+      w: Math.round(r.width), h: Math.round(r.height),
+      top: Math.round(r.top), bottom: Math.round(r.bottom),
+      bodyW: br ? Math.round(br.width) : null,
+      bodyH: br ? Math.round(br.height) : null,
+      cutTop: Math.round(Math.max(0, ar.top - r.top)),
+      cutBottom: Math.round(Math.max(0, r.bottom - ar.bottom)),
+    };
+  });
+  return { arenaTop: Math.round(ar.top), arenaH: Math.round(ar.height), cards };
+})()`
+
+/* 作战屏是定高 grid（行高由 `grid-template-rows` 那几支分），窄屏/矮屏下
+   最容易出的岔子是「某一行把别人的份额吃了」—— 光看元素高度看不出是谁吃的，
+   得把 stage 自己的**行高表**与每个 grid 子项的实际高一起报出来。
+   `.stage` 是模块作用域类名（选择器写 `.stage` 选不中），所以按「display: grid
+   且写过 grid-template-areas」这个特征认它。 */
+const GRID_PROBE = `(()=>{
+  const root = document.querySelector('[data-battle]');
+  if (!root) return null;
+  const stage = [...root.querySelectorAll('div')].find((d) => {
+    const c = getComputedStyle(d);
+    return c.display === 'grid' && c.gridTemplateAreas && c.gridTemplateAreas !== 'none';
+  });
+  if (!stage) return { err: '找不到 stage' };
+  const kids = [...stage.children].map((el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      area: getComputedStyle(el).gridArea,
+      h: Math.round(r.height), w: Math.round(r.width), top: Math.round(r.top),
+    };
+  });
+  return {
+    rows: getComputedStyle(stage).gridTemplateRows,
+    cols: getComputedStyle(stage).gridTemplateColumns,
+    stageH: Math.round(stage.getBoundingClientRect().height),
+    /* 纵向够不够放：放不下时 stage 自己会滚（见横屏档那条兜底），
+       滚了多少这一支报出来 —— 只报横向溢出的话这事儿看不见。 */
+    scrollH: stage.scrollHeight,
+    clientH: stage.clientHeight,
+    kids,
+  };
+})()`
+
+async function gridBox(label) {
+  const r = await ev(GRID_PROBE)
+  if (!r || r.err) { console.log(`  [${label}] ${r ? r.err : '不在'}`); return r }
+  console.log(`  [${label}] stage 高=${r.stageH}  行=${r.rows}  列=${r.cols}` +
+    (r.scrollH > r.clientH + 1 ? `  ← 纵向要滚 ${r.scrollH - r.clientH}px` : '  一屏放得下'))
+  for (const k of r.kids) console.log(`      ${k.area}  ${k.w}×${k.h}@${k.top}`)
+  return r
+}
+
+async function foes(label) {
+  const r = await ev(FOE_PROBE)
+  if (!r) { console.log(`  [${label}] 敌阵不在`); return r }
+  console.log(`  [${label}] 战场 top=${r.arenaTop} 高=${r.arenaH}`)
+  for (const c of r.cards) {
+    const cut = c.cutTop + c.cutBottom
+    console.log(`      ${c.id}  卡 ${c.w}×${c.h}@${c.top}  画框 ${c.bodyW}×${c.bodyH}` +
+      (cut ? `  ← 被裁 ${cut}px（上 ${c.cutTop} / 下 ${c.cutBottom}）` : '  完整'))
+  }
+  return r
+}
 
 /* 全屏浮层（`.modal` 那一套）靠 `position: fixed; inset: 0` 撑满视口。
    可 **fixed 认的包含块是「最近的带 transform/filter/contain 的祖先」** ——
@@ -302,9 +389,10 @@ try {
   await cdp.send('Page.enable')
   /* 真视口：--window-size 只是窗口，`mobile:true` 才让页面按手机那套摆放
      （含 `viewport-fit=cover` 与 dvh 的口径），截图也按这个尺寸出。 */
-  await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: VW, height: VH, deviceScaleFactor: 2, mobile: true,
+  const metrics = (w, h) => cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: w, height: h, deviceScaleFactor: 2, mobile: true,
   })
+  await metrics(BOOT_VW, BOOT_VH)
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
 
   console.log(`\n== 手机档看一眼 · ${TAG} ==`)
@@ -350,6 +438,13 @@ try {
   await shot('03-sortie-main-bottom')
   await spill('编队面板·滚到底')
 
+  // 横屏档：到这里才转（真机的次序 —— 竖着拿进来，出击那一下才转过去）
+  if (LAND) {
+    await metrics(VW, VH)
+    await sleep(500)
+    await shot('03b-land-sortie')
+  }
+
   // 出击 → 作战屏
   await ev(`(()=>{const b=document.querySelector('[data-launch]');if(b)b.click();return true})()`)
   await poll(`!!document.querySelector('[data-battle]')`, 20000, '作战屏')
@@ -357,6 +452,8 @@ try {
   await shot('04-battle')
   await spill('作战屏')
   await boxes('作战屏', ['.stage', 'header', '[data-enemy-field]', '[data-battle-log]', '[data-battle-cmd]'])
+  await gridBox('作战屏')
+  await foes('作战屏')
 
   console.log('\n  完成，图在 ' + OUT)
 } catch (e) {

@@ -732,3 +732,25 @@
 @media (pointer: coarse) {
   .filterBtn, .loadBtn, .pick { min-height: 44px; }
 }
+
+/* ============ 横屏档（≤560 高 · 横向）============
+   880 那条把 `.briefBody` 折成上下两摞，是**给竖屏写的**：390 宽里两栏
+   并排，每栏不到 190，羁绊那栏的说明句全得碎成一堆。横屏反过来 ——
+   844 宽、390 高，宽度富余、高度见底：两摞叠着要 800 多，而 `.modalBox`
+   只有 320，两块一起溢出，字当场压到「已选 3/6」那一行上（量到过）。
+   所以这一档把两栏还回来。`row-reverse` 不是随手写的：DOM 里
+   `.bondPane` 在 `.briefMain` 前面（那是给竖屏的 column 方向排的），
+   倒过来才是桌面那张「名单在左、羁绊在右」的版。
+   `max-height` 也从 82vh 放到「视口减一点」—— 82vh 留的那点上下的气
+   是给竖屏的，横屏这 390 里它一口气扔掉 70px。
+   ⚠️ 必须排在 880 那条之后：同特异性下谁在后谁赢，写前面等于没写。 */
+@media (orientation: landscape) and (max-height: 560px) {
+  .modal { padding: 8px; }
+  .modalBox, .modalBoxSplit {
+    max-height: calc(100dvh - 16px);
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .briefBody { flex-direction: row-reverse; gap: 10px; }
+  .bondPane { flex: 0 0 236px; max-height: none; }
+}

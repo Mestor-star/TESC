@@ -40,6 +40,7 @@ import { inkOf } from '../lib/hue'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { putRecord } from '../lib/battle/store'
+import { releaseLandscape } from '../lib/landscape'
 import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
 import type { GearDef } from '../lib/battle/types'
 import { passiveText } from '../lib/battle/roster'
@@ -221,6 +222,10 @@ const SFX_OF_FX: Record<FxKind, SfxName> = {
   noise: 'blast', guard: 'guard', heal: 'heal', item: 'loot', gear: 'open',
 }
 
+/* 离开作战屏之后隔一拍再还横屏锁（为什么不是当场还，见下面那个 effect）。
+   放模块级：StrictMode 的「装 → 清 → 再装」要跨两次 effect 实例才能配对。 */
+let releaseTimer = 0
+
 export function Battle({
   mission, squad, progress, growth, stamina, equip, owned, bag, morphPool, bond,
   onExit, onSettled,
@@ -243,10 +248,36 @@ export function Battle({
   /** 翻开的是哪一只敌体的「信息」（id）—— 看信息不占回合、也不挑目标：
       头顶那块简介撤了之后，性质 / 来历 / 技能全在这一处。 */
   const [foeInfo, setFoeInfo] = useState<string | null>(null)
+  /**
+   * 观测频道展不展开（**只管窄屏**）。
+   *
+   * 手机竖屏一屏要塞下 HUD → 顺位 → 敌阵 → 观测 → 指令 → 小队六段，
+   * 高度是明摆着不够的。而敌阵那一格是 `overflow: hidden`，敌卡又是
+   * 「卡高 = 卡宽」（`.foeBody` 的 aspect-ratio）——实测 390×844 上战场只分到
+   * 189px，敌卡却要 232px，上下各被切掉 21px，切掉的正是挂着 onClick 的
+   * `[data-foe-body]` 与脚下那排：**看得见、点不到**。
+   * 观测频道是六段里唯一「只读不点」的一段，所以手机上默认收成一行标题，
+   * 省下的高度全给敌阵。桌面那一栏照旧摊着（宽档下那枚把手 `display: contents`，
+   * 摊平成原来的一行标题，外观与可点性都不变）。
+   */
+  const [logOpen, setLogOpen] = useState(false)
   const [rec, setRec] = useState<BattleRecord | null>(null)
   const [narrating, setNarrating] = useState(false)
   const [filed, setFiled] = useState(false)
   const [equipMap, setEquipMap] = useState<Record<string, string>>(equip)
+  /* 离开这一屏就把全屏 / 横屏锁还回去（锁是在 Missions 的「出击」那一下上的，
+     见 lib/landscape.ts）。没锁过的话它本来就是空操作。
+     ⚠️ 这里**不能**直接 `return releaseLandscape`：StrictMode 会把 effect 走两遍
+     （装 → 清 → 再装），清理那一跑正好落在「刚锁上」之后 —— dev 下表现为
+     「刚转过去又弹回来」。压一拍再放：那一拍里 effect 若又被装上（StrictMode
+     的第二遍），就把这次释放撤销；真卸载时没人再挂回来，锁照样还。
+     与 BootSeq 那个计时器开关是同一类坑，只是这边反过来要躲。 */
+  useEffect(() => {
+    window.clearTimeout(releaseTimer)
+    return () => {
+      releaseTimer = window.setTimeout(releaseLandscape, 600)
+    }
+  }, [])
   /** 结算只走一次（严格模式下 effect 会被重放） */
   const settled = useRef(false)
   /** 敌方指挥：接口接通了才由模型点这一手，否则引擎自己判断 */
@@ -959,9 +990,20 @@ ${siteR.f.word}`}>
 
       {/* 观测频道 —— 右侧一栏竖排战报：谁出了哪一手、说了什么、打在谁身上，一眼扫得到，
           又不会压在敌阵脚下挡视野 */}
-      <div className={css.logStrip} data-battle-log>
+      <div className={css.logStrip} data-battle-log data-log-open={logOpen ? '1' : '0'}>
         <div className={css.logCap}>
-          观测频道
+          {/* 窄屏这是一枚折叠把手（宽档 `display: contents`，摊平成原来的标题行） */}
+          <button
+            type="button"
+            className={css.logToggle}
+            data-log-toggle
+            aria-expanded={logOpen}
+            onClick={() => setLogOpen((v) => !v)}
+            title={logOpen ? '收起观测频道' : '展开观测频道'}
+          >
+            观测频道
+            <CaretRight size={13} weight="bold" className={css.logChev} />
+          </button>
           <i className={css.logSlash} />
         </div>
         <div className={css.logLines}>
