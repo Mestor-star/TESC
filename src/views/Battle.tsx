@@ -261,6 +261,20 @@ export function Battle({
    * 摊平成原来的一行标题，外观与可点性都不变）。
    */
   const [logOpen, setLogOpen] = useState(false)
+  /**
+   * 横屏下「双方的读数」收不收（**只管手机横过来那一档**，见 Battle.module.css
+   * 尾部那条 `orientation: landscape` 的媒体查询）。
+   *
+   * 这两条都是 `auto` 行：内容一长，它自己长高，把 `1fr` 那一行的战场挤扁 ——
+   * 而战场是 `overflow: hidden`，挤扁不是把敌卡截一截，是**整块连人带按钮
+   * 一起切走**。血条少一截还看得懂，人没了就没得打了。
+   *
+   * 所以横屏下两边默认收成一条细把手（顶上那一条 `.hudBar`），要看再点开。
+   * 桌面与手机竖屏**一个像素都不动**：那个属性只在横屏那条媒体查询里被读，
+   * 别处的 CSS 里根本没有 `[data-hud-open]` / `[data-foe-open]` 这两个选择器。
+   */
+  const [hudOpen, setHudOpen] = useState(false)
+  const [foeOpen, setFoeOpen] = useState(false)
   const [rec, setRec] = useState<BattleRecord | null>(null)
   const [narrating, setNarrating] = useState(false)
   const [filed, setFiled] = useState(false)
@@ -795,7 +809,44 @@ export function Battle({
       <div className={css.stage}>
 
       {/* HUD */}
-      <header className={css.hud}>
+      <header className={css.hud} data-hud-open={hudOpen ? '1' : '0'}>
+        {/* 横屏专用的一条细把手（桌面与手机竖屏 `display: none`）：收起时
+            整条 HUD 只剩它，省下的高度全给战场。
+            「撤出」跟着搬进来一枚 —— 原来那一枚在 `.hudR` 里，而 hudR 收起时
+            是 `display: none`：不挪这一下，收起来就撤不出去、把人锁在战斗里。 */}
+        <div className={css.hudBar}>
+          <button
+            type="button"
+            className={css.hudToggle}
+            data-hud-toggle
+            aria-expanded={hudOpen}
+            onClick={() => setHudOpen((v) => !v)}
+            title={hudOpen ? '收起状态读数' : '展开状态读数'}
+          >
+            状态
+            <CaretRight size={13} weight="bold" className={css.barChev} />
+          </button>
+          <button
+            type="button"
+            className={css.hudToggle}
+            data-foe-toggle
+            aria-expanded={foeOpen}
+            onClick={() => setFoeOpen((v) => !v)}
+            title={foeOpen ? '收起敌方读数' : '展开敌方读数'}
+          >
+            敌情
+            <CaretRight size={13} weight="bold" className={css.barChev} />
+          </button>
+          {over ? null : (
+            <button
+              className={`btn btn--ghost ${css.barExit}`}
+              style={{ fontSize: 12 }}
+              onClick={() => onExit(st.sp, equipMap)}
+            >
+              <ArrowLeft size={13} /> 撤出
+            </button>
+          )}
+        </div>
         <div className={css.hudL}>
           <span className={`${css.no} mono`}>{st.no} / S{st.stage}</span>
           <b className={css.title}>{st.title}</b>
@@ -932,7 +983,11 @@ ${siteR.f.word}`}>
       {/* 敌阵 —— 头目档居中、召唤物分列两翼；数值与状态在脚下（头顶不挂简介）。
           两翼各自向中列收（左翼右对齐、右翼左对齐），所以中列永远在正中，
           不因为场上是 1 只还是 6 只而左右漂。 */}
-      <div className={css.arena} data-enemy-field>
+      {/* `data-foe-open` 只被横屏那条媒体查询读（见 Battle.module.css）：
+          收起时敌卡只剩画框，脚下那坨（血条 / 名字 / 数值 / 徽标 / 破绽标签）
+          整块让位。它是敌卡里第二高的一块，量到过 77px —— 对 390 高的横屏来说，
+          那几乎就是「看得见敌人」与「看不见敌人」的差别。 */}
+      <div className={css.arena} data-enemy-field data-foe-open={foeOpen ? '1' : '0'}>
         <div className={css.enemyRow}>
           <div className={`${css.foeWing} ${css.foeWingL}`} data-foe-wing="left">
             {foeLine.left.map((c) => (

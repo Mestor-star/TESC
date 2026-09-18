@@ -455,6 +455,23 @@ try {
   await gridBox('作战屏')
   await foes('作战屏')
 
+  // 收起是横屏的默认态（上面那几张就是），这里把两条读数各点开量一次 ——
+  // 「敌情」点开时脚下那 77px 回不回来、还装不装得下，是 `.foe` 宽度上限的
+  // 唯一依据（见 Battle.module.css 尾部 `.foe` 的注释）；只量收起态等于没量。
+  if (LAND) {
+    await pressAt('[data-foe-toggle]')
+    await sleep(400)
+    await shot('04b-foe-open')
+    await foes('作战屏·敌情展开')
+    await pressAt('[data-foe-toggle]')
+    await sleep(300)
+    await pressAt('[data-hud-toggle]')
+    await sleep(400)
+    await shot('04c-hud-open')
+    await boxes('作战屏·状态展开', ['[data-enemy-field]', '[data-battle-cmd]'])
+    await gridBox('作战屏·状态展开')
+  }
+
   console.log('\n  完成，图在 ' + OUT)
 } catch (e) {
   console.error('LOOK-MOBILE ERROR: ' + e.message)

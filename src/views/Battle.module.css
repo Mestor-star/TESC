@@ -586,6 +586,13 @@
 }
 .spBar i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
 
+/* 横屏那一条细把手（收起 / 展开双方的读数）。
+   ⚠️ `display: none` 是它的**常态** —— 桌面与手机竖屏下它整个不存在：
+   那两个 button 连布局都不参与，「横屏收起」这一套在宽屏上留不下任何痕迹。
+   只有 Battle.module.css 尾部那条 `orientation: landscape` 的媒体查询里
+   才把它抬出来。 */
+.hudBar { display: none; }
+
 /* ---------- 阵型 ---------- */
 
 
@@ -2533,6 +2540,54 @@
      这两项是定宽小件（一个读数、一根体力条），不给它们被压的机会；
      真要横滑，由上面那条 `traitRow` 去滑。 */
   .round, .spWrap { flex: 0 0 auto; white-space: nowrap; }
+
+  /* ---------- 双方的读数默认收起（常驻的只剩顶上这一条）----------
+     为什么要收：HUD 与敌卡脚下都是 `auto` 行，两人都会「自己长高」——
+     羁绊挂牌多一条、破绽标签多一枚，它们就把 `1fr` 那行的战场往下挤。
+     而战场是 `overflow: hidden`：挤扁不是把敌卡裁一截，是**连人带按钮
+     一起切走**。读数少一截还看得懂，人没了就没得打。
+     ⚠️ 收起是**默认**（`useState(false)`），所以这两个选择器写的是 `'0'`。
+     展开时那一条会比从前更高（多出把手这一行）—— 那是玩家自己点的，
+     点开就是为了看读数，不亏。 */
+  .hudBar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding-bottom: 2px;
+  }
+  .hudToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius);
+    background: var(--bg-1);
+    color: var(--ink-mute);
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    cursor: var(--cursor-point);
+  }
+  /* 展开着的那一枚镶金边 —— 收起时两枚长得一样，得让人一眼看出哪个是开着的 */
+  .hudToggle[aria-expanded='true'] {
+    border-color: var(--amber);
+    background: color-mix(in srgb, var(--amber) 8%, var(--bg-1));
+    color: var(--amber-deep);
+  }
+  .barChev { transition: transform 0.15s ease; }
+  .hudToggle[aria-expanded='true'] .barChev { transform: rotate(90deg); }
+  /* 撤出推到最右：它是这一条里唯一「按错了会出事」的一枚，离那两枚把手远些 */
+  .barExit { margin-left: auto; }
+  /* ⚠️ 展开时把这枚收起 —— `.hudR` 里本来就有一枚「撤出」，两枚同时在场就是
+     同一个动作摆两遍（量到过：展开后屏幕上并排两个「← 撤出」）。
+     这一枚存在的全部理由是「收起了也撤得出去」，所以只归收起态。 */
+  .hud[data-hud-open='1'] .barExit { display: none; }
+
+  .hud[data-hud-open='0'] .hudL,
+  .hud[data-hud-open='0'] .hudR { display: none; }
+  .arena[data-foe-open='0'] .foeFoot { display: none; }
   /* 羁绊挂牌在这一行里可伸可缩（900 档那支 `flex: 1 1 100%` 是竖屏的写法），
      缩到放不下时由它自己横滑 —— 高度是一行，不跟着长 */
   .traitRow { flex: 1 1 auto; min-width: 0; max-width: none; flex-wrap: nowrap; overflow-x: auto; }
@@ -2559,7 +2614,17 @@
     max-height: none;
     align-items: start;
   }
-  .cmd { padding: 4px 6px; gap: 4px; }
+  /* 指令盘缩一档（行动者面板 + 六枚按钮一起小）。
+     用 `zoom` 而不是逐项改字号：这一块里字号、内边距、图标尺寸是**散着写**的
+     十几处，逐项改一处漏一处就是「按钮小了字没小」那种一眼看得出的错位。
+     zoom 是整块等比缩，观感上仍是同一套版式、只是小一圈 —— 要的就是这个。
+     ⚠️ 小队那一条（`.partyCol`）**不缩**：它是立绘卡，缩下去人脸就糊了。
+       ⚠️ 也因此这一刀**省不下高度** —— `.console` 是 `auto` 行，行高取
+          「指令盘」与「小队」里高的那个，量下来 140 全是小队立绘卡撑的，
+          指令盘缩到 0.9 之后仍比它矮，行高一个像素没动（实测）。
+          所以这一刀买到的只有观感，不是空间；真要从这一行抠高度，
+          得去动小队卡 —— 那是拿人脸的清晰度换，不划算。 */
+  .cmd { padding: 4px 6px; gap: 4px; zoom: 0.9; }
   /* 小队横躺成一条，自己在格子里横滑（6 张卡铺开有 800 多宽，右上角那格放不下）。
      ⚠️ 宽度写**固定值**、不写百分比：`.console` 那两列是 `minmax(0,1fr) auto`，
      而 `auto` 拿的是小队自己的 max-width —— 写 46% 时它按格子的 46% 反算，
@@ -2592,15 +2657,25 @@
      多的战报交给它自己 `.logLines` 的内滚。 */
   .logStrip { max-height: none; min-height: 0; }
 
-  /* 敌卡在横屏**恢复宽度**（横屏缺的是高度、富余的是宽度）：卡一宽，
-     脚下那几行文字就不用折行，反而比窄卡更矮。900 档压到 64px 起是给
-     竖屏写的，横屏照抄会又窄又高 —— 越窄越高是这一屏最不该有的形状。
-     ⚠️ 上限 146 是**量出来的**，不是拍的：卡高 = 卡宽 × 9/16（画框）+
-     脚下那一坨（名字 / 血条 / 数值，量到 77，横屏已压过一道）。
-     176 宽时卡正好 176 高，比战场那行还高一截、上下各切 11px；
-     152 宽时 163，战场给 160，还差 3px；收到 146 才落到 159，装得下。
-     脚下的文字到 146 宽都没折行（176 / 152 / 146 三档量下来脚下都是 77）。 */
-  .foe { flex-basis: clamp(100px, 14vw, 146px); max-width: 146px; }
+  /* 敌卡在横屏**放到能放的最大**（横屏缺的是高度、富余的是宽度）：卡一宽，
+     脚下那几行文字就不用折行，反而比窄卡更矮。
+     ⚠️ 上限 180 是**量出来的**，卡着「敌情展开时也装得下」这条线：
+       卡高 = 卡宽 × 9/16（画框）+ 脚下那一坨（名字 / 血条 / 数值，
+       横屏已压过一道，量到 77）。
+       收起时只有画框（180 宽 → 101 高），战场 189 里看着空是正常的；
+       点开「敌情」那 77 会回来，101 + 77 = 178 —— 刚好还在 189 里。
+       再往上（比如 199）展开就顶格，多一 px 都会把卡底切给 overflow: hidden。
+     `46vh` 那一支是给更矮的横屏（SE 那种 375 高）的：那里战场没有 189，
+     按 vw 算出来的卡会把展开后的脚下顶出去。 */
+  .foe { flex-basis: clamp(112px, min(22vw, 46vh), 180px); max-width: 180px; }
+  /* ⚠️ 中列不吃 `flex-basis` —— `.foeMid` 是**块级**容器（不是 flex 容器），
+     里面那张 `.foe` 只是普通块，`flex-basis` 对它无效，宽度全由内容决定。
+     脚下那一坨在时，是那几行文字把中列撑到与两翼同宽；一收起（`敌情` 默认关），
+     中列的内容只剩一个 glyph —— 当场塌成 54px 的方片，与两翼的 118 差了一倍
+     （同一场里两张卡一大一小）。所以这里给中列自己一个与两翼同宽的定宽 ——
+     ⚠️ 这个值必须与上面 `.foe` 的 `flex-basis` **逐字一致**：敌阵那一行是
+       靠「两翼等分余量」把首领钉在正中的，中列与两翼差一点点，首领就偏了。 */
+  .foeMid { width: clamp(112px, min(22vw, 46vh), 180px); }
   .foeWing { gap: 10px; }
   .enemyRow { gap: 10px; }
 
