@@ -35,23 +35,25 @@ const READY_LINE = '停滞观测终端已启动 · 欢迎回来。'
 
 export function BootSeq({ onDone }: { onDone: () => void }) {
   const [shown, setShown] = useState(0)
-  const timers = useRef<number[]>([])
-  const doneRef = useRef(false)
+  /* `onDone` 由调用方每次渲染新建，挂进依赖会把这一趟重跑一遍 ——
+     所以要把它**扣在 ref 里**，让下面那个空依赖的 effect 够得着最新的那一份。
+     ⚠️ 挡「只跑一趟」不许用 `useRef(false)` 那种开关：dev 的 StrictMode 会把
+     effect 走两遍（装 → 清 → 再装），开关在第二遍进门时已经是真，
+     effect 直接 return、一个 timer 都没重挂 —— 开场就停在接入序列不动，
+     而生产构建不做这两遍，冒烟（build 产物）照样全绿。 */
+  const onDoneRef = useRef(onDone)
+  onDoneRef.current = onDone
 
   useEffect(() => {
-    if (doneRef.current) return
-    doneRef.current = true
     const total = SELF_CHECK.length + 1
+    const timers: number[] = []
     for (let i = 1; i <= total; i++) {
-      timers.current.push(window.setTimeout(() => setShown(i), BOOT_START + i * BOOT_STEP))
+      timers.push(window.setTimeout(() => setShown(i), BOOT_START + i * BOOT_STEP))
     }
-    timers.current.push(
-      window.setTimeout(onDone, BOOT_START + (total + 1) * BOOT_STEP + BOOT_READY_MS),
+    timers.push(
+      window.setTimeout(() => onDoneRef.current(), BOOT_START + (total + 1) * BOOT_STEP + BOOT_READY_MS),
     )
-    const t = timers.current
-    return () => t.forEach((x) => window.clearTimeout(x))
-    // 只跑一趟：`onDone` 由调用方每次渲染新建，挂进依赖会把它重跑一遍
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => timers.forEach((x) => window.clearTimeout(x))
   }, [])
 
   const total = SELF_CHECK.length + 1

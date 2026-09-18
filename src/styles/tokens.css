@@ -707,7 +707,7 @@ input[type='range']::-moz-range-thumb {
    包含块，弹层就会被压进页面那一栏里。 */
 @keyframes riseIn {
   from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; }
+  to { opacity: 1; transform: none; }
 }
 @keyframes flickerIn {
   0% { opacity: 0; }
@@ -761,11 +761,23 @@ input[type='range']::-moz-range-thumb {
 }
 
 /* ============ 视图脚手架（各页面通用） ============ */
+/* ⚠️ 这里**只能是 `backwards`，不能是 `both` / `forwards`**（2026-09-18 量的）。
+   动画一收尾，`forwards` 那半边就把末帧**焊在元素上**，而 Chrome 焊上去的
+   不是字面的 `transform: none`，是动画算出来的**单位矩阵**
+   （`matrix(1,0,0,1,0,0)`）—— 实测：`.vpage` 停在这儿时 computed 是矩阵，
+   运行时把 `animation` 摘掉，同一个元素立刻变回 `none`。
+   而**单位矩阵照样创建包含块**，于是 `.vpage` 把它内部所有
+   `position: fixed; inset: 0` 的浮层（编队面板 / 军需处那一套 `.modal`）
+   拽成「相对自己」定位，再被 `place-items: center` 居中到**整页内容的中间** ——
+   内容一长（手机上任务板 3227px 高）面板就整块落到屏幕外，
+   看着像「点了出击没反应」。桌面只是内容短时碰巧没露馅。
+   `backwards` 一样能在挂载那一刻就压住首帧（这里本来也没有 delay，
+   加不加它视觉上都等价），动画结束即回落到元素自身样式：`transform` 未声明 = `none`。 */
 .vpage {
   padding: 24px 26px 56px;
   max-width: 1320px;
   margin: 0 auto;
-  animation: riseIn 300ms var(--ease-out) both;
+  animation: riseIn 300ms var(--ease-out) backwards;
 }
 
 /* 页头改**居中**（2026-09-16 方贴纸稿）。

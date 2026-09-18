@@ -768,7 +768,9 @@ export function Battle({
         <div className={css.hudL}>
           <span className={`${css.no} mono`}>{st.no} / S{st.stage}</span>
           <b className={css.title}>{st.title}</b>
-          <span className="tiny muted">{st.place}</span>
+          {/* 地点挂个本地类：手机档 HUD 折行时它是唯一没写 nowrap 的一段，
+              被挤窄就一个一个字往下掉，读出来是一竖列「脏/器/公/寓」 */}
+          <span className={`${css.place} tiny muted`}>{st.place}</span>
           {/* 敌方怎么出手：接通了接口就是模型在指挥，没接通是引擎的离线判断 */}
           <span
             className={css.cmdChip}

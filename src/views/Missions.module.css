@@ -237,6 +237,11 @@
 }
 .bondCap { display: flex; flex-direction: column; gap: 2px; }
 .bondCap b { font-size: 12px; letter-spacing: 0.08em; color: var(--amber-deep); }
+/* 窄屏那枚折叠把手 —— 宽屏下 `display: contents`：盒子整个消失，里面的
+   「标题 + 条数」像从前那样直接参与 `.bondCap` 的 column 布局，
+   宽屏的外观、间距、可点性一个像素都不动（见文件末尾的 720 那一节）。 */
+.bondToggle { display: contents; }
+.bondChev { display: none; }
 .bondGroup { display: flex; flex-direction: column; gap: 6px; }
 .bondLabel {
   font-size: 10.5px; letter-spacing: 0.1em; color: var(--ink-mute);
@@ -353,6 +358,69 @@
   color: var(--amber-deep);
   border-color: color-mix(in srgb, var(--amber) 60%, transparent);
   background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+
+/* ---------- 编队面板 · 手机档（≤720px，2026-09-18）----------
+   880 那条只把 `briefBody` 叠成一列，没管谁占多高：羁绊栏整块压在
+   「主角卡 / 选人 / 装备」头上，而后三者才是编队时真正要动手的 ——
+   实测装备调整被挤成 **23px** 高，标题底下直接就是底栏，等于没有。
+   按主人拍的那一版重排（顺序 = 他看的那张草图）：
+     ① 羁绊栏收成一枚**可展开的把手**，默认只报「几条成立」；
+     ② 顺序换成 主角卡 → 选人 → 装备 → **羁绊**（`order` 换位，
+        不动 DOM —— 桌面那份两栏并排的读序也就不用跟着改）；
+     ③ 面板吃满视口高度，`briefMain` 各块 `flex-shrink: 0`，谁也不许再被压扁；
+     ④ 底栏（已选 / 出击）吸底，滑到哪儿都够得着。
+   `100dvh` 那段与外壳同口径：老浏览器取不到 dvh 时，上一条 `vh` 兜底。 */
+@media (max-width: 720px) {
+  .modal { padding: 10px; }
+  .modalBox,
+  .modalBoxSplit,
+  .modalBoxWide {
+    width: 100%;
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 12px 12px 10px;
+    gap: 9px;
+  }
+  .modalHead { align-items: flex-start; }
+  .briefBody { gap: 9px; }
+
+  /* 折叠把手这时才真的长出来 */
+  .bondToggle {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: var(--cursor-point);
+  }
+  .bondChev { display: block; margin-left: auto; color: var(--amber-deep); transition: transform var(--t-fast); }
+  .bondPane[data-bond-open='1'] .bondChev { transform: rotate(90deg); }
+  /* 收起时三段读数整块不摆 —— 那一行只剩下把手 */
+  .bondPane[data-bond-open='0'] .bondGroup { display: none; }
+  .bondPane { order: 2; padding: 9px 10px; }
+  .briefMain { order: 1; }
+
+  /* 面板的滚动交给 `briefMain` 一家管；里面的块一律按内容高，谁也不许被压扁 */
+  .briefMain > * { flex-shrink: 0; }
+  .loadout { max-height: none; }
+  .pickGrid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .loadName { min-width: 96px; }
+
+  /* 底栏吸底 ——「出击」不必再滑到底去找。
+     背景铺一截渐变把滚上来的字压住，不然底栏会跟名单糊在一起。 */
+  .modalFoot {
+    position: sticky;
+    bottom: 0;
+    margin-top: auto;
+    padding: 9px 0 2px;
+    background: linear-gradient(180deg, transparent, var(--bg-2) 30%);
+  }
 }
 
 .modalFoot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

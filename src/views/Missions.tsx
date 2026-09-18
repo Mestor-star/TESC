@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Check, Crosshair, PaperPlaneTilt, Storefront, Trash, Users, X } from '@phosphor-icons/react'
+import { ArrowRight, CaretRight, Check, Crosshair, PaperPlaneTilt, Storefront, Trash, Users, X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
@@ -121,6 +121,15 @@ export function Missions() {
   const [openArch, setOpenArch] = useState<string | null>(null)
   /** 编队中的任务（非 null = 编队面板开着） */
   const [briefing, setBriefing] = useState<Mission | null>(null)
+  /**
+   * 羁绊那一栏展不展开（**只管窄屏**）。
+   *
+   * 桌面两栏并排，它一直摊着；手机上两栏叠成一列，它整栏压在「选人 / 装备」
+   * 上面占掉半屏，而编队时真正要动手的恰恰是后者 —— 所以窄屏默认收成一行，
+   * 只报「几条成立」，想看细节再点开。桌面那份不受影响：那一栏的宽窄
+   * 由 `.bondPane` 自己的媒体查询管，跟这个开关无关。
+   */
+  const [bondOpen, setBondOpen] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
   /** 正在打的那一场 */
   const [live, setLive] = useState<{ mission: Mission; squad: string[] } | null>(null)
@@ -299,6 +308,9 @@ export function Missions() {
     const auto = rec.length ? rec : PERSON_IDS.filter((id) => id !== OPERATOR_ID && isMet(id)).slice(0, 3)
     // 主角必在队里 —— 编队是「他带谁去」，不是「要不要带他」
     setPicked([OPERATOR_ID, ...auto.filter((id) => id !== OPERATOR_ID).slice(0, SQUAD_MAX - 1)])
+    /* 羁绊栏每次都从收起起手：窄屏下它压在「选人 / 装备」上面，
+       上一场展开过就记住了的话，下一场又会先盖住要动手的那一块。 */
+    setBondOpen(false)
     setBriefing(m)
   }
 
@@ -394,7 +406,10 @@ export function Missions() {
       }
     }).filter((p) => p.have > 0)
       .sort((x, y) => Number(y.on) - Number(x.on) || y.have - x.have)
-    return { bonds, traits, pairs, bondVals }
+    /* 「几条成立」是窄屏那一行折叠标题唯一要报的数（见 bondOpen）：
+       队伍羁绊与双人各数各的，凑一块儿就是这张名单当下真吃到的东西。 */
+    const onCount = traits.filter((t) => t.on).length + pairs.filter((p) => p.on).length
+    return { bonds, traits, pairs, bondVals, onCount }
   }, [picked, bondOfSquad])
 
   /** 队伍羁绊这一档到底给什么 —— 一行写死，面板上不摆黑话 */
@@ -1040,9 +1055,29 @@ ${rb.f.word}`}
             <div className={css.briefBody}>
             {/* 左栏：羁绊的实时状态。名单一动就跟着动 ——
                 编队看的就是「这一手带出去能凑出什么、再带上谁又多一条」。 */}
-            <aside className={css.bondPane} data-bond-pane data-bond-live>
+            <aside
+              className={css.bondPane}
+              data-bond-pane
+              data-bond-live
+              data-bond-open={bondOpen ? '1' : '0'}
+            >
               <div className={css.bondCap}>
-                <b>羁绊 · 实时</b>
+                {/* 这一栏在窄屏是一枚可折叠的把手（桌面下 `display: contents`，
+                    摊平成原来的「标题 + 说明」两行，外观与可点性都不变）。 */}
+                <button
+                  type="button"
+                  className={css.bondToggle}
+                  data-bond-toggle
+                  aria-expanded={bondOpen}
+                  onClick={() => setBondOpen((v) => !v)}
+                  title={bondOpen ? '收起羁绊读数' : '展开羁绊读数'}
+                >
+                  <b>羁绊 · 实时</b>
+                  <span className="tiny muted">
+                    {squadBonds.onCount ? `${squadBonds.onCount} 条成立` : '暂无成立'}
+                  </span>
+                  <CaretRight size={13} weight="bold" className={css.bondChev} />
+                </button>
                 <span className="tiny muted">随名单即时变化 · 与打起来的口径同一份</span>
               </div>
 
