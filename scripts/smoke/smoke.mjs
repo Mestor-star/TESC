@@ -7,8 +7,11 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'no
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
+import { fileURLToPath } from 'node:url'
 
-const CNM = 'D:\\cnm'
+/* 项目根由本脚本位置推出来（脚本在 <root>/scripts/smoke/），别写死盘符 ——
+   仓库挪个地方（本机就从 D:\cnm 搬到了 D:\游戏开发）整份冒烟就跑不动了。 */
+const CNM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const APP_URL = 'http://127.0.0.1:4319/'
 const PREVIEW_PORT = 4319
@@ -690,6 +693,20 @@ try {
   await poll(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');const l=o['v1-1']||[];return l.some(x=>x.text.includes('【DIR1】'))}catch(e){return false}})()`, 10000, 'C dir1 log')
   const log1 = await ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o['v1-1']||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
   ok('C2 叙述已写入 v1-1 会话且指令剥离', log1.includes('【DIR1】') && !log1.includes('```') && !log1.includes('eventDone'), '')
+
+  /* 收束栏必须**活在视图之外**。视图是按 case 换的 lazy chunk，切去「低语者日志」
+     那一下 Plot 整个卸载 —— 收束栏与「进入下一事件」若只住在组件 state 里，切回来就没了
+     （2026-10-20 撞见的那个 bug）。这一条钉住落盘读回：往返一趟，栏与文案一字不差。 */
+  const barText = () => ev(`(()=>{const e=document.querySelector('[data-concluded]');return e?e.innerText:''})()`)
+  const barBefore = await barText()
+  await goto('低语者日志')
+  await sleep(400)
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-concluded]')`, 15000, 'C bar after view round-trip')
+  const barAfter = await barText()
+  ok('C2c 收束栏跨视图保留（切低语者日志再切回，按钮/文案/digest 一字不差）',
+    barAfter.includes('进入下一事件') && barAfter.includes('本事件已收束') && barAfter === barBefore,
+    JSON.stringify({ barBefore, barAfter }))
 
   // 点「进入下一事件」→ 此刻才写记录；同时自动为 v1-2 生成衔接开场（req2 eventDone → v1-2 收束栏现）
   await concludedGo()
@@ -3654,7 +3671,10 @@ try {
        M3 顶栏     —— 读数那一簇折到了第二行，且它自己横滑得起来；
        M4 底部导航 —— 横滑到最右那一枚也点得动、点了真的换页；
        M5 梅芙气泡 —— 贴底整宽卡片：每一步的气泡与「下一步」都在屏幕里；
-       M6 触控目标 —— 粗指针那一套（`@media (pointer: coarse)`）确实生效了。
+       M6 触控目标 —— 粗指针那一套（`@media (pointer: coarse)`）确实生效了：
+                      主控件 44（底条那几枚 / `.linkGo`），次级控件那一档
+                      （筛选芯片 34 / 按钮 40 / 滑杆 40 / 勾选框 24 —— 后两样是
+                      2026-09-18 按 `scripts/look-screens.mjs` 的三档量尺补的）。
 
      ⚠️ M2 的判据与 `tools/pv/mobile-probe.mjs` 里那条 `overflowSrc` **同源**：
      判的是「它把**页面**撑宽了」，不是「它这会儿不在屏上」——
@@ -3837,6 +3857,49 @@ try {
   if (zTap.linkN === 0) skip('Z6c 「展开详情」那一枚（`.linkGo`）抬到 44', '（这一屏没有 .linkGo）')
   else ok('Z6c 「展开详情」那一枚（`.linkGo`，全站最常点的一枚）抬到了 44',
     zTap.linkMin >= 44, `最小 ${zTap.linkMin}px · 共 ${zTap.linkN} 枚`)
+
+  /* Z6d/Z6e —— 次级控件那一档（2026-09-18 第二版粗指针段补的两类）。
+     这一档桌面是 23~36px，手指上收在「芯片 34 / 按钮 40」：
+     量的是**下界**，不量个别按钮多大 —— 只要还有一枚掉在档下就说明规则没生效。
+     两屏各走一趟：终末图鉴那一排 17 枚筛选芯片是全站唯一成片跌破 24 的控件，
+     终端设置那两支滑杆与勾选框是另外两处（勾选框 24 正好踩在 WCAG 2.2 那条线上）。 */
+  await goto('终末图鉴')
+  await sleep(900)
+  const zTap2 = await ev(`(()=>{
+    const h=(el)=>Math.round(el.getBoundingClientRect().height)
+    /* ⚠️ 折叠着的那些行详情仍在 DOM 里（祖先 display:none），它们的 .btn 量出来是 0 ——
+       这一条量的是「手指真点得到的那一档」，先按「真渲染出来的」筛一道再取最小值。 */
+    const shown=(sel)=>[...document.querySelectorAll(sel)].filter((el)=>{
+      const r=el.getBoundingClientRect()
+      return r.width>=1&&r.height>=1&&getComputedStyle(el).visibility!=='hidden'})
+    const chips=shown('button.chip').map(h)
+    const btns=shown('.btn').map(h)
+    return {chipMin:chips.length?Math.min(...chips):null,chipN:chips.length,
+      btnMin:btns.length?Math.min(...btns):null,btnN:btns.length}})()`)
+  if (zTap2.chipN === 0) skip('Z6d 筛选芯片那一排抬到 34', '（这一屏没有 button.chip）')
+  else ok('Z6d 终末图鉴那一排筛选芯片（桌面上 23px，全站唯一成片跌破 24 的控件）抬到了 34',
+    zTap2.chipMin >= 34, `最小 ${zTap2.chipMin}px · 共 ${zTap2.chipN} 枚`)
+  if (zTap2.btnN === 0) skip('Z6e 按钮那一档抬到 40', '（这一屏没有 .btn）')
+  else ok('Z6e 次级按钮那一档（桌面 36px）抬到了 40（折叠着的详情面板不算，它们量出来是 0）',
+    zTap2.btnMin >= 40, `最小 ${zTap2.btnMin}px · 共 ${zTap2.btnN} 枚`)
+
+  await goto('终端设置')
+  await sleep(900)
+  const zTap3 = await ev(`(()=>{
+    const h=(el)=>Math.round(el.getBoundingClientRect().height)
+    const shown=(sel)=>[...document.querySelectorAll(sel)].filter((el)=>{
+      const r=el.getBoundingClientRect()
+      return r.width>=1&&r.height>=1&&getComputedStyle(el).visibility!=='hidden'})
+    const rng=shown("input[type='range']").map(h)
+    const ck=shown("input[type='checkbox']").map(h)
+    return {rngMin:rng.length?Math.min(...rng):null,rngN:rng.length,
+      ckMin:ck.length?Math.min(...ck):null,ckN:ck.length}})()`)
+  if (zTap3.rngN === 0) skip('Z6f 滑杆抬到 40', '（这一屏没有 input[type=range]）')
+  else ok('Z6f 设置页那两支滑杆（桌面 16~18px）抬到了 40（尺寸写在 Settings.module.css，见该处注）',
+    zTap3.rngMin >= 40, `最小 ${zTap3.rngMin}px · 共 ${zTap3.rngN} 枚`)
+  if (zTap3.ckN === 0) skip('Z6g 勾选框抬到 24', '（这一屏没有 input[type=checkbox]）')
+  else ok('Z6g 勾选框（浏览器默认 13px）抬到了 24（WCAG 2.2 那条线）',
+    zTap3.ckMin >= 24, `最小 ${zTap3.ckMin}px · 共 ${zTap3.ckN} 枚`)
 
   /* 还原：往后（含 SHOT 那一段）回到 1440×1000 的桌面档 —— 这一相是借了设备仿真，
      不属于它的一律当场还回去。 */

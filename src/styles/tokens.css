@@ -979,4 +979,12 @@ input[type='range']::-moz-range-thumb {
    这一段只管触控目标，**不动字号与配色**（mech §41 那把尺量的就是配色）。 */
 @media (pointer: coarse) {
   .linkGo { min-height: 44px; }
+  /* 下面三条是同一套口径的补齐（smoke 的 Z6d / Z6e / Z6g 钉在这三条线上）：
+     · button.chip —— 终末图鉴那排筛选芯片，桌面 23px，全站唯一成片跌破 24 的控件；
+     · .btn —— 次级按钮桌面 36px；
+     · input[type=checkbox] —— 浏览器默认 13px，WCAG 2.2 那条线是 24。
+     删了冒烟会红，手指上也真的点不中。 */
+  button.chip { min-height: 34px; }
+  .btn { min-height: 40px; }
+  input[type='checkbox'] { min-height: 24px; }
 }

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 
@@ -14,6 +15,29 @@ export function SaveDialog() {
   const autosave = readAutosave()
 
   const close = () => setSlotsOpen(false)
+
+  /* Esc 收作「关」：只在浮层挂着时监听（本组件只为浮层存在，卸载即摘，不会残留）。
+     焦点落在输入框里时让给它 —— 槽名改名那格自己拿 Esc 撤编辑（SlotGrid），
+     浮层不去抢；其余情形一律关，与 Title 的存档浮层 / PvScreen / Archive 灯箱同一条手感。
+     关掉之后把焦点还给打开它的那枚按钮。 */
+  const opener = useRef<Element | null>(null)
+  useEffect(() => {
+    opener.current = document.activeElement
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const t = e.target as HTMLElement | null
+      if (t?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return
+      e.preventDefault()
+      setSlotsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      const el = opener.current
+      opener.current = null
+      if (el instanceof HTMLElement && el.isConnected) el.focus()
+    }
+  }, [setSlotsOpen])
 
   return createPortal(
     <div

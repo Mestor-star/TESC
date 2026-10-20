@@ -11,7 +11,7 @@
    被带 transform 的 view-transition 祖先捕获。
    ============================================================ */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, PencilSimple, Plus, Trash, X } from '@phosphor-icons/react'
 
@@ -96,6 +96,30 @@ export function VariablePanel() {
 
   const resetEdit = () => { setEditKey(null); setEKey(''); setERaw(''); setEType('str') }
   const resetAdd = () => { setAdding(false); setNKey(''); setNRaw(''); setNType('str') }
+
+  /* Esc：先撤掉行内表单（新增 / 编辑各自一格），再按一次才关浮层 ——
+     与 SlotGrid 那格「Esc 撤编辑」同一条手感，不会一按就整片消失。
+     监听只为浮层存在（卸载即摘）；关掉之后把焦点还给打开它的那枚按钮。 */
+  const opener = useRef<Element | null>(null)
+  useEffect(() => {
+    opener.current = document.activeElement
+    return () => {
+      const el = opener.current
+      opener.current = null
+      if (el instanceof HTMLElement && el.isConnected) el.focus()
+    }
+  }, [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      if (editKey) { setEditKey(null); setEKey(''); setERaw(''); setEType('str'); return }
+      if (adding) { setAdding(false); setNKey(''); setNRaw(''); setNType('str'); return }
+      setVarsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [adding, editKey, setVarsOpen])
 
   /* —— 新增 —— */
   const commitAdd = () => {

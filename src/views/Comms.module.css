@@ -174,7 +174,84 @@
 
 /* ============ 手机档（≤720px）============
    960 那条把两栏摞成一栏之后，`.chatPane` 那条 `min-height: 480px` 就多余了 ——
-   窄屏上整页在滚，对话框该按内容走，不该再钉一个一屏出头的地板。 */
+   窄屏上对话面板的高度由下面那条「整屏定高」的规则定，不该再钉一个一屏出头的地板。 */
 @media (max-width: 720px) {
   .chatPane { min-height: 0; }
+}
+
+/* ============ 手机档：整屏定高，只有消息列表滚（BUG-02） ============
+   缺陷（清单 BUG-02 / 实测复现）：≤960 那条把 .wrap 写成 height:auto，
+   .chatPane 又挂一条 min-height —— 面板按内容长高，整页变成「外窗滚 + 内层想滚
+   却没高度」的两层结构：390x844 上 .vpage 量出 2987px（可视 665px），输入框
+   落在整页最底；键盘弹起（390x420）就更够不着了。
+
+   改法只有一个念头：**把高度还成一条定值链**。
+   .vpage 收成定高的一列（height:100% 一路继承外壳的 100dvh，见 App.module.css 的
+   .root / .main），页头按内容占它那一份，剩下的全给 .wrap；.wrap 内部
+   contactList 按内容、chatPane 吃 1fr；chatPane 里 thread 是唯一滚动容器
+   （flex:1 + min-height:0 + overflow-y:auto），composer 是固定尾行。
+   于是输入框的位置只由「可视区高度」决定，与消息多少无关 —— 键盘压矮可视区时
+   整条链一起缩，输入框始终贴着面板底。全程没有 px 魔法数，也没有第二层滚动。
+
+   ⚠️ .chatMain 在 Tavern.module.css 里有一条 min-height:380（≤960），
+   这里用「装着 .composer 的那一列」这个结构钩子压回 0 —— 否则它会把面板顶穿，
+   输入框重新掉到面板外（CSS Modules 改了名，跨模块只能按结构认）。 */
+@media (max-width: 860px) {
+  :global(.vpage):has(> .wrap) {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 12px;   /* 底条（--strip-h 56）由外壳那一行让开，这里只留视觉呼吸 */
+  }
+  /* 页头在手机上只留 kicker + 标题：390 宽时那段说明文自己就要 252px，
+     键盘一弹（420 高）连消息流都剩不下。 */
+  :global(.vpage):has(> .wrap) > :global(.vhead) {
+    flex: 0 0 auto;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+  }
+  :global(.vpage):has(> .wrap) > :global(.vhead) :global(.vhead__sub),
+  :global(.vpage):has(> .wrap) > :global(.vhead) :global(.vhead__right) { display: none; }
+
+  .wrap {
+    flex: 1;
+    min-height: 0;
+    height: auto;          /* 压掉 ≤960 那条「按内容长高」 */
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, auto) minmax(0, 1fr);
+    overflow: hidden;
+  }
+  /* 会话列表给一个**定值**（不是 max-height）：auto 轨道在定高网格里会被
+     1fr 那条挤，挤出来多少全看内容多少 —— 实测只剩 88px，只露得出一个人。
+     26vh 在 844 上是 219px：够看见自己在哪个线程、也够换人，剩下的全归消息流。 */
+  .contactList { height: clamp(140px, 26vh, 260px); min-height: 0; }
+  /* 会话列表底下那条脚注（全局 .panel__body，两段说明文）在 219px 的列表里
+     自己就要 88px —— 定高之后它吃掉的正是能看见几个联系人。手机上让它退场。 */
+  .contactList > :global(.panel__body) { display: none; }
+  /* 会话头在 390 宽上原来会折成三四行（名字断成「恋兔光 · 在 / 线」），
+     一占就是 146px —— 定高之后它吃的是消息流的地盘。收成一行：
+     名字不断行、场景说明截一行、装饰性的信道标签让位。 */
+  .chatHead { padding: 8px 12px; gap: 8px; flex-wrap: nowrap; }
+  .chatHeadMeta b {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .chatHeadMeta small {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .channelTag { display: none; }
+  .chatPane { min-height: 0; }
+  .chatPane :has(> .composer) { min-height: 0; }
+  .thread { min-height: 0; }
+  .composer { flex: 0 0 auto; }
+}
+
+/* 键盘弹起那一档（可视区只剩 ~420，≈ Android 把 layout viewport 压矮 / iOS 的
+   visual viewport）。这一档只剩「正在说话」这件事：页头与会话列表让开，
+   整幅给会话 —— 否则 420 里 56（顶栏）+ 67（页头）+ 65（输入框）就把消息流吃成负的。 */
+@media (max-width: 860px) and (max-height: 560px) {
+  :global(.vpage):has(> .wrap) > :global(.vhead) { display: none; }
+  .contactList { display: none; }
+  /* 两行之间的 16px 此刻是纯浪费（上面那行已经没有了） */
+  .wrap { row-gap: 0; }
 }

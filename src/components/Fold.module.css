@@ -37,6 +37,10 @@
   align-items: center;
   justify-content: center;
   flex: none;
+  /* 桌面 23×19（图标 13 + 内边距）跌破 24 的可点下限 —— 补下限，不写死 width/height：
+     写死会把那枚箭头挤变形，min-* 只把它撑到方框里居中。 */
+  min-width: 24px;
+  min-height: 24px;
   margin: 0;
   padding: 3px 5px;
   background: none;
