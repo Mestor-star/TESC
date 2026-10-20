@@ -80,13 +80,17 @@
 .itemStage {
   display: flex; align-items: baseline; gap: 8px;
 }
+/* 等级数：默认/封存两档的行内色是 --ink-mute / --ink-faint（token 抬过之后已过线），
+   只有登记态那枚行内写的是 var(--red)（3.50）—— 行内优先级更高，只能在这里盖。
+   `!important` 压行内色在 Archive / LorebookModal 已有先例。 */
 .itemStage .s {
   font-family: var(--font-mono);
   font-size: 30px;
   font-weight: 800;
   line-height: 1;
 }
-.itemStage small { color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+.itemReg .itemStage .s { color: var(--red-deep) !important; }
+.itemStage small { color: var(--ink-mute); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
 .itemMain { min-width: 0; }
 .itemMain b { font-size: 16.5px; font-weight: 900; }
 .itemMain .alias { font-family: var(--font-mono); color: var(--ink-mute); font-size: 10.5px; letter-spacing: 0.12em; margin-left: 8px; }
@@ -115,7 +119,8 @@
 }
 .counterBox b { color: var(--c); display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.12em; margin-bottom: 6px; }
 
-.chev { font-family: var(--font-mono); color: var(--c); font-size: 12px; transition: transform var(--t-mid) var(--ease-out); }
+/* --c 是行级强调色（红 / 钢蓝 / 线色三档），原色当字 1.45–3.33；掺墨到 35% 后 ≥5.2 */
+.chev { font-family: var(--font-mono); color: color-mix(in srgb, var(--c) 35%, var(--ink)); font-size: 12px; transition: transform var(--t-mid) var(--ease-out); }
 .itemRow.open .chev { transform: rotate(90deg); }
 
 /* 分类组头 */
@@ -134,7 +139,7 @@
 }
 .groupTitle { font-size: 15px; font-weight: 900; letter-spacing: 0.02em; }
 .groupSub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); letter-spacing: 0.1em; text-transform: uppercase; }
-.groupCount { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.groupCount { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
 .groupEmpty { color: var(--ink-faint); font-size: 13px; padding: 18px 0; line-height: 1.8; }
 
 /* 条目展开详情 */

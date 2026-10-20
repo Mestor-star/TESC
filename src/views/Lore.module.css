@@ -64,7 +64,9 @@
 .cardHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .cardTitle { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: 0.01em; }
 .cardSub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); letter-spacing: 0.1em; text-transform: uppercase; }
-.cardRef { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); border-radius: var(--radius-pill); padding: 2px 7px; background: color-mix(in srgb, var(--c) 8%, transparent); }
+/* 来源标：--c 是数据表带来的本色（深浅不可知，没有 -deep 档），当字先掺墨压深 ——
+   45% 那一档对白底最差 4.44（琥珀 5.79 / 薄荷 4.94 / 浅灰紫 5.33），底色只用来认色相。 */
+.cardRef { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: color-mix(in srgb, var(--c) 45%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); border-radius: var(--radius-pill); padding: 2px 7px; background: color-mix(in srgb, var(--c) 8%, transparent); }
 .cardBody { margin: 12px 0 0; font-size: 13px; line-height: 1.85; color: var(--ink-dim); flex: 1; }
 .cardTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .tag {

@@ -323,6 +323,8 @@ export function LoreManager({ embedded = false, open = true, onClose }: LoreMana
                         style={{ fontSize: 11, padding: '5px 9px' }}
                         onClick={() => void doDelete(b.id)}
                         onBlur={() => setConfirmDel(null)}
+                        title={confirmDel === b.id ? '确认删除世界书' : `删除《${b.name || '未命名世界书'}》`}
+                        aria-label={confirmDel === b.id ? '确认删除世界书' : `删除《${b.name || '未命名世界书'}》`}
                       >
                         {confirmDel === b.id ? '确认删除' : <Trash size={12} weight="bold" />}
                       </button>

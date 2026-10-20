@@ -3192,8 +3192,10 @@
    键盘（Z 确定 / X 返回 / C 角色介绍 / 方向键走位）
    ------------------------------------------------------------
    光标必须**看得见**，而且不能只靠颜色（色弱与低亮度屏上都读不出）：
-   三层一起变 —— 1px 实边（本色）、一层同色外环（box-shadow 0 0 0 1px，
-   零模糊，符合全站「层次靠边不靠影」）、再加 2px 上抬位移。
+   三层一起变 —— 1px 实边（本色）、**2px 聚焦环**（box-shadow 0 0 0 2px，
+   走全站键盘环那支 --violet，零模糊，符合全站「层次靠边不靠影」）、再加 2px 上抬位移。
+   环必须够 3:1：原来那圈琥珀对奶油底只有 1.53（A11Y3-05），换成 #7d5cff 后 4.01、
+   对白底 4.33 —— 与 11 屏那套焦点环是同一支色。
    位移那 2px 是「这一格被顶起来了」—— 与全站按钮 :hover 的垫片是同一套语汇。
    ============================================================ */
 .seqBtn[data-focus='1'],
@@ -3201,15 +3203,15 @@
 .risk[data-focus='1'],
 .morphChip[data-focus='1'] {
   border-color: var(--amber);
-  box-shadow: 0 0 0 1px var(--amber);
+  box-shadow: 0 0 0 2px var(--violet);
   background: color-mix(in srgb, var(--amber) 14%, var(--bg-1));
   transform: translateY(-2px);
 }
 /* 选目标时的光标落在**卡**上：单位卡是画框，焦点就框在画框上 */
 .unit[data-focus='1'],
 .foe[data-focus='1'] .foeBody {
-  outline: 1px solid var(--amber);
-  outline-offset: 1px;
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
   transform: translateY(-2px);
 }
 .foe[data-focus='1'] .foeBody.unitAim { animation: aimPulse 1s ease-in-out infinite; }
@@ -3345,10 +3347,10 @@
 /* 敌我一眼分开，但结构一致：我方左沿走薄荷（自己人），敌方走绯（要打的） */
 .tcard[data-side='ally'] { border-left-color: var(--jade); }
 .tcard[data-side='enemy'] { border-left-color: var(--red); }
-/* 光标：1px 实边 + 底色 + 上抬 2px（与指令盘、单位卡同一套语汇） */
+/* 光标：1px 实边 + 2px 聚焦环（--violet）+ 底色 + 上抬 2px（与指令盘、单位卡同一套语汇） */
 .tcard[data-focus='1'] {
   border-color: var(--amber);
-  box-shadow: 0 0 0 1px var(--amber);
+  box-shadow: 0 0 0 2px var(--violet);
   background: color-mix(in srgb, var(--amber) 14%, var(--bg-1));
   transform: translateY(-2px);
 }

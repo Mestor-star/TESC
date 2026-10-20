@@ -768,7 +768,8 @@ export function Dashboard() {
             <div className={css.kv}>
               <span className={css.kvKey}>小队体力</span>
               <span className={css.kvVal}>
-                <b style={{ color: staminaLow ? 'var(--red)' : 'var(--jade)' }}>
+                {/* 本色当底、-deep 当字：--jade 压白底 1.31、--red 3.50，都够不着正文线 */}
+                <b style={{ color: staminaLow ? 'var(--red-deep)' : 'var(--jade-deep)' }}>
                   {live.sp ? `${Math.round(live.sp.cur)}/${live.sp.max}` : '—'}
                 </b>
                 <span className="tiny muted"> · 每收束一段观测回补</span>

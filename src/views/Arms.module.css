@@ -14,7 +14,7 @@
 }
 .metric:hover { border-color: var(--line-3); transform: translateY(-1px); }
 .metric small { display: block; color: var(--ink-mute); font-size: 11px; letter-spacing: 0.14em; }
-.metric b { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 24px; font-weight: 800; line-height: 1; color: var(--ink-dim); transition: color var(--t-fast); }
+.metric b { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 20px; font-weight: 600; line-height: 1; color: var(--ink-dim); transition: color var(--t-fast); }
 .metric.isOn { border-color: var(--steel); background: color-mix(in srgb, var(--steel) 10%, transparent); }
 .metric.isOn b { color: var(--steel-deep); }
 
@@ -46,9 +46,7 @@
   border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
   border-left: 4px solid var(--c);
   border-radius: var(--radius);
-  background:
-    linear-gradient(115deg, color-mix(in srgb, var(--c) 10%, transparent), transparent 55%),
-    var(--bg-1);
+  background: var(--bg-1);
 }
 .tradMark {
   display: flex;
@@ -60,34 +58,36 @@
   border-right: 1px solid var(--line);
 }
 .tradKind {
-  font-size: 30px;
-  font-weight: 900;
+  font-size: 28px;
+  font-weight: 600;
   letter-spacing: 0.14em;
-  color: var(--c);
+  /* 本色当底、字掺墨：--c 是数据表本色（浅到 #cfcfef 那种都有），原色当字只有 1.42。
+     28px/600 算大字，掺到 55% 对白底最差 3.68（浅灰紫 4.10、琥珀 4.47）；压到 --bg-2 也有 3.31。 */
+  color: color-mix(in srgb, var(--c) 55%, var(--ink));
   /* 大字那一档的装饰影：走全站唯一的错位重影（原来是 `0 6px 18px` 的柔光） */
-  text-shadow: var(--duo-shadow);
 }
 .tradMark small {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   color: var(--ink-mute);
 }
 .tradBody { min-width: 0; }
 .tradSchool {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.14em;
   color: var(--ink);
   margin-bottom: 6px;
 }
-.tradBody p { margin: 5px 0 0; font-size: 12.5px; line-height: 1.75; color: var(--ink-dim); }
+.tradBody p { margin: 5px 0 0; font-size: 13px; line-height: 1.75; color: var(--ink-dim); }
 .tradQuote {
   align-self: flex-end;
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.12em;
-  color: var(--c);
+  /* 12px 要正文线：再往下掺（35%）才扛得住 .85 的透明度 —— 合成后最差 4.77 */
+  color: color-mix(in srgb, var(--c) 35%, var(--ink));
   opacity: 0.85;
   white-space: nowrap;
   writing-mode: vertical-rl;
@@ -101,8 +101,9 @@
   margin: 26px 0 10px;
 }
 .groupMark { width: 4px; height: 18px; border-radius: var(--radius-pill); }
-.groupTitle { font-size: 15px; font-weight: 900; letter-spacing: 0.02em; }
-.groupCount { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.groupTitle { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+/* 分组计数是要读的内容，不是角标 —— 走 mute（faint 只留占位符与纯装饰） */
+.groupCount { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
 
 /* ---- 条目 ---- */
 .list { display: flex; flex-direction: column; gap: 12px; }
@@ -131,14 +132,15 @@
   color: inherit;
 }
 .itemNo { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-.itemNo .no { font-family: var(--font-mono); font-size: 26px; font-weight: 800; line-height: 1; color: var(--c); }
-.itemNo small { color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; }
+/* 编号同 .tradKind：28px 大字，掺 55% 墨（悬浮到 --bg-2 上仍有 3.31） */
+.itemNo .no { font-family: var(--font-mono); font-size: 28px; font-weight: 600; line-height: 1; color: color-mix(in srgb, var(--c) 55%, var(--ink)); }
+.itemNo small { color: var(--ink-mute); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; }
 .itemMain { min-width: 0; }
-.itemMain b { font-size: 16.5px; font-weight: 900; }
-.itemMain .alias { font-family: var(--font-mono); color: var(--ink-mute); font-size: 10.5px; letter-spacing: 0.14em; margin-left: 8px; }
+.itemMain b { font-size: 16px; font-weight: 600; }
+.itemMain .alias { font-family: var(--font-mono); color: var(--ink-mute); font-size: 11px; letter-spacing: 0.14em; margin-left: 8px; }
 .itemMain p {
   margin: 6px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-dim);
   line-height: 1.65;
   display: -webkit-box;
@@ -153,13 +155,13 @@
   align-items: baseline;
   gap: 6px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--ink);
 }
 .holderChip i {
   font-style: normal;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   color: var(--ink-faint);
   border: 1px solid var(--line-2);
@@ -176,9 +178,7 @@
   border-style: dashed;
   border-color: var(--line-2);
   border-left: 3px dashed var(--line-3);
-  background:
-    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 3%, transparent) 0 10px, transparent 10px 20px),
-    var(--bg-1);
+  background: var(--bg-1);
   color: var(--ink-faint);
 }
 .itemLocked:hover { border-color: var(--line-3); background: var(--bg-2); }
@@ -198,11 +198,11 @@
   opacity: 0.7;
 }
 .lockMain { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.lockMain b { font-size: 20px; font-weight: 900; letter-spacing: 0.12em; color: var(--ink-faint); }
+.lockMain b { font-size: 20px; font-weight: 600; letter-spacing: 0.12em; color: var(--ink-faint); }
 .lockMain i { font-style: normal; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint); }
 .lockCode {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   color: var(--ink-faint);
   border: 1px dashed var(--line-2);
@@ -222,20 +222,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10.5px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.12em;
   color: var(--ink-mute);
   margin: 12px 0 6px;
 }
 .expLabel::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .expText { font-size: 13px; line-height: 1.85; color: var(--ink-dim); }
-.holderName { font-size: 15px; color: var(--ink); }
+.holderName { font-size: 14px; color: var(--ink); }
 .holderNote { display: block; margin-top: 3px; font-size: 12px; color: var(--ink-mute); }
 .expFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
 .schoolChip {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.05em;
   color: var(--steel-deep);
   border: 1px solid color-mix(in srgb, var(--steel) 40%, transparent);
@@ -243,7 +243,7 @@
   border-radius: var(--radius-pill);
   padding: 3px 9px;
 }
-.refChip { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); }
+.refChip { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
 
 @media (max-width: 900px) {
   .trad { grid-template-columns: 1fr; gap: 12px; }
@@ -252,4 +252,12 @@
   .itemRow { grid-template-columns: 1fr; gap: 8px; }
   .itemRight { flex-direction: row; align-items: center; justify-content: space-between; }
   .expGrid { grid-template-columns: 1fr; }
+}
+
+/* 手机档 · 粗指针：上面那一排系谱筛选（桌面实测 31px 高）。
+   `.kindChip` **不是**全站的 `.chip` —— 它自己长了一套 padding 与字号，
+   tokens.css 那条 `button.chip` 够不着，所以尺寸归这里管（34 是 tokens.css
+   里定的次级控件那一档，两边同一个数）。 */
+@media (pointer: coarse) {
+  .kindChip { min-height: 34px; }
 }

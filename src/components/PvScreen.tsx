@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { SkipForward, SpeakerHigh } from '@phosphor-icons/react'
+import { Play, SkipForward, SpeakerHigh } from '@phosphor-icons/react'
 
 import { markPvSeen, notePvOk, pvSources } from '../lib/pv'
 import css from './PvScreen.module.css'
@@ -62,6 +62,24 @@ const TIP_MS = 8000 /* 还在等闸门 → 摆出「载入较慢」（数据在�
 const GIVE_UP_MS = 28000 /* 到点还没起播 → 当这一趟放不出来，收场 */
 const STALL_MS = 9000 /* 已经在放了，卡住这么久没缓过来 → 收场 */
 
+/**
+ * 这一台要不要「减少动效」（2026-09-18，A11Y3-09）。
+ *
+ * ⚠ **CSS 管不到 `<video>`。** `PvScreen.module.css` 那条 reduce 规则只能把这一层
+ * 的淡入淡出按住，片子该播还是播 —— 实测 reduce 态进站 `paused: false`、
+ * `currentTime` 一直往前跑。要不要放这件事只能在 js 里判。
+ *
+ * 采样一次就够（系统设置在会话中途改动，下一趟开屏自然会跟上）；
+ * 老浏览器没有 `matchMedia` 就当正常档。
+ */
+function prefersReduce(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    return false
+  }
+}
+
 /** 缓冲领先多少秒（后半段没缓冲时是 0） */
 function runway(v: HTMLVideoElement): number {
   const b = v.buffered
@@ -101,6 +119,12 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
   const closing = useRef(false)
   /* 下标也留一份 ref：`onError` 与看门狗都要在**不等重渲染**的前提下判「还有没有下一支」 */
   const idxRef = useRef(0)
+  /* reduce 档：**不自动放**（A11Y3-09）。片子停在第 0 帧当静态海报，
+     底下摆「播放影像」与「跳过」两个入口 —— 前者是用户亲手给的起播手势，
+     后者一按就直接交还开场标题屏（不因为不播就把流程卡在这一层）。
+     `armed` 一翻真，下面那套闸门 / 看门狗原样接手，与正常档走同一条路。 */
+  const [reduce] = useState(prefersReduce)
+  const [armed, setArmed] = useState(() => !reduce)
 
   /** 收场：`seen` 决定要不要记「看过」，`fade` 是淡出时长（放不出来时不给淡） */
   const close = (seen: boolean, fade = 400) => {
@@ -123,6 +147,19 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const v = vid.current
     if (!v) return
+
+    /* reduce 档且还没按「播放影像」：**故意不放**。
+       不挂闸门、不挂三条看门狗 —— 那几条管的是「放不出来」，这儿是「不放」。
+       只留一条 Esc = 跳过，与 popover 那套手感一致。 */
+    if (!armed) {
+      v.pause()
+      const onEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') close(true)
+      }
+      window.addEventListener('keydown', onEsc)
+      return () => window.removeEventListener('keydown', onEsc)
+    }
+
     let alive = true
     /* 这一支源有没有来过数据 —— 换源判的是**这个**，不是「等了多久」。
        它是 effect 的局部量：换源会改 `srcIdx`，effect 收摊重来，它跟着清零。 */
@@ -246,7 +283,21 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
       window.removeEventListener('keydown', onKey)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srcIdx, advance])
+  }, [srcIdx, advance, armed])
+
+  /** reduce 档的「播放影像」—— 这一步本身就是手势，起播与出声都在这儿一次拿下。
+      被拦下来也不要紧：`armed` 一翻真，effect 里那套 `kick()` 会退回静音重试。 */
+  const playNow = () => {
+    const v = vid.current
+    setArmed(true)
+    if (!v) return
+    void v
+      .play()
+      .then(() => setMuted(v.muted))
+      .catch(() => {
+        /* 手势没被认（极少见）：交给 effect 的静音回退，画面照走 */
+      })
+  }
 
   return (
     <div
@@ -282,9 +333,27 @@ export function PvScreen({ onClose }: { onClose: () => void }) {
       {/* 载入那一下垫一句话，别让黑底先愣着。
           攒够之前报个进度 —— 有读数就说明它在动，不是死了；
           迟迟不来的时候改口径，别让主人对着「正在载入」干等，把跳过说明白。 */}
-      {started ? null : (
+      {started ? null : armed ? (
         <div className={css.loading} data-pv-wait={slow ? 'slow' : 'ok'}>
           {slow ? '影像载入较慢 · 可直接跳过' : `开场影像 · 正在载入${pct > 0 ? ` ${pct}%` : ''}`}
+        </div>
+      ) : null}
+
+      {/* reduce 档的两个入口：播放 / 跳过。不做成「播放就盖上全屏」——
+          按了播放之后这一层与正常档完全一样（跳过键一直在右上角）。 */}
+      {armed ? null : (
+        <div className={css.poster} data-pv-reduce>
+          <p className={css.posterNote}>
+            已开启「减少动效」 · 影像不会自动播放
+          </p>
+          <button
+            className={css.play}
+            data-pv-play
+            onClick={playNow}
+            aria-label="播放开场影像"
+          >
+            <Play size={13} weight="fill" /> 播放影像
+          </button>
         </div>
       )}
 

@@ -59,8 +59,10 @@
   /* —— 文本（冷墨：深藏蓝，比纯黑软，压得住青与紫） —— */
   --ink: #0e1729;
   --ink-dim: #394765;    /* 对白底 9.28:1 */
-  --ink-mute: #657190;   /* 对白底 4.86:1 —— 上一版这一支卡在 4.50 线上，别让它掉下去 */
-  --ink-faint: #98a5bf;  /* 对白底 2.5 上下：只给占位符与 9–10px 的角标，不当正文用 */
+  --ink-mute: #5a6685;   /* 对白底 5.72:1；压到实际底色上也过线：--bg-0 5.28、--bg-2 5.14、--bg-3 4.73。
+                            旧值 #657190 的 4.86 只对**纯白**成立，卡底一换就掉到 4.37（A11Y3-01 那条账），这里按卡底重定 */
+  --ink-faint: #75839d;  /* 对白底 3.83:1；对 --bg-0 3.53、--bg-2 3.44、--bg-3 3.16 —— 9–11px 角标与占位符的底线是 3:1。
+                            档案编号 / 状态附注 / 分组计数这类**要读的内容**不算角标，走 --ink-mute；这一支只留给占位符与纯装饰 */
 
   /* —— 主题色 ——
      每一支都有**两个档**，用法只有一条规矩：
@@ -757,7 +759,29 @@ input[type='range']::-moz-range-thumb {
   body { font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* 有限动画：压到一帧就收束 —— 原有做法，别动。 */
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  /* 无限动画：**只压 duration 等于把它变成「0.01ms 死循环」** —— 位移归零了，主线程没归零
+     （2026-09-18 量：同一屏 2s 的 TaskDuration，reduce 态 45ms；把这行加上之后落到 12ms 那一档。
+     差额全在 box-shadow 被无限重算。）所以把迭代次数钉成 1：配上上面那条 duration，
+     动画一帧收束、当帧结束，等价于「停掉」——有限动画的观感一个像素都不变。
+     全仓 grep `animation ... infinite` 那一批（2026-09-18，10 个文件 / 26 处声明）都靠这两行收口，
+     逐条清单见本轮交付说明；文件与关键帧对得上的是：
+       tokens.css    .pulse · .sev-hi .pulse · .chip--danger（pulseGlow）· .caret::after（blink）
+       App           .navItem__dot（blink）· .pill--danger .pulseDot · .toast--danger（pulseGlow）
+       Boot          .chipDot（pulseGlow）· .orn（ornSpin，那条与 ornIn 并列）
+       BootSeq       .chipDot（pulseGlow）· .seqMeter > span::after（sweep）· .caret（caretBlink）
+       Title         .opDot（pulseGlow）
+       Comms         .typing i（blink）
+       Dashboard     .mapNode[data-on='1'] .mapHalo（mapPing）· .mapHere（mapSpin）
+       Plot          .typingDot（pulse）· .draftSpin（plotSpin）
+       PvScreen      .loading（pvBlink）· .sound（pvNudge）—— 那一段自己也写了 animation: none
+       Battle        .unitAim · .cmdPulse · .linkHint · .chant · .chainReady · .enrageTag（6 条规则 / 8 处）
+     ⚠ 别改成只给上面某几个选择器写 animation: none —— 漏一个就是一条死循环留着。 */
+  *, *::before, *::after { animation-iteration-count: 1 !important; }
+  /* 平滑滚动也吃不到上面那两条 duration（Battle 日志那条 scroll-behavior: smooth，
+     见 views/Battle.module.css）。reduce 档里一律瞬时 —— 这一条只在这一段里有。 */
+  *, *::before, *::after { scroll-behavior: auto !important; }
 }
 
 /* ============ 视图脚手架（各页面通用） ============ */

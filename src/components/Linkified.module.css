@@ -19,7 +19,9 @@
   opacity: 1;
   border-bottom-style: solid;
 }
+/* 焦点只换底色时对白底只有 1.21（A11Y3-06）—— 补一圈全站同款的 2px 实线环（对白底 4.33） */
 .lk:focus-visible {
-  outline: none;
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
   background: var(--bg-3);
 }

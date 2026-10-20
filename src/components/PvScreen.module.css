@@ -57,6 +57,56 @@
   color: var(--bg-1);
 }
 
+/* 「减少动效」档的两个入口（A11Y3-09，2026-09-18）。
+   片子在这一档**不自动放**（CSS 管不到 <video>），所以这一层得自己给出路：
+   正中一句说明 + 一枚「播放影像」，右上角的「跳过」照旧 —— 不播也走得掉。
+   配色照本仓那条规矩：白贴纸压墨字，垫片走实心位移、零模糊。 */
+.poster {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px 18px;
+  text-align: center;
+  /* 片子停在第 0 帧 —— 那一帧是**亮底**（白门牌 + 浅房间），白字压上去等于隐身。
+     所以这一块自带深色底片：墨 82% 掺透明，压住片子又不把画面糊死。 */
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bg-1) 18%, transparent);
+}
+.posterNote {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--bg-1);
+}
+.play {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 9px 17px;
+  color: var(--ink);
+  background: var(--bg-1);
+  border: 1px solid var(--bg-1);
+  box-shadow: 0 4px 0 var(--steel);
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast);
+}
+.play:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--steel);
+}
+.play:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--steel);
+}
+
 /* 跳过：右上角，避让刘海/状态栏 */
 .skip {
   position: absolute;
