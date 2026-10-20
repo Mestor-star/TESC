@@ -40,17 +40,46 @@ const REVERSE_LOGIC_MAP: Record<LorebookEntry['selectiveLogic'], number> = {
   and_all: 3,
 };
 
+/* ---------- 形状兜底（导入侧的输入边界） ----------
+ *
+ * ST 导出的 JSON 现实里什么形状都有：`key` 写成一整个字符串（"a,b"）、写成数字、
+ * 数组里混进对象/null，`content` 写成数字，`entries` 写成字符串或数组。
+ * 这些以前照样入册，后面每一处都炸得很远：
+ *   · `keys` 不是数组 → LorebookEngine.scan 抛 `keys.map is not a function`，
+ *     而 lorescan 把这一抛吞成 `continue` —— **整本世界书导进来、永远不命中、也不报错**；
+ *   · `content` 不是字符串 → lorescan 拼块那一行的 `.replace` 抛，推演那一回合直接断；
+ *   · `entries` 是字符串 → `Object.values("abc")` 变出三条空词条。
+ * 所以进册之前先收形状：收不了的一律空着（空词条没有键，引擎自己就跳过），不猜。
+ */
+function keyListOf(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((k): k is string => typeof k === 'string' && k !== '');
+  if (typeof v === 'string' && v !== '') return [v];
+  return [];
+}
+
+function textOf(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+function numOf(v: unknown, dflt: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
+}
+
+const isEntryObject = (e: unknown): e is Record<string, unknown> =>
+  !!e && typeof e === 'object' && !Array.isArray(e);
+
 export function importLorebook(data: SillyTavernLorebookExport): Omit<Lorebook, 'id' | 'createdAt' | 'updatedAt'> {
-  const rawEntries = Object.values(data.entries || {});
+  // 类型表里 entries 是对象集合，运行时却可能是字符串 / 数组 —— 先按「值」收一遍再交回去
+  const rawEntries = Object.values(data.entries || {}).filter(isEntryObject) as SillyTavernLorebookExport['entries'][string][];
   const entries: LorebookEntry[] = rawEntries
     .filter((e) => !e.excluded)
     .map((e) => ({
       id: crypto.randomUUID(),
-      keys: e.key || [],
-      secondaryKeys: e.keysecondary || [],
-      content: e.content || '',
-      comment: e.comment,
-      order: e.order ?? 100,
+      keys: keyListOf(e.key),
+      secondaryKeys: keyListOf(e.keysecondary),
+      content: textOf(e.content),
+      comment: typeof e.comment === 'string' ? e.comment : undefined,
+      order: numOf(e.order, 100),
       position: POSITION_MAP[e.position ?? 1] ?? 'after_char',
       depth: e.depth,
       role: e.role,
@@ -59,7 +88,7 @@ export function importLorebook(data: SillyTavernLorebookExport): Omit<Lorebook, 
       constant: e.constant ?? false,
       // ST 的 disable 词条不再丢弃：保留并入册，供「预设调配」逐条开关
       enabled: e.disable !== true,
-      probability: e.useProbability ? (e.probability ?? 100) : 100,
+      probability: e.useProbability ? numOf(e.probability, 100) : 100,
       useProbability: e.useProbability ?? false,
       addMemo: e.addMemo ?? false,
       sticky: e.sticky,
@@ -84,7 +113,7 @@ export function importLorebook(data: SillyTavernLorebookExport): Omit<Lorebook, 
     }));
 
   return {
-    name: data.name || '导入的世界书',
+    name: typeof data.name === 'string' && data.name ? data.name : '导入的世界书',
     description: data.description,
     entries,
     recursiveScanning: data.settings?.recursive_scanning ?? false,

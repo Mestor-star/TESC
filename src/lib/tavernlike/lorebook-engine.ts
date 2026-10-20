@@ -100,24 +100,13 @@ export class LorebookEngine {
     if (keys.length === 0) return false;
 
     const primaryMatches = keys.map(k => this.containsKeyword(text, this.normalizeKeyword(k)));
-    const allPrimary = primaryMatches.every(m => m);
-    const anyPrimary = primaryMatches.some(m => m);
-
-    let primaryOk = false;
-    switch (selectiveLogic) {
-      case 'and_all':
-      case 'and_any':
-        primaryOk = anyPrimary; // For simple frontend integration, both and_any/and_all treat primary as OR-ish trigger
-        break;
-      case 'not_all':
-        primaryOk = !allPrimary;
-        break;
-      case 'not_any':
-        primaryOk = !anyPrimary;
-        break;
-      default:
-        primaryOk = anyPrimary;
-    }
+    /* 主键恒为「任一命中」。
+       ST 的口径里 selectiveLogic 只决定**次键**怎么配合，主键不参与与/非；
+       从前这里把 selectiveLogic 也套在主键上，而 importLorebook 对缺字段的 ST 条目
+       默认落成 'not_all' —— 于是**单主键词条永不命中**（本机 fuzz：not_all / not_any
+       下单主键命中数 0，同一份词条换个 logic 就是 1）。表现是「世界书导进来在册，
+       正文里一个字都没进过」，一路不报错。 */
+    const primaryOk = primaryMatches.some(m => m);
 
     if (!primaryOk) return false;
 
@@ -131,13 +120,17 @@ export class LorebookEngine {
     const allSecondary = secondaryMatches.every(m => m);
     const anySecondary = secondaryMatches.some(m => m);
 
+    /* 次键：not_* 是「取反」不是「取正」—— 从前 not_all / not_any 两支原样返回
+       allSecondary / anySecondary，与 ST 语义正好相反（本机 fuzz：文本有 a 无 b 时
+       四种 logic 全落 0 命中，not_all / not_any 本该放行）。 */
     switch (selectiveLogic) {
       case 'and_all':
         return allSecondary;
       case 'not_all':
-        return allSecondary;
-      case 'and_any':
+        return !allSecondary;
       case 'not_any':
+        return !anySecondary;
+      case 'and_any':
       default:
         return anySecondary;
     }

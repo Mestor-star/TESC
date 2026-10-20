@@ -456,15 +456,30 @@ export function parseBackupText(text: string, bytes = text.length): ParseResult 
   if (v < 1) return { ok: false, error: `备份文件版本号 v${v} 不合法。` }
   if (!isPlainObject(raw.local)) return { ok: false, error: '备份文件缺少 local（localStorage 段）。' }
   if (!isPlainObject(raw.idb)) return { ok: false, error: '备份文件缺少 idb（IndexedDB 段）。' }
+  /* local 段：值必须是字符串，键必须落在本终端的 `zts-` 命名空间里。
+     这一道是**写回**那侧的边界 —— restoreBackup 的 writeLocal 是逐条 setItem，
+     不认前缀的话一份编造的备份就能往**同源的别人家** localStorage 里塞键
+     （本机 fuzz：local 里给 {"evil-key":"x","__proto__":"PWN"}，恢复之后
+     这两个键原样躺在本终端的 localStorage 里）。不认识 → 直接拒绝，不猜、不丢。 */
   for (const [k, val] of Object.entries(raw.local)) {
     if (typeof val !== 'string') return { ok: false, error: `localStorage 段里的 ${k} 不是字符串。` }
+    if (!k.startsWith(LS_PREFIX)) {
+      return {
+        ok: false,
+        error: `localStorage 段里出现了不属于本终端的键 ${JSON.stringify(k)}（只认 ${LS_PREFIX} 前缀）—— 拒绝导入，当前进度未改动。`,
+      }
+    }
   }
   const idb: Record<string, BackupDb> = {}
   for (const name of BACKUP_DB_NAMES) {
     const tables = raw.idb[name]
     if (tables == null) continue
     if (!isPlainObject(tables)) return { ok: false, error: `idb.${name} 不是表集合。` }
-    const clean: BackupDb = {}
+    /* 无原型对象：表名是文件里写的字符串，叫 `__proto__` 时普通对象的赋值会走
+       setter 把**这张表的原型**换成那个数组 —— 于是这张表在预览里整行消失、
+       Object.keys 也数不出来（本机 fuzz 复现：ownKeys 为空、原型成了 Array）。
+       表名属于数据，不该改写原型。 */
+    const clean: BackupDb = Object.create(null)
     for (const [table, rows] of Object.entries(tables)) {
       if (!Array.isArray(rows)) return { ok: false, error: `idb.${name}.${table} 不是数组。` }
       clean[table] = rows as BackupRow[]

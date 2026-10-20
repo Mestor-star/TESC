@@ -18,6 +18,9 @@ import type { GuideState } from './guide'
    而 guide.ts 早就已经引了它（LEVEL_* 那几个常量）—— 依赖图上本模块 =a=> guide =b=> battle/store
    早就存在，再加一条 slots =b=> battle/store 只是把同一条边拉直，既不新增 chunk 也不新增环。 */
 import { resetBattleToInitial } from './battle/store'
+/* 多标签页并发（见 lib/tablock.ts）：另一页正在玩同一份进度时，这一页是只读的 ——
+   存档槽与会话账的写入口都得先过这一道。循环是安全的：tablock 谁都不 import。 */
+import { tabWriteBlocked } from './tablock'
 
 export const RUN_KEY = 'zts-terminal:v3'
 export const PLOT_KEY = 'zts-plot:v1'
@@ -145,9 +148,16 @@ function emptyWorld(): WorldState {
   }
 }
 
-/** 逐角色裁剪会话日志，防配额 */
+/**
+ * 逐角色裁剪会话日志，防配额。
+ *
+ * 出参用**无原型对象**：这份账的键来自 localStorage 里的原文（也可能是一份外来备份
+ * 原样灌进来的），键名叫 `__proto__` 时普通对象的赋值会走 setter 把**原型**改成
+ * 那个数组 —— 这一条悄悄消失，整张账的原型还变成 Array（本机 fuzz 复现：ownKeys 少
+ * 一个、`Object.getPrototypeOf(out)` 是 Array）。键名是数据，不该改写原型。
+ */
 function trimLogs(obj: unknown): Record<string, ChatMsg[]> {
-  const out: Record<string, ChatMsg[]> = {}
+  const out: Record<string, ChatMsg[]> = Object.create(null)
   if (!obj || typeof obj !== 'object') return out
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
     if (Array.isArray(v)) out[k] = (v as ChatMsg[]).slice(-LOG_CAP)
@@ -166,22 +176,66 @@ function readLogs(key: string): Record<string, ChatMsg[]> {
   }
 }
 
+/**
+ * 一格存档的形状兜底（读档的输入边界）。
+ *
+ * `zts-slots:v1` 是 localStorage 里的一段裸 JSON ——「从备份恢复」会把外来备份里的
+ * 这一串**原样**写回来，截断的 / 手改的 / 别的版本写的都可能落在这儿。
+ * 从前这里只 slice 不验：slots 里塞进字符串、数字、缺 snapshot 的对象时，
+ * SlotGrid 那两行 `slot.snapshot.operatorName` 直接抛
+ * `Cannot read properties of undefined (reading 'operatorName')` ——
+ * 整个存读档面板白屏（本机 fuzz 复现）。所以逐槽过一遍形状：
+ * 认不出的当空格；认得出但缺字段的按空值补齐，**不猜内容**。
+ */
+function asSlotOf(v: unknown, index: number): SaveSlot | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const o = v as Record<string, unknown>
+  const snap = o.snapshot
+  if (!snap || typeof snap !== 'object' || Array.isArray(snap)) return null
+  const s = snap as Record<string, unknown>
+  const obj = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? x : null)
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
+  return {
+    name: typeof o.name === 'string' && o.name.trim() ? o.name : `手动存档 · ${index + 1}`,
+    savedAt: num(o.savedAt),
+    records: num(o.records),
+    snapshot: {
+      schema: 1,
+      operatorName: typeof s.operatorName === 'string' ? s.operatorName : '言万心叶',
+      unlocked: s.unlocked === true,
+      epDone: (obj(s.epDone) ?? {}) as Record<string, true>,
+      cur: typeof s.cur === 'string' ? s.cur : null,
+      focusId: typeof s.focusId === 'string' ? s.focusId : null,
+      world: (obj(s.world) ?? emptyWorld()) as WorldState,
+      plot: (obj(s.plot) ?? {}) as Record<string, ChatMsg[]>,
+      tavern: (obj(s.tavern) ?? {}) as Record<string, ChatMsg[]>,
+      guide: (obj(s.guide) ?? undefined) as GuideState | undefined,
+      savedAt: num(s.savedAt) || num(o.savedAt),
+    },
+  }
+}
+
 function readFile(): SlotsFile {
   try {
     const raw = localStorage.getItem(SLOTS_KEY)
     if (!raw) return { v: 1, slots: Array(SLOT_COUNT).fill(null), autosave: null }
     const p = JSON.parse(raw) as Partial<SlotsFile>
     const slots: (SaveSlot | null)[] = Array.isArray(p.slots)
-      ? p.slots.slice(0, SLOT_COUNT)
+      ? p.slots.slice(0, SLOT_COUNT).map((v, i) => asSlotOf(v, i))
       : Array(SLOT_COUNT).fill(null)
     while (slots.length < SLOT_COUNT) slots.push(null)
-    return { v: 1, slots, autosave: p.autosave ?? null }
+    /* autosave 同样是外来内容：认不出就当没有自动档 —— canContinue() 要读
+       a.snapshot.epDone，读档那一路要读 snapshot.world，坏壳交给它们只会抛 */
+    return { v: 1, slots, autosave: asSlotOf(p.autosave, 0) }
   } catch {
     return { v: 1, slots: Array(SLOT_COUNT).fill(null), autosave: null }
   }
 }
 
 function saveFile(f: SlotsFile): void {
+  /* 只读页（另一个标签页在玩）：**不写**。整本回写会把那边的档盖掉 —— 这是本模块
+     自己的写入入口，拦在这里比拦在各调用方稳。 */
+  if (tabWriteBlocked()) return
   try {
     localStorage.setItem(SLOTS_KEY, JSON.stringify(f))
     /* 这一趟写成了：之前挂着的「自动档写不进去」就不该再在屏上 */
@@ -408,6 +462,9 @@ function clearRunState(): void {
  * 晚到的重置会让上一档的点数先上屏（与 hardReset 里同一句提醒同源）。
  */
 export async function applySnapshot(snapshot: RunSnapshot): Promise<void> {
+  /* 只读页读档 = 拿一份档把整本账覆写掉（还顺手清运行态、重置战斗域）——
+     另一个标签页正玩着的进度会被这一下整份换掉。拦在最前面，什么都别动。 */
+  if (tabWriteBlocked()) return
   try {
     localStorage.setItem(
       RUN_KEY,
@@ -477,6 +534,8 @@ export async function applySnapshot(snapshot: RunSnapshot): Promise<void> {
  * CLAUDE.md 那条「新增持久化状态必须…在 slots.ts 的存档读写里登记」说的正是这里。
  */
 export function clearRunStorage(): void {
+  /* 只读页重置 = 把另一个标签页正玩着的那一档整份删掉。同上，拦在最前面。 */
+  if (tabWriteBlocked()) return
   /* ① 运行态：与读档共用同一份 RUN_STATE_KEYS（口径统一，见上面那一段清单） */
   clearRunState()
   /* ② 档本身：重置是**连档一起清**（读档那一路只是覆写这三支，不清） */

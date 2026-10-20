@@ -53,6 +53,7 @@ import type { ConcludedMark, PendingBattleMark } from '../lib/plotpending'
 import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { clearStorageFault, noteStorageFault, setPlotLogsSource, storageFault, subscribeStorageFault } from '../lib/slots'
+import { startTabLock, subscribeTabLock, tabLockState, tabWriteBlocked, takeoverTabLock } from '../lib/tablock'
 import { relName } from '../data/rel'
 import { Portrait } from '../components/Portrait'
 /* 会话流那套壳（旁白块 / 台词框 / 推演折叠 / 接续选项 / 输入带）**住在
@@ -256,6 +257,12 @@ function currentLogs(): Record<string, ChatMsg[]> {
  * 同时把这一份挂成 unsavedLogs —— 见上面那一段：不许用存储里的旧账回写。
  */
 function writeLogs(next: Record<string, ChatMsg[]>): void {
+  /* 只读页（另一个标签页在玩同一份进度）：**一个字都不写**。
+     这一句是整页唯一的会话账出口 —— 拦在这里，后台跑完的回合、兜底那条
+     兜底 effect、清往期正文都一并拦下；读还是照常读（可翻阅）。
+     不静默：屏上那条常驻提示（render 里的 data-tab-lock）就是它的话；
+     用户动作那几条入口（发送 / 选项）另有更早的一道，见 pushTurn。 */
+  if (tabWriteBlocked()) return
   try {
     localStorage.setItem(LOG_KEY, JSON.stringify(next))
     /* 写成了：存储与内存重新一致，dirty 撤掉、故障也撤掉 */
@@ -507,6 +514,24 @@ export function Plot() {
   const [shown, setShown] = useState(THREAD_WINDOW)
   /** 落盘故障（配额满 / 隐私模式）—— 顶上那条横幅读的就是它 */
   const fault = useSyncExternalStore(subscribeStorageFault, storageFault)
+  /* —— 多标签页并发（见 lib/tablock.ts）——
+     心跳只挂在剧情推进这一页：会写会话账与自动档的只有这里，别的界面不参与判定、
+     也就不多写一拍。只读页照常读、照常翻；写入入口由 tabWriteBlocked() 拦
+     （writeLogs / pushTurn / slots 的存档写）。 */
+  const tabLock = useSyncExternalStore(subscribeTabLock, tabLockState)
+  useEffect(() => { startTabLock() }, [])
+  /** 上一次见到的写权代次：变了 = 刚拿到写权（点「接手」，或对面走了自动回来） */
+  const lockEpoch = useRef(tabLock.epoch)
+  useEffect(() => {
+    if (tabLock.epoch === lockEpoch.current) return
+    lockEpoch.current = tabLock.epoch
+    /* 只读期间屏上这份是旧账 —— 拿存储里的最新账重载一次视图，
+       否则这一页接下来的第一笔写会把对面写进去的正文整本盖掉。
+       内存真账（写失败留下的那份）也一并作废：它属于上一轮。 */
+    unsavedLogs = null
+    setLogs(loadLogs())
+    setErr(null)
+  }, [tabLock.epoch])
   /** 「清理往期正文」的二次确认（与「回退到上一段」同一套口径） */
   const [confirmClearPast, setConfirmClearPast] = useState(false)
   const [draft, setDraft] = useState('')
@@ -769,6 +794,9 @@ export function Plot() {
   }, [logs, busy, focusEv?.id])
 
   const appendMsg = useCallback((evId: string, m: ChatMsg) => {
+    /* 只读页：连内存里的这一份都不改 —— 否则那条消息会「上屏但没进账」，
+       看着像写进去了。写入被拦这件事由屏上那条常驻提示说明。 */
+    if (tabWriteBlocked()) return
     const next = persistMsg(evId, m)
     persistedRef.current = next   // 这一份已经落过盘了，兜底那一条别再写一遍
     setLogs(next)
@@ -1090,6 +1118,11 @@ export function Plot() {
     async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean; idle?: boolean }) => {
       const ev = EPISODES.find((e) => e.id === evId)
       if (!ev || busy || !ready) return
+      /* 只读页不许推演：先把这一页是只读的说出来，别发出去了才在写入入口丢掉 */
+      if (tabWriteBlocked()) {
+        setErr('这一页是只读的：另一个标签页正在玩同一份进度。要在这里继续，先点上方那条提示里的「在这一页接手」。')
+        return
+      }
       /* 新回合开张：令牌 +1（见 turnSeq 那一段）。本轮补收把它记下来，
          落地前比对 —— 中途又开了一回合，它就作废。 */
       const turn = ++turnSeq
@@ -2128,6 +2161,23 @@ export function Plot() {
                   <span>当前为离线环境。填入接口地址与模型后即可在线推演；或按下方「离线通读」读本段原文。</span>
                   <button className="btn btn--amber" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
                     前往设置
+                  </button>
+                </div>
+              ) : null}
+
+              {/* —— 多标签页并发：这一页是「第二页」→ 常驻只读提示 + 接手 ——
+                  只在真的判成只读时上屏；单标签页时这一块压根不存在（不多一行、不延一拍）。 */}
+              {tabLock.readonly ? (
+                <div className={css.warn} data-tab-lock="readonly">
+                  <b>另一个标签页正在玩同一份进度</b>
+                  <span>这一页是只读的，写进去会把那边的正文覆盖。想在这里继续，先点「在这一页接手」。</span>
+                  <button
+                    className="btn btn--amber"
+                    style={{ fontSize: 12 }}
+                    data-tab-takeover="1"
+                    onClick={() => takeoverTabLock()}
+                  >
+                    在这一页接手
                   </button>
                 </div>
               ) : null}

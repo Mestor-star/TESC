@@ -749,7 +749,16 @@ export function Settings() {
       const results = await lore.importStLorebookMulti(inputs)
       const ok = results.filter((r) => r.book)
       const bad = results.filter((r) => r.error)
-      if (ok.length) push('success', '已导入世界书', ok.map((r) => r.book?.name ?? '').filter(Boolean).join(' · '), false)
+      /* 名字后面带上词条数：一份「只有 {}」或词条形状全认不出的文件以前也报「已导入」，
+         看着成了，其实一本空册子（0 条）—— 数出来就不算静默（本机 fuzz：{} / entries:"abc"） */
+      if (ok.length) {
+        push(
+          'success',
+          '已导入世界书',
+          ok.map((r) => `${r.book?.name ?? ''}（${r.book?.entries.length ?? 0} 条词条）`).filter(Boolean).join(' · '),
+          false,
+        )
+      }
       if (bad.length) push('warn', '部分文件未识别', bad.map((r) => r.fileName).join('、'), false)
       if (!ok.length && !bad.length) push('info', '未导入任何文件', '所选 JSON 均未被识别为世界书。', false)
     } catch {
