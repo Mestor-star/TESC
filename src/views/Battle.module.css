@@ -2693,3 +2693,726 @@
   .foeInfoBtn { padding: 0 4px; }
   .foeInfoBtn span { display: none; }
 }
+
+
+/* ============================================================
+   机制上屏（2026-09-19 这一批）—— 连携点 / 连携条件表 / 敌方意图 /
+   同调 · 狂暴的全景行 / 狂暴与破防窗口两枚标签
+   ------------------------------------------------------------
+   逻辑层（src/lib/battle/）这一批把三条资源循环与首领狂暴做完了，但屏上
+   一样都看不见。这一节只做「读」：读数全从引擎的只读导出取
+   （engine.chainOf / linkBoardOf、日志里的 foe-cmd / sync / enrage），
+   视图不重算一个机制数。
+   颜色一律走 tokens：薄荷＝同调 / 就绪（达成那一档），绯＝狂暴 / 危险，
+   琥珀＝「差一点 / 待办」（与 .logCap 那条同源）。
+   ⚠️ 这一节排在文件最末：≤640 那几条要压过上面同特异性的定义，
+      挪到前面等于没写。
+   ============================================================ */
+
+/* ---------- 连携点：HUD 上那一池 ---------- */
+
+/* 与「小队体力」并排、同一行：两条都是队级读数，放在一起才读得出
+   「这一趟还剩多少本钱 / 合力攒到几成」。薄荷是这一屏里唯一表示
+   「达成 / 攒满」的那一支（见 tokens 的 --jade 注），所以池子用它。 */
+.chainPool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--jade) 34%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--jade) 8%, var(--bg-1));
+  color: var(--jade-deep);
+  white-space: nowrap;
+}
+/* 满格那一下：边框换成实心本色的那一档，提示「这一拍就结算」 */
+.chainPool[data-full='1'] {
+  border-color: color-mix(in srgb, var(--jade) 72%, transparent);
+  background: color-mix(in srgb, var(--jade) 16%, var(--bg-1));
+}
+
+/* 池子本体：上限几格就画几格 —— 「刻度」是上限唯一的读法。
+   frac 不再另画一条连续进度条：一格一格亮起来，比一条填充更读得出
+   「还差一格」，而那正是玩家要做的判断。 */
+.chainTicks { display: inline-flex; align-items: center; gap: 2px; }
+.chainTicks i {
+  display: block;
+  width: 9px;
+  height: 11px;
+  border: 1px solid color-mix(in srgb, var(--jade) 46%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.chainTicks i[data-on='1'] {
+  border-color: color-mix(in srgb, var(--jade) 86%, transparent);
+  background: linear-gradient(180deg, var(--jade), color-mix(in srgb, var(--jade) 76%, var(--ink)));
+  animation: chainTick 0.32s ease-out both;
+}
+@keyframes chainTick {
+  from { transform: scaleY(0.35); }
+  to { transform: none; }
+}
+.chainNum {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--jade-deep);
+}
+/* 「同调 将发」—— 本色当底就压墨字（见 CLAUDE.md 的配色两档）：
+   这里底色是实心薄荷，所以走 --on-accent，不配白字。 */
+.chainReady {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 14px;
+  letter-spacing: 0.1em;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--jade);
+  color: var(--on-accent);
+  animation: chainReadyBeat 1.15s ease-in-out infinite;
+}
+@keyframes chainReadyBeat {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.58; }
+}
+
+/* ---------- 连携 · 条件表（观测频道顶上那一块） ---------- */
+
+/* 自己滚：「一条连携三行字」乘上场上的羁绊条数，摊开能顶掉半栏战报。
+   与其让战报被挤没，不如让这张表自己滚 —— 手边要留着的永远是战报。 */
+.linkBoard {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 0 0 auto;
+  max-height: min(42%, 244px);
+  overflow-y: auto;
+  padding: 0 2px 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.linkBoardCap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+}
+.linkBoardReady {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--jade-deep);
+  white-space: nowrap;
+}
+.linkRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 6px 5px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+/* 三档一眼分开：就绪（薄荷）／差一点（琥珀）／缺人（绯，见下一条） */
+.linkRow[data-blocked='1'] { border-left-color: var(--amber); }
+.linkRow[data-ready='1'] {
+  border-left-color: var(--jade);
+  background: color-mix(in srgb, var(--jade) 9%, var(--bg-1));
+}
+.linkRowTop {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.linkRowName {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.linkRowKind {
+  flex: none;
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+.linkRowNum {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+/* 「还差什么」那一句是引擎写的（engine.linkBoardOf 的 blocked）——
+   排面留得窄就截断，全文在 title 里。 */
+.linkRowState {
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: var(--amber-deep);
+  white-space: normal;
+}
+.linkRow[data-ready='1'] .linkRowState { color: var(--jade-deep); }
+.linkRowState[data-missing='1'] { color: var(--red-deep); }
+.linkRowBar {
+  display: block;
+  height: 3px;
+  background: var(--line-2);
+}
+.linkRowBar i {
+  display: block;
+  height: 100%;
+  background: var(--amber);
+  transition: width 0.24s var(--ease-out);
+}
+.linkRowBar i[data-ready='1'] { background: var(--jade); }
+/* 条件文案：引擎摊好的那几句人话，照念即可（不在视图里另写一套判据） */
+.linkConds {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding-left: 13px;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--ink-mute);
+}
+.linkRow[data-ready='1'] .linkConds { color: var(--ink-dim); }
+/* ---------- 同调 / 狂暴：观测频道里的独立行 ---------- */
+
+/* 整行铺开 = 出血到栏边（观测频道的内边距是 10px 12px）——
+   它读起来才不是「又一条战报」，而是横着切过去的一道**分界**：
+   这一轮到此为止，下一轮整个盘面都不一样了。
+   换色与换节奏是同一件事：同调是白送的合力（薄荷、亮起），
+   狂暴是对方撕开了自己的壳（绯、压下去）。 */
+.logLine.logWide {
+  margin: 4px -12px;
+  padding: 5px 12px;
+  border-left: 2px solid var(--jade);
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--jade) 17%, transparent) 0%,
+    transparent 82%);
+  animation: logWide 0.34s var(--ease-out) both;
+}
+.logLine.logWide[data-log-event='enrage'] {
+  border-left-color: var(--red);
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--red) 18%, transparent) 0%,
+    transparent 82%);
+}
+@keyframes logWide {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+.logEventCap {
+  display: block;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--jade-deep);
+}
+.logLine.logWide[data-log-event='enrage'] .logEventCap { color: var(--red-deep); }
+/* 台词与特效错开一拍：先出「全景 · 同调」这一行抬头，正文晚一档浮上来 */
+.logWide .logTxt { animation: logWideTxt 0.28s ease-out 0.14s both; }
+@keyframes logWideTxt {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- 全景：同调 / 狂暴的黑边 ---------- */
+
+/* docs §3.1：黑边＝人为的屏幕边界。上下两道**实心**边（不糊、不渐变）
+   把战斗盘框成一块屏幕 —— 全站 0 处 backdrop-filter，这一条也只能这么写。 */
+.wideCut {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.wideBar {
+  display: block;
+  flex: 0 0 11%;
+  min-height: 24px;
+  background: var(--ink);
+  animation: wideBarIn 0.34s var(--ease-out) both;
+}
+.wideBar[data-wide-bar='top'] { transform-origin: top; }
+.wideBar[data-wide-bar='bottom'] { transform-origin: bottom; }
+@keyframes wideBarIn {
+  from { transform: scaleY(0.08); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+/* 字幕带：白贴纸压在两道黑边之间（与全站方贴纸同一套：方角、硬垫片、零模糊）。
+   它晚 0.22s 才浮上来 —— 这就是「台词与特效错开一拍」的那一拍。 */
+.wideCap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: min(760px, 88%);
+  margin: 0 auto;
+  padding: 9px 20px 10px;
+  border: 1px solid var(--line-2);
+  border-left: 4px solid var(--jade);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: 0 5px 0 color-mix(in srgb, var(--ink) 26%, transparent);
+  animation: wideCapIn 0.42s var(--ease-out) 0.22s both;
+}
+.wideCut[data-wide-cut='enrage'] .wideCap { border-left-color: var(--red); }
+@keyframes wideCapIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.wideKicker {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  color: var(--jade-deep);
+}
+.wideCut[data-wide-cut='enrage'] .wideKicker { color: var(--red-deep); }
+.wideName {
+  font-size: 17px;
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-shadow: var(--duo-shadow);
+}
+.wideNote {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+/* ---------- 敌方意图挂牌（挂在敌卡画框下沿） ---------- */
+
+/* 绝对定位压在画框里，不占版面：敌卡是「卡宽 = 卡高」的正方形，
+   多一行就多挤敌阵一截（手机上那一截正是「看得见、点不到」的来源）。 */
+.foeIntent {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  display: block;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--red) 44%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--red) 10%, var(--bg-1));
+  color: var(--red-deep);
+  font-size: 9.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: foeIntentIn 0.26s ease-out both;
+}
+.foeIntent b {
+  margin-right: 4px;
+  padding-right: 4px;
+  border-right: 1px solid color-mix(in srgb, var(--red) 34%, transparent);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+@keyframes foeIntentIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- 两枚必须单独长出来的标签 ---------- */
+
+/* 狂暴：它不在 c.buffs 里（直接改面板，见 types 的 enraged），所以与
+   no-heal / guard-clear 同一个坑 —— 通用清单读不到它，得自己长一枚。
+   绯是这一屏的「危险」档；呼吸只动透明度，不动位移（不跟抖屏一起晃）。 */
+.buff[data-buff='enrage'] {
+  border-color: color-mix(in srgb, var(--red) 62%, transparent);
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--red-deep);
+  animation: enrageTag 1.7s ease-in-out infinite;
+}
+@keyframes enrageTag {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+/* 破绽归零：**不是**「尽碎」。虚线 + 冷灰 = 「它自己会凝回来」，
+   与上面那枚实线绯色的「被人按着、这一回合不许重凝」刻意长得不一样。 */
+.buff[data-buff='guard-zero'] {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--line-3) 72%, transparent);
+  color: var(--ink-mute);
+}
+
+/* ============================================================
+   手机档：这一节新加的三块在窄屏上的退让
+   ⚠️ 必须排在本节所有基础规则之后（同特异性谁在后谁赢）。
+   ============================================================ */
+@media (max-width: 640px) {
+  /* 连携条件表在手机上跟着观测频道一起收：390×844 上敌阵只分到 189px，
+     摊开这张表就是拿「看得见敌人」去换「读得出条件」—— 要看再点开。 */
+  .logStrip[data-log-open='0'] .linkBoard { display: none; }
+  /* 展开态改成**浮层**（这一条是本轮改的，理由在下头）：
+     这一栏在网格里是 auto 行，一长就往下顶。条件表一摊开、给它 224px，
+     敌阵那一行被压到 28px（实测量出来的）—— 卡片直接裁没了，比看不见条件更糟。
+     所以手机上展开时它浮起来：离开网格，贴着视口底部摊开，最多 56vh；
+     敌阵与指令盘一格都不动。收起（再点一次标题）就回到原来那一行。 */
+  .logStrip[data-log-open='1'] {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    max-height: min(56vh, 420px);
+    z-index: 30;
+    background: var(--bg-1);
+    box-shadow: var(--shadow-3);
+  }
+  .logStrip { overflow: hidden; }
+  .linkBoard { max-height: none; flex: 0 0 auto; }
+  /* 敌卡脚下那排标签：手机上一枚标签折一行，两枚就多出一行、被 .arena 裁掉。
+     收字号与内边距、缩间距，让「狂暴 · 破防」与「破绽尽碎」挤回同一行。
+     （实测：9px/4px 时两枚仍换行，敌卡脚下被裁 —— 这里再收一档到 8.5px。） */
+  .buff { font-size: 8.5px; padding: 0 3px; line-height: 13px; }
+  .buffT { font-size: 8px; padding: 0 2px; }
+  .buffs { gap: 3px; }
+  /* 手机上不摆键盘提示（外接键盘的人另有快捷键，屏上先让出这 16px 给敌阵） */
+  .kbdHint { display: none; }
+  /* 敌卡脚下那一排：手机上一律**单行**（要更多就横滑），绝不再折行 ——
+     折一行就多 16px，而敌阵那一格是 overflow: hidden，多出来的那行直接被裁。 */
+  .buffs { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
+  .buff { flex: 0 0 auto; }
+  /* 指令盘那一块收一档（296 → 240）：敌阵才是这一屏的主角，
+     而指令盘本身内滚，收短不丢东西。实测这一档换回来的 50 余 px
+     正好让敌卡（画框 + 脚下那排）整个落进敌阵那一格。 */
+  .console { max-height: min(240px, 29vh); }
+  /* 观测频道标题那一枚：仍在次级控件那一档，但比 34 收一点，把高度还给敌阵 */
+  .codexBtn { min-height: 30px; padding: 0 6px; font-size: 9.5px; }
+
+  /* 池子与抬头各收一号，跟 .traitChip 的 10.5px 同一档 */
+  .chainTicks i { width: 8px; height: 9px; }
+  .chainReady { font-size: 9px; line-height: 13px; }
+  .foeIntent { font-size: 9px; }
+
+  /* 全景字幕带：窄屏上两侧内边距收一道，正文限两行（超了截断） */
+  .wideCap { padding: 7px 12px 8px; max-width: 94%; }
+  .wideName { font-size: 15px; }
+  .wideNote { font-size: 10px; }
+  .wideBar { flex-basis: 9%; min-height: 18px; }
+}
+
+/* ============================================================
+   键盘（Z 确定 / X 返回 / C 角色介绍 / 方向键走位）
+   ------------------------------------------------------------
+   光标必须**看得见**，而且不能只靠颜色（色弱与低亮度屏上都读不出）：
+   三层一起变 —— 1px 实边（本色）、一层同色外环（box-shadow 0 0 0 1px，
+   零模糊，符合全站「层次靠边不靠影」）、再加 2px 上抬位移。
+   位移那 2px 是「这一格被顶起来了」—— 与全站按钮 :hover 的垫片是同一套语汇。
+   ============================================================ */
+.seqBtn[data-focus='1'],
+.row[data-focus='1'],
+.risk[data-focus='1'],
+.morphChip[data-focus='1'] {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+  background: color-mix(in srgb, var(--amber) 14%, var(--bg-1));
+  transform: translateY(-2px);
+}
+/* 选目标时的光标落在**卡**上：单位卡是画框，焦点就框在画框上 */
+.unit[data-focus='1'],
+.foe[data-focus='1'] .foeBody {
+  outline: 1px solid var(--amber);
+  outline-offset: 1px;
+  transform: translateY(-2px);
+}
+.foe[data-focus='1'] .foeBody.unitAim { animation: aimPulse 1s ease-in-out infinite; }
+
+/* 指令盘底下那一行按键说明（只在根菜单里出现，别处抢位置） */
+.kbdHint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 5px;
+  margin-top: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute);
+}
+.kbdHint i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 14px;
+  min-width: 15px;
+  padding: 0 3px;
+  text-align: center;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink-dim);
+}
+
+/* 观测频道标题那一行上的「角色介绍」—— 一枚次级按钮（34~40 那一档） */
+.codexBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  cursor: var(--cursor-point);
+}
+.codexBtn:hover { border-color: var(--amber); color: var(--amber-deep); }
+.kbdCap {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 0 3px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink-mute);
+}
+
+/* ---------- 角色介绍页（我方 / 敌方共用一套版式） ---------- */
+.codexNav { display: flex; align-items: center; gap: 4px; flex: none; }
+.codexNavBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--ink-dim);
+  cursor: var(--cursor-point);
+}
+.codexNavBtn:hover { border-color: var(--amber); color: var(--amber-deep); }
+.codexTabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.codexSideBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--steel) 46%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--steel-deep);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: var(--cursor-point);
+}
+.codexSideBtn:hover { border-color: var(--steel); }
+.codexSideBtn[data-side='enemy'] {
+  border-color: color-mix(in srgb, var(--red) 46%, transparent);
+  color: var(--red-deep);
+}
+
+@media (max-width: 640px) {
+  /* 手机档：这一枚是次级控件，按 tokens 末尾那条尺子抬到 34 */
+  .codexBtn { min-height: 34px; }
+  .codexNavBtn { width: 34px; height: 34px; }
+  .codexSideBtn { min-height: 34px; }
+  .kbdHint { font-size: 9px; }
+}
+
+/* ============================================================
+   选目标那一层：卡片阵（敌我共用一套形态）
+   ------------------------------------------------------------
+   卡阵自己在 .cmd 里滚（不受外层的 max-height 摆布）：一场最多六个人，
+   一格 100 出头，两行就装得下；再多就滚 —— 滚的是卡阵，不是整块指令盘。
+   数字一律 tabular-nums：血条一跳、字宽一变，整排卡会跟着左右抖。
+   ============================================================ */
+.targetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 5px;
+  max-height: min(190px, 34vh);
+  overflow-y: auto;
+  padding: 2px;
+  scroll-behavior: smooth;
+}
+.tcard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 6px 6px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--line-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  font-variant-numeric: tabular-nums;
+  cursor: var(--cursor-point);
+  transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+.tcard:hover { border-color: color-mix(in srgb, var(--amber) 62%, transparent); }
+/* 敌我一眼分开，但结构一致：我方左沿走薄荷（自己人），敌方走绯（要打的） */
+.tcard[data-side='ally'] { border-left-color: var(--jade); }
+.tcard[data-side='enemy'] { border-left-color: var(--red); }
+/* 光标：1px 实边 + 底色 + 上抬 2px（与指令盘、单位卡同一套语汇） */
+.tcard[data-focus='1'] {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+  background: color-mix(in srgb, var(--amber) 14%, var(--bg-1));
+  transform: translateY(-2px);
+}
+.tcardTop { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.tcardName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tcardTag {
+  flex: none;
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--ink-mute);
+}
+.tcardHp {
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--line-2);
+  overflow: hidden;
+}
+.tcardHp i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--jade) 82%, var(--ink)), var(--jade));
+}
+.tcardHp i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
+.tcardNum {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.tcardNum i { font-style: normal; font-size: 9px; color: var(--ink-mute); }
+.tcard[data-low='1'] .tcardNum { color: var(--red-deep); }
+.tcardGuard {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--steel-deep);
+}
+.tcardGuard[data-guard-left='0'] { color: var(--red-deep); }
+/* 敌方的『这一拍要做什么』：一行就够，全文在 title 里 */
+.tcardIntent {
+  font-size: 9px;
+  line-height: 1.3;
+  color: var(--red-deep);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 状态那一栏：卡小，标签跟着收一号；空的时候不占位 */
+.tcardBuffs .buffs, .tcardBuffs > div { justify-content: flex-start; gap: 3px; }
+.tcardBuffs:empty { display: none; }
+
+@media (max-width: 640px) {
+  .targetGrid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); max-height: min(168px, 30vh); }
+  .tcard { padding: 4px 5px 5px; }
+  .tcardName { font-size: 10.5px; }
+}
+
+/* ============================================================
+   演出强度（标准 / 减弱）· 震屏与遮挡纪律
+   ------------------------------------------------------------
+   2026-09-19 收口径（主人两次收话之后的定版）：
+     · 镜头语言（整屏推近/旋转/大幅位移）**不做** —— 那是眩晕的来源；
+     · 震屏只留 1px、最多 2 帧，且减弱档一次都不震；
+     · 不做全屏白闪（改成效果层里的一团局部高光），暗角幅度减半；
+     · 重量改由「命中定格 ≤60ms + 材质层次 + 时序」承担（见 BattleFx.tsx）。
+   特效层永远 pointer-events: none —— 它盖在读数上，但**碰不到**读数。
+   ============================================================ */
+.root[data-shake='1'] { animation: shakeSoft 0.12s steps(2, end); }
+@keyframes shakeSoft {
+  0%, 100% { transform: none; }
+  50% { transform: translate3d(-1px, 0, 0); }
+}
+
+/* 开发预览台（F2 / ?fx=all）：屏内浮层，不进玩法 */
+.fxPreviewMask {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+.fxPreviewCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(620px, 100%);
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--violet);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-3);
+}
+.fxPreviewHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.fxPreviewHead b { font-size: 14px; letter-spacing: 0.05em; }
+.fxPreviewHead span { color: var(--ink-mute); }
+.fxPreviewStage {
+  position: relative;
+  height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background:
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--ink) 8%, transparent), transparent 62%),
+    var(--bg-2);
+}
+.fxPreviewBar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fxPreviewBar button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: var(--cursor-point);
+}
+.fxPreviewBar button:hover:not(:disabled) { border-color: var(--amber); color: var(--amber-deep); }
+.fxPreviewBar button:disabled { opacity: 0.45; cursor: default; }
+
+@media (max-width: 640px) {
+  .fxPreviewStage { height: 220px; }
+  .fxPreviewBar button { min-height: 40px; }
+}

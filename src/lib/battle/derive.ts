@@ -13,7 +13,8 @@ import { SIDE_AXIS } from '../../data/roster'
 import { ARMS } from '../../data/arms'
 import { AXIS_INF } from '../../data/types'
 import type { Character, Mission } from '../../data/types'
-import { CAST, OPERATOR_ID, avatarIdOf, personOf } from '../../data/castmeta'
+import { CAST, OPERATOR_ID, OPERATOR_PERSON, avatarIdOf, personOf } from '../../data/castmeta'
+import { nameKey } from '../namekey'
 import { opBuiltinOf, opPeriodAtProgress } from '../operator-arc'
 import type { OpAbility, OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
@@ -70,25 +71,51 @@ const CORE: Record<string, Character> = Object.fromEntries(CHARACTERS.map((c) =>
  * 剧情作战（mainline.ts）直接搬事件在场者的 id —— 两边都要认，
  * 否则剧情那一栏挂出来的就是 'kuro-no-maou' 这种原文 id。
  */
+/* 同一个名字在两张表里各写一种中点，精确匹配就整条丢掉 —— 推荐名单因此只剩一两个名字
+   （高危任务实际少上人）。所以**建表与查表共用一把尺**：`lib/namekey.ts` 的 nameKey
+   （NFKC + 去空白 + 中点统一 U+00B7），全仓只此一份实现。 */
+
 const NAME2ID = (() => {
   const m = new Map<string, string>()
+  /** 规范键 → 首次登记的原始写法（撞键时报得出是哪两条） */
+  const first = new Map<string, string>()
+  const clashes: string[] = []
+  const put = (raw: string, id: string) => {
+    const key = nameKey(raw)
+    if (!key) return
+    const prev = m.get(key)
+    if (prev === undefined) {
+      m.set(key, id)
+      first.set(key, raw)
+      return
+    }
+    // 先登记者占位（与旧行为一致）；不同 id 撞到同一个规范键必须报出来，不许悄悄覆盖
+    if (prev !== id) clashes.push(`${first.get(key) ?? key} → ${prev} ｜ ${raw} → ${id}`)
+  }
   for (const p of CAST) {
-    m.set(p.id, p.id)
-    for (const n of [p.name, ...p.names]) if (!m.has(n)) m.set(n, p.id)
+    put(p.id, p.id)
+    for (const n of [p.name, ...p.names]) put(n, p.id)
+  }
+  // 操作员不在 CAST 里：推荐名单会写到他（missiongen 的某几个 pool 就带「言万心叶」），
+  // 不登记的话那一条永远解析不出来。id 仍是 'operator'，调用点照旧按 OPERATOR_ID 过滤。
+  put(OPERATOR_PERSON.name, OPERATOR_ID)
+  for (const n of OPERATOR_PERSON.names) put(n, OPERATOR_ID)
+  if (clashes.length) {
+    console.warn('[battle/derive] NAME2ID 规范键冲突（取先登记者）：\n' + clashes.join('\n'))
   }
   return m
 })()
 
-/** 单个名字 / id → 名录 id；认不出返回 null */
+/** 单个名字 / id → 名录 id；认不出返回 null（按上面的规范化那把尺认） */
 export function personIdOf(token: string): string | null {
-  return NAME2ID.get(token) ?? null
+  return NAME2ID.get(nameKey(token)) ?? null
 }
 
 /** 任务简报的推荐名单（中文名或 id）→ 名录 id（认不出的丢弃） */
 export function squadIdsFrom(names: string[]): string[] {
   const out: string[] = []
   for (const n of names) {
-    const id = NAME2ID.get(n)
+    const id = personIdOf(n)
     if (id && !out.includes(id)) out.push(id)
   }
   return out
@@ -887,7 +914,7 @@ const SUMMON_MOVE: FoeSkill = {
  * 那一条已经在血量的马拉松里被算过一遍了（见 tuning 的 enemyAtkPerStage）。
  */
 export function enemiesOf(m: Mission, progress = 0): Combatant[] {
-  const count = m.stage >= 8 ? 3 : m.stage >= 5 ? 2 : 1
+  const count = m.stage >= 5 ? 3 : 1
   const seed: FoeSeed = {
     missionId: m.id, nature: m.nature, place: m.place, stage: m.stage, progress,
     // 只站一只的时候不挂「甲」—— 甲乙丙丁是拿来分彼此的，只有一只就没得分
@@ -895,14 +922,17 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
   }
   const out: Combatant[] = []
   for (let i = 0; i < count; i++) {
-    // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到顶时它升格为「首领」。
-    // 一支小队清完一整场却没碰上一个像样的东西，那不算作战，只算打扫。
-    const tier: Combatant['tier'] = i > 0
-      ? undefined
-      : m.stage >= TUNING.ultStage ? 'boss' : 'elite'
     // 指名首领：任务挂了 bossId、且那份档案对得上时，场上的头一名就换成他
     // （见 bosses.ts —— 那一类对手是有名有姓有 RANK 的真人，不是现推的观测体）。
-    out.push(buildFoe(seed, i, tier, i === 0 ? namedBossOf(m.bossId) : undefined))
+    const named = i === 0 ? namedBossOf(m.bossId) : undefined
+    // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到 bossTierStage 时升格为「首领」。
+    // 一支小队清完一整场却没碰上一个像样的东西，那不算作战，只算打扫。
+    // 危险度那道线**不是** ultStage（那管的是终结技能，见 tuning 的 bossTierStage）。
+    // 指名首领恒为「首领」档：他是档案里的人，不该因为这一场排在卷几就被念成精英。
+    const tier: Combatant['tier'] = i > 0
+      ? undefined
+      : named || m.stage >= TUNING.bossTierStage ? 'boss' : 'elite'
+    out.push(buildFoe(seed, i, tier, named))
   }
   return out
 }
@@ -938,7 +968,11 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
   const halfAtk = seed.half ? TUNING.summonAtkMul : 1
   {
     // 首领与精英各走各的倍数：只写 elite 那一支的话，升格成首领反而掉回 ×1
-    const hpMul = (tier === 'boss' ? TUNING.bossHpMul : tier === 'elite' ? TUNING.eliteHpMul : 1) * halfHp
+    // 首领的血倍数分两档：危险度到顶（≥ ultStage）那一档才是 bossHpMul，
+    // 6~7 的首领按 bossHpMulMid 站（来由见 tuning 那一格的头注 —— 线性血曲线
+    // 在两档之间涨不出要的那一跳，跳只能落在倍数上）。
+    const bossHp = stage >= TUNING.ultStage ? TUNING.bossHpMul : TUNING.bossHpMulMid
+    const hpMul = (tier === 'boss' ? bossHp : tier === 'elite' ? TUNING.eliteHpMul : 1) * halfHp
     const atkMul = (tier === 'boss' ? TUNING.bossAtkMul : tier === 'elite' ? TUNING.eliteAtkMul : 1) * halfAtk
     const willMul = tier === 'boss' ? TUNING.bossWillMul : tier === 'elite' ? TUNING.eliteWillMul : 1
     /* 一位有名有姓的对手，血量按**哪一档**算？
@@ -987,6 +1021,11 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
        给他们糊一层护盾等于替他们新造了机制（bosses.ts 的规矩：
        每一个名字、每一句台词、每一手机制都得有原文依据）。
        所以 named 在场时，没写 guardAxis 就是没有破绽。 */
+    /* 机制包（BOSS_MOVES）与终结技能这两样**只按危险度配发**，不跟档位走 ——
+       见 tuning 的 ultStage 与下面 BOSS_MOVES 的头注（「只有危险度到顶的那几只」）。
+       tier 管的是「站在最前面的是谁、倍数按哪一档」，不含「带不带那套机构级手段」：
+       6~7 定回首领档之后，这一行就是「8 起才有大招」这句话唯一的落点。 */
+    const topDanger = tier === 'boss' && stage >= TUNING.ultStage
     const guardAxis = named ? named.guardAxis : GUARD_AXIS[prof.name]
     const guardPts = !guardAxis ? 0
       : named?.guardPts
@@ -1025,9 +1064,9 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
           target: k.target, effect: k.effect, turns: k.turns, rounds: k.rounds,
           cd: k.cd ?? 0,
         } satisfies SkillSpec)),
-        // boss 级的机制包：只有「首领」这一档才配这套（见 BOSS_MOVES）——
-        // 判的是头上那一档，不是危险度：低危场的精英照样是正经对手，只是不带机制包。
-        ...(tier === 'boss'
+        // boss 级的机制包：只有「危险度到顶」的那几只才配这套（见 BOSS_MOVES）——
+        // 判的是危险度，不是头上那一档：6~7 的首领照样是正经对手，只是还没到机构级。
+        ...(topDanger
           ? BOSS_MOVES.map((k) => ({
               id: k.id, name: k.name, kind: k.kind, desc: k.desc,
               cost: k.cost, power: k.power, axis: k.axis, fx: prof.fx,
@@ -1051,7 +1090,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
             } satisfies SkillSpec]
           : []),
         // boss 级的终结技能：不占常规出手，蓄满自己放（见 engine 的咏唱三段）
-        ...(tier === 'boss'
+        ...(topDanger
           ? [{
               id: 'foe-ult',
               name: (FOE_ULT[prof.name] ?? FOE_ULT.未分类观测体).name,

@@ -1,0 +1,450 @@
+/* ============================================================
+   攻击动效 · 族（BattleFx.tsx 的皮）
+   ------------------------------------------------------------
+   一族一套形状，颜色只做加强：
+     斩击＝斜线 · 射击＝直线 · 爆炸＝圆 · 雷电＝折线 · 重力＝向内 · 治愈＝向上 ·
+     声波＝同心弧 · 支援＝上浮折角 · 破防＝向外崩的壳片 · 兜底＝一道中性横光。
+   只用 transform / opacity / filter（个别层加一点 filter），不碰布局属性 ——
+   一帧里改 width/height 会带着整块重排，那才是掉帧的来源。
+   节点数由 FX_SPEC 定死（每族 ≤ 40），fx 一清整棵子树卸载。
+   ============================================================ */
+
+.fxRoot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  --fx-c: var(--steel);
+  --fx-c2: color-mix(in srgb, var(--steel) 70%, #fff);
+}
+.fxRoot[data-fx-family='slash'] { --fx-c: color-mix(in srgb, var(--steel) 82%, #fff); --fx-c2: #fff; }
+.fxRoot[data-fx-family='shot'] { --fx-c: var(--amber); --fx-c2: #fff; }
+.fxRoot[data-fx-family='blast'] { --fx-c: var(--red); --fx-c2: var(--amber); }
+.fxRoot[data-fx-family='thunder'] { --fx-c: color-mix(in srgb, var(--steel) 55%, #fff); --fx-c2: #fff; }
+.fxRoot[data-fx-family='gravity'] { --fx-c: var(--violet); --fx-c2: color-mix(in srgb, var(--violet) 45%, #000); }
+.fxRoot[data-fx-family='heal'] { --fx-c: var(--jade); --fx-c2: #fff; }
+.fxRoot[data-fx-family='support'] { --fx-c: var(--jade); --fx-c2: var(--steel); }
+.fxRoot[data-fx-family='break'] { --fx-c: var(--amber); --fx-c2: var(--red); }
+.fxRoot[data-fx-family='sound'] { --fx-c: var(--violet); --fx-c2: var(--steel); }
+.fxRoot[data-fx-family='neutral'] { --fx-c: var(--ink-dim); --fx-c2: var(--line-3); }
+
+.fxRoot > i {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* ---------- 光带：斩击的斜线 / 射击的直线 / 兜底的横光 ---------- */
+.band {
+  left: 50%;
+  top: 50%;
+  width: 130%;
+  height: 3px;
+  margin: -1px 0 0 -65%;
+  background: linear-gradient(90deg, transparent 6%, var(--fx-c) 46%, var(--fx-c2) 52%, var(--fx-c) 58%, transparent 94%);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fx-c) 70%, transparent));
+  opacity: 0;
+}
+.fxRoot[data-fx-family='slash'] .band {
+  transform-origin: 50% 50%;
+  animation: slashBand 420ms cubic-bezier(0.16, 0.9, 0.24, 1) both;
+}
+@keyframes slashBand {
+  0% { opacity: 0; transform: rotate(-26deg) scaleX(0.12); }
+  22% { opacity: 1; transform: rotate(-26deg) scaleX(1); }
+  100% { opacity: 0; transform: rotate(-26deg) scaleX(1.08) translateX(6%); }
+}
+.fxRoot[data-fx-family='shot'] .band {
+  animation: shotBand 380ms cubic-bezier(0.1, 0.9, 0.2, 1) both;
+}
+@keyframes shotBand {
+  0% { opacity: 0; transform: scaleX(0.04) translateX(-46%); }
+  26% { opacity: 1; transform: scaleX(1) translateX(0); }
+  100% { opacity: 0; transform: scaleX(1) translateX(18%); }
+}
+.fxRoot[data-fx-family='neutral'] .band { animation: neutralBand 360ms ease-out both; }
+@keyframes neutralBand {
+  0% { opacity: 0; transform: scaleX(0.2); }
+  40% { opacity: 0.9; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* ---------- 残影：斩击落下去之后那三道错开的重光 ---------- */
+.ghost {
+  left: 50%;
+  top: 50%;
+  width: 120%;
+  height: 2px;
+  margin-left: -60%;
+  background: linear-gradient(90deg, transparent, var(--fx-c) 50%, transparent);
+  opacity: 0;
+  transform-origin: 50% 50%;
+  filter: blur(0.4px);
+}
+.fxRoot[data-fx-family='slash'] .ghost {
+  animation: ghostSlide 420ms cubic-bezier(0.16, 0.9, 0.24, 1) both;
+  animation-delay: calc(var(--i) * 40ms + 40ms);
+}
+@keyframes ghostSlide {
+  0% { opacity: 0; transform: rotate(-26deg) translateY(calc(var(--i) * 6px)) scaleX(0.5); }
+  30% { opacity: 0.55; }
+  100% { opacity: 0; transform: rotate(-26deg) translateY(calc(var(--i) * 6px)) scaleX(1.05); }
+}
+
+/* ---------- 冲击环：爆炸是扁圆、声波是同心圆、重力是向内收 ---------- */
+.ring {
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: 42%;
+  margin: -21% 0 0 -21%;
+  border: 2px solid var(--fx-c);
+  border-radius: 50%;
+  opacity: 0;
+}
+.fxRoot[data-fx-family='blast'] .ring {
+  animation: blastRing 560ms cubic-bezier(0.12, 0.9, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 90ms);
+}
+@keyframes blastRing {
+  0% { opacity: 0; transform: scale(0.18) scaleY(0.42); border-width: 6px; }
+  28% { opacity: 0.95; }
+  100% { opacity: 0; transform: scale(2.3) scaleY(0.62); border-width: 1px; }
+}
+.fxRoot[data-fx-family='sound'] .ring {
+  animation: soundRing 520ms ease-out both;
+  animation-delay: calc(var(--i) * 70ms);
+  border-color: color-mix(in srgb, var(--fx-c) 70%, transparent);
+}
+@keyframes soundRing {
+  0% { opacity: 0; transform: scale(0.2); }
+  26% { opacity: 0.7; }
+  100% { opacity: 0; transform: scale(2.1); }
+}
+.fxRoot[data-fx-family='gravity'] .ring {
+  animation: gravityRing 640ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  border-color: color-mix(in srgb, var(--fx-c) 80%, transparent);
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--fx-c) 40%, transparent);
+}
+@keyframes gravityRing {
+  0% { opacity: 0; transform: scale(2.4); }
+  24% { opacity: 0.85; }
+  100% { opacity: 0; transform: scale(0.14); }
+}
+.fxRoot[data-fx-family='heal'] .ring,
+.fxRoot[data-fx-family='support'] .ring {
+  animation: healRing 620ms ease-out both;
+  border-color: color-mix(in srgb, var(--fx-c) 62%, transparent);
+}
+@keyframes healRing {
+  0% { opacity: 0; transform: scale(0.4); }
+  30% { opacity: 0.55; }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+
+/* ---------- 碎片：爆炸的边缘焦痕 / 破防崩开的壳片 ---------- */
+.shard {
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3px 0 0 -3px;
+  background: var(--fx-c2);
+  opacity: 0;
+  clip-path: polygon(50% 0, 100% 62%, 24% 100%);
+}
+.fxRoot[data-fx-family='blast'] .shard,
+.fxRoot[data-fx-family='break'] .shard {
+  animation: shardFly var(--dur, 520ms) cubic-bezier(0.16, 0.8, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 14ms);
+}
+.fxRoot[data-fx-family='blast'] .shard { --dur: 560ms; }
+.fxRoot[data-fx-family='break'] .shard { --dur: 520ms; background: var(--fx-c); }
+@keyframes shardFly {
+  0% { opacity: 0; transform: rotate(0deg) translate(0, 0) scale(0.5); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(calc(var(--a) * 3deg)) translate(0, calc(var(--d) * -3.2px)) scale(1.05); }
+}
+
+/* ---------- 细点：射击的弹壳硝烟 / 雷电的火星 / 治愈的上浮 / 重力的向心 ---------- */
+.dot {
+  left: calc(50% + (var(--x) - 50) * 0.1%);
+  top: calc(50% + (var(--y) - 50) * 0.1%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--fx-c2);
+  opacity: 0;
+}
+.fxRoot[data-fx-family='shot'] .dot {
+  animation: shotDot 380ms ease-out both;
+  animation-delay: calc(var(--i) * 18ms);
+}
+@keyframes shotDot {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  20% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(calc(24px + var(--i) * 6px), calc(-14px - var(--i) * 4px)) scale(0.3); }
+}
+.fxRoot[data-fx-family='thunder'] .dot {
+  animation: sparkDot 460ms ease-out both;
+  animation-delay: calc(var(--i) * 12ms);
+}
+@keyframes sparkDot {
+  0% { opacity: 0; transform: scale(0.4); }
+  16% { opacity: 1; transform: scale(1.25); }
+  100% { opacity: 0; transform: translateY(calc(10px + var(--i) * 3px)) scale(0.4); }
+}
+.fxRoot[data-fx-family='heal'] .dot {
+  animation: riseDot 620ms ease-out both;
+  animation-delay: calc(var(--i) * 48ms);
+  background: var(--fx-c);
+}
+@keyframes riseDot {
+  0% { opacity: 0; transform: translateY(10px) scale(0.5); }
+  30% { opacity: 0.95; }
+  100% { opacity: 0; transform: translateY(-46px) scale(1); }
+}
+.fxRoot[data-fx-family='gravity'] .dot {
+  animation: pullDot 640ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 22ms);
+  background: var(--fx-c);
+}
+@keyframes pullDot {
+  0% { opacity: 0; transform: translate(0, 0) scale(1.1); }
+  18% { opacity: 0.8; }
+  100% { opacity: 0; transform: translate(calc((50 - var(--x)) * 2.6px), calc((50 - var(--y)) * 2.6px)) scale(0.2); }
+}
+.fxRoot[data-fx-family='sound'] .dot {
+  animation: noteDot 520ms ease-out both;
+  animation-delay: calc(var(--i) * 40ms);
+}
+@keyframes noteDot {
+  0% { opacity: 0; transform: translateY(0) scale(0.5); }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-30px) scale(1); }
+}
+.fxRoot[data-fx-family='neutral'] .dot { animation: shotDot 360ms ease-out both; animation-delay: calc(var(--i) * 30ms); }
+
+/* ---------- 折线：雷电 ---------- */
+.zigzag {
+  left: 50%;
+  top: 8%;
+  width: 3px;
+  height: 84%;
+  margin-left: calc(var(--i) * 26px - 13px);
+  background: var(--fx-c2);
+  clip-path: polygon(50% 0, 100% 22%, 40% 26%, 100% 48%, 30% 52%, 100% 74%, 46% 78%, 50% 100%, 0 74%, 60% 70%, 0 48%, 70% 44%, 0 22%, 60% 26%);
+  opacity: 0;
+  transform: rotate(calc(var(--i) * 7deg - 4deg));
+}
+.fxRoot[data-fx-family='thunder'] .zigzag {
+  animation: bolt 460ms steps(1, end) both;
+  animation-delay: calc(var(--i) * 60ms);
+}
+@keyframes bolt {
+  0%, 100% { opacity: 0; }
+  6%, 18% { opacity: 1; }
+  12% { opacity: 0.35; }
+  26% { opacity: 0.85; }
+  40% { opacity: 0; }
+}
+
+/* ---------- 折角：支援的上浮 ---------- */
+.chevron {
+  left: calc(24% + var(--i) * 16%);
+  top: 62%;
+  width: 12px;
+  height: 12px;
+  border-left: 2px solid var(--fx-c);
+  border-top: 2px solid var(--fx-c);
+  transform: rotate(45deg);
+  opacity: 0;
+}
+.fxRoot[data-fx-family='support'] .chevron {
+  animation: chevRise 640ms ease-out both;
+  animation-delay: calc(var(--i) * 70ms);
+}
+@keyframes chevRise {
+  0% { opacity: 0; transform: rotate(45deg) translateY(12px) scale(0.7); }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; transform: rotate(45deg) translateY(-38px) scale(1); }
+}
+
+/* ---------- 白闪 / 暗角 ---------- */
+/* 局部高光：只在中弹那一团亮一下（半径受限的径向渐变），**不是**整屏白闪 ——
+   全屏闪是光敏与眩晕的高风险项，2026-09-19 收口径时禁掉了。 */
+.flash {
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%,
+    color-mix(in srgb, #fff 62%, transparent) 0%,
+    color-mix(in srgb, var(--fx-c) 26%, transparent) 26%,
+    transparent 46%);
+  opacity: 0;
+  animation: fxFlash 200ms ease-out both;
+}
+@keyframes fxFlash {
+  0% { opacity: 0; }
+  16% { opacity: 0.62; }
+  100% { opacity: 0; }
+}
+.vignette {
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 40%, color-mix(in srgb, var(--ink) 26%, transparent) 100%);
+  opacity: 0;
+  animation: fxVignette 640ms ease-out both;
+}
+@keyframes fxVignette {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ============================================================
+   prefers-reduced-motion：一族只剩一层，150ms 淡入淡出
+   ------------------------------------------------------------
+   不位移、不抖屏、不闪白（光敏那一条与 epilepsy 都按这个来）——
+   形状与颜色仍然分得开（剩下那一层就是这一族的代表色横光）。
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .fxRoot > i { display: none; }
+  .fxRoot .band {
+    display: block;
+    opacity: 0;
+    height: 6px;
+    background: linear-gradient(90deg, transparent, var(--fx-c) 50%, transparent);
+    animation: reducedFlash 150ms ease-out both;
+  }
+  .fxRoot .flash {
+    display: block;
+    background: color-mix(in srgb, var(--fx-c) 42%, #fff);
+    animation: reducedFlash 150ms ease-out both;
+  }
+}
+@keyframes reducedFlash {
+  0% { opacity: 0; }
+  40% { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+
+/* ---------- 收刀余韵：一层留得比招式更久的光晕 ----------
+   同一族里「谁的余韵更长」就靠这一层（见 FX_CHAR 的 afterglow）。
+   它只做透明度与极小的缩放，不位移。 */
+.afterglow {
+  inset: -6%;
+  background: radial-gradient(circle at 50% 50%,
+    color-mix(in srgb, var(--fx-c) 22%, transparent) 0%,
+    transparent 58%);
+  opacity: 0;
+  animation: afterglow 1ms linear both;
+  animation-duration: calc(max(var(--ag, 0) * 1ms, 0ms));
+}
+@keyframes afterglow {
+  0% { opacity: 0.85; }
+  55% { opacity: 0.34; }
+  100% { opacity: 0; }
+}
+
+/* ============================================================
+   减弱档（玩家在 C 菜单里选的，或系统 prefers-reduced-motion）
+   ------------------------------------------------------------
+   只留两样：**一帧形变**（那一道代表色的光带，横向 scale 抖一下）+ **一层余光**。
+   关掉的：残影、冲击环、碎屑、粒子、折线、白闪、暗角、震屏、位移。
+   形状与颜色还在，所以仍认得出是谁的哪一手。
+   ============================================================ */
+[data-fx-level='reduced'] .fxRoot > i,
+.fxRoot[data-fx-level='reduced'] > i { display: none; }
+[data-fx-level='reduced'] .fxRoot .band,
+.fxRoot[data-fx-level='reduced'] .band {
+  display: block;
+  opacity: 0;
+  height: 6px;
+  animation: reducedMorph 260ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+@keyframes reducedMorph {
+  0% { opacity: 0; transform: scaleX(0.3); }
+  22% { opacity: 0.85; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+[data-fx-level='reduced'] .fxRoot .afterglow,
+.fxRoot[data-fx-level='reduced'] .afterglow {
+  display: block;
+  animation-duration: calc(max(var(--ag, 0) * 1ms, 240ms));
+}
+[data-fx-level='reduced'] .fxRoot .flash,
+[data-fx-level='reduced'] .fxRoot .vignette,
+.fxRoot[data-fx-level='reduced'] .flash,
+.fxRoot[data-fx-level='reduced'] .vignette { display: none; }
+
+/* ============================================================
+   命中核（impact core）：让「命中那一帧」真的有一团东西
+   ------------------------------------------------------------
+   验收时看出来的毛病：爆 / 重力那几手在 45%（命中）那一帧只剩一圈淡环，
+   读不出「打实了」。所以补一层**伪元素核光**（不占节点预算）——
+   径向实心到透明，22% 就烧到最亮，45% 开始退。它跟着族色走，所以不糊。
+   同时把环与碎片的**实心度**往上提：环边 2→4px、碎片带投影。
+   ============================================================ */
+.fxRoot::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52%;
+  height: 52%;
+  margin: -26% 0 0 -26%;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--fx-c2) 92%, transparent) 0%,
+    color-mix(in srgb, var(--fx-c) 62%, transparent) 34%,
+    color-mix(in srgb, var(--fx-c) 18%, transparent) 56%,
+    transparent 72%);
+  opacity: 0;
+  filter: blur(0.5px);
+  animation: fxCore 620ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+@keyframes fxCore {
+  0% { opacity: 0; transform: scale(0.34); }
+  20% { opacity: 1; transform: scale(1); }
+  44% { opacity: 0.62; transform: scale(1.02); }
+  100% { opacity: 0; transform: scale(1.2); }
+}
+/* 斩 / 射：核光收窄成一道（不是一团圆） —— 形状即分类那条不能破 */
+.fxRoot[data-fx-family='slash']::before {
+  width: 120%;
+  height: 26%;
+  margin: -13% 0 0 -60%;
+  border-radius: 0;
+  transform: rotate(var(--ang, -26deg));
+  background: radial-gradient(ellipse at 50% 50%,
+    color-mix(in srgb, var(--fx-c2) 88%, transparent) 0%,
+    color-mix(in srgb, var(--fx-c) 46%, transparent) 42%,
+    transparent 72%);
+  animation: fxCore 420ms cubic-bezier(0.16, 0.9, 0.24, 1) both;
+}
+.fxRoot[data-fx-family='shot']::before {
+  width: 120%;
+  height: 14%;
+  margin: -7% 0 0 -60%;
+  border-radius: 0;
+  background: radial-gradient(ellipse at 50% 50%,
+    color-mix(in srgb, #fff 82%, transparent) 0%,
+    color-mix(in srgb, var(--fx-c) 44%, transparent) 40%,
+    transparent 70%);
+  animation: fxCore 380ms cubic-bezier(0.1, 0.9, 0.2, 1) both;
+}
+/* 环与碎片提实：环边更粗、碎片更大并带一圈本色投影 */
+.ring { border-width: 4px; }
+.shard {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fx-c) 70%, transparent));
+}
+
+/* 时间轴采样用（验收/预览台）：把命中核钉在当前比例那一定格上。
+   伪元素没法用内联样式暂停，所以走一个属性选择器 —— 探针只写 data 属性。 */
+[data-froze]::before {
+  animation: none !important;
+  opacity: var(--core-stop, 0.6);
+  transform: scale(1);
+}

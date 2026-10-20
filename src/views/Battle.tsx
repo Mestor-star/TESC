@@ -6,10 +6,10 @@ import {
 } from '@phosphor-icons/react'
 
 import {
-  act, bossUltOf, chargeOf, createBattle, digestOf, enemysTurn, etaOf, legalSkills, lootOddsOf,
-  pendingFoe, rewardOf,
+  act, bossUltOf, chainOf, chargeOf, createBattle, digestOf, enemysTurn, etaOf, legalSkills,
+  linkBoardOf, lootOddsOf, pendingFoe, rewardOf,
 } from '../lib/battle/engine'
-import type { Command } from '../lib/battle/engine'
+import type { Command, LinkBoardRow } from '../lib/battle/engine'
 import { intentOf, requestEnemyIntent } from '../lib/battle/ai'
 import type { RawIntent } from '../lib/battle/ai'
 
@@ -60,6 +60,7 @@ import type { BattleRecord, BattleState, Combatant, DutyId, EnemyIntent, FxKind,
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
+import { BattleFx, FX_PREVIEW, familyOf, specOf } from './BattleFx'
 
 import css from './Battle.module.css'
 
@@ -165,6 +166,12 @@ function fxSeed(skillId: string): { hue: number; variant: number; dir: number } 
  * 所以它只认 effect 里的键，不看动画类别 —— 「治疗技被配上斩击动画」这种数据的毛病
  * 也不会串到观感上（与 toneOf 同一个路数）。
  */
+/** 这一手落在哪一族（数据表在 BattleFx.tsx：FX_TABLE / BY_NAME / BY_KIND）——
+ *  这一屏里**只有这一处**做族判定，视图别处不写 if/else。 */
+function famOf(f: { skillId: string; skill: string; kind: string; tone?: string }): string {
+  return familyOf(f.skillId, { fx: f.kind, name: f.skill, tone: f.tone })
+}
+
 function affixesOf(k?: SkillSpec): string[] {
   const e = k?.effect
   if (!e) return []
@@ -445,6 +452,23 @@ export function Battle({
     })
   }, [st])
 
+  /* ---- 连携点：**全队共用的一池**（见 engine.chainOf）----
+     与下面「小队体力」是两本账，也与上面那排羁绊挂牌是两本账：
+       · 小队体力 —— 出征的本钱，只在出击时扣；
+       · 共鸣槽（人层）—— 每人一条，攒满才凑得上一条连携；
+       · 连携点（队层）—— 一条池子，敲穿破绽 / 掀开护盾 / 打倒敌体都往里进账，
+         攒满那一拍由**全队**自动放出「同调」。它是唯一一条「玩家改不了、
+         只能靠打得对来喂」的资源 —— 屏上要是看不见，那三条进账就白喂了。
+     只读：读数与上限全从引擎取，视图一个数都不自己算。 */
+  const chain = useMemo(() => chainOf(st), [st])
+  /* ---- 连携条件表（见 engine.linkBoardOf）----
+     「这条连携此刻差什么」：槽攒到几拍 / 冷却剩几拍 / 谁不在场 / 还差什么。
+     与上面那排羁绊挂牌读的是**同一份名单**，只是那排读的是「蓄到几成」，
+     这张表读的是「差在哪一条」—— 同一个人卡住时，挂牌只给一个不动的数字，
+     表里那句 blocked 才说得清是卡在谁、卡在冷却、还是条件没来。
+     ⚠️ 只读：判定仍在引擎的 linkReady / followCondition 里，两处各写一套迟早打架。 */
+  const board = useMemo(() => linkBoardOf(st), [st])
+
   /* ---- 行动顺位：还差几拍轮到自己 ---- */
   const order = useMemo(() => {
     return [...st.allies, ...st.enemies]
@@ -552,7 +576,12 @@ export function Battle({
       else if (e.gate) sfx('form')
       else sfx(SFX_OF_FX[e.fx] ?? 'hit')
       // 连携要留够看清两张脸的时间：它后面还跟着一手伤害，380ms 会一闪而过
-      const hold = e.link ? 1500 : e.dmg || e.down ? 620 : 380
+      /* 全景（同调 / 狂暴）另给一档：它演的不是「这一下」，是「这一轮整体变了」——
+         黑边压下来、字幕浮上来各占一拍，380ms 只够看个边角的颜色。
+         这一条是**节奏**，不是特效：同一份日志、同一段账，只是给全队级的事多留一拍。 */
+      const hold = e.link ? 1500
+        : e.skillId === 'sync' || e.skillId === 'enrage' ? 1200
+          : e.dmg || e.down ? 620 : 380
       /* ---- 「打到」的那一下 ----
          演出是动画（斩击 0.42s 掠过去、爆破环 0.6s 涨开），而引擎早把**整手**算完了：
          `act()` 是同步的，一次性把这一手的账全部追加进 log。血条若直接读实时状态，
@@ -561,7 +590,10 @@ export function Battle({
          账上记的 `hpBefore`（见下面 hpView）；到点才翻成实时血。
          取 hold 的 45%（斩击正掠过、爆破环正涨开），上限压在 hold 之前 ——
          翻晚了会跟下一条账的开场撞在一起。 */
-      const impact = Math.max(150, Math.min(Math.round(hold * 0.45), hold - 120))
+      /* 命中定格：招牌招在这一帧上多压几十毫秒（血与数字都还没翻）——
+         这是「一击的重量」里最便宜也最有效的那一格：只推迟**落定**，不改演出本身。 */
+      const hstop = specOf(e.skillId, { fx: e.fx, name: e.skill, tone: e.tone }).spec.hitstop ?? 0
+      const impact = Math.max(150, Math.min(Math.round(hold * 0.45) + hstop, hold - 120))
       const landedAt = window.setTimeout(() => setImpacted(true), impact)
       setImpacted(false)
       timers.push(landedAt)
@@ -737,6 +769,23 @@ export function Battle({
 
   // 观测频道挂在右栏，一栏高：多留几手，翻得到上一拍
   const recent = st.log.slice(Math.max(0, shown - 14), shown)
+
+  /* ---- 敌方意图：把引擎写下的那一条 `foe-cmd` 挂回它的卡上 ----
+     引擎在真正出手**之前**先落一条「敌方指挥」（skillId 为 foe-cmd，正文在 note 里，
+     离线判断与接口指挥两条路写的是同一个 skillId）。它挂在日志里就只是一行字，
+     可玩家要回答的问题在**卡**上：「它这一拍要做什么」—— 打谁、还是先给自己上壳。
+     所以这里从**已经演到的那一段**（shown 之前的账）里按人取最后一条：
+     演到哪就说到哪，不提前剧透还没轮到的敌体，也不去猜引擎下一手是什么。
+     取最后一条而不是全部：同一只敌体这一场会被指挥很多次，屏上只该有当下的那一条。 */
+  const foeIntent = useMemo(() => {
+    const m = new Map<string, string>()
+    const upto = Math.min(shown, st.log.length)
+    for (let i = 0; i < upto; i++) {
+      const e = st.log[i]
+      if (e.skillId === 'foe-cmd' && e.note) m.set(e.actorId, e.note)
+    }
+    return m
+  }, [shown, st.log])
   /* 抖屏按**分量**分级，不再按动画类别 ——
      从前只有 blast / noise 抖，于是同一记爆裂，敲在小怪身上与敲在首领身上晃得一样狠，
      而一记暴击斩击一点都不抖。weight 是「这一下打掉了对面几成血」：
@@ -746,6 +795,9 @@ export function Battle({
      斩击要 0.42s 才掠到人身上，开场就晃屏等于刀还没到先挨了一下。
      附带修掉一处旧账 —— 连着两手同为 1 级时，`data-shake` 前后都是 '1'，
      DOM 不变、CSS 动画不重启，第二手就不晃了；现在中间必然落回 0 一帧。 */
+  /* 震屏收到「1px / 两帧」这一档（2026-09-19 收口径：镜头语言撤掉，震屏压到最小）。
+     分量 still 只决定**要不要**震，不再决定幅度 —— 幅度与帧数在 CSS 里写死。
+     减弱档一次都不震（见下面的 data-shake 条件）。 */
   const shake = !fx || !impacted ? 0
     : fx.crit || fx.down ? 3
       : (fx.weight ?? 0) >= 0.12 ? 2
@@ -765,6 +817,274 @@ export function Battle({
   })()
   const aimAllies = panel === 'aim' && !aimEnemies
 
+  /* ============================================================
+     键盘 —— 作战屏的主路径（鼠标 / 触控一条不删，两条路都通）
+     ------------------------------------------------------------
+     Z = 确定（确认指令 / 技能 / 目标；回放中＝快进，跳过演出）
+     X = 返回上一层（选目标 → 技能表 → 指令盘）；角色介绍里＝关闭
+     C = 角色介绍（我方 / 敌方，← → 换人，↑ ↓ 换边）
+     方向键 = 在指令盘 / 技能表 / 目标 / 名单之间移动
+
+     为什么另立一套而不是把按钮都做成 tab 序：这一屏的次序是**盘面**决定的
+     （先挑目标、再定招式），tab 序是 DOM 决定的，两者对不上；而战斗里每一次
+     挪手都是半拍，玩家要的是「方向键一格一格走」这种可预期的路径。
+     所以焦点是**视图自己的游标**（cursor），不是浏览器焦点：它能被 clamp、
+     能在换面板时归零，也不会把焦点漏到屏幕外看不见的按钮上。
+   ============================================================ */
+  const [cursor, setCursor] = useState(0)
+  /** 角色介绍页：翻开的是哪一边、第几个（C 键与「角色介绍」那一枚共用） */
+  const [codex, setCodex] = useState<{ side: 'ally' | 'enemy'; i: number } | null>(null)
+  /** 开发预览台（F2 / ?fx=all）：把登记过的每一手逐个放一遍 —— 加招、验收、回归都靠它 */
+  const [preview, setPreview] = useState<{ i: number } | null>(null)
+  /**
+   * 演出强度：'standard' 标准 / 'reduced' 减弱。
+   * 口径（2026-09-19 主人两次收话之后的定版）：
+   *   · **默认跟系统** prefers-reduced-motion —— 系统开了就默认减弱；
+   *   · 玩家在 C 菜单里手动选过，就**以选择为准**（存 localStorage，zts- 前缀）；
+   *   · 减弱档：只留一帧形变 + 一层余光，无震屏、无闪光、无位移，
+   *     但仍分得出是谁的哪一手（形状即分类那条不破）。
+   */
+  const [fxLevel, setFxLevel] = useState<'standard' | 'reduced'>(() => {
+    try {
+      const v = localStorage.getItem('zts-fx-level')
+      if (v === 'standard' || v === 'reduced') return v
+    } catch { /* 读不到就按系统那条 */ }
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'standard'
+  })
+  const pickFxLevel = useCallback((v: 'standard' | 'reduced') => {
+    setFxLevel(v)
+    try { localStorage.setItem('zts-fx-level', v) } catch { /* 存不了也不影响本次会话 */ }
+  }, [])
+  /* 作战屏自己接焦点：键位监听挂在 window 上，本来就不需要先点一下；
+     这一手是给「Tab 进来的人」与读屏软件一个落点，也顺手把浏览器的滚动锚点拿回来。 */
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => { rootRef.current?.focus({ preventScroll: true }) }, [])
+  /* 直达预览台：作战屏 URL 上带 ?fx=all 就自动翻开（不必先打完一场） */
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('fx') === 'all') setPreview({ i: 0 })
+  }, [])
+
+  /* 各面板里「方向键走得动的那一串」—— 与 JSX 里的渲染次序**逐条对齐**，
+     两处各排一套的话，方向键走到的与屏上高亮的迟早不是同一格。 */
+  const skillRows = useMemo(
+    () => (actor ? SKILL_GROUPS.flatMap((g) => legalSkills(actor, st).filter(g.of)) : []),
+    [actor, st],
+  )
+  const gearRows = useMemo(
+    () => Object.keys(owned).filter((gid) => (owned[gid] ?? 0) > 0 && GEAR_OF[gid]),
+    [owned],
+  )
+  const aimRows = useMemo(
+    () => (aimEnemies ? st.enemies : st.allies).filter((c) => !c.down && c.gone <= 0),
+    [aimEnemies, st],
+  )
+  const codexRows = codex ? (codex.side === 'ally' ? st.allies : st.enemies) : []
+  const zoneLen = codex ? codexRows.length
+    : panel === 'root' ? SEQ.length
+      : panel === 'skill' ? skillRows.length
+        : panel === 'item' ? ITEMS.length
+          : panel === 'gear' ? gearRows.length + 1
+            : panel === 'morph' ? st.morphPool.length
+              : panel === 'flee' ? 1
+                : panel === 'aim' ? aimRows.length : 0
+  /**
+   * 每一层的**列数** —— 方向键按它走二维：
+   *   · 指令盘是 3×2（与 .seq 的 grid 同一把尺），←→ 行内、↑↓ 换行；
+   *   · 技能 / 道具 / 装备 / 撤退是单列（.list 竖排），只有 ↑↓；
+   *   · 变身档案与敌阵是一横条（.morphRow / .enemyRow），只有 ←→；
+   *   · 选我方成员（小队列是竖排）只有 ↑↓。
+   * 列数写在这里而不是从 DOM 量：量出来的数会在折行时变化，方向键的步长
+   * 随之漂移 —— 玩家记住的是「↓ 走一行」，不是「↓ 走 3.5 格」。
+   */
+  const zoneCols = panel === 'root' ? 3
+    : panel === 'aim' ? (aimEnemies ? Math.max(1, aimRows.length) : 1)
+      : panel === 'morph' ? Math.max(1, st.morphPool.length)
+        : 1
+  /** 游标永远在这串里（换面板 / 换人时归零 —— 见下面那条 effect） */
+  const cur = Math.min(cursor, Math.max(0, zoneLen - 1))
+  /* 一进这一层，光标就落在**最靠前的那一项上** —— 但不落在按不动的那一项上：
+     本场有「封印未解」的存档（普攻灰着），默认停在「攻击」的话，玩家第一下 Z
+     就是什么都没发生。所谓「最靠前」，在这一屏的意思是**最靠前的能选的那一项**。 */
+  useEffect(() => {
+    if (panel === 'root') {
+      const ok = SEQ.findIndex((b) => b.id !== 'atk'
+        || (actor ? legalSkills(actor, st).some((x) => x.kind === '普攻') : false))
+      setCursor(ok < 0 ? 0 : ok)
+    } else if (panel === 'skill') {
+      const ok = skillRows.findIndex((k) => k.cost <= (actor?.tempo ?? 0)
+        && (actor?.cds[k.id] ?? 0) <= 0)
+      setCursor(ok < 0 ? 0 : ok)
+    } else {
+      setCursor(0)
+    }
+    // 只在换层 / 换人时归位：把 skillRows 之类写进依赖会让每次出手都把光标拉回第一格
+  }, [panel, st.actor, codex?.side])
+
+  /* 光标走到哪儿，哪儿就得在容器里看得见（技能表 / 装备表都会内滚）。
+     用 querySelector 而不是给每一格挂 ref：这一屏的格子是 map 出来的，
+     挂十几个 ref 只是把同一件事写得更长。 */
+  useEffect(() => {
+    const el = document.querySelector('[data-battle] [data-focus="1"]')
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+  }, [cur, panel, codex?.side, codex?.i])
+
+  /** 退一层：选目标 → 技能表 → 指令盘。鼠标那枚 × 与 X 键走同一条路 ——
+      两处各写一套的话，「退到哪」这件事迟早会分叉。 */
+  const backOut = useCallback(() => {
+    setPending(null)
+    setPanel((p) => (p === 'aim' && pending && pending.t === 'skill' ? 'skill' : 'root'))
+    setCursor(0)
+  }, [pending])
+
+  const openCodex = useCallback((side: 'ally' | 'enemy' = 'ally', i = 0) => {
+    setCodex({ side, i })
+    setCursor(0)
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      const arrow = k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown'
+      const act = k === 'z' || k === 'Enter' || k === ' '
+      const back = k === 'x' || k === 'Escape' || k === 'Backspace'
+      const menu = k === 'c'
+      /* 开发预览台：F2 开 / 关；开着的时候方向键换招、Z/X/C 关掉 */
+      if (e.key === 'F2') {
+        e.preventDefault()
+        setPreview((p) => (p ? null : { i: 0 }))
+        return
+      }
+      if (preview) {
+        e.preventDefault()
+        if (k === 'ArrowDown' || k === 'ArrowRight') {
+          setPreview({ i: Math.min(FX_PREVIEW.length - 1, preview.i + 1) })
+        } else if (k === 'ArrowUp' || k === 'ArrowLeft') {
+          setPreview({ i: Math.max(0, preview.i - 1) })
+        } else if (act || back || menu) setPreview(null)
+        return
+      }
+      if (!arrow && !act && !back && !menu) return
+
+      /* ① 角色介绍开着 —— 方向键在里面走（← → 换人，↑ ↓ 换边），其余键关掉它 */
+      if (codex) {
+        e.preventDefault()
+        const list = codex.side === 'ally' ? st.allies : st.enemies
+        const n = Math.max(1, list.length)
+        /* 与战斗内的各层同一条边界规矩：**到头就停住**，不绕回。
+           （早先这里写的是循环；主人口径统一之后改成停住 —— 一处绕回、处处停住
+             的话，玩家在「换人」上记的直觉到了指令盘上会反过来。） */
+        if (k === 'ArrowLeft') setCodex({ ...codex, i: Math.max(0, codex.i - 1) })
+        else if (k === 'ArrowRight') setCodex({ ...codex, i: Math.min(n - 1, codex.i + 1) })
+        else if (k === 'ArrowUp' || k === 'ArrowDown') {
+          setCodex({ side: codex.side === 'ally' ? 'enemy' : 'ally', i: 0 })
+        } else if (act) {
+          /* C 菜单里 Z = 切换演出强度（标准 ⇄ 减弱）—— 不用去设置页 */
+          pickFxLevel(fxLevel === 'standard' ? 'reduced' : 'standard')
+        } else if (back || menu) setCodex(null)
+        return
+      }
+
+      /* ② 还在回放：Z 就是「跳过演出」—— 把账一次读完，不留半截动画 */
+      if (playing) {
+        if (act) {
+          e.preventDefault()
+          setShown(st.log.length)
+          setFx(null)
+          setCut(null)
+        }
+        return
+      }
+
+      /* ③ 不是待令（敌方思考 / 已收场）：只留 C —— 翻角色介绍不占回合 */
+      if (st.phase !== 'select') {
+        if (menu) { e.preventDefault(); openCodex('ally', 0) }
+        return
+      }
+
+      /* ④ 待令 */
+      e.preventDefault()
+      if (menu) {
+        openCodex('ally', Math.max(0, st.allies.findIndex((a) => a.id === actor?.id)))
+        return
+      }
+      if (back) { backOut(); return }
+      if (arrow) {
+        /* 二维走位 + **到边界就停住**（全屏统一；只有角色介绍按用户明写的「循环」走）。
+           行内一步 = 1 格，上下一步 = 一行的格数；只有一列 / 只有一行的层面，
+           对应那两个方向键是**空操作**（不是跳到首尾 —— 那是另一套规矩）。 */
+        const n = Math.max(1, zoneLen)
+        const cols = Math.max(1, zoneCols)
+        const rows = Math.ceil(n / cols)
+        const step = k === 'ArrowLeft' || k === 'ArrowUp' ? -cols : cols
+        const step1 = k === 'ArrowLeft' || k === 'ArrowUp' ? -1 : 1
+        const clampTo = (v: number) => Math.max(0, Math.min(n - 1, v))
+        if (k === 'ArrowLeft' || k === 'ArrowRight') {
+          if (cols <= 1) return
+          setCursor((c) => clampTo(Math.min(c, n - 1) + step1))
+        } else {
+          if (rows <= 1) return
+          setCursor((c) => clampTo(Math.min(c, n - 1) + step))
+        }
+        return
+      }
+      if (!actor) return
+      if (panel === 'root') {
+        const b = SEQ[cur]
+        if (!b) return
+        const basic = b.id === 'atk'
+          ? legalSkills(actor, st).find((x) => x.kind === '普攻')
+          : undefined
+        if (b.id === 'atk') { if (basic) issue({ t: 'atk', targetId: '' }) }
+        else if (b.id === 'guard') issue({ t: 'guard' })
+        else { setCursor(0); setPanel(b.id as Panel) }
+        return
+      }
+      if (panel === 'skill') {
+        /* 与鼠标那条路同一道闸：出不起的 / 冷却中的技能按不动（按钮上 disabled 管的是鼠标，
+           键盘得自己再拦一次 —— 否则 Z 键能把一个节拍不够的招式放出去）。 */
+        const kk = skillRows[cur]
+        if (kk && kk.cost <= actor.tempo && (actor.cds[kk.id] ?? 0) <= 0) {
+          issue({ t: 'skill', skillId: kk.id })
+        }
+        return
+      }
+      if (panel === 'item') {
+        const it = ITEMS[cur]
+        if (!it) return
+        const free = TUNING.freePerBeat.item - (st.freeUsed.item ?? 0)
+        if ((st.bag[it.id] ?? 0) > 0 && free > 0) issue({ t: 'item', itemId: it.id })
+        return
+      }
+      if (panel === 'gear') {
+        if (cur === 0) { doEquip(null); return }
+        const gid = gearRows[cur - 1]
+        if (!gid) return
+        const spent = TUNING.freePerBeat.gear - (st.freeUsed.gear ?? 0) <= 0
+        const holder = Object.keys(equipMap).find((pid) => pid !== actor.id && equipMap[pid] === gid)
+        if (canEquip(actor.id, gid) && !holder && !spent) doEquip(gid)
+        return
+      }
+      if (panel === 'morph') {
+        const id = st.morphPool[cur]
+        if (id && pending) { setPending(null); setPanel('root'); play({ ...pending, targetId: id } as Command) }
+        return
+      }
+      if (panel === 'flee') { play({ t: 'flee' }); return }
+      if (panel === 'aim') {
+        const t = aimRows[cur]
+        if (t) pickTarget(t.id)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [codex, preview, playing, st, panel, cur, zoneLen, zoneCols, skillRows, gearRows, aimRows,
+    actor, pending, equipMap, issue, play, pickTarget, doEquip, backOut, openCodex,
+    fxLevel, pickFxLevel])
+
   /*
     作战屏走 portal 挂到 body 上。
     任务板 / 剧情页的容器带 transform，fixed 会被它当成包含块 ——
@@ -772,7 +1092,14 @@ export function Battle({
     挂到 body 之后它才是一块真正独占视图的界面：1920×1080 一屏装得下。
   */
   return createPortal(
-    <div className={css.root} data-battle="1" data-phase={st.phase} data-command={st.command} data-shake={shake ? String(shake) : undefined}>
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      className={css.root}
+      data-battle="1"
+      data-phase={st.phase} data-command={st.command}
+      data-fx-level={fxLevel}
+      data-shake={fxLevel === 'standard' && shake ? '1' : undefined}>
       {/*
         全屏演出层 —— 只管「一手打一群」的那种（全体技 / 合击 / 终末系）。
         单体技不走这里：打在一个人身上的东西，就该出现在那个人身上
@@ -786,6 +1113,7 @@ export function Battle({
           data-fx-tone={fx.tone}
           data-fx-var={fxSeed(fx.skillId).variant}
           data-fx-dir={fxSeed(fx.skillId).dir === 1 ? 'r' : 'l'}
+          data-fx-family={famOf(fx)}
           data-crit={fx.crit ? '1' : undefined}
           style={{
             '--fx-hue': fxSeed(fx.skillId).hue,
@@ -794,6 +1122,10 @@ export function Battle({
           aria-hidden
         >
           <FxLayers fx={fx} />
+          <BattleFx
+            skillId={fx.skillId} name={fx.skill} kind={fx.kind} tone={fx.tone}
+            seed={fxSeed(fx.skillId).hue} level={fxLevel}
+          />
           <span className={css.fxTag} data-fx-tag={fx.skillId}>{fx.skill}</span>
         </div>
       ) : null}
@@ -801,12 +1133,30 @@ export function Battle({
       {/* 终结技大字报 —— 压在演出层之上（z 22 > 20），只在那一手放出来之前立一屏 */}
       {cut ? <UltCut key={cut.n} cut={cut} /> : null}
 
+
       {/* 连携技：右侧立一张牌 —— 两个人（或一整队）的头像 + 招式名 */}
       {fx?.link ? <LinkPop key={fx.n} link={fx.link} /> : null}
 
       {/* 作战屏 —— 自成一块「游戏窗口」，不铺满整个浏览器宽度
           （铺满会让指令窗与小队列隔得太远，出招时眼睛要横跨半屏） */}
       <div className={css.stage}>
+
+      {/* 全景 · 全队级事件的一道黑边（同调 / 狂暴）——
+          docs §3.1 那三条里的第一条与第二条：单点伤害是**近景**（特效贴着挨打的那个），
+          全队级的事件是**全景**；而「全景」在 AVG 里不是把镜头拉远，是**加黑边** ——
+          上下两道实心边把战斗盘框成一块「屏幕」，画面与字幕因此分得开。
+          第三条（台词与特效错开一拍）由 CSS 的 animation-delay 承担：
+          黑边先压下来，字幕晚一档才浮上来，眼睛先看完画面再读字。
+          挂在这一层**里面**：黑边框的是「这局战斗」那一块屏，不是浏览器视口 ——
+          挂在幕布（.root）上的话，它左右会顺着幕布那 -14px 的余量伸到屏幕外面去。 */}
+      {fx && (fx.skillId === 'sync' || fx.skillId === 'enrage') ? (
+        <WideCut
+          key={fx.n}
+          id={fx.skillId}
+          skill={fx.skill}
+          note={st.log[fx.n]?.note}
+        />
+      ) : null}
 
       {/* HUD */}
       <header className={css.hud} data-hud-open={hudOpen ? '1' : '0'}>
@@ -928,6 +1278,32 @@ ${siteR.f.word}`}>
           <span className={css.round} data-hand={st.hand}>
             第 <b>{st.hand}</b> 手 <span className="tiny muted">/ {st.tick} 回合</span>
           </span>
+          {/* 连携点 —— 可读的一池：上限几格就画几格，满格那一下换成「同调 将发」。
+              满格不等于放出来了：同调在**收拍**（endBeat）才结算，所以那三个字写的是
+              「将发」而不是「已发」—— 屏上先说一步，玩家才知道这一拍该把谁推上去。 */}
+          <div
+            className={css.chainPool}
+            data-chain-pool
+            data-chain-cur={chain.cur}
+            data-chain-max={chain.max}
+            data-full={chain.cur >= chain.max && chain.max > 0 ? '1' : undefined}
+            role="img"
+            aria-label={`连携点 ${chain.cur} / ${chain.max}${chain.cur >= chain.max ? ' · 满格，同调将在这一拍收拍时放出' : ''}`}
+            title={'连携点（队层，全队共用一个池子）：敲穿破绽、掀开护盾、打倒敌体都往里进账，'
+              + '长时间的僵持会一拍漏一点。攒满的那一拍由全队自动放出「同调」——'
+              + '全员攻击 / 充能 / 减伤各抬一档，对面每一具的破绽各削一点（合力不需要对上轴）。'}
+          >
+            <span className="tiny mono" style={{ letterSpacing: '0.14em' }}>连携</span>
+            <span className={css.chainTicks} data-chain-ticks aria-hidden>
+              {Array.from({ length: Math.max(1, chain.max) }, (_, i) => (
+                <i key={i} data-on={i < chain.cur ? '1' : undefined} />
+              ))}
+            </span>
+            <span className={`${css.chainNum} mono`}>{chain.cur}/{chain.max}</span>
+            {chain.cur >= chain.max && chain.max > 0 ? (
+              <em className={css.chainReady} data-chain-sync>同调 将发</em>
+            ) : null}
+          </div>
           <div className={css.spWrap} title="小队体力 · 只在出击时扣，随观测间隔回补；出手消耗的是各人自己的节拍">
             <span className="tiny mono" style={{ letterSpacing: '0.14em' }}>小队体力</span>
             <div className={css.spBar}>
@@ -996,6 +1372,8 @@ ${siteR.f.word}`}>
                 c={viewOf(c)}
                 fx={fx}
                 landed={impacted}
+                intent={foeIntent.get(c.id)}
+                focus={panel === 'aim' && aimEnemies && aimRows[cur]?.id === c.id}
                 active={!over && actor?.id === c.id}
                 targetable={aimEnemies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
@@ -1009,6 +1387,8 @@ ${siteR.f.word}`}>
                 c={viewOf(foeLine.mid)}
                 fx={fx}
                 landed={impacted}
+                intent={foeIntent.get(foeLine.mid.id)}
+                focus={panel === 'aim' && aimEnemies && aimRows[cur]?.id === foeLine.mid.id}
                 active={!over && actor?.id === foeLine.mid.id}
                 targetable={aimEnemies && !foeLine.mid.down && !playing}
                 onPick={() => pickTarget(foeLine.mid!.id)}
@@ -1023,6 +1403,8 @@ ${siteR.f.word}`}>
                 c={viewOf(c)}
                 fx={fx}
                 landed={impacted}
+                intent={foeIntent.get(c.id)}
+                focus={panel === 'aim' && aimEnemies && aimRows[cur]?.id === c.id}
                 active={!over && actor?.id === c.id}
                 targetable={aimEnemies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
@@ -1043,6 +1425,34 @@ ${siteR.f.word}`}>
         />
       ) : null}
 
+      {/* 角色介绍（C）—— 我方与敌方共用同一份版式：名字、性质、来历、机制、
+          回复、五轴、以及**每一手的说明**。两边都写全，是因为玩家要做的判断
+          常常是「对面这一手到底干什么」—— 只给我方一份，那一半就还是黑箱。 */}
+      {codex && codexRows.length ? (
+        <CodexPanel
+          c={codexRows[Math.min(codex.i, codexRows.length - 1)]}
+          side={codex.side}
+          index={Math.min(codex.i, codexRows.length - 1)}
+          total={codexRows.length}
+          onPrev={() => setCodex({ ...codex, i: Math.max(0, codex.i - 1) })}
+          onNext={() => setCodex({ ...codex, i: Math.min(codexRows.length - 1, codex.i + 1) })}
+          onSide={() => setCodex({ side: codex.side === 'ally' ? 'enemy' : 'ally', i: 0 })}
+          onClose={() => setCodex(null)}
+          level={fxLevel}
+          onLevel={() => pickFxLevel(fxLevel === 'standard' ? 'reduced' : 'standard')}
+        />
+      ) : null}
+
+      {/* 开发预览台 —— F2（或在作战屏 URL 上加 ?fx=all）。不进正式玩法：只有按键/参数才翻得开 */}
+      {preview ? (
+        <FxPreview
+          i={preview.i}
+          level={fxLevel}
+          onStep={(d) => setPreview({ i: Math.max(0, Math.min(FX_PREVIEW.length - 1, preview.i + d)) })}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
+
       {/* 观测频道 —— 右侧一栏竖排战报：谁出了哪一手、说了什么、打在谁身上，一眼扫得到，
           又不会压在敌阵脚下挡视野 */}
       <div className={css.logStrip} data-battle-log data-log-open={logOpen ? '1' : '0'}>
@@ -1060,18 +1470,51 @@ ${siteR.f.word}`}>
             <CaretRight size={13} weight="bold" className={css.logChev} />
           </button>
           <i className={css.logSlash} />
+          {/* 角色介绍（C）—— 放在这一行而不是 HUD：HUD 在手机上已经折成两行了，
+              再多一枚就要把敌阵那点高度也吃掉；这一行本来就只是标题，放得下。 */}
+          <button
+            type="button"
+            className={css.codexBtn}
+            data-codex-open
+            title={'角色介绍 · C —— 每人一份：技能、被动、五轴；← → 换人，↑ ↓ 在我方与敌方之间翻'}
+            onClick={() => openCodex('ally', Math.max(0, st.allies.findIndex((a) => a.id === actor?.id)))}
+          >
+            角色介绍<i className={css.kbdCap}>C</i>
+          </button>
         </div>
+
+        {/* 连携 · 条件表（engine.linkBoardOf 的只读投影）——
+            与 HUD 上那排羁绊挂牌是同一份名单的两面：挂牌给「蓄到几拍」，
+            这张表给「还差什么」。blocked 那一句就是引擎自己写的「还差什么」，
+            视图不另编一句话（两处各写一套，屏上迟早与判定打架）。
+            ⚠️ 窄屏它跟着观测频道一起收（见文件末 ≤640 那一档）：手机上这一栏
+               只有一行高，摊开就是抢敌阵的位置 —— 要看再点开，与战报同一个把手。 */}
+        <LinkBoard rows={board} />
+
         <div className={css.logLines}>
           {recent.length === 0 ? (
             <div className="tiny muted">观测频道静默。</div>
           ) : (
-            recent.map((e, i) => (
+            recent.map((e, i) => {
+              /* 同调 / 狂暴是**全队级**事件，单独一行、单独一套皮 —— 见 docs §7.1 第 2 条：
+                 它们跟普通伤害挤在同一行里，读起来就只是「又一条战报」，
+                 而这两条说的是「这一轮整个盘面变了」。所以整行铺开（负边距出血到栏边）、
+                 换色（同调走薄荷、狂暴走绯）、换节奏（慢一档、先落一道竖线再出字）。
+                 不以伤害分栏，是一句台词：屏幕先立起来，字后跟上。 */
+              const wide = e.skillId === 'sync' ? 'sync' : e.skillId === 'enrage' ? 'enrage' : null
+              return (
               <div
                 key={`${e.actorId}-${e.skillId}-${i}`}
-                className={`${css.logLine} ${e.skillId.startsWith('link-') ? css.logLink : ''}`}
+                className={`${css.logLine} ${e.skillId.startsWith('link-') ? css.logLink : ''} ${wide ? css.logWide : ''}`}
                 data-log-side={e.side}
                 data-log-link={e.skillId.startsWith('link-') ? '1' : undefined}
+                data-log-event={wide ?? undefined}
               >
+                {wide ? (
+                  <em className={css.logEventCap} data-log-event-cap={wide}>
+                    {wide === 'sync' ? '全景 · 同调' : '全景 · 狂暴'}
+                  </em>
+                ) : null}
                 {e.line ? <span className={css.line} data-log-line>{e.line}</span> : null}
                 <span className={css.logTxt}>
                   <b>{e.actor}</b> · {e.skill}
@@ -1081,7 +1524,8 @@ ${siteR.f.word}`}>
                   {e.note ? <span className="muted"> · {e.note}</span> : null}
                 </span>
               </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
@@ -1138,7 +1582,7 @@ ${siteR.f.word}`}>
 
               {panel === 'root' ? (
                 <div className={css.seq} data-command-menu>
-                  {SEQ.map((b) => {
+                  {SEQ.map((b, index) => {
                     // 普通攻击是「攻击」这一条指令本身，不是技能表里的一栏（用户口径）。
                     // 封印未解的人按不动这一条 —— 灰着并写清为什么，比按下去没反应好。
                     const basic = b.id === 'atk'
@@ -1151,6 +1595,7 @@ ${siteR.f.word}`}>
                       type="button"
                       data-cmd={b.id}
                       data-locked={locked ? '1' : undefined}
+                      data-focus={panel === 'root' && cur === index ? '1' : undefined}
                       disabled={locked}
                       title={locked
                         ? `尚未解禁：解封 ${actor.startUsed}/${actor.startNeed} 打满后，普攻与技能才放得出来`
@@ -1171,6 +1616,9 @@ ${siteR.f.word}`}>
                     </button>
                     )
                   })}
+                  <div className={css.kbdHint} data-kbd-hint>
+                    <i>Z</i>确定<i>X</i>返回<i>C</i>角色介绍<i>↑↓←→</i>移动
+                  </div>
                 </div>
               ) : null}
 
@@ -1192,6 +1640,8 @@ ${siteR.f.word}`}>
                               k={k}
                               sp={actor.tempo}
                               cd={actor.cds[k.id] ?? 0}
+                              /* 键盘游标 —— 与 skillRows 同一个次序（SKILL_GROUPS 摊平） */
+                              focus={panel === 'skill' && skillRows[cur]?.id === k.id}
                               onClick={() => issue({ t: 'skill', skillId: k.id })}
                             />
                           ))}
@@ -1245,7 +1695,7 @@ ${siteR.f.word}`}>
               {panel === 'item' ? (
                 <SubPanel title="道具" onBack={() => setPanel('root')}>
                   <div className={css.list} data-item-list>
-                    {ITEMS.map((it) => {
+                    {ITEMS.map((it, i) => {
                       const n = st.bag[it.id] ?? 0
                       /* 两道限：存量是背包里还剩几剂，额度是本回合还能丢几次
                          （TUNING.freePerBeat —— 道具不消耗回合，所以每回合各限一次）。
@@ -1257,6 +1707,7 @@ ${siteR.f.word}`}>
                           key={it.id}
                           type="button"
                           data-item={it.id}
+                          data-focus={panel === 'item' && cur === i ? '1' : undefined}
                           className={`${css.row} ${out ? css.rowPoor : ''}`}
                           disabled={out}
                           title={free <= 0
@@ -1281,6 +1732,7 @@ ${siteR.f.word}`}>
                     <button
                       type="button"
                       data-gear="__none"
+                      data-focus={panel === 'gear' && cur === 0 ? '1' : undefined}
                       className={`${css.row} ${!actor.gear ? css.rowOn : ''}`}
                       disabled={TUNING.freePerBeat.gear - (st.freeUsed.gear ?? 0) <= 0}
                       title="卸下装具 —— 同样不消耗回合，每回合一次"
@@ -1291,7 +1743,7 @@ ${siteR.f.word}`}>
                     </button>
                     {Object.keys(owned)
                       .filter((gid) => (owned[gid] ?? 0) > 0 && GEAR_OF[gid])
-                      .map((gid) => {
+                      .map((gid, gi) => {
                         const g = GEAR_OF[gid]
                         const on = actor.gear === gid
                         // 专属件认人：它认的是系丝线的那只手，不是背包里有没有位置
@@ -1305,6 +1757,7 @@ ${siteR.f.word}`}>
                             key={gid}
                             type="button"
                             data-gear={gid}
+                            data-focus={panel === 'gear' && cur === gi + 1 ? '1' : undefined}
                             data-gear-only-for={!canEquip(actor.id, gid) ? g.onlyFor?.join(',') : undefined}
                             data-gear-held-by={holder || undefined}
                             disabled={!ok || spent}
@@ -1342,7 +1795,9 @@ ${siteR.f.word}`}>
                       脱出成功率按双方行动条速度差评估：<b>{Math.round(st.fleeOdds * 100)}%</b>。
                       撤退失败这一手即告作废，敌方照常行动。
                     </p>
-                    <button className={css.risk} type="button" data-flee-go onClick={() => play({ t: 'flee' })}>
+                    <button className={css.risk} type="button" data-flee-go
+                      data-focus={panel === 'flee' && cur === 0 ? '1' : undefined}
+                      onClick={() => play({ t: 'flee' })}>
                       执行撤退
                     </button>
                   </div>
@@ -1367,13 +1822,14 @@ ${siteR.f.word}`}>
                         此刻没有可借的档案 —— 已解锁的人都在这支队伍里。
                       </span>
                     ) : null}
-                    {st.morphPool.map((id) => {
+                    {st.morphPool.map((id, mi) => {
                       const p = personOf(id)
                       return (
                         <button
                           key={id}
                           type="button"
                           data-morph-pick={id}
+                          data-focus={panel === 'morph' && cur === mi ? '1' : undefined}
                           className={css.morphChip}
                           style={{ '--c': p?.hue ?? 'var(--line)' } as CSSProperties}
                           onClick={() => { setPending(null); setPanel('root'); play({ ...(pending as Command), targetId: id } as Command) }}
@@ -1392,12 +1848,31 @@ ${siteR.f.word}`}>
                   <div className={css.aimHead}>
                     <Crosshair size={14} weight="bold" />
                     <b>{aimLabel(st, pending)}</b>
-                    <button className={css.x} type="button" onClick={() => { setPending(null); setPanel('root') }}>
+                    <button className={css.x} type="button" onClick={backOut} title="取消（X）">
                       <X size={13} />
                     </button>
                   </div>
+                  {/* 选目标 = 选**一张卡**，不是选一行名字。
+                      卡片里四样是玩家真正要比的：脸（谁）、血（还剩多少）、
+                      状态（身上挂着什么、壳还在不在）、以及敌方的这一拍意图。
+                      敌我共用这一套卡形（结构与间距一致），分得开靠的是颜色与
+                      那几个敌方专属读数（档位 / 破绽 / 指令）—— 不是换一套版式。
+                      群体技不进这一层（见 issue：target === 'all' 直接出手），
+                      确认那一下整屏亮一次就够（全屏那一层特效）。 */}
+                  <div className={css.targetGrid} data-target-grid data-side={aimEnemies ? 'enemy' : 'ally'}>
+                    {aimRows.map((c, i) => (
+                      <TargetCard
+                        key={c.id}
+                        c={viewOf(c)}
+                        side={aimEnemies ? 'enemy' : 'ally'}
+                        focus={cur === i}
+                        intent={foeIntent.get(c.id)}
+                        onPick={() => pickTarget(c.id)}
+                      />
+                    ))}
+                  </div>
                   <span className="tiny muted">
-                    {aimEnemies ? '点敌阵中任一单位确定目标。' : '点我方任一成员确定目标。'}
+                    {aimEnemies ? '方向键挑卡，Z 确定打谁。' : '方向键挑卡，Z 确定给谁。'}
                   </span>
                 </div>
               ) : null}
@@ -1420,6 +1895,7 @@ ${siteR.f.word}`}>
                 landed={impacted}
                 active={!over && actor?.id === c.id}
                 targetable={aimAllies && !c.down && !playing}
+                focus={panel === 'aim' && aimAllies && aimRows[cur]?.id === c.id}
                 onPick={() => pickTarget(c.id)}
               />
             ))}
@@ -1430,6 +1906,84 @@ ${siteR.f.word}`}>
       </div>
     </div>,
     document.body,
+  )
+}
+
+/* ---------- 连携 · 条件表 ----------
+   引擎那份只读投影（engine.linkBoardOf）画成的表：一条连携一行，
+   行里给三样此刻的读数 —— 蓄到几拍 / 冷却剩几拍 / 还差什么 —— 外加它自己的条件文案。
+
+   为什么要摊成表而不是塞进 HUD 那排挂牌：挂牌只有一个数字，
+   「3/4 人满」卡住的时候，玩家看得见「没满」，看不见「为什么没满」——
+   是那一位倒了？冷却还压着？还是条件（破绽 / 咏唱 / 接应）没来？
+   这三件事在屏上是三种不同的对策，摊开写才谈得上选。
+
+   ⚠️ 一个字都不自己判：ready / blocked / missing 全是引擎算好的（见 linkBoardOf），
+      这里只负责把它们摆成一张表。两处各写一套判据，屏上迟早与「真接不接得上」打架。 */
+function LinkBoard({ rows }: { rows: LinkBoardRow[] }) {
+  const ready = rows.filter((r) => r.ready).length
+  return (
+    <div className={css.linkBoard} data-link-board={String(rows.length)}>
+      <div className={css.linkBoardCap}>
+        <span className="mono">连携 · 条件</span>
+        {rows.length ? (
+          <em
+            className={css.linkBoardReady}
+            data-link-board-ready
+            data-full={ready === rows.length ? '1' : undefined}
+          >
+            {ready}/{rows.length} 就绪
+          </em>
+        ) : null}
+      </div>
+      {rows.length === 0 ? (
+        <span className="tiny muted">本场没有可用的连携 —— 名单上凑不出一对。</span>
+      ) : rows.map((r) => {
+        /* 进度条读两把不同的尺：有槽的那一类读「攒到几拍 / 要几拍」，
+           条件那一类没有槽，读「冷却走了几成」（走满即「条件一到就接」）。 */
+        const pct = r.kind === 'gauge'
+          ? (r.need > 0 ? Math.min(100, (r.progress / r.need) * 100) : 100)
+          : (r.cd > 0 ? Math.max(0, Math.min(100, (1 - r.cdLeft / r.cd) * 100)) : 100)
+        return (
+          <div
+            className={css.linkRow}
+            key={r.id}
+            data-link-row={r.id}
+            data-ready={r.ready ? '1' : undefined}
+            data-blocked={r.blocked ? '1' : undefined}
+          >
+            <div className={css.linkRowTop}>
+              <b className={css.linkRowName}>{r.name}</b>
+              <i className={css.linkRowKind}>{r.kind === 'gauge' ? '共鸣槽' : '条件追击'}</i>
+              <span
+                className={css.linkRowNum}
+                data-link-progress={r.progress}
+                data-link-cd={r.cdLeft}
+              >
+                {r.kind === 'gauge'
+                  ? `${r.progress}/${r.need} 拍`
+                  : r.cdLeft > 0 ? `冷却 ${r.cdLeft}/${r.cd}` : '冷却已过'}
+              </span>
+            </div>
+            <span className={css.linkRowBar} aria-hidden data-link-bar>
+              <i style={{ width: `${pct}%` }} data-ready={r.ready ? '1' : undefined} />
+            </span>
+            {/* 「还差什么」单独一行 —— 挤在名字右边的话，一行只剩得下四个字，
+                名字与那句话会一起被截断（实测 261px 宽时名字被截成「楼之…」）。 */}
+            <em
+              className={css.linkRowState}
+              data-link-state
+              data-missing={r.missing.length ? '1' : undefined}
+            >
+              {r.ready ? '就绪' : (r.blocked ?? '等条件')}
+            </em>
+            <ul className={css.linkConds} data-link-conds>
+              {r.conds.map((t) => <li key={t}>{t}</li>)}
+            </ul>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -1546,7 +2100,14 @@ function gearNotes(g: GearDef): string[] {
   return out
 }
 
-function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number; onClick: () => void }) {
+function SkillBtn({ k, sp, cd, onClick, focus }: {
+  k: SkillSpec
+  sp: number
+  cd: number
+  onClick: () => void
+  /** 键盘游标停在这一格（见 Battle 的键盘那一段）。与鼠标的 :hover 各管一路。 */
+  focus?: boolean
+}) {
   const poor = k.cost > sp
   const cooling = cd > 0
   const notes = notesOf(k)
@@ -1560,6 +2121,7 @@ function SkillBtn({ k, sp, cd, onClick }: { k: SkillSpec; sp: number; cd: number
       data-power={k.power}
       data-cd={cooling ? cd : undefined}
       data-cdmax={k.cd ?? 0}
+      data-focus={focus ? '1' : undefined}
       className={`${css.row} ${k.gate ? css.rowStart : ''} ${k.kind === '终结技' ? css.rowEnd : ''} ${poor || cooling ? css.rowPoor : ''}`}
       disabled={poor || cooling}
       title={`${k.name}｜${k.desc}${state ? `（${state}）` : ''}`}
@@ -1604,12 +2166,35 @@ function Bar({ c }: { c: Combatant }) {
 
 function BuffTags({ c }: { c: Combatant }) {
   const guard = c.guardAxis ? c.guardPts : 0
+  /* 破绽「零」的第二种来源：护盾被削到零、但**没有**被掀开（guardMend === 0）。
+     与下面那枚「尽碎」读起来都是 0，意思差着一整回合：
+       尽碎 = 被掀开、这一段**不许重凝**（guardMend > 0，有人按着它）；
+       归零 = 只是被削没了，它自己会凝回来。
+     两枚必须长得不一样，否则玩家会把「白白的一回合窗口」看成「这层壳已经没了」。 */
+  const guardZero = !!c.guardAxis && c.guardMax > 0 && guard <= 0 && c.guardMend <= 0
   if (!c.buffs.length && !c.shield && !c.taunt && !guard && !c.broken && !c.guardMend
-    && !c.noHealRounds && !c.ward && c.charge <= 1) return null
+    && !guardZero && !c.enraged && !c.noHealRounds && !c.ward && c.charge <= 1) return null
   /* 标签表搬去 skilltext.BUFF_LABEL（天赋那一格读的也是它，两处不能各写一套） */
   const label = BUFF_LABEL
   return (
     <div className={css.buffs}>
+      {/* 狂暴 —— 又一夜「不挂在 c.buffs 里」的坑，与 no-heal / guard-clear 同一类：
+          它直接改面板（见 types 的 Combatant.enraged 与 engine 的 checkEnrage），
+          所以通用那份 buff 清单**读不到它**，必须在这儿单独长一枚。
+          一枚标签说两件事：它更凶了，以及——它把壳掀开了。后面那半句是本条的意义：
+          狂暴给的是**一个窗口**，不是一段纯数值增强（docs §2.1 那条批评）。
+          窗口那半句只在真被掀开时写（guardMend > 0），否则标签会替引擎撒谎。 */}
+      {c.enraged ? (
+        <span className={css.buff} data-buff="enrage" data-debuff="1"
+          data-enrage-open={c.guardMend > 0 ? '1' : undefined}
+          title={'狂暴：血跌破门槛之后它不再省力 —— 破坏力 +'
+            + Math.round(TUNING.enrageAtk * 100) + '%、充能 +'
+            + Math.round(TUNING.enrageSpd * 100) + '%，一个形态只狂暴一次（换形态重新算）。'
+            + (c.guardMend > 0 ? '代价是破绽被整个掀开：这一段它没有壳，往这个窗口里压。' : '')}>
+          狂暴{c.guardMend > 0 ? <i className={css.buffT}>破防</i> : null}
+        </span>
+      ) : null}
+
       {/* 破绽：反现实实体身上那层「只有对上这条轴才削得动」的护盾。
           轴名直接挂在标签上 —— 这一条的全部意义就是让玩家**读**出来它怕什么，
           藏起来的话，五轴里另外四条就永远只是面板上的装饰。 */}
@@ -1633,6 +2218,19 @@ function BuffTags({ c }: { c: Combatant }) {
           破绽尽碎<i className={css.buffT}>{c.guardMend}</i>
         </span>
       ) : null}
+      {/* 破绽归零 —— 「零」的第二种来源（见上面 guardZero 的注）。
+          它跟「尽碎」在同一处读：都是 0 点，但这一枚说的是「会自己凝回来」。
+          少了这一枚，一记同调把壳削到 0 的那一回合在屏上什么都不显示，
+          玩家只会以为「这只敌人的破绽层不见了」。 */}
+      {guardZero ? (
+        <span className={css.buff} data-buff="guard-zero"
+          title={'破绽归零：那层「' + c.guardAxis + '」的护盾已经被削到 0 点，'
+            + '但这只是削没了 —— 它过一拍会自己凝回来（' + c.guardMax + ' 点）。'
+            + '与「破绽尽碎」不是一件事：那一枚是被人按着、整整一回合不许重凝。'}>
+          破绽归零<i className={css.buffT}>待凝</i>
+        </span>
+      ) : null}
+
       {/* 禁疗：被「禁止命令」钉住的那一段（noHealRounds > 0）。
           另一枚**必须单独长出来**的标签，理由和上面那枚同源但方向相反：
           它不挂在任何一条 buff 上（那一栏数的是「本人出手几次」，而被钉的人未必轮得到出手），
@@ -1751,6 +2349,38 @@ function UltCut({ cut }: { cut: CutView }) {
   )
 }
 
+/* ---------- 全景 · 同调 / 狂暴的黑边 ----------
+   docs §3.1 摘出来的三条，全在这一块上：
+     ① **景别是节奏手段** —— 单点伤害走近景（特效贴着挨打的那个，见 Unit / Foe 的 fxOn），
+        全队级的两件事（同调 / 狂暴）走全景：它们改的是整个盘面，不该只在一个格子上一闪。
+     ② **黑边 = 人为的屏幕边界** —— 上下两道实心边把战斗盘框成一块「屏幕」，
+        画面与字幕因此分得开。本仓 0 处 backdrop-filter，靠的是硬边不是糊。
+     ③ **台词与特效错开一拍** —— 边先压下来、字幕晚一档浮上来（CSS animation-delay），
+        眼睛先读完画面再读字。
+   再一条：它**不禁用**底下的任何东西（pointer-events: none、约 0.9s 自己走完）——
+   演出是盖在盘面上的一层，不是一屏要人按掉的弹窗。 */
+function WideCut({ id, skill, note }: { id: string; skill: string; note?: string }) {
+  const sync = id === 'sync'
+  return (
+    <div
+      className={css.wideCut}
+      data-wide-cut={id}
+      role="status"
+      aria-label={`${sync ? '同调' : '狂暴'} —— ${skill}`}
+    >
+      <i className={css.wideBar} aria-hidden data-wide-bar="top" />
+      <div className={css.wideCap}>
+        <span className={css.wideKicker} data-wide-kicker>
+          {sync ? '全景 · 全队 · 同调' : '全景 · 敌体 · 狂暴'}
+        </span>
+        <b className={css.wideName}>{skill}</b>
+        {note ? <span className={css.wideNote} data-wide-note>{note}</span> : null}
+      </div>
+      <i className={css.wideBar} aria-hidden data-wide-bar="bottom" />
+    </div>
+  )
+}
+
 function LinkPop({ link }: { link: { id: string; name: string; members: string[] } }) {
   return (
     <div className={css.linkPop} data-link={link.id} data-link-pop="1" role="status">
@@ -1782,7 +2412,7 @@ function LinkPop({ link }: { link: { id: string; name: string; members: string[]
 /* ---------- 单位卡：我方（小队列里的一行 —— 血、节拍、行动条一眼看全） ---------- */
 
 function Unit({
-  c, fx, landed, active, targetable, onPick,
+  c, fx, landed, active, targetable, onPick, focus,
 }: {
   c: Combatant
   fx: FxView | null
@@ -1791,6 +2421,9 @@ function Unit({
   active?: boolean
   targetable?: boolean
   onPick?: () => void
+  /** 键盘游标停在这一张卡上（选目标那一层）。与 targetable 分开：
+      可挑是「能不能点」，这一枚是「现在停在哪」。 */
+  focus?: boolean
 }) {
   const hit = !!fx && fx.targetId === c.id
   /** 单体演出就落在他身上（全体技走全屏那一层，这里只留飘字） */
@@ -1802,6 +2435,7 @@ function Unit({
       className={`${css.unit} ${c.down ? css.unitDown : ''} ${c.gone > 0 ? css.unitGone : ''} ${active ? css.unitActive : ''} ${targetable ? css.unitAim : ''}`}
       data-unit={c.id}
       data-side={c.side}
+      data-focus={focus ? '1' : undefined}
       data-down={c.down ? '1' : undefined}
       data-gone={c.gone > 0 ? String(c.gone) : undefined}
       data-stance={c.stance ? '1' : undefined}
@@ -1909,11 +2543,16 @@ function Unit({
           data-fx={fx!.kind}
           data-fx-tone={fx!.tone}
           data-fx-var={fxSeed(fx!.skillId).variant}
+          data-fx-family={famOf(fx!)}
           data-crit={fx!.crit ? '1' : undefined}
           style={{ '--fx-hue': fxSeed(fx!.skillId).hue, '--u': c.hue } as CSSProperties}
           aria-hidden
         >
           <FxLayers fx={fx!} />
+          <BattleFx
+            skillId={fx!.skillId} name={fx!.skill} kind={fx!.kind} tone={fx!.tone}
+            seed={fxSeed(fx!.skillId).hue}
+          />
           <em className={css.fxTagOn}>{fx!.skill}</em>
         </span>
       ) : null}
@@ -1930,16 +2569,89 @@ function Unit({
   )
 }
 
+/* ---------- 选目标用的卡（敌我共用一套形态） ----------
+   与战场上的 .unit / .foe 是两套东西：那两套要撑住「站在场上」的分量，
+   所以卡大、留白多；这一套是**列表**，一屏要塞得下四个人还要读得清，
+   于是把四样最要比的东西压在一张 100 出头的小卡上：脸 / 名字与档位 /
+   血（数字 + 条）/ 身上的状态。敌方多两样 —— 破绽还剩几点、这一拍要做什么。
+   数字一律 tabular-nums：血条一跳、字宽一变，整排卡会跟着抖（见 .tcard）。 */
+function TargetCard({
+  c, side, focus, intent, onPick,
+}: {
+  c: Combatant
+  side: 'ally' | 'enemy'
+  focus?: boolean
+  intent?: string
+  onPick: () => void
+}) {
+  const hpPct = Math.max(0, Math.min(100, (c.hp / Math.max(1, c.hpMax)) * 100))
+  const low = hpPct <= 30
+  return (
+    <div
+      className={css.tcard}
+      data-target-card={c.id}
+      data-side={side}
+      data-focus={focus ? '1' : undefined}
+      data-low={low ? '1' : undefined}
+      role="button"
+      tabIndex={-1}
+      aria-label={`${named(c)}${side === 'enemy' ? ' · 敌方' : ''}　${c.hp} / ${c.hpMax}`}
+      onClick={onPick}
+    >
+      <span className={css.tcardTop}>
+        {side === 'ally' ? (
+          <Portrait avatarId={c.avatarId ?? c.id} name={named(c)} hue={c.hue} sigil={c.sigil} size={26} />
+        ) : (
+          <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
+            <span style={{ fontSize: 12 }}>{c.sigil}</span>
+          </span>
+        )}
+        <span className={css.tcardName}>{named(c)}</span>
+        <i className={css.tcardTag}>
+          {side === 'ally'
+            ? dutyOf(c.duty).name
+            : c.tier === 'boss' ? '首领' : c.tier === 'elite' ? '精英' : '杂兵'}
+        </i>
+      </span>
+      <span className={css.tcardHp} aria-hidden>
+        <i style={{ width: `${hpPct}%` }} data-low={low ? '1' : undefined} />
+      </span>
+      <span className={css.tcardNum}>
+        {c.hp}<i>/{c.hpMax}</i>
+      </span>
+      {side === 'enemy' && c.guardMax > 0 && c.guardAxis ? (
+        <span className={css.tcardGuard} data-guard-left={c.guardPts}>
+          破绽 {c.guardPts}/{c.guardMax}
+        </span>
+      ) : null}
+      {side === 'enemy' && intent ? (
+        <span className={css.tcardIntent} title={`它这一拍的指令：${intent}`}>指令 · {intent}</span>
+      ) : null}
+      <span className={css.tcardBuffs}><BuffTags c={c} /></span>
+    </div>
+  )
+}
+
 /* ---------- 单位卡：敌方（居中放大 · 数值在脚下 · 头顶不挂简介） ----------
    头顶原先挂着一整块「名字 + 精英/首领 + 定位 + 机制」的简介：敌阵一多，
    那几行字比人还高，挡着自己也挡着隔壁。现在头顶留空 ——
    谁是谁、什么来历、会使哪几手，点卡上的「信息」看（见 FoeInfoPanel）。*/
 
 function Foe({
-  c, fx, landed, active, targetable, onPick, onInfo,
+  c, fx, landed, active, targetable, onPick, onInfo, intent, focus,
 }: {
   c: Combatant
   fx: FxView | null
+  /**
+   * 「它这一拍要做什么」—— 引擎写下的那条 `foe-cmd`（敌方指挥）的正文。
+   * 挂在卡上而不是只留在战报里：战报读的是**发生过**的事，这一枚读的是
+   * 它**正要去**做的事 —— 打谁、还是先给自己套一层。玩家读得出意图，
+   * 才谈得上「先杀奶」「换个人扛」这些决定（docs §2.3 那三条）。
+   * 位置照旧不占版面：绝对定位压在画框下沿，多一行不挤敌阵的高度。
+   */
+  intent?: string
+  /** 键盘游标停在这一张卡上（选目标那一层，见 Battle 的键盘那一段） */
+  focus?: boolean
   /** 这一手打实了没有 —— 飘字与「失能」都等它（血量走 `c.hp`，已由 viewOf 退回打之前） */
   landed?: boolean
   active?: boolean
@@ -1957,6 +2669,7 @@ function Foe({
       className={css.foe}
       data-unit={c.id}
       data-side="enemy"
+      data-focus={focus ? '1' : undefined}
       data-foe-card={c.id}
       data-foe-down={c.down ? '1' : undefined}
     >
@@ -1974,6 +2687,14 @@ function Foe({
         <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
           <span style={{ fontSize: 30 }}>{c.sigil}</span>
         </span>
+        {/* 敌方意图挂牌 —— 只读引擎那一条账，视图不猜下一手（见 Foe 的 intent 注）。
+            「指令」两个字先说清这是它**被指挥**的，不是它已经打出来的。 */}
+        {intent ? (
+          <span className={css.foeIntent} data-foe-intent={c.id} title={`它这一拍的指令：${intent}`}>
+            <b>指令</b>
+            {intent}
+          </span>
+        ) : null}
         {/* 倒下的那一下：化开、收进去，人留在原位当个空壳 ——
             位置不能塌，一塌两翼就跟着挪，玩家刚记住的排面全乱。 */}
         {c.down ? <span className={css.vanish} data-foe-vanish={c.id} aria-hidden /> : null}
@@ -1991,11 +2712,16 @@ function Foe({
             data-fx={fx!.kind}
             data-fx-tone={fx!.tone}
             data-fx-var={fxSeed(fx!.skillId).variant}
+            data-fx-family={famOf(fx!)}
             data-crit={fx!.crit ? '1' : undefined}
             style={{ '--fx-hue': fxSeed(fx!.skillId).hue } as CSSProperties}
             aria-hidden
           >
             <FxLayers fx={fx!} />
+            <BattleFx
+            skillId={fx!.skillId} name={fx!.skill} kind={fx!.kind} tone={fx!.tone}
+            seed={fxSeed(fx!.skillId).hue}
+          />
             <em className={css.fxTagOn}>{fx!.skill}</em>
           </span>
         ) : null}
@@ -2085,9 +2811,26 @@ function FoeInfoPanel({ c, onClose }: { c: Combatant; onClose: () => void }) {
     ? c.guardMend > 0
       ? `${c.guardAxis} —— 被「破绽尽碎」整个掀开了：护盾归零（0 / ${c.guardMax}），` +
         '这一回合里既砸不出「打穿」、它也不会重凝；过完这一回合才按满点凝回来。'
-      : `${c.guardAxis} —— 只有对上这条轴的攻击削得动那层护盾（现余 ${c.guardPts} / ${c.guardMax}）。` +
-        '削穿即「观测成立」：它当场停一拍，且这一拍里挨打加成。'
+      : c.guardPts <= 0
+        /* 第三种零：被削到 0、但没人按着 —— 与上面那一种是**两件事**：
+           这边会自己凝回来，那边的窗口是整整一回合不许凝。所以这一行必须另写一句，
+           不能与「现余 0 / 5」那句共用（那一句会让玩家以为壳还在，只是读作 0）。 */
+        ? `${c.guardAxis} —— 护盾已经被削到 0 点（0 / ${c.guardMax}），` +
+          '但它只是被削没了：没有被按住，过一拍会自己凝回满点。这一拍里它照样是 0 防。'
+        : `${c.guardAxis} —— 只有对上这条轴的攻击削得动那层护盾（现余 ${c.guardPts} / ${c.guardMax}）。` +
+          '削穿即「观测成立」：它当场停一拍，且这一拍里挨打加成。'
     : '没有破绽层：哪条轴打上去都一样。'])
+
+  /* 狂暴那一行 —— 与战斗盘上那枚 data-buff="enrage" 同源（见引擎的 checkEnrage）。
+     它不挂在 buff 上，所以这一页与战斗盘是**两处都得单独写**的同一个坑：
+     只写一处的话，翻详情的人看到的还是「这个首领什么事都没有」。 */
+  if (c.enraged) {
+    rows.push(['狂暴', '血跌破门槛之后它打红了眼 —— 破坏力 +' + Math.round(TUNING.enrageAtk * 100)
+      + '%、充能 +' + Math.round(TUNING.enrageSpd * 100) + '%。一个形态只狂暴一次，换形态重新算。'
+      + (c.guardMend > 0
+        ? '　对价：「' + c.guardAxis + '」被整个掀开，这一回合它没有壳 —— 往这个窗口里压。'
+        : '')])
+  }
 
   /* 回复那一行 —— 主人 2026-09-18 报「狂热者格尔会莫名回血」之后立的。
      那一下之所以读着像 bug，是因为屏上**一个字都没说它会回血**：
@@ -2159,6 +2902,207 @@ function FoeInfoPanel({ c, onClose }: { c: Combatant; onClose: () => void }) {
                 <i className={css.rowSub}>{k.kind}</i>
               </span>
               <span className={css.rowCost}>{k.power > 0 ? `×${k.power}` : '—'}</span>
+              {k.desc ? <span className={css.rowDesc}>{k.desc}</span> : null}
+              {k.line ? <span className={css.foeSkillLine}>「{k.line}」</span> : null}
+              <span className={css.rowNotes}>
+                {notesOf(k).map((t) => <i key={t}>{t}</i>)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- 开发预览台（F2 / ?fx=all）----------
+   把登记过的每一手逐个放一遍：左边浮层里就是真实的 BattleFx（同一份数据表、
+   同一套 CSS），右上角写 skillId / 族 / 时长。加新招之后先在这儿看，
+   不必真打一场 —— 验收截图与回归对比也全靠它。
+   不进正式玩法：只有 F2 或 URL 上带 ?fx=all 才翻得开。 */
+function FxPreview({ i, onStep, onClose, level }: {
+  i: number
+  level: 'standard' | 'reduced'
+  onStep: (d: number) => void
+  onClose: () => void
+}) {
+  const [n, setN] = useState(0)
+  const at = Math.max(0, Math.min(FX_PREVIEW.length - 1, i))
+  const item = FX_PREVIEW[at]
+  const { family, spec } = specOf(item.id, {})
+  return (
+    <div className={css.fxPreviewMask} data-fx-preview={item.id} onClick={onClose}>
+      <div className={css.fxPreviewCard} onClick={(e) => e.stopPropagation()}>
+        <div className={css.fxPreviewHead}>
+          <b data-fx-preview-label>{item.label}</b>
+          <span className="mono tiny" data-fx-preview-id={item.id} data-fx-preview-family={family}>
+            {item.id} · {family} · {spec.dur}ms
+          </span>
+        </div>
+        <div className={css.fxPreviewStage} data-fx-preview-stage>
+          <BattleFx
+            key={`${item.id}-${n}`}
+            skillId={item.id} name={item.label} kind=""
+            seed={at * 37 + 11} level={level}
+          />
+        </div>
+        <div className={css.fxPreviewBar}>
+          <button type="button" data-fx-preview-prev onClick={() => onStep(-1)} disabled={at <= 0}>
+            ← 上一手
+          </button>
+          <span className="mono tiny">{at + 1} / {FX_PREVIEW.length}</span>
+          <button type="button" data-fx-preview-next onClick={() => onStep(1)} disabled={at >= FX_PREVIEW.length - 1}>
+            下一手 →
+          </button>
+          <button type="button" data-fx-preview-replay onClick={() => setN((v) => v + 1)}>重播</button>
+          <button type="button" data-fx-preview-close onClick={onClose}>关闭（F2 / X）</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- 角色介绍（C）----------
+   每人一份：名字 / 性质 / 来历 / 当前 / 职能 / 机制 / 被动 / 破绽 / 回复 / 狂暴，
+   五轴，以及**每一手的说明**（技能名、类别、消耗、正文、备注、台词）。
+   我方与敌方共用这一份版式 —— 对面会使哪几手、那一手干什么，是这一屏最缺的一页
+   （从前只有敌卡上那枚「信息」，而我方一个人的本事要翻到档案页去看）。
+
+   两件事刻意与 FoeInfoPanel 走同一条路：
+     · 读数全从 Combatant 与 bosses.ts 读，不另编履历（没有档案就照实说没有）；
+     · 破绽那三种「零」在这里同样分开写（掀开 / 归零 / 正常），理由见那一段的注。
+   键盘：← → 换人（循环，用户明写的那一处例外）、↑ ↓ 在我方与敌方之间翻，
+         C / X / Esc 关闭。鼠标仍是点哪算哪（左右两枚箭头 + 那一枚翻面按钮）。 */
+function CodexPanel({
+  c, side, index, total, onPrev, onNext, onSide, onClose, level, onLevel,
+}: {
+  c: Combatant
+  side: 'ally' | 'enemy'
+  index: number
+  total: number
+  onPrev: () => void
+  onNext: () => void
+  onSide: () => void
+  onClose: () => void
+  level: 'standard' | 'reduced'
+  onLevel: () => void
+}) {
+  const nb = namedBossOf(c.namedId)
+  const rows: Array<[string, string]> = [
+    ['性质', [c.cls, c.tier === 'boss' ? '首领' : c.tier === 'elite' ? '精英' : '', ...c.tags]
+      .filter(Boolean).join(' · ') || '未分类'],
+    ['来历', nb ? nb.from : (side === 'enemy'
+      ? `观测体 · 按这一场的地点 R 值与危险度现推的通用件${c.note ? `（${c.note}）` : ''}`
+      : '本场编队里的同行者。')],
+    ['当前', `${c.hp} / ${c.hpMax} 生命　·　节拍 ${c.tempo} / ${c.tempoMax}`],
+  ]
+  if (side === 'ally') {
+    const d = dutyOf(c.duty)
+    rows.push(['职能', `${d.name} —— ${d.desc}　主攻轴：${d.axis}`])
+  }
+  if (c.trait) rows.push(['机制', c.trait])
+  if (c.passive) {
+    rows.push(['被动', `${c.passive.name} —— ${[c.passive.desc, ...passiveText(c.passive)].join('　')}`])
+  }
+  rows.push(['破绽', c.guardMax > 0 && c.guardAxis
+    ? c.guardMend > 0
+      ? `${c.guardAxis} —— 被整个掀开了（0 / ${c.guardMax}），这一回合不许重凝`
+      : c.guardPts <= 0
+        ? `${c.guardAxis} —— 已削到 0 点（0 / ${c.guardMax}），但没被按住，它会自己凝回来`
+        : `${c.guardAxis} —— 只有对上这条轴的攻击削得动（现余 ${c.guardPts} / ${c.guardMax}）`
+    : '没有破绽层：哪条轴打上去都一样。'])
+  if (c.enraged) {
+    rows.push(['狂暴', '血跌破门槛之后它打红了眼 —— 破坏力 +' + Math.round(TUNING.enrageAtk * 100)
+      + '%、充能 +' + Math.round(TUNING.enrageSpd * 100) + '%。一个形态只狂暴一次。'])
+  }
+
+  return (
+    <div
+      className={css.foeInfoMask}
+      data-codex
+      data-codex-side={side}
+      data-codex-person={c.id}
+      role="dialog"
+      aria-label={`角色介绍 · ${c.name}`}
+      onClick={onClose}
+    >
+      <div className={css.foeInfoCard} onClick={(e) => e.stopPropagation()}>
+        <div className={css.foeInfoHead}>
+          <span className="glyph" style={{ '--g': c.hue } as CSSProperties}>
+            <span style={{ fontSize: 26 }}>{c.sigil}</span>
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <b data-codex-name>{named(c)}</b>
+            <span className="tiny muted" style={{ display: 'block' }}>
+              {side === 'ally' ? '我方角色介绍' : '敌方介绍与描述'}　·　{index + 1} / {total}
+            </span>
+          </span>
+          <div className={css.codexNav}>
+            <button type="button" className={css.codexNavBtn} data-codex-prev onClick={onPrev} title="上一位（←）">
+              <CaretRight size={13} weight="bold" style={{ transform: 'rotate(180deg)' }} />
+            </button>
+            <button type="button" className={css.codexNavBtn} data-codex-next onClick={onNext} title="下一位（→）">
+              <CaretRight size={13} weight="bold" />
+            </button>
+          </div>
+          <button className={css.x} type="button" data-codex-close onClick={onClose} title="关闭（C / X / Esc）">
+            <X size={13} />
+          </button>
+        </div>
+
+        <div className={css.codexTabs}>
+          <button
+            type="button"
+            className={css.codexSideBtn}
+            data-codex-toggle
+            data-side={side}
+            onClick={onSide}
+            title="在我方与敌方之间翻（↑ ↓）"
+          >
+            <Swap size={12} weight="bold" />
+            {side === 'ally' ? '翻到敌方介绍' : '翻回我方介绍'}
+          </button>
+          <button
+            type="button"
+            className={css.codexSideBtn}
+            data-fx-level-toggle
+            data-level={level}
+            onClick={onLevel}
+            title="演出强度（Z 键切换）：减弱档只留一帧形变与一层余光，无震屏、无闪光"
+          >
+            演出强度 · {level === 'reduced' ? '减弱' : '标准'}
+          </button>
+          <span className="tiny muted">← → 换人　·　↑ ↓ 换边　·　Z 切强度　·　C / X 关闭</span>
+        </div>
+
+        <div className={css.foeInfoRows}>
+          {rows.map(([k, v]) => (
+            <div className={css.foeInfoRow} key={k}>
+              <span className={css.foeInfoKey}>{k}</span>
+              <span className={css.foeInfoVal}>{v}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className={css.foeInfoCap}>五轴</div>
+        <div className={css.foeInfoAxes}>
+          {Object.entries(c.axes).map(([k, v]) => (
+            <span className={css.axisChip} key={k}>
+              {AXIS_LABEL[k] ?? k} <b>{v}</b>
+            </span>
+          ))}
+        </div>
+
+        <div className={css.foeInfoCap}>技能 · {c.skills.length} 手</div>
+        <div className={`${css.list} ${css.foeInfoList}`} data-codex-skills>
+          {c.skills.map((k) => (
+            <div className={css.row} key={k.id} data-codex-skill={k.id}>
+              <SkillIcon id={k.id} />
+              <span className={css.rowName}>
+                <span>{k.name}</span>
+                <i className={css.rowSub}>{k.kind}</i>
+              </span>
+              <span className={css.rowCost}>{k.cost ? `${k.cost} 节拍` : '无耗'}</span>
               {k.desc ? <span className={css.rowDesc}>{k.desc}</span> : null}
               {k.line ? <span className={css.foeSkillLine}>「{k.line}」</span> : null}
               <span className={css.rowNotes}>

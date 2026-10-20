@@ -517,6 +517,59 @@ export function followCdOf(base: number, members: string[], bond?: Record<string
   return Math.max(1, base - bondCut(bondFloorOf(members, bond)))
 }
 
+/* ============================================================
+   可读的连携条件 —— 「这一记要怎么才接得上」是可以枚举的
+   ------------------------------------------------------------
+   连携的触发条件从前只活在日志那一句话里（「谁打穿了谁的破绽」），
+   屏上要列出来就得自己再猜一遍 —— 而猜出来的迟早和引擎里跑的对不上。
+   这里把**条件**本身做成数据：谁、看什么、差多少、为什么还接不上。
+   引擎那一侧由 `linkBoardOf` 补上当下的进度（槽攒到几拍、冷却还剩几拍、谁不在场）。
+   ⚠️ 这份数据是**只读**的：引擎不读它做判定，判定仍在 followCondition / linkReady。
+      两处若各写一套判据，读数就会和实际打架 —— 所以这里只描述，不判定。
+   ============================================================ */
+
+/** 一条连携的触发条件（人话版，一行一条） */
+export interface LinkCond {
+  id: string
+  name: string
+  /** 'gauge' = 共鸣槽（团队连携）；'cond' = 条件追击（双人那些） */
+  kind: 'gauge' | 'cond'
+  /** 共鸣槽要几拍才满（'cond' 那条没有槽，写 0） */
+  need: number
+  /** 接完一手的冷却（拍） */
+  cd: number
+  /** 参加者（档案 id） */
+  members: string[]
+  /** 触发条件，一行一条 —— 屏上照着念就行 */
+  conds: string[]
+  desc: string
+}
+
+/**
+ * 本场在场的连携，连同它们的**触发条件**。
+ * 与 `bondsOf` 是同一份名单（同一次算），只是把「条件」那几栏摊开成人话。
+ */
+export function linkCondsOf(ids: string[], bond?: Record<string, number>): LinkCond[] {
+  return bondsOf(ids, bond).map((b) => ({
+    id: b.id,
+    name: b.name,
+    kind: b.squad ? 'gauge' : 'cond',
+    need: b.squad ? b.need : 0,
+    cd: b.cd,
+    members: [...b.members],
+    conds: b.squad
+      ? [
+        `名单上每人把自己那条能量攒满（各 ${b.need} 拍）`,
+        '全员都在场上 —— 倒了、蛰伏了，这一记就凑不齐',
+      ]
+      : [
+        '搭档这一手打穿了破绽（对上它怕的那条轴）',
+        '对面正在咏唱终结技能',
+        ...(TUNING.linkRescueOn ? ['或同伴被打到残血 —— 换一位接应'] : []),
+      ],
+    desc: b.link.desc,
+  }))
+}
 /**
  * 把羁绊加成落到上阵者身上（只落常驻字段）。
  * 连携技不再进技能表 —— 它由共鸣槽 / 追击条件自动触发（见 engine 的 fireFollows / fireTeamLink）。

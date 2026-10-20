@@ -11,8 +11,9 @@
      其中「更换装备」不消耗回合（执行委员长口径）。
    ============================================================ */
 
-import { LION_PAIR_ID, RIVAL_LINK, applySynergies, bondFloorOf, bondsOf } from './synergy'
-import type { Bond } from './synergy'
+import { LION_PAIR_ID, RIVAL_LINK, applySynergies, bondFloorOf, bondsOf, linkCondsOf } from './synergy'
+import type { Bond, LinkCond } from './synergy'
+import { planFoeAct } from './foeplan'
 import { lineFor, poolFor } from './banter'
 import { AXIS_SCALE, TUNING } from './tuning'
 import {
@@ -350,6 +351,13 @@ export function createBattle(opts: CreateOpts): BattleState {
     follow: {},
     followCd: {},
     lastBreak: [],
+    /* 连携点（见 types 的 BattleState.chain）：开局空池。关掉 TUNING.chainOn 时
+       引擎一处都不往里记，下面每一处都先过那道开关 —— 这一格留着不碍事。 */
+    chain: 0,
+    chainMax: TUNING.chainMax,
+    chainIdle: 0,
+    chainPeak: 0,
+    syncs: 0,
     // 天赋：响过的次数（按「人:下标」记）与重入深度（见 types 的 talentUsed / talentDepth）
     talentUsed: {},
     talentDepth: 0,
@@ -562,6 +570,106 @@ function gainTempo(c: Combatant, n: number): number {
 /** 硬直的名字（写日志用） */
 const CONTROL_NAME: Partial<Record<BuffKey, string>> = { silence: '沉默', stall: '断拍' }
 
+/* ============================================================
+   连携点 —— 第三条可运营的循环（见 tuning 的「连携点」那一节）
+   ------------------------------------------------------------
+   另两条循环（节拍 = 单人手里那点钱、共鸣槽 = 一人一条能量）都长在
+   「谁什么时候动」这一侧。连携点长在**我方合力**那一侧：破绽是敌人身上的一层壳，
+   敲穿它原本只换来「停一拍、挨打更重」，敲完那一笔就散了 —— 这一格把那一笔接住。
+
+     破绽敲穿 / 破防尽碎 / 打掉一个 / 打穿一个形态 → 攒点
+     攒满 → 「同调」自己放出去（全队几拍加成 + 全体敌体破绽各削一点），池子清零
+     攒着 → 合击按点数加重（fireLinkHand 读它）
+     连着几拍没有进账 → 一拍漏一点（存着不动不叫运营，叫攒钱）
+
+   全部走 TUNING.chainOn 一道开关：关掉时 gainChain 直接返回 0，
+   池子停在 0，下面每一处判据都自然落空 —— 手感回到改动前。
+   ============================================================ */
+
+/**
+ * 攒连携点。进账即把「空转拍数」清零；到顶就停在上限（满池等着收拍时放同调）。
+ * @returns 真的进了几点（日志要报这个数，与 gainTempo 同一条规矩）
+ */
+function gainChain(s: BattleState, n: number): number {
+  if (!TUNING.chainOn || n <= 0) return 0
+  const cap = s.chainMax ?? TUNING.chainMax
+  const cur = s.chain ?? 0
+  const next = Math.min(cap, cur + n)
+  const got = next - cur
+  if (got <= 0) return 0
+  s.chain = next
+  s.chainIdle = 0
+  // 峰值记下来：收场时池子多半是空的，而战果那一栏问的是「这一场运营到哪一步」
+  if (next > (s.chainPeak ?? 0)) s.chainPeak = next
+  return got
+}
+
+/** 连携点亮到几成（0~1）—— 屏上要画那一条时读它 */
+export function chainOf(s: BattleState): { cur: number; max: number; frac: number } {
+  const max = s.chainMax ?? TUNING.chainMax
+  const cur = s.chain ?? 0
+  return { cur, max, frac: max > 0 ? cur / max : 0 }
+}
+
+/** 这一记合击该按几倍打 —— 连携点亮着就按点数加重，封顶 chainLinkCap */
+function chainLinkMul(s: BattleState): number {
+  if (!TUNING.chainOn) return 1
+  const cur = s.chain ?? 0
+  if (cur <= 0) return 1
+  return Math.min(TUNING.chainLinkCap, 1 + cur * TUNING.chainLinkPerPoint)
+}
+
+/**
+ * 「同调」—— 连携点攒满那一拍自动放的那一下。
+ *
+ * 放在**收拍**（endBeat）里判而不是在 gainChain 里当场放，是有原因的：
+ * gainChain 的调用点全在结算途中（stripGuard / hit / clearGuard），
+ * 在那儿再回头去削一遍全体破绽，等于在 stripGuard 里递归调 stripGuard 那一套。
+ * 收拍是这一轮所有账都结完的那个点 —— 也是玩家眼里「这一轮结束了」的那一下。
+ *
+ * 份量刻意压低（+攻速、减伤各几成、几拍就散）：它是一记白送的、不由玩家点的东西，
+ * 与连携同一条规矩 —— 值得等，等不来胜负。
+ */
+function fireSync(s: BattleState) {
+  const cap = s.chainMax ?? TUNING.chainMax
+  if ((s.chain ?? 0) < cap) return
+  s.chain = 0
+  s.chainIdle = 0
+  s.syncs = (s.syncs ?? 0) + 1
+  const mine = aliveOf(s.allies)
+  for (const c of mine) {
+    addBuff(c, 'atk', TUNING.syncAtk, TUNING.syncTurns)
+    addBuff(c, 'spd', TUNING.syncSpd, TUNING.syncTurns)
+    addBuff(c, 'shield', TUNING.syncShield, TUNING.syncTurns)
+  }
+  /* 全体敌体破绽各削一点 —— 这一刀**不吃轴**：连携点是我方合力攒出来的，
+     不该因为「这一队没人对上它那条轴」就白攒。削穿了照走 stripGuard 那一套
+     （会停一拍、会记 lastBreak、会给出手者回节拍）—— 但这里没有「出手者」，
+     所以直接削点数，把「观测成立」留给真正打得动它的那一手去拿。
+     ⚠ 因此**下限留 1 点**：同调可以把它削到只剩最后一点，但不许自己完成「破防」这一手。
+     留 0 的话既不置 broken、也不设 guardMend（stripGuard 见 0 直接返回、重凝只看 guardMend），
+     那只敌体的破绽就会永久停在 0 —— 屏上是「破绽归零 · 待凝」，凝不回来。 */
+  let peeled = 0
+  for (const f of aliveOf(s.enemies)) {
+    if (!f.guardAxis || f.guardPts <= 0) continue
+    const before = f.guardPts
+    f.guardPts = Math.max(1, before - TUNING.syncGuardStrip)
+    if (f.guardPts < before) peeled += 1
+  }
+  pushLog(s, {
+    round: s.hand, actorId: TERMINAL.id, actor: TERMINAL.name, side: 'ally',
+    skillId: 'sync', skill: '同调 · 观测合并', kind: '指令', fx: 'noise',
+    note: '全队的观测口径对上了同一件事 —— 连携点满格放出：'
+      + '参加者接下来 ' + TUNING.syncTurns + ' 拍攻击 +' + Math.round(TUNING.syncAtk * 100) + '%、'
+      + '充能 +' + Math.round(TUNING.syncSpd * 100) + '%、减伤 '
+      + Math.round(TUNING.syncShield * 100) + '%；'
+      + (peeled
+        ? '对面 ' + peeled + ' 具的破绽同时被削去至多 ' + TUNING.syncGuardStrip
+          + ' 点（合力不需要对上轴；破防那一手仍留给真正打得动它的人）。'
+        : '对面没有可削的破绽 —— 这一份全落在我们自己身上。'),
+  })
+}
+
 /**
  * 防御姿态吃掉的硬直 —— 架着盾的时候，`TUNING.stanceImmune` 里那几样压制定身落不下来。
  *
@@ -606,12 +714,16 @@ function stripGuard(s: BattleState, src: Combatant, t: Combatant, n: number) {
      给出手者而不是给被打的：这一条是「取材」那类职能的活路 ——
      他一手敲下去、节拍回一点，于是敲破绽本身能滚起来（但仍要贴得上轴、削得动点）。 */
   gainTempo(src, TUNING.breakTempo)
+  /* 连携点：**我方**敲穿的才算 —— 对面敲穿我方的破绽不该给我方攒点。
+     与上面那一笔回节拍同一个位置：这一手「真的读对了轴」，才有一份合力进账。 */
+  const chained = src.side === 'ally' ? gainChain(s, TUNING.chainGainBreak) : 0
   pushLog(s, {
     round: s.hand, actorId: t.id, actor: t.name, side: t.side,
     skillId: 'break', skill: '破绽 · 观测成立', kind: '指令', fx: 'noise',
     targetId: t.id, target: t.name,
     note: `${src.name} 打穿了 ${t.name} 的破绽 —— 「${t.guardAxis}」这一路是对的。`
-      + `它停 ${t.broken} 拍，这期间挨打更重（×${TUNING.breakAmp}）。`,
+      + `它停 ${t.broken} 拍，这期间挨打更重（×${TUNING.breakAmp}）。`
+      + (chained ? `　连携点 +${chained}（${s.chain}/${s.chainMax ?? TUNING.chainMax}）。` : ''),
   })
 }
 
@@ -638,15 +750,59 @@ function clearGuard(s: BattleState, src: Combatant, t: Combatant) {
   if (!t.guardAxis || t.down || t.gone > 0) return
   t.guardPts = 0
   t.guardMend = TUNING.guardClearRounds
+  /* 连携点：「尽碎」比「敲穿」多给一份 —— 它是把整层壳掀掉，换来的窗口更长，
+     合力的账上自然也重一点（见 tuning 的 chainGainCrush）。 */
+  const chained = src.side === 'ally' ? gainChain(s, TUNING.chainGainCrush) : 0
   pushLog(s, {
     round: s.hand, actorId: src.id, actor: src.name, side: src.side,
     skillId: 'guard-clear', skill: '破绽 · 尽碎', kind: '指令', fx: 'guard',
     targetId: t.id, target: t.name,
     note: `${t.name} 的「${t.guardAxis}」被整个掀开了 —— 破绽归零，`
-      + `这一回合里不许重凝。`,
+      + `这一回合里不许重凝。`
+      + (chained ? `　连携点 +${chained}。` : ''),
   })
 }
 
+/**
+ * 首领 · 狂暴与破防窗口（见 tuning 的「首领 · 狂暴与破防窗口」那一节）。
+ *
+ * 与**阶段切换**（phaseTwo）是两件事：那条是「换个人上来」，这条是「同一个人打红了眼」。
+ * 触发只有一条：血跌破 enrageAt。一个形态一次（Combatant.enraged 记次数 ——
+ * 阶段切换是造一个新的 Combatant，所以下一个形态自然重新算）。
+ *
+ * 为什么不挂成 buff：addBuff 的时限是「本人出手几次 + buffRoundsCap 回合」两者取先到，
+ * 而狂暴该挂到**这个形态结束**为止。挂 buff 的话，一个活得久一点的首领会在
+ * 十几拍之后自己冷静下来 —— 那不是狂暴，那是一阵心慌。所以直接改面板：
+ * 破坏力与充能各抬一档，落进 axes / spd，与变身（form）同一条路数。
+ *
+ * 破防窗口是这一条的**对价**：它更强了，但它这一段没有壳（guardPts 归零、
+ * guardMend 里不许重凝）。玩家该往这个窗口里压 —— 而不是等它自己冷静。
+ */
+function checkEnrage(s: BattleState, c: Combatant) {
+  if (!TUNING.enrageOn) return
+  if (c.side !== 'enemy' || (!c.tier && !c.namedId)) return
+  if ((c.enraged ?? 0) > 0) return
+  if (c.hp <= 0 || c.hp > c.hpMax * TUNING.enrageAt) return
+  c.enraged = 1
+  c.axes = { ...c.axes, 破坏力: Math.round(c.axes.破坏力 * (1 + TUNING.enrageAtk)) }
+  c.spd = Math.round(c.spd * (1 + TUNING.enrageSpd) * 100) / 100
+  const opened = TUNING.enrageGuardOpen && !!c.guardAxis
+  if (opened) {
+    c.guardPts = 0
+    c.guardMend = TUNING.guardClearRounds
+  }
+  pushLog(s, {
+    round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+    skillId: 'enrage', skill: '狂暴 · 破防窗口', kind: '指令', fx: 'blast',
+    targetId: c.id, target: c.name,
+    note: `${c.name} 的血线跌破 ${Math.round(TUNING.enrageAt * 100)}% —— 它不再省力了：`
+      + `破坏力 +${Math.round(TUNING.enrageAtk * 100)}%、充能 +${Math.round(TUNING.enrageSpd * 100)}%。`
+      + (opened
+        ? `　代价是它这一段没有壳：「${c.guardAxis}」被扯开了 ${TUNING.guardClearRounds} 个回合，`
+          + '往这儿压。'
+        : ''),
+  })
+}
 /**
  * 禁疗：把目标「回血」这两条路一起堵上，堵满一整段窗口。
  * ------------------------------------------------------------
@@ -1030,6 +1186,9 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
       note: `${def.name} 攒着的那一手被打散了 —— ×${had} 的那一下没能出手。`,
     })
   }
+  /* 首领那一条：挨了够重的一下、血跌破门槛 —— 它打红了眼（见 checkEnrage）。
+     放在失能判定**之前**：打红眼是「快死了才发生的事」，而倒下的人已经不发脾气了。 */
+  if (def.hp > 0 && !def.down) checkEnrage(s, def)
   let down = false
   if (def.hp === 0 && !def.down && def.gone <= 0) {
     const kept = keepStanding(s, def)
@@ -1044,6 +1203,9 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
     }
     down = kept === 'down'
   }
+  /* 打掉一个 → 连携点进账（只有我方打掉的算）。记在**真的倒下**之后：
+     被「战斗续行 / 不倒」留下来的那一口不算，人还站着呢。 */
+  if (down && atk.side === 'ally') gainChain(s, TUNING.chainGainDown)
   return {
     round: s.hand, actorId: atk.id, actor: atk.name, side: atk.side,
     skillId: k.id, skill: k.name, kind: k.kind, gate: k.gate, fx: k.fx,
@@ -1475,6 +1637,20 @@ function endBeat(s: BattleState) {
         })
       }
     }
+    /* 防御性自愈：破绽**三样全不成立**（点数见底 / 没在破防 / 没有重凝在倒数）就是僵死态 ——
+       老档或异常改动会留下这个坑（同调曾把点数削到 0 却不置 broken、不设 guardMend）：
+       屏上只会一直写着「破绽归零 · 待凝」，永远凝不回来。
+       这里按满点兜回一根，并**写进日志**（不静默修）—— 异常再出现时还看得见。 */
+    if (c.guardAxis && c.guardMax > 0 && c.guardPts <= 0 && c.broken <= 0 && c.guardMend <= 0) {
+      c.guardPts = c.guardMax
+      pushLog(s, {
+        round: s.hand, actorId: c.id, actor: c.name, side: c.side,
+        skillId: 'guard-mend', skill: '破绽 · 自愈', kind: '指令', fx: 'guard',
+        targetId: c.id, target: c.name,
+        note: `${c.name} 的「${c.guardAxis}」读数异常 —— 破绽归零却既未破防、也不在重凝：`
+          + `按自愈兜回满点（${c.guardPts} 点）。`,
+      })
+    }
     /* 禁疗同样按**回合**往下走 —— 一格一回合，数到零禁令就解。
        与上面那一段是两步路、各走各的钟，但都是 endBeat 这一拍：同一手落下的
        两样压制（掀防 / 封回血）会在同一个收拍上一起到点，读日志时是一件事。 */
@@ -1560,6 +1736,27 @@ function endBeat(s: BattleState) {
             : `${c.name} 变回自己 —— 借来的东西还了回去，接下来 ${m.cd} 拍手感发虚。`,
         })
         c.morph = null
+      }
+    }
+  }
+  /* 连携点 · 这一拍的两件事：**先**看该不该放「同调」，**再**看该不该漏一点。
+     顺序不能反：攒满那一拍如果先按空转扣一格，池子就永远差一点到不了顶，
+     「同调」也就永远放不出来 —— 那是把整条循环做成了死路。
+     两件都挂在 chainOn 上：关掉时这一栏一个字节都不动，回到改动前。 */
+  if (TUNING.chainOn) {
+    fireSync(s)
+    const cur = s.chain ?? 0
+    if (cur > 0) {
+      s.chainIdle = (s.chainIdle ?? 0) + 1
+      if (s.chainIdle >= TUNING.chainIdleBeats) {
+        s.chain = cur - 1
+        s.chainIdle = 0
+        pushLog(s, {
+          round: s.hand, actorId: TERMINAL.id, actor: TERMINAL.name, side: 'ally',
+          skillId: 'chain-idle', skill: '连携点 · 漏', kind: '指令', fx: 'drone',
+          note: `连着 ${TUNING.chainIdleBeats} 拍没有新的破绽进账 —— 连携点漏了一格`
+            + `（${s.chain}/${s.chainMax ?? TUNING.chainMax}）：攒着不动不算运营。`,
+        })
       }
     }
   }
@@ -2033,6 +2230,14 @@ function followCondition(s: BattleState, actor: Combatant): string | null {
   if (chanting.length) {
     return `${chanting.map((c) => c.name).join('、')} 正在咏唱`
   }
+  /* ③ **接应**：同伴被打到残血。前两条都是顺风条件（把壳敲开、往咏唱上压），
+     逆风时一次都不会亮 —— 而那正是最该有人接一手的时候。所以补这一条，
+     且排在最后：顺风的那两条先说话，说不出话来才轮到它。
+     门槛在 tuning 的 linkRescueAt（关掉 linkRescueOn 就退回只有前两条的老手感）。 */
+  if (TUNING.linkRescueOn) {
+    const hurt = aliveOf(s.allies).filter((c) => c.hp > 0 && c.hp <= c.hpMax * TUNING.linkRescueAt)
+    if (hurt.length) return `${hurt.map((c) => c.name).join('、')} 被打到残血`
+  }
   return null
 }
 
@@ -2056,19 +2261,24 @@ function fireLinkHand(
     // 参加者与招式名整份带上：右侧那张连携牌直接照着这条日志立起来
     link: { id: b.id, name: b.link.name, members: live.map((c) => c.id) },
   })
+  /* 连携点：点亮着的时候这一记更重（见 tuning 的 chainLinkPerPoint / chainLinkCap）。
+     power 与 linkPow **同乘** —— 连携的总量是 0.75 ×（参加者各人该轴读数之和），
+     只乘一边会让「谁先动」改变同一记连携的分量（见 synergy 的 LINK_SHARE 那一段）。
+     池子不清：清池只归「同调」那一处管，接一记合击就清的话，攒与不攒没差别。 */
+  const cm = chainLinkMul(s)
   resolve(s, actor, {
     id: `link-${b.id}`,
     name: b.link.name,
     kind: '战技',
     desc: b.link.desc,
     cost: 0,
-    power: b.link.power,
+    power: b.link.power * cm,
     axis: b.link.axis,
     fx: b.link.fx,
     line: b.link.line,
     target: 'one',
     linkUnits: live.filter((c) => c.id !== actor.id).map((c) => c.id),
-    linkPow: b.link.linkPow,
+    linkPow: b.link.linkPow * cm,
   }, target.id)
 }
 
@@ -2529,14 +2739,77 @@ function fireHitTalents(s: BattleState, atk: Combatant, def: Combatant, e: LogEn
  * 挑中了也只是扣成一笔还不上的空账，那正是「扣不动就白嫖」的另一半。
  * 出不起就退回普攻（**普攻永远出得起**，与我方普攻同一条规矩，见 act 的 atk 分支）。
  */
+/**
+ * 敌方这一手（离线指挥）。
+ *
+ * 次序是**定死的**，每一层都有理由：
+ *   ① 终结技能的咏唱 —— 那是剧本手，不是选项；
+ *   ② 召唤 —— 同上（首领与精英才有）；
+ *   ③ **规划**（foeplan 的 planFoeAct：集火 / 治疗 / 换招 / 危机应对）；
+ *   ④ 规划给不出一手（挑不出合法的、或者 TUNING.foeAI 关着）→ 改动前那套随机。
+ *
+ * 第 ④ 层是**兜底而不是主路**：它会退回「重手 35% 随机」，那是这一版之前的手感。
+ * 关掉 TUNING.foeAI 就是整条路线回到它 —— 这也是这一批改动「可回滚」的落点。
+ */
 function enemyAct(s: BattleState, foe: Combatant) {
   const t = pickTarget(s, foe)
   if (!t) return
   if (ultStep(s, foe, t)) return
   // 首领与精英先把人喊来 —— 喊人算它这一手（有冷却，也有整场上限）
   if (summonFoe(s, foe)) return
-  /* 挑「重手」时跳过召唤那一手：它不造成伤害，被挑中等于白出一手。
-     再加一条 `affordable` —— 出不起的不算数（见函数头）。 */
+  /* 规划说的那一手。三道关都要过才执行：技能得**此刻真的放得出来**
+     （legalSkills 那一道会把沉默、门、印记、冷却全算进来）、目标得还在、
+     钱得够 —— 有一步不成，整手退回下面那条老路，绝不留空。 */
+  const plan = planFoeAct(s, foe)
+  if (plan) {
+    const pt = plan.targetId ? find(s, plan.targetId) : undefined
+    if (pt && !pt.down && pt.gone <= 0) {
+      /* 这一手该出哪一招：
+           heal / ward —— 规划器点名的那一手（治疗 / 保命），出得起就出；
+           attack      —— **重手由这枚硬币决定**（TUNING.foeHeavyRate，与改动前同一个数）。
+         规划器只挑「哪一记重手 + 打谁」，不替 engine 掷这枚硬币 ——
+         见 foeplan 文件头上那一段纪律（聪明的敌人不等于更强的敌人）。 */
+      let k: SkillSpec | undefined
+      if (plan.mode === 'attack') {
+        const heavy = plan.heavyId
+          ? legalSkills(foe, s).find(
+            (x) => x.id === plan.heavyId && !x.ult && !x.summon
+              && x.kind !== '普攻' && affordable(x, foe.tempo),
+          )
+          : undefined
+        const basic = basicOf(foe) ?? foe.skills[0]
+        k = heavy && Math.random() < TUNING.foeHeavyRate ? heavy : basic
+      } else if (plan.skillId) {
+        k = legalSkills(foe, s).find(
+          (x) => x.id === plan.skillId && !x.ult && !x.summon && affordable(x, foe.tempo),
+        )
+      }
+      if (k) {
+        // 战意先落纸，再出手 —— 日志里读起来才是「它为什么这么打」
+        if (plan.note) {
+          pushLog(s, {
+            round: s.hand, actorId: foe.id, actor: foe.name, side: foe.side,
+            skillId: 'foe-cmd', skill: '敌方指挥', kind: '指令', fx: 'drone',
+            note: plan.note,
+          })
+        }
+        foe.tempo = Math.max(0, foe.tempo - k.cost)
+        /* 记下这一手：下一手再挑同一招要打折（换招，见 foeplan 的 score）。
+           只为「换招」服务，随对局一起走，不清场。 */
+        s.foeLast = { ...(s.foeLast ?? {}), [foe.id]: k.id }
+        /* 集火的焦点记在**盘面**上：几只敌体共用同一个靶，直到他倒下才改口
+           （见 foeplan 的 pickFocus）。治疗 / 保命不算集火 —— 那一手没朝我方去。 */
+        if (TUNING.foeFocusOn && pt.side === 'ally' && plan.mode === 'attack') s.focus = pt.id
+        resolve(s, foe, k, pt.id)
+        // 打完这一手才轮到那记连携 —— 它是「接在攻击后面」的，不是另起一手
+        fireRivalLink(s, foe.id)
+        return
+      }
+    }
+  }
+  /* —— 以下三条是**改动前**的路径，一字未改 ——
+     挑「重手」时跳过召唤那一手：它不造成伤害，被挑中等于白出一手。
+     再加一条 affordable —— 出不起的不算数（见函数头）。 */
   const heavy = foe.skills.find(
     (k) => k.kind === '战技' && !k.ult && !k.summon && affordable(k, foe.tempo),
   )
@@ -2650,6 +2923,10 @@ function phaseTwo(s: BattleState): boolean {
   /* 这一具也有下一形态的话，接着排下去 —— 不这么做的话，
      「多形态」就只到第二形态为止，而原文里巨匠那一条是走到底的。
      链子接在**顶上来的这一位自己**的 next 栏上，所以谁接谁由档案说了算。 */
+  /* 连携点：打穿一个形态是这一场最重的一次「读对了」——
+     比打掉一个杂兵多给一份（见 tuning 的 chainGainPhase）。
+     记在**顶上来的那一具已经就位**之后：形态真的换了才算数。 */
+  gainChain(s, TUNING.chainGainPhase)
   s.nextBoss = namedBossOf(next.namedId)?.next
   // 换了形态就是另一个场面了 —— 对面那一记连携的冷却跟着清（见 fireRivalLink）
   s.followCd[RIVAL_LINK.id] = 0
@@ -2823,6 +3100,62 @@ export function mvpOf(s: BattleState): string {
 }
 
 /** 剩余体力（结算后写回持久池） */
+/* ============================================================
+   连携牌 · 可读的触发条件（这一批只做数据侧，屏上那一层由下一批接手）
+   ------------------------------------------------------------
+   synergy 的 linkCondsOf 说的是「这条连携**要什么**才接得上」，
+   这里补上「此刻**差多少**」：槽攒到几拍、冷却还剩几拍、谁不在场、条件成不成立。
+   两段合起来，屏上要列一张表时不必自己再猜一遍引擎的口径。
+
+   ⚠️ **只读**。判定仍在 linkReady / followCondition 里 —— 这里若是自己另写一套，
+      读数与实际接不接得上迟早会打架，而玩家只信屏上那一行。
+   ============================================================ */
+
+export interface LinkBoardRow extends LinkCond {
+  /** 此刻接不接得上（条件成立 + 冷却好了 + 全员在场） */
+  ready: boolean
+  /** 槽攒到几拍（'cond' 那条恒为 0 —— 它没有槽） */
+  progress: number
+  /** 冷却还剩几拍 */
+  cdLeft: number
+  /** 不在场的参加者（名字）—— 缺一个就凑不齐 */
+  missing: string[]
+  /** 还差什么（接得上时为 null）：一行字，照着念给玩家听 */
+  blocked: string | null
+}
+
+/** 本场在列的连携，连同此刻的进度（屏上那张牌照着它立起来） */
+export function linkBoardOf(s: BattleState): LinkBoardRow[] {
+  if (!TUNING.linkBoardOn) return []
+  const ids = s.allies.map((c) => c.id)
+  const conds = linkCondsOf(ids, s.bond)
+  /* 条件追击那三条此刻成不成立 —— 与 followCondition 同一份判据（顺序也一致：
+     破绽 → 咏唱 → 接应）。这儿只回答「现在有没有」，不挑由谁接。 */
+  const brokeNow = aliveOf(s.enemies).some((e) => e.broken > 0 || s.lastBreak.includes(e.id))
+  const chanting = chantingFoes(s).length > 0
+  const rescue = TUNING.linkRescueOn
+    && aliveOf(s.allies).some((c) => c.hp > 0 && c.hp <= c.hpMax * TUNING.linkRescueAt)
+  const condMet = brokeNow || chanting || rescue
+  return conds.map((c) => {
+    const missing: string[] = []
+    for (const id of c.members) {
+      const m = find(s, id)
+      if (!m || m.down || m.gone > 0) missing.push(m?.name ?? id)
+    }
+    const cdLeft = s.followCd?.[c.id] ?? 0
+    const progress = c.kind === 'gauge'
+      ? Math.min(...c.members.map((id) => s.follow?.[id] ?? 0))
+      : 0
+    const ok = missing.length === 0 && cdLeft <= 0
+      && (c.kind === 'gauge' ? progress >= c.need : condMet)
+    let blocked: string | null = null
+    if (missing.length) blocked = '缺 ' + missing.join('、') + ' —— 这一记凑不齐'
+    else if (cdLeft > 0) blocked = '冷却还剩 ' + cdLeft + ' 拍'
+    else if (c.kind === 'gauge') blocked = '共鸣槽 ' + progress + '/' + c.need + ' 拍'
+    else if (!condMet) blocked = '等一个条件：破绽 / 咏唱 / 接应'
+    return { ...c, ready: ok, progress, cdLeft, missing, blocked }
+  })
+}
 export function spAfter(s: BattleState): number {
   return s.sp
 }

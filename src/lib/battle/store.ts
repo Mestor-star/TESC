@@ -351,17 +351,35 @@ export async function buyGear(
 }
 
 /**
- * 清空作战域隐藏存档 —— 「重置世界进度 / 开新档」的收口。
+ * 把作战域隐藏存档收回到**本档初值** —— 这一套初值逻辑的唯一实现。
  * ------------------------------------------------------------
  * 这一整库都是**当前这一轮**的东西：作战记录、终末点数、小队体力、
- * 装具库存与装配、任务成长、已领取归档。clearRunStorage() 只管 localStorage
- * 那几个 key，碰不到这里，所以重置路径必须显式调用本函数，
- * 否则出现「进度已归零，点数还在、体力不回满、旧战报还挂着」。
+ * 装具库存与装配、任务成长、已领取归档。
+ *
+ * 「初值」不是「另写一份默认值」，而是**两张表清空后各读取函数自己的兜底**：
+ *   · records  → `listRecords()` 返回 []（任务简报板 / 作战记录空着）
+ *   · coin     → `readCoin()` 返回 0（军需点数归零）
+ *   · stamina  → `readStamina()` 空表时走 `freshStamina()`（体力回满、chargeAt 归 0）
+ *   · bag      → `readBag()` 返回 TUNING.bagDefault 的副本（补给池回初始配给）
+ *   · growth / level / equip / gear / mainclaimed → 各自的默认答案（{} / {} / {} / {} / {}）
+ * 所以「清空」与「回到初值」在这里是同一件事，只是**必须两表都清**。
+ *
+ * 两条路径共用本函数（口径统一，别再造第二份）：
+ *   · 重置 / 开新档 → Terminal 的 hardReset（`resetBattleStore` 这个旧名就是本函数）
+ *   · 读档 / applySnapshot → slots.ts 里直接 await 它，见那边的 RUN_STATE_KEYS 注
  * 手动存档（zts-slots:v1）不在此列，一律保留。
  */
-export async function resetBattleStore(): Promise<void> {
+export async function resetBattleToInitial(): Promise<void> {
   await safe(async () => {
     await db().records.clear()
     await db().meta.clear()
   }, undefined)
+}
+
+/**
+ * 旧名（重置路径的既有调用点）—— 转手给 `resetBattleToInitial()`，
+ * 同一个函数、同一套初值，读档那一路也吃这一份。
+ */
+export async function resetBattleStore(): Promise<void> {
+  await resetBattleToInitial()
 }

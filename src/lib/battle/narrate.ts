@@ -11,6 +11,7 @@
 import { chatCompletion, isReady, loadProfile } from '../api'
 import type { ChatTurn } from '../api'
 import { mvpIdOf, mvpOf } from './engine'
+import { bondsOf } from './synergy'
 import type { BattleRecord, BattleState } from './types'
 
 /** 系统侧口径：终端在替委员会起草文书，不是「AI 写小说」 */
@@ -169,6 +170,22 @@ export function recordOf(s: BattleState, digest: string): BattleRecord {
     mainline: s.mainline,
     // 对手的档位随记录一起留档：回填推演的那段正文要照它定分寸（首领级要写出那一记杀着）
     tier: s.enemies.find((e) => e.tier)?.tier,
+    /* —— 「战果 → 主线」那一侧的数据（全部可选，见 types 的 BattleRecord）——
+       这一批只在这里**写**，读的一侧由 settle 的 plotTieInOf 统一产出。
+       逐条都是现成的盘面读数，不另存一份账：
+         · chainPeak / syncs —— 连携点运营到哪一步（峰值才有意义：收场时池子多半是空的）
+         · phases          —— 打过几个**有名有姓**的形态（1 = 没换形态，>1 = 打穿了阶段）
+         · enraged         —— 有几个敌体狂暴过（狂暴是打红了眼，不是换人）
+         · breaks          —— 我方一共敲穿过几次破绽（「读对了它怕哪条轴」的计数）
+         · ties            —— 本场成立的连携羁绊（主线可以照着它点名）
+         · bossId          —— 这一场打的是哪一位指名首领（形态链与图鉴都认它） */
+    chainPeak: s.chainPeak ?? 0,
+    syncs: s.syncs ?? 0,
+    phases: Math.max(1, s.enemies.filter((e) => e.namedId).length),
+    enraged: s.enemies.reduce((n, e) => n + (e.enraged ?? 0), 0),
+    breaks: s.log.filter((l) => l.skillId === 'break' && l.side === 'enemy').length,
+    ties: bondsOf(s.allies.map((c) => c.id), s.bond).map((b) => b.id),
+    bossId: s.enemies.find((e) => e.namedId)?.namedId,
   }
 }
 

@@ -751,6 +751,17 @@ export interface Combatant {
    */
   noHealRounds: number
 
+  /**
+   * 狂暴过几次（>0 即「这一个形态已经打红了眼」）。
+   *
+   * 与阶段切换（BattleState.nextBoss）是两件事，别混：
+   *   阶段切换 —— **换个人**：这一具倒下，档案里写着的那一位顶上来（见 engine 的 phaseTwo）。
+   *   狂暴    —— **同一个人**：血跌破 TUNING.enrageAt 那一下攻速上抬、破绽整个掀开。
+   * 一个形态只狂暴一次，所以它是计数不是钟 —— 换形态就是另一个 Combatant，各算各的。
+   * 开关在 TUNING.enrageOn：关掉时这一栏永远是 0，引擎一处都不读它。
+   */
+  enraged?: number
+
   /** 护持：还能挡掉几次负面（挡一次少一层） */
   ward: number
   /** 蓄力：>1 时下一手伤害乘这个数（打出去或被打断即清零） */
@@ -1016,6 +1027,34 @@ export interface BattleState {
    */
   lastBreak: string[]
   /**
+   * 连携点（全队共用一池，0 ~ chainMax）。
+   *
+   * 这是**第三条**可运营的循环，另两条是节拍（单人手头的钱）与共鸣槽（一人一条）：
+   *   · 进账：敲穿破绽 / 破防尽碎 / 打掉一个敌体 / 打掉一个首领形态；
+   *   · 出账：攒满即自动放「同调」（全队几拍加成 + 全体敌体破绽各削一点）；
+   *   · 存着：合击按点数加重（TUNING.chainLinkPerPoint，封顶 chainLinkCap）。
+   * 于是「读它怕哪条轴 → 敲破绽 → 换合击」是同一条链。
+   *
+   * 全部可选：这一栏立起来之前跑出来的状态、以及关掉 TUNING.chainOn 的对局，
+   * 读它一律按 0 算（引擎里那一处判断只看有没有这一格，不看它是几）。
+   */
+  chain?: number
+  /** 连携点上限（开局由 TUNING.chainMax 落下来；缺省同值） */
+  chainMax?: number
+  /** 连着几拍没有新进账（到 TUNING.chainIdleBeats 就一拍漏一点，进账即清零） */
+  chainIdle?: number
+  /** 这一场放出过几次「同调」（战果回写读它） */
+  syncs?: number
+  /** 连携点的峰值（战果回写读它 —— 收场时池子多半是空的，峰值才是「运营到哪一步」） */
+  chainPeak?: number
+  /** 集火焦点（敌体 id）—— 几只敌体咬同一个人，见 foeplan 的 planFoeAct */
+  focus?: string
+  /**
+   * 上一手用了哪一招（敌体 id → 技能 id）。只为「换招」这一条服务：
+   * 同一招连着放要打折，否则敌方的招式表只是装饰。按人记，跨回合留着。
+   */
+  foeLast?: Record<string, string>
+  /**
    * 天赋响过几次（键 `${角色 id}:${天赋在这人 PassiveSpec.talents 里的下标}`）。
    *
    * 键里带下标而不是只带名字：同一个人挂两条同名天赋是允许的（一条管开场、一条管残血），
@@ -1088,6 +1127,25 @@ export interface BattleRecord {
   mainline?: boolean
   /** 本场对手的档位（首领 / 精英 / 常规）——回填推演的剧情正文按它定分寸 */
   tier?: 'elite' | 'boss'
+  /**
+   * —— 以下是「战果 → 主线」那一侧的数据（全部可选，旧档没有就是没有）——
+   * 这一批字段**只写不读**：写在这里、由 settle 的 plotTieInOf 产出一份「本场留下了什么」，
+   * 调用方（作战屏 / 推演）本轮一个字没动。缺读者时它们躺在存档里也不碍事。
+   */
+  /** 连携点峰值 —— 「这一场运营得怎么样」 */
+  chainPeak?: number
+  /** 放过几次「同调」 */
+  syncs?: number
+  /** 这一场打过几个首领形态（1 = 没换形态；>1 = 打穿了阶段） */
+  phases?: number
+  /** 有敌体狂暴过几次（狂暴是打红了眼，不是换人） */
+  enraged?: number
+  /** 本场成立的羁绊 id（队伍协同 / 双人连携）—— 主线可以照着它点名 */
+  ties?: string[]
+  /** 这场打的是哪一位指名首领（档案 id）—— 阶段切换与图鉴都认它 */
+  bossId?: string
+  /** 敲穿破绽的次数（我方）—— 「读对了它怕哪条轴」的计数 */
+  breaks?: number
 }
 
 /** 体力（小队共用一条；只在执行任务时消耗，平时随观测进度缓慢回复） */
