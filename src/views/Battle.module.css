@@ -2461,7 +2461,11 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 0;
+    /* 触控口径：原先量到 67×17（跌破 24）。高度补到 24、左右各留 2px —— 
+       它不是主控件（次级那一档是 34~40），但绝不能再小于 24。 */
+    min-height: 24px;
+    min-width: 24px;
+    padding: 0 2px;
     border: 0;
     background: transparent;
     color: inherit;
@@ -3073,18 +3077,32 @@
      敌阵那一行被压到 28px（实测量出来的）—— 卡片直接裁没了，比看不见条件更糟。
      所以手机上展开时它浮起来：离开网格，贴着视口底部摊开，最多 56vh；
      敌阵与指令盘一格都不动。收起（再点一次标题）就回到原来那一行。 */
+  /* ⚠️ 2026-09-19 再改一次：原先贴着**视口底**摊开（bottom: 8px），
+     390×844 上量到 416–836 —— 正好把指令盘（596–712）与小队列（721–836）
+     整块盖住：「防御」中心 elementFromPoint 命中的是条件表里的字，
+     而整屏 sh=ch 滚不动，展开后就只能先收起来才出得了招。
+     现在改成**贴顶**的抽屉：它盖住的是敌阵那一片，出招那一半一格都不碰
+     （实测展开态 8–408，指令盘 596 起，中间干干净净）。
+     把手仍在抽屉顶那一行，再点一次就收；收起即回到网格里那一行 56px。 */
   .logStrip[data-log-open='1'] {
     position: fixed;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    bottom: auto;
     left: 8px;
     right: 8px;
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    max-height: min(56vh, 420px);
+    max-height: min(52vh, 400px);
     z-index: 30;
     background: var(--bg-1);
     box-shadow: var(--shadow-3);
   }
   .logStrip { overflow: hidden; }
   .linkBoard { max-height: none; flex: 0 0 auto; }
+  /* 条件表自己滚并封顶：这一栏里只有它会长，不封顶就把战报整栏挤没 */
+  .logStrip[data-log-open='1'] .linkBoard {
+    max-height: min(22vh, 190px);
+    flex: 0 0 auto;
+    overflow-y: auto;
+  }
   /* 敌卡脚下那排标签：手机上一枚标签折一行，两枚就多出一行、被 .arena 裁掉。
      收字号与内边距、缩间距，让「狂暴 · 破防」与「破绽尽碎」挤回同一行。
      （实测：9px/4px 时两枚仍换行，敌卡脚下被裁 —— 这里再收一档到 8.5px。） */
@@ -3100,7 +3118,61 @@
   /* 指令盘那一块收一档（296 → 240）：敌阵才是这一屏的主角，
      而指令盘本身内滚，收短不丢东西。实测这一档换回来的 50 余 px
      正好让敌卡（画框 + 脚下那排）整个落进敌阵那一格。 */
-  .console { max-height: min(240px, 29vh); }
+  /* 指令盘的高度分配（2026-09-19 重排这一档）：
+     原先只有一条 `max-height: min(240px,29vh)`，而 .cmd/.sub/.list 一路
+     `min-height:0`，四级 flex 压缩把技能表压成 20px —— 390×844 上量到
+     clientHeight=20 / scrollHeight=220 / 可见行 0，等于手机上选不了技能。
+     现在分两层说：
+       · 指令盘一层（root）：300 —— 六枚各 44（触控口径；2 行 88 + 间距）
+         外加轮次那一行，小队列落在 1fr 里（.partyCol 本来就会滚）。
+         实测敌阵那一格还剩 231 —— 敌卡装得下。
+       · 技能 / 道具 / 装备表展开：**指令窗自己浮起来**，网格一格都不动
+         （敌阵仍 231、小队列仍钉在底上 96）—— 挤网格的话，两行 111 高的
+         技能行要 250，敌阵会被压到 80，那是拿敌阵换表；现在谁都不让。 */
+  .console { max-height: min(46vh, 300px); grid-template-rows: auto minmax(96px, 1fr); }
+  /* 六枚指令：主控件 44（tokens.css 末尾那一档的口径） */
+  .seq .seqBtn { min-height: 44px; }
+
+  /* ---- 三张表的抽屉 ----
+     位置是算出来的：底边压在「指令盘那一格的上沿」之上 8px，
+     所以它**不可能**再盖住指令盘与小队列（BUG2-03 是同一处毛病，
+     观测频道那一栏也是这么修的）。console 自己没有背景，
+     让出来的那一段能透出敌阵 —— 视觉上是「表浮起来」，不是「面板塌了」。 */
+  .console[data-panel='skill'],
+  .console[data-panel='item'],
+  .console[data-panel='gear'] {
+    height: min(46vh, 300px);
+    grid-template-rows: auto 96px;
+    align-content: end;
+    /* 抽屉是这一格的固定后代，而 grid 子项各自成层（.orderStrip 是 7）——
+       不把 console 自己抬起来，行动顺位那一行会画在抽屉上面 */
+    z-index: 32;
+  }
+  /* 指令窗挪走之后网格只剩小队列 —— 把它钉回**底下那一格**，
+     位置与一层时逐像素相同（740–836），抽招前后屏上不会跳 */
+  .console[data-panel='skill'] .party,
+  .console[data-panel='item'] .party,
+  .console[data-panel='gear'] .party { grid-row: 2; }
+  .console[data-panel='skill'] .cmd,
+  .console[data-panel='item'] .cmd,
+  .console[data-panel='gear'] .cmd {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    bottom: calc(min(46vh, 300px) + 16px + env(safe-area-inset-bottom, 0px));
+    z-index: 30;
+    background: var(--bg-2);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+  }
+  /* 抽屉里这张表吃满剩下的高度并自己滚 —— 上限不再是 186 / 220 那一档 */
+  .console[data-panel='skill'] .cmd .sub,
+  .console[data-panel='item'] .cmd .sub,
+  .console[data-panel='gear'] .cmd .sub { flex: 1 1 auto; min-height: 0; }
+  .console[data-panel='skill'] .cmd .list,
+  .console[data-panel='item'] .cmd .list,
+  .console[data-panel='gear'] .cmd .list { min-height: 0; max-height: none; flex: 1 1 auto; }
   /* 观测频道标题那一枚：仍在次级控件那一档，但比 34 收一点，把高度还给敌阵 */
   .codexBtn { min-height: 30px; padding: 0 6px; font-size: 9.5px; }
 

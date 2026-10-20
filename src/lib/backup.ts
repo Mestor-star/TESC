@@ -179,6 +179,8 @@ function openDb(name: string): Promise<IDBDatabase> {
     const req = indexedDB.open(name)
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error(`打开本地库 ${name} 失败`))
+    // 别的标签页还压着旧版本时，打开会被挂住 —— 既不成功也不报错，不接这一把就是永不 settle
+    req.onblocked = () => reject(new Error(`本地库 ${name} 被别的标签页占着（旧版本没关），请先关掉那边再重试`))
   })
 }
 
@@ -207,6 +209,8 @@ function openWithSchema(name: string, schema: Record<string, string | null>, ver
     req.onupgradeneeded = () => applySchema(req.result, schema)
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error(`打开本地库 ${name} 失败`))
+    // 升版本时若别的标签页没关，`onblocked` 是唯一会到的那一下（同样是不 settle 的老路）
+    req.onblocked = () => reject(new Error(`本地库 ${name} 正在升级，被别的标签页占着 —— 请先关掉那边再重试`))
   })
 }
 
@@ -487,24 +491,75 @@ export function parseBackupText(text: string, bytes = text.length): ParseResult 
   return { ok: true, file, preview, name: '' }
 }
 
-/** 选文件 → 读文本 → 校验。取消返回 null（≠ 失败） */
-export function pickBackupFile(): Promise<ParseResult | null> {
+/**
+ * 选文件这一步的兜底时长（默认 10 分钟）。
+ *
+ * 为什么不是 30 秒：主人在文件管理器里翻目录、翻到一半去干别的，都是正常用法 ——
+ * 太短会在他真在挑文件时把对话框之外的按钮先复位掉，反而更像 bug。
+ * 探针（`scripts/smoke` 与验收脚本）可以把 `globalThis.__ztsPickTimeoutMs` 调小来验超时那一路。
+ */
+const PICK_TIMEOUT_MS = 10 * 60 * 1000
+
+/**
+ * 选文件这一步的结果。
+ *
+ * **取消与超时都不是失败** —— 它们和「选中了、但文件是坏的」必须分开：
+ * 前者什么都不该发生（按钮复位、不弹错误 toast），后者才要红字 + toast。
+ */
+export type PickOutcome =
+  | { state: 'cancel' }
+  | { state: 'timeout' }
+  | { state: 'parsed'; result: ParseResult }
+
+function pickTimeoutMs(): number {
+  const hook = (globalThis as { __ztsPickTimeoutMs?: unknown }).__ztsPickTimeoutMs
+  return typeof hook === 'number' && Number.isFinite(hook) && hook > 0 ? hook : PICK_TIMEOUT_MS
+}
+
+/**
+ * 选文件 → 读文本 → 校验。**每一条路都会 settle**，不 reject。
+ *
+ * 从前只挂 `onchange`：用户一按取消、或 `input.click()` 根本没弹出（非用户手势被浏览器拒），
+ * 这个 Promise 就永远悬着 → 调用方的 `finally` 不跑 → 两枚按钮永久灰在「读取中…」。
+ * 现在三条路各接一把：
+ *  ① `change` —— 选中文件（读失败也有 `error` / `abort` 两把）；
+ *  ② `cancel` —— Chrome 113+ 在用户点取消时对同一个 input 派发（事件名就是 `cancel`）；
+ *  ③ 超时 —— 老浏览器不发 `cancel`、或者对话框压根没弹出时的最后一道兜底。
+ */
+export function pickBackupFile(): Promise<PickOutcome> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.json,application/json'
+    /** 只 settle 一次：change / cancel / 超时，谁先到谁算 */
+    let done = false
+    let timer = 0
+    function finish(out: PickOutcome) {
+      if (done) return
+      done = true
+      if (timer) window.clearTimeout(timer)
+      input.removeEventListener('cancel', onCancel)
+      input.onchange = null
+      resolve(out)
+    }
+    function onCancel() {
+      finish({ state: 'cancel' })
+    }
+    timer = window.setTimeout(() => finish({ state: 'timeout' }), pickTimeoutMs())
+    input.addEventListener('cancel', onCancel)
     input.onchange = () => {
       const f = input.files?.[0]
       if (!f) {
-        resolve(null)
+        finish({ state: 'cancel' })
         return
       }
       const reader = new FileReader()
-      reader.onerror = () => resolve({ ok: false, error: '文件读取失败（权限或被占用）。' })
+      reader.onerror = () => finish({ state: 'parsed', result: { ok: false, error: '文件读取失败（权限或被占用）。' } })
+      reader.onabort = () => finish({ state: 'cancel' })
       reader.onload = () => {
         const text = typeof reader.result === 'string' ? reader.result : ''
         const r = parseBackupText(text, f.size)
-        resolve(r.ok ? { ...r, name: f.name } : r)
+        finish({ state: 'parsed', result: r.ok ? { ...r, name: f.name } : r })
       }
       reader.readAsText(f)
     }

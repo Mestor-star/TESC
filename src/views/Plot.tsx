@@ -321,6 +321,29 @@ function parseDraftLines(raw: string): string[] {
     .slice(0, 4)
 }
 
+/**
+ * 车道选择是**会话级**的（BUG2-06）。
+ *
+ * 切到别的视图，Plot 整个卸载，useState 里的那一格跟着没了 —— 页签还在
+ * （名册上那场没散），车道却自己收回主线，还得再点一次页签。名册 / 线程账都在
+ * 存储里，只有这一个「人在哪一路」是纯界面选择，所以把它提到模块作用域：
+ * 重新挂载时按它重建，并当场按名册校正（那一场散了 / 没得看了就回主线，
+ * 绝不出现「页签收走了、正文却还停在那条空车道」）。
+ */
+type PlotLane = 'main' | 'date' | 'past'
+let laneMemo: PlotLane = 'main'
+let datePickMemo: string | null = null
+
+/** 重新挂载时按名册校正上次的选择 */
+function restoreLane(): { lane: PlotLane; pick: string | null } {
+  const live = listRendezvous().filter((r) => !r.done)
+  const past = listRendezvous().filter((r) => r.done)
+  const pick = datePickMemo && live.some((r) => r.id === datePickMemo) ? datePickMemo : null
+  if (laneMemo === 'date' && live.length) return { lane: 'date', pick }
+  if (laneMemo === 'past' && past.length) return { lane: 'past', pick: null }
+  return { lane: 'main', pick: null }
+}
+
 export function Plot() {
   const {
     operatorName, navigate, push,
@@ -340,9 +363,13 @@ export function Plot() {
    * 事件指令（`dateRequest`，见 terminal/Terminal.tsx）。这一路刚开出来的那一刻
    * 也当场跳过来（下方那只看 `rvVer` 的效果），主人不必自己去发现多了一枚按钮。
    */
-  const [lane, setLane] = useState<'main' | 'date' | 'past'>('main')
+  const [boot] = useState(restoreLane)
+  const [lane, setLane] = useState<'main' | 'date' | 'past'>(boot.lane)
   /** 这一路开着的是哪一场（DateLane 换场时报上来） */
-  const [datePick, setDatePick] = useState<string | null>(null)
+  const [datePick, setDatePick] = useState<string | null>(boot.pick)
+  /* 选中就记下（见上面 laneMemo 那一节）：卸载再回来还在这条车道、还是这一场 */
+  useEffect(() => { laneMemo = lane }, [lane])
+  useEffect(() => { datePickMemo = datePick }, [datePick])
   const rvVer = useSyncExternalStore(subscribeRendezvous, rendezvousVersion)
   const liveRvs = useMemo(() => listRendezvous().filter((r) => !r.done), [rvVer])
   /**

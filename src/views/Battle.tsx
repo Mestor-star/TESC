@@ -859,6 +859,57 @@ export function Battle({
      这一手是给「Tab 进来的人」与读屏软件一个落点，也顺手把浏览器的滚动锚点拿回来。 */
   const rootRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => { rootRef.current?.focus({ preventScroll: true }) }, [])
+  /* ============================================================
+     焦点：这一屏是整块 portal 到 body 的全屏界面，底下的外壳照旧留在
+     tab 序里 —— 读屏能念到、Enter 又被这一屏的 keydown 吞掉，等于一片
+     幽灵焦点（实测 Tab 第 13 步落在「终端总览」上）。两手一起上：
+       ① 挂载期间给外壳（#root）挂 inert，卸载摘掉；
+       ② Tab 自己搬：一律留在**当前这一层**里（角色介绍 / 敌情 / 演出预览
+          开着就留那一层，否则留在作战屏），到头绕回第一枚 ——
+          inert 只管「别人进不来」，绕回还得自己写，否则最后一步会
+          跳去浏览器地址栏。
+     Esc / X 关掉那一层时焦点回到打开它的那一枚（见下面那条 restore effect）。
+     ============================================================ */
+  const openerRef = useRef<HTMLElement | null>(null)
+  const rememberOpener = useCallback(() => {
+    const a = document.activeElement as HTMLElement | null
+    openerRef.current = a && a !== document.body ? a : null
+  }, [])
+  useEffect(() => {
+    const shell = document.getElementById('root')
+    if (!shell) return
+    shell.setAttribute('inert', '')
+    return () => { shell.removeAttribute('inert') }
+  }, [])
+  useEffect(() => {
+    const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), '
+      + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const layer = (document.querySelector('[data-codex]')
+        ?? document.querySelector('[data-foe-info-panel]')
+        ?? document.querySelector('[data-fx-preview]')
+        ?? document.querySelector('[data-battle]')) as HTMLElement | null
+      if (!layer) return
+      const items = [...layer.querySelectorAll<HTMLElement>(FOCUSABLE)]
+        .filter((el) => el.getClientRects().length > 0)
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      /* 一律自己搬：交给浏览器的话，从最后一枚接下去就是屏外那一整条导航 */
+      e.preventDefault()
+      if (!active || !layer.contains(active)) { first.focus(); return }
+      const i = items.indexOf(active)
+      if (e.shiftKey) {
+        if (i <= 0) last.focus()
+        else items[i - 1].focus()
+      } else if (i < 0 || i === items.length - 1) first.focus()
+      else items[i + 1].focus()
+    }
+    window.addEventListener('keydown', onTab)
+    return () => window.removeEventListener('keydown', onTab)
+  }, [])
   /* 直达预览台：作战屏 URL 上带 ?fx=all 就自动翻开（不必先打完一场） */
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('fx') === 'all') setPreview({ i: 0 })
@@ -939,9 +990,19 @@ export function Battle({
   }, [pending])
 
   const openCodex = useCallback((side: 'ally' | 'enemy' = 'ally', i = 0) => {
+    rememberOpener()
     setCodex({ side, i })
     setCursor(0)
-  }, [])
+  }, [rememberOpener])
+  /* 那一层关掉之后把焦点还给打开它的那一枚 —— 不还的话焦点落回 body，
+     下一记 Tab 又从页面开头数起（对键盘与读屏都是「整屏重来」）。 */
+  useEffect(() => {
+    if (codex || foeInfo || preview) return
+    const el = openerRef.current
+    if (!el) return
+    openerRef.current = null
+    if (document.contains(el)) el.focus({ preventScroll: true })
+  }, [codex, foeInfo, preview])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1377,7 +1438,7 @@ ${siteR.f.word}`}>
                 active={!over && actor?.id === c.id}
                 targetable={aimEnemies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
-                onInfo={() => setFoeInfo(c.id)}
+                onInfo={() => { rememberOpener(); setFoeInfo(c.id) }}
               />
             ))}
           </div>
@@ -1392,7 +1453,7 @@ ${siteR.f.word}`}>
                 active={!over && actor?.id === foeLine.mid.id}
                 targetable={aimEnemies && !foeLine.mid.down && !playing}
                 onPick={() => pickTarget(foeLine.mid!.id)}
-                onInfo={() => setFoeInfo(foeLine.mid!.id)}
+                onInfo={() => { rememberOpener(); setFoeInfo(foeLine.mid!.id) }}
               />
             ) : null}
           </div>
@@ -1408,7 +1469,7 @@ ${siteR.f.word}`}>
                 active={!over && actor?.id === c.id}
                 targetable={aimEnemies && !c.down && !playing}
                 onPick={() => pickTarget(c.id)}
-                onInfo={() => setFoeInfo(c.id)}
+                onInfo={() => { rememberOpener(); setFoeInfo(c.id) }}
               />
             ))}
           </div>
@@ -1531,7 +1592,9 @@ ${siteR.f.word}`}>
       </div>
 
       {/* 下窗 —— 左指令 / 右小队（black souls 式：出招与看血在同一块里） */}
-      <div className={css.console}>
+      {/* data-panel 是给手机档 CSS 认的：技能 / 道具 / 装备表展开时
+          .console 要长高（见文件末 ≤640 那一档），一层与二层不是同一笔预算 */}
+      <div className={css.console} data-panel={over || playing || !actor ? 'root' : panel}>
         <div className={css.cmd} data-battle-cmd data-actor={!over && !playing && actor ? actor.id : undefined}>
           {over ? (
             <Result

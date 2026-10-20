@@ -335,6 +335,8 @@ function BackupPanel() {
   const [error, setError] = useState<string | null>(null)
   const [audit, setAudit] = useState<string | null>(null)
   const [banner, setBanner] = useState<string | null>(restoreBannerText)
+  /** 轻提示：不是错误，只是「这一步没成，但不用你管」。取消不写、超时才写一条。 */
+  const [hint, setHint] = useState<string | null>(null)
 
   const doExport = async () => {
     setBusy('export')
@@ -370,18 +372,27 @@ function BackupPanel() {
     setBusy('pick')
     setError(null)
     setAudit(null)
+    setHint(null)
     setPreview(null)
     pendingBackup = null
     try {
-      const r = await pickBackupFile()
-      if (r === null) return
-      if (!r.ok) {
-        setError(r.error)
+      const out = await pickBackupFile()
+      /* 取消 = 什么都没发生：不复位成一句报错，也不弹 toast —— 主人按下取消时
+         期待的就是「刚才那一下不算数」。只把按钮放回去（finally），面板静默。 */
+      if (out.state === 'cancel') return
+      /* 超时同样不是错误（老浏览器不发 cancel / 对话框没弹出），给一条灰字轻提示，
+         好让人知道「刚才那一下确实没成」，而不是以为终端卡住了。 */
+      if (out.state === 'timeout') {
+        setHint('没有选中文件 —— 等候超时，已自动复位。可以再点一次「从备份恢复」。')
         return
       }
-      pendingBackup = r.file
-      setFname(r.name)
-      setPreview(r.preview)
+      if (!out.result.ok) {
+        setError(out.result.error)
+        return
+      }
+      pendingBackup = out.result.file
+      setFname(out.result.name)
+      setPreview(out.result.preview)
     } finally {
       setBusy(null)
     }
@@ -481,6 +492,7 @@ function BackupPanel() {
           </div>
 
           {error ? <div className={bcss.err} data-backup-error>{error}</div> : null}
+          {hint ? <div className="muted tiny" data-backup-hint>{hint}</div> : null}
           {audit ? <div className={bcss.ok} data-backup-audit>{audit}</div> : null}
 
           {preview ? (

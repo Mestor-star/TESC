@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, AttireProfile, AttireProgress, ActCount, RelId, TimelineEvent } from '../data/types'
 import { castOf } from '../lib/cast'
@@ -296,8 +296,62 @@ let sessionAuthed = false
 let sessionStage: 'title' | 'game' = 'title'
 let sessionSetup = false
 let pendingView: ViewId | null = null
-/** 重挂载后由 provider 首个 effect 弹一次的通知（重置/读档的落地反馈） */
-let pendingToast: { kind: ToastKind; title: string; body: string } | null = null
+
+/* ============================================================
+   通知队列 · 模块作用域（跨全量重挂载存活）
+   ------------------------------------------------------------
+   读档 / 重置 / 行动开始三条路都要 requestRemount() 把整个
+   TerminalProvider 换掉 —— 各视图的 state 是在挂载那一刻从存储读的，
+   不换实例就读不到新档。
+   所以这里的通知**不能存在 provider 的 state 里**：换实例那一下就没了。
+   上一版做的是「模块级 pendingToast + 新 provider 首个 effect 里挂一个
+   420ms 定时器再 push」，队列本身不在模块里，于是那条提示的生死挂在
+   「新实例能否活过 420ms」上 —— 卸载的 cleanup 会 clearTimeout，
+   而 pendingToast 在排定时器之前就已经置空了，等不到第二次消费机会：
+   一旦重挂载在这段窗口里再来一次，提示就**永远消失**。
+   这条路的失败形状正是「读档之后没有提示 / 提示闪一下就没了」——
+   真机上就是读档没反应，冒烟那头则是偶发超时。
+   现在队列本身跨重挂载存活，写进队列的那一刻就在屏上：
+   没有待消费的旗标，也没有「等一会儿再弹」的定时器。
+   ============================================================ */
+let toastList: Toast[] = []
+let toastSeq = 0
+const toastSubs = new Set<() => void>()
+
+function commitToasts(next: Toast[]): void {
+  toastList = next
+  for (const fn of toastSubs) fn()
+}
+function subscribeToasts(fn: () => void): () => void {
+  toastSubs.add(fn)
+  return () => { toastSubs.delete(fn) }
+}
+function readToasts(): Toast[] {
+  return toastList
+}
+
+/**
+ * 弹一条通知。live 的那几条（后台推来的）不自动消退。
+ * 只有「出事 / 得手」两种才出声；情报类（观测记录、人事通知、委员长的
+ * 自言自语）在右下角悄悄来去就好 —— 从前每一条都响，后台推一条就叮一下，
+ * 用户根本对不上是哪件事。
+ */
+function pushToast(kind: ToastKind, title: string, body?: string, live?: boolean): void {
+  if (kind === 'danger' || kind === 'warn') sfx('alert')
+  else if (kind === 'success') sfx('loot')
+  toastSeq += 1
+  const t: Toast = { id: toastSeq, kind, title, body, live }
+  commitToasts([...toastList.slice(-4), t])
+  if (!live) {
+    window.setTimeout(() => {
+      commitToasts(toastList.filter((x) => x.id !== t.id))
+    }, 5400)
+  }
+}
+
+function dismissToast(id: number): void {
+  commitToasts(toastList.filter((x) => x.id !== id))
+}
 
 function takePendingView(): ViewId | null {
   const v = pendingView
@@ -635,8 +689,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [varsOpen, setVarsOpen] = useState(false)
   /** 「存读档」浮层开关 */
   const [slotsOpen, setSlotsOpen] = useState(false)
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const toastId = useRef(0)
+  /* 通知队列是模块级那份（见 pushToast 上头那一段）：重挂载换实例，
+     队列不跟着走 —— 「已读档」这种提示才不会被换实例抹掉。 */
+  const toasts = useSyncExternalStore(subscribeToasts, readToasts)
   /** 跨视图「打开档案」意图（正文关键词跳转用；档案页消费后清除） */
   const [profileRequest, setProfileRequest] = useState<{ id: string; name: string; ts: number } | null>(null)
   /** 跨视图「打开图鉴条目」意图（正文关键词跳转用；图鉴页消费后清除） */
@@ -730,16 +785,6 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     ensureBuiltinGroups()
   }, [])
 
-  /* 重挂载后落地一条重置/读档的反馈通知（冷启动为 null 则跳过） */
-  useEffect(() => {
-    if (!pendingToast) return
-    const t = pendingToast
-    pendingToast = null
-    const id = window.setTimeout(() => push(t.kind, t.title, t.body, false), 420)
-    return () => window.clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   /* 事件详纲那张表 2.1 MB，是懒加载的（见 data/briefs/index.ts）。
      在**开屏之后、第一次推进之前**这段空闲里先把它拉回来 —— 等到真拼导演提示词
      那一刻再去拉，那一回合就白等一个来回。拿不到也不拦：`Plot` 那边会 await 一次，
@@ -753,27 +798,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const push = useCallback((kind: ToastKind, title: string, body?: string, live?: boolean) => {
-    /*
-      只有「出事 / 得手」两种才出声；情报类（观测记录、人事通知、委员长的自言自语）
-      在右下角悄悄来去就好 —— 以前每一条都响，后台推一条就叮一下，
-      用户根本对不上是哪件事，只会觉得「又在莫名响」。
-    */
-    if (kind === 'danger' || kind === 'warn') sfx('alert')
-    else if (kind === 'success') sfx('loot')
-    toastId.current += 1
-    const t: Toast = { id: toastId.current, kind, title, body, live }
-    setToasts((prev) => [...prev.slice(-4), t])
-    if (!live) {
-      window.setTimeout(() => {
-        setToasts((prev) => prev.filter((x) => x.id !== t.id))
-      }, 5400)
-    }
-  }, [])
-
-  const dismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((x) => x.id !== id))
-  }, [])
+  /* 两个都是模块函数（跨重挂载稳定）：组件这一头只做转手 */
+  const push = pushToast
+  const dismiss = dismissToast
 
   /* —— 事件门禁 —— */
   const navigate = useCallback(
@@ -822,7 +849,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       sessionStage = 'game'
       sessionSetup = false
       pendingView = 'dashboard'
-      pendingToast = { kind: 'info', title: '已读取自动存档', body: `${a.name || '自动存档'} · 收束 ${a.records} 段` }
+      pushToast('info', '已读取自动存档', `${a.name || '自动存档'} · 收束 ${a.records} 段`)
       requestRemount()
     })()
     return true
@@ -845,7 +872,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // 开场先给总览：这一屏是「你现在什么状况」，
     // 正史要往哪儿推是下一步的事，不该一进来就压在人脸上。
     pendingView = 'dashboard'
-    pendingToast = { kind: 'warn', title, body }
+    pushToast('warn', title, body)
     requestRemount()
   }, [])
 
@@ -898,7 +925,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         sessionStage = 'game'
         sessionSetup = false
         setSetupMode(false)
-        pendingToast = { kind: 'success', title: '存档已读取', body: `载入「${slot.name}」。` }
+        pushToast('success', '存档已读取', `载入「${slot.name}」。`)
         requestRemount()
       })()
     },
