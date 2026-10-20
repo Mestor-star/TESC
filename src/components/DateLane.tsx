@@ -208,9 +208,12 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
       const meta = TAVERN_PERSONAS.find((p) => p.charId === charId)
       if (!c || !meta) return
       const cfg = settings
+      /* 通道没配好**只报一句、不换视图** —— 从前这里是 push 完紧跟一句
+         navigate('settings')，点进「约会专线」那一下整页就被换成了终端设置
+         （BUG-03）。换页面是主人点「去配置」那一枚时才发生的事，不是这一路
+         自己代劳的。 */
       if (!cfg || !isReady(cfg)) {
-        push('warn', '推演通道未配置', '请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来赴约。')
-        navigate('settings')
+        push('warn', '推演通道未配置', '请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来赴约。', false)
         return
       }
       setErr(null)
@@ -393,24 +396,19 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
       }
     },
     [
-      settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, flagKeys, epDone, world,
+      settings, busy, push, operatorName, bondNow, bumpBond, setFlag, flagKeys, epDone, world,
       append, meetChar, registerEnd, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel, setCg,
     ],
   )
 
-  /* 刚进来、这一场还一句话都没有 → 让对面开口（与从前一样，只在空线程时跑一次）。
-     照旧问一次推演通道：一进来就凭空生出几句对白很怪。 */
-  const opened = useRef<string | null>(null)
-  useEffect(() => {
-    if (!rv || opened.current === rv.id) return
-    if ((loadSmsLogs()[rv.id] ?? []).length > 0) { opened.current = rv.id; return }
-    /* 通道还没读出来、或者上一场正忙着 —— **先别认下这一场**，等下一轮再来。
-       从前是「先记账、再发话」：正忙时 `fireDate` 一进门就被 `busy` 挡回来，
-       而账已经记下了 —— 这一场就永远哑在那儿，换回来也不会再开一次。 */
-    if (!settings || busy) return
-    opened.current = rv.id
+  /* 让对面先开口：**只有点了那一枚才发**。
+     从前这是一只进车道就跑一次的效果（空线程即 `fireDate`）—— 用户一个字没写，
+     额度就先花掉了一回（BUG-03）。现在它是一枚摆在空档上的显式动作，
+     要不要花这一回由主人自己按。 */
+  const openFirst = useCallback(() => {
+    if (!rv || busy) return
     void fireDate(rv.id, [])
-  }, [rv, settings, busy, fireDate])
+  }, [rv, busy, fireDate])
 
   const send = async () => {
     const text = draft.trim()
@@ -616,10 +614,41 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
               </div>
             ) : null}
             {activeLog.length === 0 && !busy ? (
-              <EmptyHint
-                title="还没人开口"
-                body={`${c?.name ?? rv.charId} 还没出声 —— 写一句递过去，或者等着看谁先开这个口。`}
-              />
+              <>
+                <EmptyHint
+                  title="还没人开口"
+                  body={`${c?.name ?? rv.charId} 还没出声 —— 写一句递过去，或者等对方先开口。`}
+                />
+                {settings && !isReady(settings) ? (
+                  /* 通道没配好：就地说明，留一枚「去配置」**可选入口** —— 点它才换页 */
+                  <div className={plot.warn} data-date-cfg-missing="1">
+                    <b>推演通道未配置</b>
+                    <span>请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来赴约。</span>
+                    <button
+                      className="btn btn--amber"
+                      style={{ fontSize: 12 }}
+                      onClick={() => navigate('settings')}
+                      data-date-cfg
+                    >
+                      去配置
+                    </button>
+                  </div>
+                ) : (
+                  <div className={plot.hintLine} data-date-await="1">
+                    <button
+                      className="btn btn--ghost"
+                      style={{ fontSize: 12 }}
+                      onClick={openFirst}
+                      disabled={busy || !settings}
+                      title="让对面把这一场的第一句说出来（消耗一次推演额度）"
+                      data-date-open
+                    >
+                      让对方先开口
+                    </button>
+                    <span>空着递过去，先听对面怎么开这个口 —— 也算一次推演。</span>
+                  </div>
+                )}
+              </>
             ) : null}
             {activeLog.map((m, i) =>
               m.from === 'them' ? (

@@ -986,5 +986,7 @@ input[type='range']::-moz-range-thumb {
      删了冒烟会红，手指上也真的点不中。 */
   button.chip { min-height: 34px; }
   .btn { min-height: 40px; }
-  input[type='checkbox'] { min-height: 24px; }
+  /* 只写 min-height 时量出 {w:13,h:24} —— 浏览器默认宽度不跟着最小高度走（BUG-08）。
+     width 一并写死，否则默认尺寸把盒子撑不回来；四件套落在同一条里，单一出处。 */
+  input[type='checkbox'] { width: 24px; min-width: 24px; height: 24px; min-height: 24px; }
 }

@@ -393,9 +393,12 @@ function TopStatus({ view }: { view: ViewId }) {
             右边三格是**机器**（时钟 / 信道 / 声音）。 */}
         <span className={css.tbDiv} />
         <div className={css.tbMach} data-tb="mach">
-        <button className={`${css.pill} ${css.clock}`} title="弗尔克图斯本地时间">
+        {/* 时钟是**读数**不是按钮 —— 原来这枚 button 没有 onClick，点了没反应，
+            Tab 还停在它上面（BUG-06）。落成 span + title 后语义正确；布局沿用
+            css.pill / css.clock 那一套（inline-flex + min-width 96），一个像素都不动。 */}
+        <span className={`${css.pill} ${css.clock}`} title="弗尔克图斯本地时间">
           <span className="num">{clock(now)}</span>
-        </button>
+        </span>
         <button className={css.pill} title="停滞观测信道状态" onClick={() => push('decode', '观测信道稳定', '与停滞观测网 · 弗尔克图斯分区保持全双工连接', false)}>
           <Bell size={14} weight="bold" />
         </button>

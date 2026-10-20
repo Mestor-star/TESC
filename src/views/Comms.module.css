@@ -224,8 +224,14 @@
   }
   /* 会话列表给一个**定值**（不是 max-height）：auto 轨道在定高网格里会被
      1fr 那条挤，挤出来多少全看内容多少 —— 实测只剩 88px，只露得出一个人。
-     26vh 在 844 上是 219px：够看见自己在哪个线程、也够换人，剩下的全归消息流。 */
-  .contactList { height: clamp(140px, 26vh, 260px); min-height: 0; }
+     26vh 在 844 上是 219px，但列表头 + 内边距吃掉 67px，列表体只剩 152px
+     （BUG-04：一行 62px，只露 2.5 行）。抬到 34vh —— 844 上 287px，
+     列表体 220px ≈3.5 行（按 56px 的「3 行」口径是 3.9 行）。
+     输入框的位置只由 .wrap 那条定高链决定（composer 是 chatPane 的固定尾行），
+     抬列表不动它 —— 两条约束的实测见缺陷清单 BUG-04。 */
+  /* ⚠️ 960 那条 .contactList{max-height:260px} 特异度相同、还排在前面 ——
+     不把它抬掉，height 写得再大也只到 260（实测就是 260）。 */
+  .contactList { height: clamp(180px, 34vh, 320px); max-height: none; min-height: 0; }
   /* 会话列表底下那条脚注（全局 .panel__body，两段说明文）在 219px 的列表里
      自己就要 88px —— 定高之后它吃掉的正是能看见几个联系人。手机上让它退场。 */
   .contactList > :global(.panel__body) { display: none; }
