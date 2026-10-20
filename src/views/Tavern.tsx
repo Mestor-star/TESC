@@ -6,6 +6,7 @@ import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
 import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
 import { plotContextFor } from '../lib/crosslink'
+import { nameKey } from '../lib/namekey'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 
@@ -493,7 +494,11 @@ ${preset.post}` : '')
         const speakerId = lines.find((l) => l.who)?.who
         /* 托付的「来自谁」照旧只认主役那四位（SmsTask.from 是 CharId，电话页那枚头像照它取立绘）。
            群里由会长或副官托付时，落到第一位主役成员名下 —— 是谁说的，正文里写着，不丢。 */
-        const spoke = speakerId ? g.charIds.find((id) => charOf(id)?.name === speakerId) : undefined
+        /* 认人按归一后的键比（lib/namekey.ts）：回执里的名字与档案全名中点写法常不一致，
+           精确相等会把「谁托付的」整条丢掉。 */
+        const spoke = speakerId
+          ? g.charIds.find((id) => nameKey(charOf(id)?.name ?? '') === nameKey(speakerId))
+          : undefined
         const from = (spoke && isCharId(spoke) ? spoke : g.charIds.find(isCharId))
         for (const task of newTasks) addTask(task.title, { detail: task.detail, ...(from ? { from } : {}) })
 

@@ -1,4 +1,5 @@
 import type { EndEntry } from './types'
+import { nameKey } from '../lib/namekey'
 
 /** 判断长串中是否出现「独立」的编号（两侧不接数字，避免 951 误中 9510） */
 function hasCode(text: string, code: string): boolean {
@@ -14,8 +15,14 @@ function hasCode(text: string, code: string): boolean {
  * 命中即视为「推进剧情自动登记」。匹配不到返回 null（该实体未收录图鉴）。
  */
 export function resolveEntityToCodexId(ent: string): string | null {
+  /* 两侧都先过 nameKey（中点统一 / NFKC / 去空白）再比**子串**：方向照旧双向
+     （实体串里含条目名，或条目名里含实体串），只是先洗干净，
+     否则实体标注换个中点写法就整条登记不上图鉴。 */
+  const key = nameKey(ent)
   for (const e of CODEX) {
-    if (e.name && (ent.includes(e.name) || e.name.includes(ent))) return e.id
+    if (!e.name) continue
+    const name = nameKey(e.name)
+    if (key.includes(name) || name.includes(key)) return e.id
   }
   for (const e of CODEX) {
     if (e.no && e.no !== '' && e.no !== '？？？' && hasCode(ent, e.no)) return e.id

@@ -19,8 +19,12 @@ import type { MultiImportInput } from '../lib/tavernlike/importer'
 import type { SillyTavernLorebookExport } from '../lib/tavernlike/types'
 import { AUDIO_DEFAULTS, setAudio, setBeds, sfx, useAudioSettings } from '../lib/audio'
 import { PanelHead, useFolds } from '../components/Fold'
+import { auditBackupText, buildBackup, downloadBackup, fmtBytes, pickBackupFile, restoreBackup } from '../lib/backup'
+import type { BackupFile, BackupPreview } from '../lib/backup'
+import { requestRemount } from '../lib/remount'
 
 import css from './Settings.module.css'
+import bcss from './Backup.module.css'
 
 /**
  * 声音。
@@ -308,6 +312,249 @@ function LogDetail({ rec, copied, onCopy }: { rec: AiLogRecord; copied: boolean;
         </button>
       </div>
     </div>
+  )
+}
+
+/* ============ 整份备份与恢复 ============ */
+
+/* 恢复成功后的横幅寄存在模块作用域：恢复完要 requestRemount 全量重挂载，
+   这个组件会被整只换掉，若把消息存在 state 里，用户什么都看不到。 */
+let restoreBannerText: string | null = null
+/* 待恢复的那一份：可能 5MB 以上，只放模块作用域，绝不进 React state 反复渲染 */
+let pendingBackup: BackupFile | null = null
+
+/**
+ * 备份与恢复：一份 .json 装下整个本地进度（localStorage 全部 zts- 键 + 三个 IndexedDB 库）。
+ * 密钥（api:main / api:sms）既不导出也不覆盖。
+ */
+function BackupPanel() {
+  const { push } = useTerminal()
+  const [busy, setBusy] = useState<'export' | 'pick' | 'restore' | null>(null)
+  const [preview, setPreview] = useState<BackupPreview | null>(null)
+  const [fname, setFname] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [audit, setAudit] = useState<string | null>(null)
+  const [banner, setBanner] = useState<string | null>(restoreBannerText)
+
+  const doExport = async () => {
+    setBusy('export')
+    setError(null)
+    setAudit(null)
+    try {
+      const file = await buildBackup()
+      const text = JSON.stringify(file)
+      const hits = auditBackupText(text)
+      const name = downloadBackup(file)
+      setAudit(
+        hits.length
+          ? `自检：文件里出现可疑字样（${hits.join('、')}）——请勿外发，联系开发者。`
+          : '自检：文件里没有密钥（无 api:main / api:sms，也没有 apiKey / Bearer 字样）。',
+      )
+      const d = file.counts.byDb
+      push(
+        'success',
+        '已导出整份备份',
+        `${name} · ${fmtBytes(text.length)} · 本地键 ${file.counts.localKeys} 个 / 世界书 ${d['zts-lore'] ?? 0} 行 / 终端态 ${d['zts-terminal-store'] ?? 0} 行 / 作战记录 ${d['zts-battle'] ?? 0} 行。含进度、会话、存档槽与世界书；不含接口密钥。`,
+        false,
+      )
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      setError(`导出失败：${m}`)
+      push('danger', '导出失败', m, false)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const doPick = async () => {
+    setBusy('pick')
+    setError(null)
+    setAudit(null)
+    setPreview(null)
+    pendingBackup = null
+    try {
+      const r = await pickBackupFile()
+      if (r === null) return
+      if (!r.ok) {
+        setError(r.error)
+        return
+      }
+      pendingBackup = r.file
+      setFname(r.name)
+      setPreview(r.preview)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const doRestore = async () => {
+    const file = pendingBackup
+    if (!file) return
+    setBusy('restore')
+    setError(null)
+    try {
+      const r = await restoreBackup(file)
+      pendingBackup = null
+      setPreview(null)
+      setFname('')
+      lore.invalidateActiveCache()
+      const msg = `已从备份恢复：本地键 ${r.localKeys} 个 · IndexedDB ${r.idbRows} 行。世界书、存档槽、会话日志与作战记录都换回了备份里的内容；接口密钥未受影响。`
+      restoreBannerText = msg
+      setBanner(msg)
+      push('success', '已从备份恢复', msg, false)
+      // 全量重挂载：各视图的 state 初始化时就读了存储，不重挂载看不到新档
+      window.setTimeout(() => requestRemount(), 1500)
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      setError(m)
+      push('danger', '恢复失败', m, false)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="panel" style={{ marginBottom: 16 }} data-backup-panel>
+      <div className="panel__head">
+        <span className="panel__title"><FloppyDisk size={15} weight="bold" /> 备份与恢复</span>
+        <span className="muted tiny" style={{ marginLeft: 'auto' }}>FULL BACKUP / LOCAL</span>
+      </div>
+      <div className="panel__body" style={{ padding: 18 }}>
+        <div className={bcss.wrap}>
+          <div className={bcss.note}>
+            <b>清浏览器缓存之前，先存一份整份备份。</b><br />
+            一份 .json 装下当前全部进度：运行档、剧情与短信会话（含 8 个手动槽与自动档）、约会名册、世界书与启用标记、
+            预设备份、作战记录与军需体力。<b>接口密钥不在文件里</b>，恢复时也一根汗毛都不碰它。
+          </div>
+
+          {banner ? (
+            <div className={bcss.ok} data-backup-banner>
+              {banner}
+              <button
+                className="btn btn--ghost"
+                style={{ fontSize: 11, padding: '4px 10px', marginLeft: 10 }}
+                onClick={() => { restoreBannerText = null; setBanner(null) }}
+              >
+                知道了
+              </button>
+            </div>
+          ) : null}
+
+          <div className={bcss.row}>
+            <div className={bcss.info}>
+              <b className={bcss.name}>导出整份备份</b>
+              <span className={bcss.desc}>
+                下载 zts-backup-YYYYMMDD-HHmm.json：localStorage 全部 zts- 键 + IndexedDB 三库全部表。不含任何接口密钥。
+              </span>
+            </div>
+            <div className={bcss.acts}>
+              <button
+                className="btn btn--primary"
+                style={{ fontSize: 12, padding: '7px 14px' }}
+                onClick={() => void doExport()}
+                disabled={busy !== null}
+                data-backup-export
+              >
+                <DownloadSimple size={14} weight="bold" /> {busy === 'export' ? '打包中…' : '导出整份备份'}
+              </button>
+            </div>
+          </div>
+
+          <div className={bcss.row}>
+            <div className={bcss.info}>
+              <b className={bcss.name}>从备份恢复</b>
+              <span className={bcss.desc}>
+                选文件后先给预览（导出时间 / 格式版本 / 各库条数 / 文件大小），确认之后才覆盖当前进度。
+              </span>
+            </div>
+            <div className={bcss.acts}>
+              <button
+                className="btn btn--ghost"
+                style={{ fontSize: 12, padding: '7px 14px' }}
+                onClick={() => void doPick()}
+                disabled={busy !== null}
+                data-backup-pick
+              >
+                <UploadSimple size={14} weight="bold" /> {busy === 'pick' ? '读取中…' : '从备份恢复'}
+              </button>
+            </div>
+          </div>
+
+          {error ? <div className={bcss.err} data-backup-error>{error}</div> : null}
+          {audit ? <div className={bcss.ok} data-backup-audit>{audit}</div> : null}
+
+          {preview ? (
+            <div className={bcss.preview} data-backup-preview>
+              <div className={bcss.previewHead}>
+                <b className={bcss.previewTitle}>这份备份里有</b>
+                <span className={bcss.previewFile}>{fname || '（未命名）'} · {fmtBytes(preview.bytes)}</span>
+              </div>
+
+              <div className={bcss.grid}>
+                <div className={bcss.cell}>
+                  <span className={bcss.cellLabel}>导出时间</span>
+                  <span className={bcss.cellVal}>{preview.exportedAt ? new Date(preview.exportedAt).toLocaleString('zh-CN') : '未知'}</span>
+                </div>
+                <div className={bcss.cell}>
+                  <span className={bcss.cellLabel}>格式版本</span>
+                  <span className={bcss.cellVal}>v{preview.version} · {preview.app.name}</span>
+                </div>
+                <div className={bcss.cell}>
+                  <span className={bcss.cellLabel}>本地键</span>
+                  <span className={bcss.cellVal}>{preview.localKeys} 个</span>
+                </div>
+                <div className={bcss.cell}>
+                  <span className={bcss.cellLabel}>库内记录</span>
+                  <span className={bcss.cellVal}>{preview.totalRows} 行</span>
+                </div>
+              </div>
+
+              <div className={bcss.grid}>
+                {preview.dbs.map((d) => (
+                  <div className={bcss.cell} key={d.name} data-backup-db={d.name}>
+                    <span className={bcss.cellLabel}>{d.name}</span>
+                    <span className={bcss.cellVal}>
+                      {d.rows} 行
+                      <span className={bcss.cellLabel} style={{ marginLeft: 6 }}>
+                        {d.tables.map((t) => `${t.table} ${t.rows}`).join(' · ')}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className={bcss.overwrite}>
+                确认后会<b>覆盖当前进度</b>：运行档、会话日志、8 个存档槽与自动档、世界书与启用标记、作战记录与军需体力，
+                全部换成这份备份里的内容（备份里没有的 zts- 键会被删掉）。接口密钥不在备份里，也不会被改动。
+                恢复前会把现状整份抓进内存，写回失败自动还原。
+              </div>
+
+              <div className={bcss.foot}>
+                <button
+                  className={`btn btn--ghost ${bcss.danger}`}
+                  style={{ fontSize: 12, padding: '7px 14px' }}
+                  onClick={() => void doRestore()}
+                  disabled={busy !== null}
+                  data-backup-confirm
+                >
+                  <WarningOctagon size={14} weight="bold" /> {busy === 'restore' ? '恢复中…' : '确认覆盖并恢复'}
+                </button>
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 12, padding: '7px 14px' }}
+                  onClick={() => { pendingBackup = null; setPreview(null); setFname(''); setError(null) }}
+                  disabled={busy !== null}
+                  data-backup-cancel
+                >
+                  取消
+                </button>
+                <span className={bcss.grow} />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -823,6 +1070,8 @@ export function Settings() {
       </div>
 
       <AudioPanel />
+
+      <BackupPanel />
 
       {/* 世界书数据管理与方案 */}
       <section className="panel" style={{ marginBottom: 16 }}>

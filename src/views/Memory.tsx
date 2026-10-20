@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import {
   ArrowRight, CalendarDots, Eye, Footprints, GitBranch, LockSimple, Quotes, Sword, UsersThree,
@@ -9,6 +9,9 @@ import { FoldAll, FoldHead, useFolds } from '../components/Fold'
 import { Portrait } from '../components/Portrait'
 import { Linkified } from '../components/Linkified'
 import { listTasks, subscribeTasks, tasksVersion } from '../lib/smstasks'
+import { listRecords } from '../lib/battle/store'
+import { tieLineOf } from '../lib/battle/settle'
+import type { BattleRecord } from '../lib/battle/types'
 import { TIMELINE } from '../data/timeline'
 import {
   MEM_SECTIONS, memCounts, relationsOf, deedsOf, threadsOf, sightsOf, mindsOf, skillsOf, chronicleOf,
@@ -67,6 +70,13 @@ export function Memory() {
   /* 托付（短信里应下的事）不在终端上下文里，由它自己的账本供给 */
   const taskVer = useSyncExternalStore(subscribeTasks, tasksVersion)
   const tasks = useMemo(() => listTasks(), [taskVer])
+  /* 战况那一格：作战记录是另一本账（隐藏存档），不归 lib/memory 排 —— 这里只读最近几场。 */
+  const [war, setWar] = useState<BattleRecord[]>([])
+  useEffect(() => {
+    let alive = true
+    void listRecords().then((rs) => { if (alive) setWar(rs.slice(0, 5)) })
+    return () => { alive = false }
+  }, [])
 
   const inp = useMemo<MemInput>(() => ({ world, epDone, records, bondNow, tasks }), [world, epDone, records, bondNow, tasks])
 
@@ -234,6 +244,57 @@ export function Memory() {
                       )}
                     </article>
                   ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* —————————— 战况 · 最近交战（不是第八栏，是一格读数） ——————————
+              一句话版直接取 lib/battle/settle 的 tieLineOf —— 与作战记录页、推演提示词
+              同一份口径，这一页不另造一套文案。旧档（连携 / 破绽 / 形态那几栏立起来之前
+              写的记录）它返回空串，就照实写「没有留下战况读数」，不拿胜负去凑一句。 */}
+          <section className="panel" data-mem-war>
+            <div className="panel__head">
+              <span className="panel__title">
+                <i className={css.secIc}><Sword size={15} weight="bold" /></i>
+                战况
+                <span className="slash" />
+              </span>
+              <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>
+                最近几场仗留下了什么：连携、破绽、对面换过几个形态 —— 一句话，出自作战记录。
+              </span>
+              <span className={css.grow} />
+              <span className={`chip ${war.length > 0 ? 'chip--on' : 'chip--off'}`}>{war.length}</span>
+            </div>
+            <div className="panel__body">
+              {war.length === 0 ? (
+                <div className={css.empty}>
+                  <b>还没有打过需要归档的仗</b>
+                  <span>作战记录里每多一场，这里就多一句战况。</span>
+                </div>
+              ) : (
+                <div className={css.warList}>
+                  {war.map((r) => {
+                    const one = tieLineOf(r)
+                    return (
+                      <article key={r.id} className={css.war} data-mem-war-row={r.id}>
+                        <div className={css.warHead}>
+                          <span className="mono tiny" style={{ color: 'var(--ink-faint)' }}>{r.no}</span>
+                          <b>{r.title}</b>
+                          <span className={`chip ${r.outcome === '胜' ? 'chip--on' : 'chip--off'}`}>{r.outcome}</span>
+                          <span className={css.grow} />
+                          <span className={css.stamp}>{stamp(r.at)}</span>
+                        </div>
+                        {one ? (
+                          <p className={css.warLine}>{one}</p>
+                        ) : (
+                          <p className={css.warEmpty}>
+                            这一场没有留下战况读数（连携 / 破绽 / 形态那几栏是后立的，旧档里没有）。
+                          </p>
+                        )}
+                      </article>
+                    )
+                  })}
                 </div>
               )}
             </div>

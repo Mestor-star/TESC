@@ -12,6 +12,7 @@
    ============================================================ */
 
 import { CAST, OPERATOR_ID, OPERATOR_PERSON, VOICE_ONLY, speakerOf } from '../data/castmeta'
+import { nameKey } from './namekey'
 
 export type DialogueSeg =
   | { kind: 'narr'; text: string }
@@ -24,33 +25,51 @@ export type DialogueSeg =
 const SPEAKER_MIN = 2
 
 interface SpeakerEntry {
-  text: string
+  /** 归一后的名字（比较键，见 lib/namekey.ts） */
+  key: string
   id: string
 }
 
-/** 档案名与正文排印在这里不是同一个点：档案/图鉴一律写「・」(U+30FB)，
-    原文排印写「·」(U+00B7) —— 同一个人（如「拉斐尔・加西亚」）。识别表把
-    两者视作同一串，编年史一类的**逐字原文**才不必为了切气泡去改标点。 */
-const DOT_ALIKE = (s: string) => s.replace(/・/g, '·')
-
-/** 台词识别表：全名 + 别名（含操作员与「开口但不在册」者），按长度降序便于长名优先 */
+/** 台词识别表：全名 + 别名（含操作员与「开口但不在册」者），按比较键长度降序便于长名优先。
+    表里存的是**比较键**（nameKey：NFKC + 去空白 + 四种中点统一 U+00B7），
+    所以档案里写「・」、正文排印写「·」的同一个人是同一个键，编年史一类的
+    **逐字原文**才不必为了切气泡去改标点。 */
 const SPEAKER_TABLE: SpeakerEntry[] = (() => {
   const map = new Map<string, string>()
   const add = (id: string, names: string[]) => {
     for (const n of names) {
-      const s = (n ?? '').trim()
-      if (s.length >= SPEAKER_MIN) map.set(s, id)
-      const alt = DOT_ALIKE(s)
-      if (alt !== s && alt.length >= SPEAKER_MIN) map.set(alt, id)
+      const key = nameKey(n ?? '')
+      if (key.length >= SPEAKER_MIN) map.set(key, id)
     }
   }
   for (const p of CAST) add(p.id, [p.name, ...p.names])
   for (const p of VOICE_ONLY) add(p.id, [p.name, ...p.names])
   add(OPERATOR_ID, [OPERATOR_PERSON.name, ...OPERATOR_PERSON.names])
   return [...map.entries()]
-    .map(([text, id]) => ({ text, id }))
-    .sort((a, b) => b.text.length - a.text.length)
+    .map(([key, id]) => ({ key, id }))
+    .sort((a, b) => b.key.length - a.key.length)
 })()
+
+/**
+ * 把一行按同一把尺（lib/namekey.ts）洗干净，并记住每个洗后字符在**原文**里到哪结束。
+ *
+ * 只洗出键、不改原行：气泡正文还得按原下标切，否则正文会被自己洗出来的空白错位。
+ * 归一都是一对一（NFKC / 中点），空白是跳过 —— 所以键里第 n 个字符的末尾下标，
+ * 就是「名字在原行里到哪一位为止」。
+ */
+function foldedHead(line: string): { key: string; end: number[] } {
+  let key = ''
+  const end: number[] = []
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (/\s/.test(c)) continue
+    const f = nameKey(c)
+    if (!f) continue
+    key += f
+    for (let j = 0; j < f.length; j++) end.push(i + 1)
+  }
+  return { key, end }
+}
 
 /** 行首的强调标记（模型偶尔把名字加粗：`**露娜**：……`）—— 剥掉再认，气泡不该因此失效。
     只认成对的（** / __ / ＊），单一个 * 或 _ 当作列表符号，不剥。 */
@@ -64,9 +83,11 @@ const OPEN_CLOSE: Record<string, string> = { '「': '」', '『': '』', '“': 
 /** 若该行以某登记名/别名 + 冒号开头 → 返回匹配；否则 null（整行留旁白） */
 function matchSpeaker(line: string): { id: string; body: string } | null {
   const head = line.replace(LEAD_MARK, '')
+  const folded = foldedHead(head)
   for (const sp of SPEAKER_TABLE) {
-    if (!head.startsWith(sp.text)) continue
-    let k = sp.text.length
+    if (!folded.key.startsWith(sp.key)) continue
+    // 名字在原行里结束的位置（洗过的键 → 原文下标）
+    let k = folded.end[sp.key.length - 1]
     const tail = TAIL_MARK.exec(head.slice(k))
     if (tail) k += tail[0].length
     const ch = head[k]

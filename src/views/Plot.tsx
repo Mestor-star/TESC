@@ -20,7 +20,8 @@ import {
   effectiveGrowth, listRecords, readBag, readEquip, readGearBag, readGrowth,
   readLevels, readStamina,
 } from '../lib/battle/store'
-import { settleExit, settleWin } from '../lib/battle/settle'
+import { mergePlotTie, plotTieInOf, settleExit, settleWin, TIE_ONCE_KEY } from '../lib/battle/settle'
+import { bondsOf } from '../lib/battle/synergy'
 import { battleMissionOf, plotSquadOf } from '../lib/battle/from-directive'
 import { eventHasNoFoe } from '../lib/battle/mainline'
 import { periodProgress } from '../lib/battle/derive'
@@ -30,7 +31,7 @@ import type { Mission } from '../data/types'
 import { Battle } from './Battle'
 import { recentBattleContext } from '../lib/battle/narrate'
 import { battleStoryBrief, narrateStorylog } from '../lib/battle/storylog'
-import type { PlotReply } from '../lib/plot'
+import type { BattleFacts, PlotReply } from '../lib/plot'
 import { loadActiveBooks } from '../lib/lorestore'
 import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
 import { ensureBriefs } from '../data/briefs'
@@ -48,6 +49,8 @@ import { attireAdvanceLabel } from '../data/attire'
 import { DateLane } from '../components/DateLane'
 import { DateArchive } from '../components/DateArchive'
 import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
+import type { ConcludedMark, PendingBattleMark } from '../lib/plotpending'
+import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { relName } from '../data/rel'
 import { Portrait } from '../components/Portrait'
@@ -264,6 +267,35 @@ function lastActOf(log: ChatMsg[] | undefined): string {
   return ''
 }
 
+/*
+  同一场结算不许写两遍 —— 这一份是**会话级**的那道门。
+  状态里的 world.flags 是异步写下去的（setFlag 走 setWorld），同一拍里连调两次时
+  闭包里读到的还是旧值；所以先有一张内存里的名单兜住同一张页面的重复调用，
+  刷新之后那一趟由世界变量 `battle.settled` 兜（见 settle 的 TIE_ONCE_KEY）。
+ */
+const tieSettled = new Set<string>()
+
+/**
+ * 一场作战记录 → 导演提示词要的那几格读数。
+ *
+ * 旧档（`chainPeak` / `phases` / `ties` 那几栏立起来之前写的记录）这些字段是 undefined：
+ * 一律按「没换过形态 / 一次都没有」退化 —— 提示词那一段随之整节不出现，不报错、不补 0 进正文。
+ * 连携记的是 id（`Bond.id`），提示词要的是名字：照这一场的队伍现算一次名表，认不出就退回 id。
+ */
+function battleFactsOf(rec: BattleRecord): BattleFacts {
+  const names = new Map(bondsOf(rec.squad ?? []).map((b) => [b.id, b.name]))
+  return {
+    title: rec.title,
+    outcome: rec.outcome,
+    phases: rec.phases ?? 1,
+    syncs: rec.syncs ?? 0,
+    breaks: rec.breaks ?? 0,
+    enraged: rec.enraged ?? 0,
+    chainPeak: rec.chainPeak ?? 0,
+    ties: (rec.ties ?? []).map((id) => names.get(id) ?? id),
+  }
+}
+
 /** 把「AI 起草」的原始返回切成一句句可直接填入的候选行动（条理性 best-effort） */
 function parseDraftLines(raw: string): string[] {
   const out: string[] = []
@@ -371,8 +403,15 @@ export function Plot() {
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
   /** 「回退到上一段」的二次确认（与设置页「再按一次确认」同一套口径） */
   const [confirmBack, setConfirmBack] = useState(false)
-  /** 「事件已收束、待手动推进」：收束正文留在原地不消失；点「进入下一事件」才写记录并推进（期间不锁输入，继续回话即留在本事件） */
-  const [concluded, setConcluded] = useState<{ evId: string; title: string; digest: string; diverged: boolean } | null>(null)
+  /**
+   * 「事件已收束、待手动推进」：收束正文留在原地不消失；点「进入下一事件」才写记录并推进
+   * （期间不锁输入，继续回话即留在本事件）。
+   *
+   * **落盘**（`lib/plotpending.ts`，键 `zts-plot-pending:v1`）：视图是按 `case` 换的，
+   * 切去别的页 Plot 整个卸载 —— 只住在组件里的话，切回来收束栏就没了。所以初值读回、
+   * 每次换都同步写回；清点走下面 `applyConcluded(null)`，各条取消路径一个不少。
+   */
+  const [concluded, setConcluded] = useState<ConcludedMark | null>(readConcluded)
   /* —— 剧情交战：指令里带 battle 时，按现场角色与敌人开打 —— */
   const [plotBattle, setPlotBattle] = useState<{ mission: Mission; squad: string[] } | null>(null)
   /**
@@ -381,9 +420,19 @@ export function Plot() {
    * 这一格必须**打赢**才走得下去：撤退或战败回到正文时按钮还在，
    * 「进入下一事件」会拦下来。带的这份编成就是现场那几个人，不能另叫别人来。
    */
-  const [pendingBattle, setPendingBattle] = useState<{
-    evId: string; name: string; mission: Mission; squad: string[]
-  } | null>(null)
+  const [pendingBattle, setPendingBattle] = useState<PendingBattleMark | null>(readPendingBattle)
+  /* 这两格的每一次换手都从这一个门过 —— 立起来、清掉都同步写盘。
+     清的那几条路不止一条（归档 / 续话 / pickOption / clearThread / rollbackAt /
+     rewriteReply / 回退上一段 / 打赢那一场），全走同一个门才不会漏写一条、
+     留下「刷新一下又活过来」的幽灵按钮。 */
+  const applyConcluded = useCallback((m: ConcludedMark | null) => {
+    setConcluded(m)
+    writeConcluded(m)
+  }, [])
+  const applyBattle = useCallback((m: PendingBattleMark | null) => {
+    setPendingBattle(m)
+    writePendingBattle(m)
+  }, [])
   const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
   const [growth, setGrowth] = useState<Record<string, number>>({})
   /** 买来的终末等级（与任务成长合流后才进战斗 —— 见 store 的 effectiveGrowth） */
@@ -483,9 +532,17 @@ export function Plot() {
 
   // 近期作战记录（隐藏存档）：作为延续性背景注入本回合推演，防前后文不搭
   const [battleLog, setBattleLog] = useState('')
+  /* 最近一场的战况读数（同一份记录的另几格）—— 提示词里「对面换过形态了」那一段靠它。
+     刚打完那一场不在这个 effect 里读：结算当场就把 rec 换进去（见 onSettled），
+     不等到下一次挂载。 */
+  const [battleFact, setBattleFact] = useState<BattleFacts | null>(null)
   useEffect(() => {
     let alive = true
-    void listRecords().then((rs) => { if (alive) setBattleLog(recentBattleContext(rs)) })
+    void listRecords().then((rs) => {
+      if (!alive) return
+      setBattleLog(recentBattleContext(rs))
+      setBattleFact(rs[0] ? battleFactsOf(rs[0]) : null)
+    })
     return () => { alive = false }
   }, [])
 
@@ -501,6 +558,17 @@ export function Plot() {
      下一个没收束的就是下一卷开头 —— 不必另外记「现在在自由时间里没有」。
      最后一格也走完了 → null，与从前全篇读完是同一副样子。 */
   const focusEv = useMemo(() => EPISODES.find((e) => !epDone[e.id]) ?? null, [epDone])
+  /* 读回的那两格要是已经过期，当场清掉 —— 宁可不显示，也不显示错的：
+     · 它指着的那一段已经归档（`epDone` 里有它）→ 收束栏该随「进入下一事件」一起走，
+       待战按钮也不该在归档之后还挂在那儿；
+     · 它指的压根不是此刻这一段（换过档、回退过、或上一轮留下的）→ 收束栏只对
+       `focusEv` 显示，不许把别人的收束栏搬到这一格来。
+     自由时间格（`isFreeId`）本来就不落 `concluded`（见 applyReply 那一支），
+     这里也不替它新造。 */
+  useEffect(() => {
+    if (concluded && (concluded.evId !== focusEv?.id || epDone[concluded.evId])) applyConcluded(null)
+    if (pendingBattle && (pendingBattle.evId !== focusEv?.id || epDone[pendingBattle.evId])) applyBattle(null)
+  }, [concluded, pendingBattle, focusEv?.id, epDone, applyConcluded, applyBattle])
   const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
   /* 本段是否由导演自动开篇（只有序章与第 1 话）。自由段一律不算 —— 它在
      `TIMELINE` 里根本没有下标（findIndex 读作 -1，照原样判就会落进「自动开篇」）；
@@ -672,7 +740,7 @@ export function Plot() {
         const squad = want.length ? want : PERSON_IDS.filter((id) => isMet(id)).slice(0, TUNING.squadMax)
         if (squad.length) {
           // 落成待战，而不是当场开打：点「进入战斗」才进；打赢了本段才继续
-          setPendingBattle({ evId, name: d.battle.name, mission: battleMissionOf(d.battle, evId), squad })
+          applyBattle({ evId, name: d.battle.name, mission: battleMissionOf(d.battle, evId), squad })
           push('danger', '交战', `${d.battle.name} 出现在现场 —— 由在场的 ${squad.length} 名成员应敌。点「进入战斗」开始。`, false)
         } else {
           push('warn', '无可应敌者', `${d.battle.name} 出现在现场，但此刻没有可派遣的成员。`, false)
@@ -689,7 +757,7 @@ export function Plot() {
         const digest = (fx.digest?.trim() || ev?.summary || '').trim()
         // 收束不再立即归档推进：正文留在当前事件不消失，等操作员点「进入下一事件」才写记录；
         // 期间不锁输入——直接继续回话即视为留在本事件，取消收束标记（未归档故无副作用）。
-        setConcluded({ evId, title: ev?.title ?? evId, digest: digest || ev?.summary || '', diverged: fx.diverged })
+        applyConcluded({ evId, title: ev?.title ?? evId, digest: digest || ev?.summary || '', diverged: fx.diverged })
         setLastEnded({ id: evId, title: ev?.title ?? evId, digest: digest || ev?.summary || '', diverged: fx.diverged, mode: 'online' })
         push('decode', '事件收束', '结尾叙述已完整上屏：点「进入下一事件」写入记录并衔接下一段；亦可继续回话留在本事件。', false)
         return
@@ -825,6 +893,7 @@ export function Plot() {
         presetPre: preset.pre || undefined,
         presetPost: preset.post || undefined,
         battleLog: battleLog || undefined,
+        battleFacts: battleFact ?? undefined,
         /* 在场名册取**此刻**的那一份（导演实时改过就用改过的）：提示词里的
            【在场角色 · 性情锚】与关系读数、短信摘录都用同一个名单。 */
         castNow: castIds,
@@ -854,7 +923,7 @@ export function Plot() {
         },
       }
     },
-    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, castOfEvent, relOf, freeOf],
+    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, battleFact, castOfEvent, relOf, freeOf],
   )
 
   const pushTurn = useCallback(
@@ -1021,7 +1090,7 @@ export function Plot() {
     const text = draft.trim()
     if (!focusEv || busy || !ready) return
     // 收束态下继续推进 = 留在本事件继续推演 → 取消收束标记
-    setConcluded(null)
+    applyConcluded(null)
     // 若「AI 起草」仍在跑，先中断它，让位给操作员的实际发言
     if (drafting) { draftAbortRef.current?.abort(); setDrafting(false) }
     setDraft('')
@@ -1083,7 +1152,7 @@ export function Plot() {
 
   const clearThread = () => {
     if (!focusEv) return
-    setConcluded(null)
+    applyConcluded(null)
     setLogs((prev) => {
       const next = { ...prev }
       delete next[focusEv.id]
@@ -1096,7 +1165,7 @@ export function Plot() {
   /** 楼层回退：截断到第 i 条之前，本段会话从该条重新起步（只动日志，不回滚已落地变量） */
   const rollbackAt = (i: number) => {
     if (!focusEv || busy) return
-    setConcluded(null)
+    applyConcluded(null)
     const cur = logs[focusEv.id] ?? []
     if (i < 0 || i > cur.length) return
     setLogs((prev) => ({ ...prev, [focusEv.id]: (prev[focusEv.id] ?? []).slice(0, i) }))
@@ -1108,7 +1177,7 @@ export function Plot() {
   /** 重写此回复：仅当末条为导演叙述、上一条是操作员发言、且该叙述未产生世界变化 */
   const rewriteReply = async (i: number) => {
     if (!focusEv || busy || !ready) return
-    setConcluded(null)
+    applyConcluded(null)
     const cur = logs[focusEv.id] ?? []
     if (i !== cur.length - 1) return
     const prev = cur[i - 1]
@@ -1124,7 +1193,7 @@ export function Plot() {
   const pickOption = async (text: string) => {
     const t = (text ?? '').trim()
     if (!focusEv || busy || !ready || !t) return
-    setConcluded(null)
+    applyConcluded(null)
     appendMsg(focusEv.id, { id: idFor(), from: 'user', text: t, time: clock() })
     await pushTurn(focusEv.id, t)
   }
@@ -1147,7 +1216,7 @@ export function Plot() {
       return
     }
     completeEvent(ev.id, digest, 'online', concluded.diverged) // 此刻才写记录 + epDone → focus 落到下一事件
-    setConcluded(null)
+    applyConcluded(null)
     push('decode', '事件收束 · 已写入记录', `${ev.title}（已写入低语者日志）`, false)
     const nextEv = nextEpisodeAfter(ev.id, epDone)
     if (BRIDGE_ON_ADVANCE && nextEv && showOnline && ready) {
@@ -1175,7 +1244,7 @@ export function Plot() {
     const ev = focusEv
     if (!ev || busy || !isFreeId(ev.id)) return
     if (!closeFreeSlot(ev.id)) return
-    setConcluded(null)
+    applyConcluded(null)
     setLastEnded(null)
     push('decode', '自由时间 · 到此为止', `${ev.group} —— 推演接回主线。这一格发生过的事仍留在会话里，可重读。`, false)
   }
@@ -1300,7 +1369,7 @@ export function Plot() {
   const finishOffline = () => {
     if (!focusEv) return
     const ev = focusEv
-    setConcluded(null)
+    applyConcluded(null)
     completeEvent(ev.id, ev.summary, 'offline')
     skipAutoOpen.current = false
     setLastEnded({ id: ev.id, title: ev.title, digest: ev.summary, diverged: false, mode: 'offline' })
@@ -1497,7 +1566,7 @@ export function Plot() {
     setConfirmBack(false)
     if (reopenEvent(backEv.id)) {
       setLastEnded(null)
-      setConcluded(null)
+      applyConcluded(null)
     }
   }
 
@@ -2189,6 +2258,29 @@ export function Plot() {
           onSettled={async (rec: BattleRecord, spLeft, eq, bagLeft) => {
             const line = await settleWin({ rec, spLeft, equip: eq, bag: bagLeft, stamina, bumpBond })
             push('success', '交战归档', line, false)
+            /* —— 战果 → 主线：数据侧那几个函数从这一行起有了读者 ——
+               ① `plotTieInOf` 的 flags 并进世界变量（走 setFlag 那道门，不手写 localStorage）；
+               ② 它给的 lines 送进观测记录（右下角那一列 —— push 就是它）；
+               ③ 最近一场的读数换成本场的，下一回合的导演提示词就带着「对面换过形态了」。
+               幂等：同一场只并一次。键是 `BattleRecord.id`（records 表的主键，putRecord 是
+               upsert：同一场重结算写回的仍是同一条），并过的那个 id 记在世界变量
+               `battle.settled` 那一格里 —— 刷新之后重放同一个 rec 也认得出。同一张页面里
+               的连点另有模块级的 tieSettled 先拦一道（setFlag 是异步写，闭包里读不到刚写的值）。
+               旧档没有那几栏读数 → lines 为空、facts 全是退化值：不写废话、不报错。 */
+            const settledBefore = String(world.flags[TIE_ONCE_KEY] ?? '')
+            if (settledBefore !== rec.id && !tieSettled.has(rec.id)) {
+              tieSettled.add(rec.id)
+              const tie = plotTieInOf(rec)
+              const merged = mergePlotTie(world.flags, tie.flags)
+              for (const [k, v] of Object.entries(merged)) {
+                if (world.flags[k] !== v) setFlag(k, v)
+              }
+              setFlag(TIE_ONCE_KEY, rec.id)
+              /* 一句话一条观测记录：lines 本来就是一格一条（峰值 / 同调 / 换形态 / 狂暴 / 破绽），
+                 这里合成一条发，免得一口气顶掉右下角那一列（它只留最近 5 条）。 */
+              if (tie.lines.length) push('info', `战况 · ${rec.title}`, tie.lines.join('；'), false)
+            }
+            setBattleFact(battleFactsOf(rec))
             /* 归档文书之外的那一份：把这一场写成**剧情正文**，回填到本事件的推演里 ——
                故事要接着往下读，不能只在作战记录里留一份公文。
                这一份走的是剧情那一路的导演提示词（directorPromptFor）：与推演正文同一副笔墨、
@@ -2222,7 +2314,7 @@ export function Plot() {
               }))
             }
             setPlotBattle(null)
-            setPendingBattle(null)
+            applyBattle(null)
             await loadKit()
           }}
         />

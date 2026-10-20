@@ -13,6 +13,7 @@ import { charOf, profileLinesOf, voiceLinesOf } from '../data/personas'
 import { INTIMATE_BOND } from '../data/intimate'
 import type { ChatMsg } from '../data/types'
 import { clock } from './format'
+import { nameKey } from './namekey'
 import { extractLiveDisplay } from './plot'
 import { BOTTOM_RULES } from './worldrules'
 
@@ -290,10 +291,13 @@ export interface GroupLine { who?: string; text: string }
  * 由界面按群名显示 —— 宁可显示成「群聊」也不硬塞给某个人。
  */
 export function parseGroupReply(raw: string, charIds: string[]): GroupLine[] {
+  /* 建表与查表共用 lib/namekey.ts 那把尺：回执里的名字与档案全名的中点写法常不一致
+     （U+00B7 / U+2027 / U+30FB / U+FF65），精确相等会把整条发言认成旁白。
+     表里存**比较键 → charId**，往外传的仍是回执原文的写法。 */
   const known = new Map<string, string>()
   for (const id of charIds) {
     const c = charOf(id)
-    if (c) known.set(c.name, id)
+    if (c) known.set(nameKey(c.name), id)
   }
   const out: GroupLine[] = []
   // 先按「【…】」切段：模型若把两条发言写在同一行，也能拆开
@@ -302,7 +306,7 @@ export function parseGroupReply(raw: string, charIds: string[]): GroupLine[] {
     const t = part.trim()
     if (!t) continue
     const m = /^【([^】]{1,12})】\s*([\s\S]*)$/.exec(t)
-    if (m && known.has(m[1].trim())) {
+    if (m && known.has(nameKey(m[1]))) {
       const body = m[2].trim()
       if (body) out.push({ who: m[1].trim(), text: body })
     } else {

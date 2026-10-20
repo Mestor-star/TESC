@@ -1276,6 +1276,26 @@ export function dateDirective(d: PlotDirective | null, charId: string, party: st
    导演系统提示词（只用大纲，不喂开场白正文）
    ============================================================ */
 
+/**
+ * 最近一场作战留下的读数（由调用方从 `BattleRecord` 取；旧档缺那几栏 = 全 0）。
+ *
+ * 只带**能落到正文上**的那几格 —— 胜负、换过几个形态、敲穿破绽 / 同调 / 狂暴的次数、
+ * 以及这一场真接上的连携。战报正文（battleLog）说的是「打过什么」，
+ * 这一格说的是「打成了什么样」，导演照着它定分寸，不必自己从战报里数。
+ */
+export interface BattleFacts {
+  title: string
+  outcome: string
+  /** 打过几个形态：1 = 没换形态；>1 = 对面换过形态了（正文不许再照第一形态写） */
+  phases: number
+  syncs: number
+  breaks: number
+  enraged: number
+  chainPeak: number
+  /** 本场成立的连携羁绊 id */
+  ties: string[]
+}
+
 export interface DirectorCtx {
   /** 操作员显示名（剧情本体固定为 言万心叶） */
   operatorName: string
@@ -1322,6 +1342,14 @@ export interface DirectorCtx {
   presetPost?: string
   /** 近期作战记录摘要（取自隐藏存档；用来承接已打过的任务，防前后文不搭） */
   battleLog?: string
+  /**
+   * 最近一场的战况读数（同一份记录里数出来的那几格）。
+   *
+   * 与 battleLog 分开是因为它们答的不是同一个问题：battleLog 是「打过什么」，
+   * 这一格是「打成了什么样」—— 对面换没换过形态、破绽敲开过几次。
+   * 没给（旧档：那几栏立起来之前写的记录）就整节不出现，提示词与从前一字不差。
+   */
+  battleFacts?: BattleFacts
   /**
    * 近期短信摘要 —— **只取与此刻在场者有关的那几本**（由 lib/crosslink.ts 的
    * `smsContextFor` 生成；无关的线程一个字都不给）。
@@ -1620,6 +1648,38 @@ function temperSection(ev: TimelineEvent, ctx: DirectorCtx): string {
 下面是这些人**各自怎么说话、什么脾气、踩到哪一句会翻脸**。照此写 —— 不要按一般印象替他们改性子，也不要让所有人用同一种腔调说话。\n\n${blocks.join('\n\n')}`
 }
 
+/**
+ * 【最近一场 · 战况读数】—— 只摆这一场**真的发生过**的几格。
+ *
+ * 为什么单开一节：battleLog 说的是「打过什么」（标题、历时、缴获），
+ * 而正文真正会写错的，是「对面现在还是开场那一副样子吗」——
+ * 所以 phases > 1 要明写一句「已经换过形态了」，不能指望模型自己从战报里数。
+ * 其余几格（破绽 / 同调 / 狂暴）只是可引用的数字：话头对得上时点一句，不许整段复述。
+ *
+ * 一条读数都没有（旧档：这几栏立起来之前写的记录）就**整节不出现**。
+ */
+function battleFactsSection(f: BattleFacts): string {
+  const judge = f.outcome === '胜' ? '是我方清的场' : f.outcome === '败' ? '没打赢，退了下来' : '中途撤出'
+  const rows: string[] = [`· 《${f.title}》这一场${judge} —— 已经发生过的事，不是传闻。`]
+  if (f.phases > 1) {
+    rows.push(`· 对面在这一场里换过 ${f.phases} 个形态 —— **已经换过形态了**：`
+      + '此刻若还在同一处，别把对面按开场那一副样子写；它现在是什么样，'
+      + '照上面那段正文与这里的读数往下接。')
+  }
+  const nums: string[] = []
+  if (f.breaks > 0) nums.push(`敲穿破绽 ${f.breaks} 次`)
+  if (f.syncs > 0) nums.push(`「同调」放出去 ${f.syncs} 次`)
+  if (f.enraged > 0) nums.push(`敌方狂暴 ${f.enraged} 次`)
+  if (f.chainPeak >= 5) nums.push(`连携点峰值 ${f.chainPeak}`)
+  if (nums.length) {
+    rows.push(`· 可引用的数字：${nums.join('｜')} —— 话头对得上时点一句就够，别整段复述战报。`)
+  }
+  if (f.ties.length) rows.push(`· 这一场真接上的连携：${f.ties.join('、')}（要有由头才点，没有就别硬提）。`)
+  /* 只剩「打过一场」一句、又没有任何读数 —— 这一节整节不出现（不为一句废话多喂一段）。 */
+  if (rows.length < 2) return ''
+  return `\n\n【最近一场 · 战况读数（既成事实，正文照它写）】\n${rows.join('\n')}`
+}
+
 /** 拼装导演系统提示词（单事件） */
 export function buildDirectorSystem(ev: TimelineEvent, ctx: DirectorCtx): string {
   /* 自由活动：卷间那一格（`free:` 段）或操作员自己按下的开关，两者走同一条规矩。
@@ -1760,6 +1820,9 @@ ${relLadderText()}
     : ctx.idle ? idleSection() : ''
   // 近期作战：与 loreContext 同格（都是「已发生的事实」，只作延续性背景）
   const opsSection = ctx.battleLog ? `\n\n${ctx.battleLog}` : ''
+  /* 战况读数紧接在战报后面：同一场仗的「打过什么」与「打成了什么样」摆在一起读，
+     免得模型在两段之间自己找关系。旧档没有那几栏时这里是空串。 */
+  const factsSection = ctx.battleFacts ? battleFactsSection(ctx.battleFacts) : ''
   // 近期短信：同一格，紧挨着它 —— 两边都是「他做过什么、与谁说过什么」
   const smsSection = ctx.smsLog ? `\n\n${ctx.smsLog}` : ''
 
@@ -1790,7 +1853,7 @@ ${baseline.trim() || '（无）'}
 主角把话说砸了，对方就是真的跟他生分，别按原著里两人多亲近去写。
 括号里的「原著同段约 N」只作对照，不作准。
 关系松紧直接决定分寸：好感低就客气、疏远、留一手；高才轮得到掏心窝的口气。
-${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${smsSection}${varBlock}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
+${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${factsSection}${smsSection}${varBlock}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
 

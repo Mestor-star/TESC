@@ -1,0 +1,144 @@
+/* 设置页 ·「备份与恢复」独立样式（不碰 Settings.module.css：那边另一位在改） */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.note {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ink-mute);
+  border-left: 2px solid var(--steel);
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--steel) 6%, transparent);
+}
+
+.note b {
+  color: var(--ink);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 200px;
+}
+
+.name {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-mute);
+}
+
+.acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.grow {
+  flex: 1;
+}
+
+.danger {
+  color: var(--red-deep);
+  border-color: var(--red);
+}
+
+/* 预览卡：确认之前的「这一份里都有什么」 */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--steel);
+  box-shadow: 0 4px 0 var(--steel);
+  padding: 14px 16px;
+}
+
+.previewHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.previewTitle {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.previewFile {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.cell {
+  border: 1px solid var(--line);
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cellLabel {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.cellVal {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.overwrite {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--red-deep);
+}
+
+.foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.err {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--red-deep);
+  border-left: 2px solid var(--red);
+  padding: 6px 10px;
+}
+
+.ok {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--steel-deep);
+  border-left: 2px solid var(--steel);
+  padding: 6px 10px;
+}

@@ -5,11 +5,14 @@ import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
-import { BOND_FULL, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
+import { BOND_FULL, CAST, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
+import type { CastPerson } from '../data/castmeta'
+import { PERSONA_CARDS } from '../data/persona'
 import { intimateOf, mergeIntim } from '../data/intimate'
 import { attireOf, dryAttire, mergeAttire } from '../data/attire'
 import { mergeActs } from '../data/acts'
 import { clamp } from '../lib/format'
+import { nameKey } from '../lib/namekey'
 import { isFreeId } from '../lib/freetime'
 import { furthestDone, opFull } from '../lib/operator'
 import { manifestOf, regionOfPlace, rOfPlace } from '../lib/battle/rvalue'
@@ -316,15 +319,193 @@ function sortRecords(list: WorldRecord[]): WorldRecord[] {
   )
 }
 
+/* ============================================================
+   正文出场识别 · 别名表（由既有数据表推导，不在这里重抄名单）
+
+   图鉴里「以人物名现身于正文」的条目（CODEX 中**无编号**、且名字与名录角色同一个
+   人的那几条）——读到对应段落（标题/地点/概述/台词里出现其名）即自动登记。
+   从前这里只写死三个全名，而原文与推演正文里这几位大多以简称出现
+   （「乃梦姐」「义人」「草次郎」），于是这一层基本没在回填。
+
+   表从哪来：
+     · 全名 / 名录别名 —— castmeta 的 CAST：name + names
+       （side 的 names 就是 sidecast 里 card(id, 全名, 简称, …) 那个第三参）；
+     · 简称 —— 由全名的姓名段推「后两字」（胡道乃梦 → 乃梦、东夷草次郎 → 次郎），
+       **但必须在 data/persona.ts 的人物卡语料里被单独用过**才收：只从名号里切出来
+       的碎片（「特琳」之于「凯特琳」、「摩尔」之于「惠特摩尔」）一律不算；
+     · 敬称不另造 —— 匹配走子串，「乃梦姐」「次郎同学」靠 '乃梦' / '次郎' 天然认出。
+
+   三道防误记的闸门：最短 2 字（单字「琳」「珊」不收）；通用称谓词不收；
+   同一个别名指向两个人就**整条放弃**（宁可漏记，不许记错人）并当场 console.warn。
+   ============================================================ */
+
+type AliasKind = 'full' | 'short'
+
+/** 一条命中：id 是图鉴条目，kind 区分「全名命中」与「简称命中」（内部用，不上屏） */
+export interface ProseEndHit {
+  id: string
+  /** 收进来的那种写法（报告/调试用） */
+  text: string
+  kind: AliasKind
+}
+
+/** 单独拿出来不指向任何人的称谓（宁可漏记，不许记错人） */
+const GENERIC_ALIAS = new Set([
+  '会长', '副会长', '队长', '领队', '老师', '姐姐', '妹妹', '兄长',
+  '学长', '学姐', '学妹', '先生', '同学', '大人', '公主', '魔王', '少女', '少年',
+])
+
+/** 收不收这个别名：比两个字符短、或是个通用称谓 → 不收 */
+function aliasAccepted(key: string): boolean {
+  return key.length >= 2 && !GENERIC_ALIAS.has(key)
+}
+
+/** 姓名段分隔：nameKey 之后中点只剩 U+00B7，按它切 */
+const SEG_DOT = '\u00b7'
+
 /**
- * 图鉴里「以人物/名称现身于正文」、却无编号实体的条目 → 读到对应段落（正文/概述出现其名）即自动登记。
- * 其余封存条目（无编号、亦不在任何正文出现）由操作员自行登记。
+ * 这条候选简称在语料里有没有「不寄居在本人任何一个已知名号里」的单独用法。
+ * 只从已知名号里切出来的碎片（「特琳」之于「凯特琳」、「摩尔」之于「惠特摩尔」）
+ * 一律不算 —— 那是名字的一段，不是称呼。
  */
-const PROSE_END_MAP: { name: string; id: string }[] = [
-  { name: '胡道乃梦', id: 'huda-nayume' },
-  { name: '勇鱼义人', id: 'yuina-yoshito' },
-  { name: '东夷草次郎', id: 'touyi-caojiro' },
-]
+function witnessed(corpus: string, masks: string[], cand: string): boolean {
+  if (!corpus) return false
+  const covered: [number, number][] = []
+  for (const m of masks) {
+    if (!m) continue
+    for (let i = corpus.indexOf(m); i >= 0; i = corpus.indexOf(m, i + 1)) {
+      covered.push([i, i + m.length])
+    }
+  }
+  for (let i = corpus.indexOf(cand); i >= 0; i = corpus.indexOf(cand, i + 1)) {
+    const nested = covered.some(([s, e]) => i >= s && i + cand.length <= e)
+    if (!nested) return true
+  }
+  return false
+}
+
+export interface ProseAliasBuild {
+  aliases: { id: string; key: string; text: string; kind: AliasKind }[]
+  /** 同一个键指向不止一个人 → 整条放弃（附两侧 id） */
+  conflicts: { key: string; ids: string[] }[]
+  /** 被闸门剔掉的（太短 / 通用称谓），报告用 */
+  dropped: string[]
+}
+
+/**
+ * 建别名表（模块级只跑一次）。corpusOf 给见证语料（见 witnessed）—— 推导简称的依据。
+ * 导出只为让校验脚本能拿别的数据再跑一遍（真表就在下面立刻建）。
+ */
+export function buildProseAliases(
+  persons: CastPerson[],
+  corpusOf: (id: string) => string,
+  /* 派生简称（推出来的那种）只为这几个人推 —— 猜名字有风险，只在不猜就认不出
+     图鉴条目的那几位身上猜；castmeta 已经声明过的名字不受这条限制。 */
+  deriveOnly?: Set<string>,
+): ProseAliasBuild {
+  const slots = new Map<string, { text: string; ids: Set<string>; kind: AliasKind }>()
+  const dropped: string[] = []
+  const put = (id: string, raw: string, kind: AliasKind) => {
+    const key = nameKey(raw)
+    if (!aliasAccepted(key)) {
+      if (key) dropped.push(raw + '(' + id + ')')
+      return
+    }
+    const slot = slots.get(key)
+    if (!slot) {
+      slots.set(key, { text: raw, ids: new Set([id]), kind })
+      return
+    }
+    slot.ids.add(id)
+    // 同一个人既有全名又有简称落到同一格时留全名那条（kind 只作内部标记）
+    if (kind === 'full') slot.kind = 'full'
+  }
+  for (const p of persons) {
+    const full = nameKey(p.name)
+    const segs = full.split(SEG_DOT)
+    put(p.id, p.name, 'full')
+    for (const n of p.names) put(p.id, n, nameKey(n) === full ? 'full' : 'short')
+    /* 姓名段 ≥3 字 → 推「后两字」作简称（胡道乃梦 → 乃梦、东夷草次郎 → 次郎），
+       须在语料里被单独用过。遮罩用本人全部已知名号 + 各姓名段 ——
+       否则「凯特琳」里切出来的「特琳」、「惠特摩尔」里的「摩尔」都会被当成称呼。 */
+    if (deriveOnly && !deriveOnly.has(p.id)) continue
+    const masks = [full, ...p.names.map((n) => nameKey(n)), ...segs]
+    const corpus = corpusOf(p.id)
+    for (const seg of segs) {
+      if (seg.length < 3) continue
+      const cand = seg.slice(-2)
+      if (witnessed(corpus, masks, cand)) put(p.id, cand, 'short')
+    }
+  }
+  const aliases: ProseAliasBuild['aliases'] = []
+  const conflicts: ProseAliasBuild['conflicts'] = []
+  for (const [key, slot] of slots) {
+    if (slot.ids.size > 1) {
+      conflicts.push({ key, ids: [...slot.ids] })
+      continue
+    }
+    aliases.push({ id: [...slot.ids][0], key, text: slot.text, kind: slot.kind })
+  }
+  // 同一个别名指向两个人：整条放弃，并在开发期把冲突打出来（不许悄悄挑一个）
+  if (conflicts.length) {
+    console.warn(
+      '[terminal/prose] 别名指向不止一个人，已整条放弃（宁可漏记，不许记错人）：\n'
+      + conflicts.map((c) => c.key + ' → ' + c.ids.join(' / ')).join('\n'),
+    )
+  }
+  return { aliases, conflicts, dropped }
+}
+
+/* 简称的见证语料：data/persona.ts 的人物卡全集（这几位在原文里被怎么称呼，卡上都留着）。
+   不拿 TIMELINE 正文当见证 —— 那是要匹配的对象，拿它自证就成了自己证自己。 */
+const PERSONA_CORPUS = nameKey(
+  Object.values(PERSONA_CARDS).map((c) => c.sections.map((s) => s.lines.join(' ')).join(' ')).join(' '),
+)
+
+/**
+ * 人名 → 图鉴条目 id。只认 CODEX 里**无编号**且与名录角色同名的那几条：
+ * 带【No.…】的实体走 entities 标注登记，按名字提前放行会把「艾美莉亚之箱」
+ * 这类提及也算成她本人到场。
+ */
+const PROSE_END_ID = new Map<string, string>()
+for (const p of CAST) {
+  const key = nameKey(p.name)
+  const entry = CODEX.find(
+    (c) => (!c.no || c.no === '？' || c.no === '？？？') && nameKey(c.name) === key,
+  )
+  if (entry) PROSE_END_ID.set(p.id, entry.id)
+}
+
+const PROSE_ALIAS_BUILD = buildProseAliases(CAST, () => PERSONA_CORPUS, new Set(PROSE_END_ID.keys()))
+const PROSE_ALIASES = PROSE_ALIAS_BUILD.aliases
+
+/**
+ * 正文（已归一）→ 本次命中的人。按图鉴 id 去重；同一人全名与简称都命中时留全名那一条。
+ * 正文只归一一次（见 proseOf），这里只做表内的子串比对。
+ */
+export function proseEndHits(prose: string): ProseEndHit[] {
+  const hit = new Map<string, ProseEndHit>()
+  for (const a of PROSE_ALIASES) {
+    const endId = PROSE_END_ID.get(a.id)
+    if (!endId || !prose.includes(a.key)) continue
+    const prev = hit.get(endId)
+    if (!prev || (prev.kind === 'short' && a.kind === 'full')) {
+      hit.set(endId, { id: endId, text: a.text, kind: a.kind })
+    }
+  }
+  return [...hit.values()]
+}
+
+/** 一段的正文比较键：标题 + 地点 + 概述 + 台词（署名与叙述都算）—— 每段只归一这一次 */
+function proseOf(e: TimelineEvent): string {
+  const script = e.script ? e.script.map((l) => (l.speaker ?? '') + l.text).join(' ') : ''
+  return nameKey(e.title + ' ' + e.place + ' ' + e.summary + ' ' + script)
+}
+
+/** 一段正文 → 命中的人（hydrate 与 resolve 两条路都只走这一处：归一一次、比一次） */
+export function proseEndHitsOf(e: TimelineEvent): ProseEndHit[] {
+  return proseEndHits(proseOf(e))
+}
 
 function defaultSaved(): Saved {
   return {
@@ -404,11 +585,8 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
       const id = resolveEntityToCodexId(ent)
       if (id) w.ends[id] = true
     }
-    // 正文以人物名现身的相关者一并回填
-    const prose = `${e.title} ${e.place} ${e.summary} ${e.script ? e.script.map((l) => `${l.speaker ?? ''}${l.text}`).join(' ') : ''}`
-    for (const m of PROSE_END_MAP) {
-      if (prose.includes(m.name)) w.ends[m.id] = true
-    }
+    // 正文里以全名或简称现身的相关者一并回填（别名表见上；正文只归一一次）
+    for (const h of proseEndHitsOf(e)) w.ends[h.id] = true
   }
   return w
 }
@@ -620,10 +798,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setSetupMode(false)
     const a = readAutosave()
     if (!hasRunProgress() && a) {
-      applySnapshot(a.snapshot)
-      sessionAuthed = true
-      sessionStage = 'game'
-      requestRemount()
+      // 读档带 IDB 那一趟：'zts-battle' 的初值重置清不掉同步，必须 await 在重挂载之前
+      void (async () => {
+        await applySnapshot(a.snapshot)
+        sessionAuthed = true
+        sessionStage = 'game'
+        requestRemount()
+      })()
       return
     }
     sessionStage = 'game'
@@ -634,13 +815,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const loadAutosave = useCallback((): boolean => {
     const a = readAutosave()
     if (!a) return false
-    applySnapshot(a.snapshot)
-    sessionAuthed = true
-    sessionStage = 'game'
-    sessionSetup = false
-    pendingView = 'dashboard'
-    pendingToast = { kind: 'info', title: '已读取自动存档', body: `${a.name || '自动存档'} · 收束 ${a.records} 段` }
-    requestRemount()
+    // 同上：先把 'zts-battle' 收回初值，再写回快照并重挂载（返回值仍同步给出去）
+    void (async () => {
+      await applySnapshot(a.snapshot)
+      sessionAuthed = true
+      sessionStage = 'game'
+      sessionSetup = false
+      pendingView = 'dashboard'
+      pendingToast = { kind: 'info', title: '已读取自动存档', body: `${a.name || '自动存档'} · 收束 ${a.records} 段` }
+      requestRemount()
+    })()
     return true
   }, [])
 
@@ -650,6 +834,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     // 军需（终末点数）/ 小队体力 / 作战记录 存在 IndexedDB 'zts-battle' 里，
     // 不在 clearRunStorage 管的那几个 localStorage key 内 —— 不显式清，
     // 重置后点数还留着、体力不回满、旧战报继续挂在任务简报板上。
+    // 读档那一路（applySnapshot）调的是同一个函数 resetBattleToInitial（本名是它的旧名），
+    // 两条路径的初值口径只有一份。
     // 必须 await 在 requestRemount 之前：重挂载后总览立刻读这几个读数，晚到的清空会让旧值先上屏。
     await resetBattleStore()
     sessionAuthed = true
@@ -705,13 +891,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         push('warn', '空存档位', `第 ${i + 1} 槽还没有存档。`)
         return
       }
-      applySnapshot(slot.snapshot)
-      sessionAuthed = true
-      sessionStage = 'game'
-      sessionSetup = false
-      setSetupMode(false)
-      pendingToast = { kind: 'success', title: '存档已读取', body: `载入「${slot.name}」。` }
-      requestRemount()
+      // 同上：读档 = 连战斗域一起换（军需 / 体力 / 战报），await 在重挂载之前
+      void (async () => {
+        await applySnapshot(slot.snapshot)
+        sessionAuthed = true
+        sessionStage = 'game'
+        sessionSetup = false
+        setSetupMode(false)
+        pendingToast = { kind: 'success', title: '存档已读取', body: `载入「${slot.name}」。` }
+        requestRemount()
+      })()
     },
     [push],
   )
@@ -1149,6 +1338,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
       const newChars: string[] = []
       const newEnds: string[] = []
+      // 正文一次归一（可能很长），再与别名表比对：全名与简称（「乃梦姐」→ '乃梦'）都认得出
+      const proseHits = proseEndHitsOf(ev)
       setWorld((prev) => {
         const met = { ...prev.met }
         // 现场名册（cast 优先，缺省回落 chars）：事件收束即把这些角色登记为「已遇见」
@@ -1160,9 +1351,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
           if (cid && !ends[cid]) { ends[cid] = true; newEnds.push(cid) }
         }
         // 正文出现其名的相关者（无编号实体）：读到即登记
-        const prose = `${ev.title} ${ev.place} ${ev.summary} ${ev.script ? ev.script.map((l) => `${l.speaker ?? ''}${l.text}`).join(' ') : ''}`
-        for (const m of PROSE_END_MAP) {
-          if (prose.includes(m.name) && !ends[m.id]) {
+        for (const m of proseHits) {
+          if (!ends[m.id]) {
             ends[m.id] = true
             newEnds.push(m.id)
           }
