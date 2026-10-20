@@ -173,6 +173,12 @@ export interface ChatOpts {
    * 端上桌谁也不知道那是断的（主人 2026-09-15 撞见的那一次）。
    */
   onFinish?: (r: { finishReason?: string; text: string }) => void
+  /** 首包超时（毫秒）：从发出请求到通道给出「开口」的信号；false = 关掉这道闸。
+   *  缺省 FIRST_PACKET_TIMEOUT_MS（60s），语义见下面「两道超时」那一节。 */
+  firstPacketTimeoutMs?: number | false
+  /** 空闲超时（毫秒）：流式途中连续这么久没有新的协议数据就中止；false = 关掉。
+   *  缺省 IDLE_TIMEOUT_MS（120s）。 */
+  idleTimeoutMs?: number | false
 }
 
 /** 一趟请求的结局：成了给正文，没成给原因 */
@@ -273,6 +279,119 @@ function netErr(e: unknown, what: string): never {
   throw netReason(e, what)
 }
 
+/* ============================================================
+   两道超时 —— 通道挂死时不许界面永远停在「推演中」
+   ------------------------------------------------------------
+   上一轮补的是「SSE 断开保留半段正文」。可**断开**与**挂死**是两件事：
+   断开会有一次 reject，挂死一个事件都不来 —— 没有超时的时候 busy 永远是
+   true，只有手动点「停止」能出来；而自动补收那一路从前连 signal 都没带，
+   挂住就是永久挂住（这也是 dirRetry 那道闸永久关死的根）。
+
+   · 首包 FIRST_PACKET_TIMEOUT_MS = 60s：
+     从发出请求到通道「开口」（流式 = 第一段可解析的 data: 行；
+     非流式 = 响应头到）。为什么是 60s —— 本地 vLLM / Ollama 叫醒模型本身
+     就要 20~40s 冷启动，中继排队的常见档也在同一量级；再短就会把「慢但正常」
+     当成挂死，那比挂死更烦人（挂死还能点停止，误杀是白等一场）。
+   · 空闲 IDLE_TIMEOUT_MS = 120s：
+     流式途中连续这么久没有新的协议数据就中止。为什么是 120s —— 思考型通道
+     （DeepSeek reasoner 一类）在两段正文之间会长时间只发呆不吐字，长段落的
+     生成间隔也就几十秒；两分钟是「这么安静已经不像在写了」的界线。
+     注意闲的是**协议数据**，不是 TCP 字节：上行只发 `: ping` 保活、
+     一个字也不给的通道不会被心跳续命（那种挂死由首包闸收口）。
+
+   中止走**同一条 AbortSignal 语义**：内部再套一个 controller，外部的
+   opts.signal（操作员按的停止）照样能掐；reader 抛 AbortError、流按原来的
+   路收尾，上层「保留半段正文」那条支线一行都不用改。
+   但错误名**不是** AbortError：上层把 AbortError 认作「操作员按的停止」，
+   那条支线是静默收场的；超时必须被说出来（可读中文 + 可重试），所以另起
+   一个 TimeoutError，正好落进「中断但保留正文」那一条支线。
+   ============================================================ */
+
+/** 首包：发出请求 → 通道开口，超过这个数就中止（可用 opts.firstPacketTimeoutMs 覆盖） */
+export const FIRST_PACKET_TIMEOUT_MS = 60_000
+/** 空闲：流式途中连续这么久没有新的协议数据就中止（可用 opts.idleTimeoutMs 覆盖） */
+export const IDLE_TIMEOUT_MS = 120_000
+
+/** 超时的一句话说明：必须读得懂，并且给出「可以重试」的暗示 */
+function timeoutReason(kind: 'first' | 'idle', ms: number): Error {
+  const sec = Math.round(ms / 1000)
+  const e = new Error(
+    kind === 'first'
+      ? `通道没有回应（等首包超时：${sec}s 内没等到第一个字）—— 多半是上游在排队、模型在冷启动，或通道正忙。可重试；连着几次都这样，就换个通道或检查接口地址。`
+      : `通道中途不出声了（空闲超时：连续 ${sec}s 没有任何新数据）—— 已收到的正文会保留，可重试；总停在同一个位置就换个通道，或把该通道改成非流式再试。`,
+  )
+  e.name = 'TimeoutError'
+  return e
+}
+
+/**
+ * 一趟请求的守夜人：两道计时 + 外部 signal 转接 + 错误归一。
+ * toError 是关键——只有「我们自己掐的」才换成可读超时错，操作员按的停止原样放行。
+ */
+export interface Watchdog {
+  /** 这一趟真正交给 fetch / reader 的信号 */
+  signal: AbortSignal
+  /** 通道开口了（收到第一段协议数据）：首包计时到此为止，空闲计时接着算 */
+  beat: () => void
+  /** 收尾：清计时、解绑外部 signal（正常与异常两条路都要走到） */
+  dispose: () => void
+  /** AbortError 归一：我们掐的 → 可读中文超时错；其余原样 */
+  toError: (e: unknown) => Error
+}
+
+function watchdogOf(
+  outer: AbortSignal | undefined,
+  firstOpt: number | false | undefined,
+  idleOpt: number | false | undefined,
+): Watchdog {
+  const first = firstOpt === undefined ? FIRST_PACKET_TIMEOUT_MS : firstOpt
+  const idle = idleOpt === undefined ? IDLE_TIMEOUT_MS : idleOpt
+  const ctrl = new AbortController()
+  let fired: 'first' | 'idle' | null = null
+  let firstTimer: ReturnType<typeof setTimeout> | null = null
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+  function trip(kind: 'first' | 'idle'): void {
+    if (fired) return
+    fired = kind
+    ctrl.abort()
+  }
+  function clear(t: ReturnType<typeof setTimeout> | null): null {
+    if (t) clearTimeout(t)
+    return null
+  }
+  function beat(): void {
+    if (fired) return
+    firstTimer = clear(firstTimer)
+    if (idle === false) return
+    idleTimer = clear(idleTimer)
+    idleTimer = setTimeout(() => trip('idle'), idle)
+  }
+
+  if (first !== false) firstTimer = setTimeout(() => trip('first'), first)
+  if (outer) {
+    if (outer.aborted) ctrl.abort()
+    else outer.addEventListener('abort', onOuterAbort)
+  }
+  function onOuterAbort(): void {
+    ctrl.abort()
+  }
+
+  return {
+    signal: ctrl.signal,
+    beat,
+    dispose: () => {
+      firstTimer = clear(firstTimer)
+      idleTimer = clear(idleTimer)
+      if (outer) outer.removeEventListener('abort', onOuterAbort)
+    },
+    toError: (e: unknown): Error => {
+      if (!fired || !isAbortError(e)) return e instanceof Error ? e : new Error(String(e))
+      return timeoutReason(fired, (fired === 'first' ? first : idle) as number)
+    },
+  }
+}
+
 /** 调起一次 OpenAI 兼容的 chat/completions */
 export async function chatCompletion(
   cfg: ApiSettings,
@@ -284,6 +403,10 @@ export async function chatCompletion(
   const maxTokens = opts?.maxTokens ?? 640
   const done = (r: Parameters<typeof settle>[7]) =>
     settle(cfg, messages, opts?.meta, false, t0, temperature, maxTokens, r)
+  /* 非流式没有「第一段」可数：首包闸管到**响应头到达**（= 通道开口了），
+     之后整包正文的等待由空闲闸兜（默认 120s）。两段都有上限，
+     又不至于把「生成得久、但确实在生成」误杀成挂死。 */
+  const wd = watchdogOf(opts?.signal, opts?.firstPacketTimeoutMs, opts?.idleTimeoutMs)
   try {
     const base = cfg.baseUrl.trim().replace(/\/+$/, '')
     if (!base) throw new Error('推演通道未填接口地址')
@@ -293,7 +416,7 @@ export async function chatCompletion(
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers,
-      signal: opts?.signal,
+      signal: wd.signal,
       body: JSON.stringify({
         model: cfg.model.trim(),
         messages,
@@ -302,6 +425,7 @@ export async function chatCompletion(
         stream: false,
       }),
     }).catch((e: unknown) => netErr(e, '连不上推演通道'))
+    wd.beat() // 响应头到了 = 通道开口；往后的等待转由空闲闸计时
     if (!res.ok) throw new Error(httpReason(res.status, await res.text().catch(() => '')))
     /* 先读正文再解析：空包与「回了个网页」是两种事，界面上该分得开 */
     const body = await res.text().catch(() => '')
@@ -344,8 +468,12 @@ export async function chatCompletion(
     done({ ok: true, text, finishReason: fr })
     return text
   } catch (e) {
-    done({ ok: false, error: e instanceof Error ? e.message : String(e) })
-    throw e
+    /* 我们掐的 → 可读的中文超时错；别的一律原样（含操作员按的 AbortError） */
+    const err = wd.toError(e)
+    done({ ok: false, error: err.message })
+    throw err
+  } finally {
+    wd.dispose()
   }
 }
 
@@ -375,6 +503,8 @@ export interface StreamResult {
 export interface StreamOpts extends ChatOpts {
   /** 每收到一段 delta.content 时回调（追加显示用，仅做无副作用投影） */
   onDelta?: (delta: string) => void
+  /** 内部用：这一趟的守夜人（由 chatCompletionStream 注入，调用方别填） */
+  watchdog?: Watchdog
 }
 
 /** OpenAI 兼容 chat/completions 的流式版 */
@@ -388,13 +518,21 @@ export async function chatCompletionStream(
   const maxTokens = opts?.maxTokens ?? 640
   const done = (r: AiOutcome) =>
     settle(cfg, messages, opts?.meta, true, t0, temperature, maxTokens, r)
+  /* 两道超时在这一层建（streamBody 只负责读包）：流式与非流式共用一套语义 */
+  const wd = watchdogOf(opts?.signal, opts?.firstPacketTimeoutMs, opts?.idleTimeoutMs)
   try {
-    const out = await streamBody(cfg, messages, opts, temperature, maxTokens)
+    const out = await streamBody(
+      cfg, messages, { ...opts, signal: wd.signal, watchdog: wd }, temperature, maxTokens,
+    )
     done({ ok: true, text: out.text, finishReason: out.finishReason, reasoning: out.reasoning })
     return out
   } catch (e) {
-    done({ ok: false, error: e instanceof Error ? e.message : String(e) })
-    throw e
+    /* 我们掐的 → 可读的中文超时错；操作员按的停止原样放行（上层照旧静默收场） */
+    const err = wd.toError(e)
+    done({ ok: false, error: err.message })
+    throw err
+  } finally {
+    wd.dispose()
   }
 }
 
@@ -431,6 +569,12 @@ async function streamBody(
   let buf = ''
   /** 有没有真的收到过 SSE 事件行 —— 没有就是「回了 200，但不是流」 */
   let sawEvent = false
+  /* 坏行账：从前单行 JSON 解析失败是**静默跳过**的 —— 正文凭空少一段，
+     事后连「少了哪一段、为什么少」都查不出来。现在计一笔，回包里有一条
+     就在控制台留一道痕（不上屏、不 toast：这不值得打扰操作员，值得的是能查）。 */
+  let badLines = 0
+  let goodLines = 0
+  let badHead = ''
 
   const handleLine = (rawLine: string) => {
     const line = rawLine.trim()
@@ -442,8 +586,15 @@ async function streamBody(
     try {
       j = JSON.parse(payload) as typeof j
     } catch {
+      badLines++
+      if (!badHead) badHead = payload.slice(0, 80)
       return false
     }
+    goodLines++
+    /* 通道开口了（第一段可解析的协议数据）→ 首包闸收工，空闲闸接手；
+       后面每来一段再续一次。心跳（`: ping`、注释行）不算数：那种通道
+       一个字也不给，绝不能靠心跳把两道闸都续掉。 */
+    opts?.watchdog?.beat()
     if (typeof j.model === 'string') out.model = j.model
     const choice = j.choices?.[0]
     if (!choice) return false
@@ -477,15 +628,35 @@ async function streamBody(
     while ((nl = buf.indexOf('\n')) !== -1) {
       const line = buf.slice(0, nl)
       buf = buf.slice(nl + 1)
-      if (handleLine(line)) return out
+      if (handleLine(line)) {
+        if (badLines > 0) {
+          console.warn(
+            `[api] 流式回包里有 ${badLines} 行 data: 解析不出来（已跳过）：${badHead}${badHead.length >= 80 ? '…' : ''}`,
+          )
+        }
+        return out
+      }
     }
   }
   if (buf.trim()) handleLine(buf)
+  /* 坏行留痕：一条也解析不出来 = 这次回包**整段丢了**，必须说；只有几条坏、
+     别的都好 = 正文可能少了半句，留给控制台（不打扰操作员）。 */
+  if (badLines > 0) {
+    console.warn(
+      `[api] 流式回包里有 ${badLines} 行 data: 解析不出来（已跳过${goodLines > 0 ? '，其余正常' : '，整包无一行可用'}）：${badHead}${badHead.length >= 80 ? '…' : ''}`,
+    )
+  }
   /* 一条 data: 都没收到 = 回的是 200 却不是流（中继把 stream:true 吞了、
      塞回来一个整包 JSON 或一张网页）。这跟「流发完但正文为空」是两种事，
      对应的出路也不同（关掉流式再试），所以在这儿分开报。 */
   if (!sawEvent) {
     throw new Error('通道没有回可读的流式内容（HTTP 200，但正文里一条 data: 都没有）：多半是这个中继不支持 stream，可在终端设置里关掉该通道的「流式生成」后重试')
+  }
+  /* 收到了 data: 行、却一行也没解析出来 —— 同样是「回的不是能读的流」，
+     沿用上面那条明确报错，只是把坏行账一起报出来（否则界面上只剩一句
+     「通道未返回任何内容」，查不出是坏行还是真空）。 */
+  if (goodLines === 0) {
+    throw new Error(`通道没有回可读的流式内容（HTTP 200，${badLines} 行 data: 全部解析不出来，首行：${badHead || '空'}）：多半是这个中继不支持 stream，可在终端设置里关掉该通道的「流式生成」后重试`)
   }
   return out
 }

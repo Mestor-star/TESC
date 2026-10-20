@@ -1962,3 +1962,39 @@ time 写什么时候（「明天放学后」「周六下午三点」这种），
 可真要写出一句有落点的约，就给 date。
 拿不准就不给，直接以对话结束。）`
 }
+
+/* ============================================================
+   补收指令的闸（Plot.tsx 的 reaskDirective / resendDirective 在用）
+   ------------------------------------------------------------
+   从前是一枚裸 boolean：补收那一趟请求自己又没有超时（api 那一层现在补了
+   首包 / 空闲两道闸），于是「挂住一次」= 闸永远关着 —— 之后每一次补收都
+   静默失效，界面上一个字都不说，玩家只看到「指令没落地」而不知为什么。
+
+   现在它是**带到期时间的锁**，两道保证：
+   · tryEnter / leave 成对 —— 调用方在 try/finally 里清，正常与异常两条路都放闸；
+   · 再加一道到期时间 —— 万一一趟请求因为任何理由没走到 finally（页面被冻、
+     promise 被吞、标签页挂起），过了 holdMs 闸自己作废，不会永久关死。
+   holdMs 取「一次补收最多能耗多久」的上界：两次非流式请求，各自被首包 60s /
+   空闲 120s 兜着，180s 足够宽。
+   ============================================================ */
+export interface RetryGate {
+  /** 闸是不是关着（关着 = 上一次补收还没回来） */
+  busy: () => boolean
+  /** 抢闸：抢到为 true —— 调用方**必须**在 finally 里 leave() */
+  tryEnter: () => boolean
+  /** 放闸（可重复调用） */
+  leave: () => void
+}
+
+export function createRetryGate(holdMs: number): RetryGate {
+  let until = 0
+  return {
+    busy: () => Date.now() < until,
+    tryEnter: () => {
+      if (Date.now() < until) return false
+      until = Date.now() + holdMs
+      return true
+    },
+    leave: () => { until = 0 },
+  }
+}

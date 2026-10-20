@@ -14,7 +14,7 @@ import { clampBudget } from '../lib/budget'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
-import { applyDirective, buildDirectorSystem, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
+import { applyDirective, buildDirectorSystem, createRetryGate, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
 import { EPISODES, isFreeId, nextEpisodeAfter } from '../lib/freetime'
 import {
   effectiveGrowth, listRecords, readBag, readEquip, readGearBag, readGrowth,
@@ -170,6 +170,14 @@ const DRAFT_PROMPT =
   '（起草助手）请暂时站在言万心叶的视角，依据当前事件与最近的对话，为言万心叶草拟 2~3 个下一步可以说出口的话或可以做的行动。\n'
   + '要求：一行一条，以「- 」开头；每条须是一句可以直接照说的完整话或一个明确的小行动，贴合当前局势与角色语气；'
   + '不要用导演叙述口吻，不要写成小说段落，不要输出事件指令或变量，也不要带「言万心叶：」之类的前缀。'
+
+/**
+ * 补收指令那道闸最多关多久（毫秒）。正常一轮补收最多两次非流式请求，各自被
+ * api 层的首包 60s / 空闲 120s 兜着；180s 是「一次补收能耗多久」的上界。
+ * 万一一趟请求没走到 finally（页面被冻、promise 被吞），过了这个点闸自己作废 ——
+ * 绝不出现「闸永久关死、之后每次补收都静默失效」。
+ */
+const DIRECTIVE_GATE_MS = 180_000
 
 /** 自动补发提示：上一回正文为空（多为思考型模型把预算耗在内部思考上）时，用它催模型直接作答 */
 const RETRY_NUDGE =
@@ -553,8 +561,12 @@ export function Plot() {
   const skipAutoOpen = useRef(false)
   const lastOpen = useRef<string | null>(null)
   const needDir = useRef(false)
-  /** 正在自动补收指令：一次回合只补一次，免得模型连着不回时反复发问 */
-  const dirRetry = useRef(false)
+  /**
+   * 补收指令的闸：一次回合只补一次，免得模型连着不回时反复发问。
+   * **带到期时间的锁**（见 lib/plot.ts 的 createRetryGate）—— 从前是裸 boolean，
+   * 那一趟请求挂住（从前没有超时）这个闸就永远关着，之后所有补收静默失效。
+   */
+  const dirRetry = useRef(createRetryGate(DIRECTIVE_GATE_MS))
 
   /* —— 流式回执按帧上屏 ——
      每收一个数据包就 setLive 一次的话，每一包都要重排整条历史（几十条正文重切一遍台词、
@@ -877,8 +889,13 @@ export function Plot() {
    */
   const reaskDirective = useCallback(
     async (ev: TimelineEvent, prior: ChatTurn[], shownText: string, where: string): Promise<boolean> => {
-      if (dirRetry.current || !cfgMain || !isReady(cfgMain)) return false
-      dirRetry.current = true
+      if (!cfgMain || !isReady(cfgMain)) return false
+      /* 闸挡下**必须说话**：静默的「点了没反应 / 上一回合没补收」比失败难查得多。
+         闸本身有到期时间，最多 180s 自己就放开（见 DIRECTIVE_GATE_MS）。 */
+      if (!dirRetry.current.tryEnter()) {
+        push('info', '补收还在进行', '上一次补收请求还没回来（最多等 3 分钟就自动放行）。这回合先不动，等它收口。', false)
+        return false
+      }
       try {
         await withBriefs()
         const system = buildDirectorSystem(ev, {
@@ -916,11 +933,16 @@ export function Plot() {
         }
         push('warn', '补收仍未拿到事件指令', '可点「要求补发指令」再试，或继续发消息推进。', false)
         return false
-      } catch {
-        /* 补收是补救、不是主线：失败就维持「待补发」，交给手动按钮 —— 绝不因此打断这一回合 */
+      } catch (e) {
+        /* 补收是补救、不是主线：失败就维持「待补发」，交给手动按钮 —— 绝不因此打断这一回合。
+           超时也走这一支（api 层抛的是 TimeoutError，不是 AbortError），
+           但要说一声：不然界面上只有「少了指令」而没有「为什么没补齐」。 */
+        const msg = e instanceof Error ? e.message : String(e)
+        push('warn', '补收没有完成', `${msg} · 可点「要求补发指令」重试，或继续发消息推进。`, false)
         return false
       } finally {
-        dirRetry.current = false
+        /* 释放保证：正常、抛错、超时三条路都从这里放闸 */
+        dirRetry.current.leave()
       }
     },
     [applyReply, push, cfgMain, operatorName, bondNow, epDone, world.flags, freeOf],
@@ -1028,32 +1050,35 @@ export function Plot() {
       setBusy(true)
       setErr(null)
 
-      const scanText = `${toTurns(baseOverride ?? logs[evId], 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
-      /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
-         这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。
-         空输入那一趟（opts.idle）**不能**退到「上一条」：那会把他上一回合说过的话
-         当成这一回合的意志再摆一遍，等于替他又说了一次。没写就是没写，交给 idleSection。 */
-      const myTurn = userMsg ?? (opts?.idle ? '' : lastActOf(baseOverride ?? logs[evId]))
-      const { system, logMeta } = await directorPromptFor(ev, scanText, {
-        act: opts?.long ? '事件衔接' : '回合推演',
-        needDirective: needDir.current,
-        operatorAction: myTurn || undefined,
-        idle: opts?.idle === true,
-      })
-      const base = toTurns(baseOverride ?? logs[evId])
-      const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
-      if (userMsg) messages.push({ role: 'user', content: userMsg })
-      // 预填充（酒馆的 assistant_prefill）：先替模型摆个开头，它顺着这句往下写。
-      // 结尾挂一条 assistant 消息是标准路子；预填本身也要先上屏，否则界面像吞了半句。
-      const prefill = readActivePrefill()
-      const outbox = prefillTurns(messages, prefill)
-
-      // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）。
-      // 事件衔接回合（opts.long）放宽预算——衔接文本「可以长」。
-      const budget = clampBudget(cfgMain!.maxTokens)
-      const turnBudget = opts?.long ? Math.max(2600, Math.round(budget * 1.6)) : budget
-      // 正文为空且疑似思考耗尽预算 → 自动加大预算补发一次，避免动辄卡在手动「要求补发」
+      /* 保护范围：从这个 try 起**每一行 await 都在里面** —— 含 directorPromptFor
+         （世界书、预设、在场名册都在它里头读，任何一处抛一次就能把 busy 永久卡成
+         true，界面从此停在「推演中」）。收口只有最外层那一个 finally。 */
       try {
+        const scanText = `${toTurns(baseOverride ?? logs[evId], 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
+        /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
+           这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。
+           空输入那一趟（opts.idle）**不能**退到「上一条」：那会把他上一回合说过的话
+           当成这一回合的意志再摆一遍，等于替他又说了一次。没写就是没写，交给 idleSection。 */
+        const myTurn = userMsg ?? (opts?.idle ? '' : lastActOf(baseOverride ?? logs[evId]))
+        const { system, logMeta } = await directorPromptFor(ev, scanText, {
+          act: opts?.long ? '事件衔接' : '回合推演',
+          needDirective: needDir.current,
+          operatorAction: myTurn || undefined,
+          idle: opts?.idle === true,
+        })
+        const base = toTurns(baseOverride ?? logs[evId])
+        const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
+        if (userMsg) messages.push({ role: 'user', content: userMsg })
+        // 预填充（酒馆的 assistant_prefill）：先替模型摆个开头，它顺着这句往下写。
+        // 结尾挂一条 assistant 消息是标准路子；预填本身也要先上屏，否则界面像吞了半句。
+        const prefill = readActivePrefill()
+        const outbox = prefillTurns(messages, prefill)
+
+        // 单回合输出预算：可在终端设置里按通道调高（思考型模型容易先把预算耗在内部思考上）。
+        // 事件衔接回合（opts.long）放宽预算——衔接文本「可以长」。
+        const budget = clampBudget(cfgMain!.maxTokens)
+        const turnBudget = opts?.long ? Math.max(2600, Math.round(budget * 1.6)) : budget
+        // 正文为空且疑似思考耗尽预算 → 自动加大预算补发一次，避免动辄卡在手动「要求补发」
         for (let attempt = 1; attempt <= 2; attempt++) {
           const ctrl = new AbortController()
           abortRef.current = ctrl
@@ -1358,42 +1383,58 @@ export function Plot() {
   /** 补发指令：仅要求模型回一个事件指令块 */
   const resendDirective = async () => {
     if (!focusEv || busy || !ready) return
+    /* 手动这一路也抢同一道闸：补收正跑着的时候再来一次，两份指令会先后落地。
+       抢不到**必须说一句** —— 「点了没反应」是最难查的一种失败。 */
+    if (!dirRetry.current.tryEnter()) {
+      setErr('上一次补收还没回来（最多 3 分钟自动放行）—— 这次没发出去，稍候再点。')
+      push('info', '补收还在进行', '上一次补收请求还没回来，这次没发出去。', false)
+      return
+    }
     setBusy(true)
     setErr(null)
     const ev = focusEv
-    await withBriefs()
-    const system = buildDirectorSystem(ev, {
-      operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
-      freeMode: freeOf(ev.id),
-      // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
-      operatorAction: lastActOf(logs[ev.id]) || undefined,
-    })
-    const messages: ChatTurn[] = [
-      { role: 'system', content: system },
-      ...toTurns(logs[ev.id]),
-      { role: 'user', content: DIRECTIVE_REASK },
-    ]
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
+    /** 注意：从 setBusy(true) 往后**每一行**都在 try 里 —— 含 withBriefs 与
+     *  buildDirectorSystem 这两处 await。它们真抛一次的话，busy 就再也不会复位了。 */
     try {
-      const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: clampBudget(cfgMain!.maxTokens) })
-      const parsed = parseDirectorReply(res)
-      needDir.current = !parsed.found
-      if (parsed.found) {
-        push('success', '已收到事件指令', '指令已自动落地。', false)
-      } else {
-        traceDirectiveMiss(res, '手动补发')
-        push('warn', '仍未解析到事件指令', '可再试一次，或继续发消息推进。', false)
+      await withBriefs()
+      const system = buildDirectorSystem(ev, {
+        operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+        freeMode: freeOf(ev.id),
+        // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
+        operatorAction: lastActOf(logs[ev.id]) || undefined,
+      })
+      const messages: ChatTurn[] = [
+        { role: 'system', content: system },
+        ...toTurns(logs[ev.id]),
+        { role: 'user', content: DIRECTIVE_REASK },
+      ]
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+      try {
+        /* 超时由 api 层那两道闸管（首包 60s / 空闲 120s），这里不必自己算：
+           它们抛的是 TimeoutError，会落进下面那一支，说清原因并可重试。 */
+        const res = await chatCompletion(cfgMain!, messages, { signal: ctrl.signal, maxTokens: clampBudget(cfgMain!.maxTokens) })
+        const parsed = parseDirectorReply(res)
+        needDir.current = !parsed.found
+        if (parsed.found) {
+          push('success', '已收到事件指令', '指令已自动落地。', false)
+        } else {
+          traceDirectiveMiss(res, '手动补发')
+          push('warn', '仍未解析到事件指令', '可再试一次，或继续发消息推进。', false)
+        }
+        applyReply(parsed, ev.id)
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+        const msg = e instanceof Error ? e.message : String(e)
+        setErr(`补发失败：${msg}`)
+        push('danger', '推演中断', msg, false)
+      } finally {
+        abortRef.current = null
       }
-      applyReply(parsed, ev.id)
-    } catch (e) {
-      if ((e as Error).name === 'AbortError') return
-      const msg = e instanceof Error ? e.message : String(e)
-      setErr(`补发失败：${msg}`)
-      push('danger', '推演中断', msg, false)
     } finally {
+      /* 释放保证：早退（AbortError）、抛错、超时三条路都从这儿收口 */
       setBusy(false)
-      abortRef.current = null
+      dirRetry.current.leave()
     }
   }
 
