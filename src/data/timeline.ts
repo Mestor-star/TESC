@@ -61,7 +61,7 @@ const v1: Evt[] = [
       + '小柴认可了他：「今天……还算挺帅的哦。」',
     entities: ['NO.819 脏器公寓', 'NO.819-A 狂热者・格尔', 'NO.2420 二级天使・黑曜石'], chars: ['luna', 'hikari', 'mefisa', 'nyau'],
     // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
-    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'reiya'],
+    cast: ['luna', 'hikari', 'mefisa', 'nyau', 'reiya', 'majina-abram'],
     bond: B({ luna: 86, hikari: 52, mefisa: 57, nyau: 68 }),
   },
   {
@@ -186,7 +186,7 @@ const v2: Evt[] = [
       + '梅芙含泪抱住脱机的他；吴诗涵留下一句：「当他真的化作怪物时，杀掉他，就是朋友的职责。」',
     entities: ['——'], chars: ['mefisa', 'hikari', 'luna', 'nyau'],
     // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
-    cast: ['mefisa', 'hikari', 'luna', 'nyau', 'phidra', 'katherine', 'merwen-gray', 'maria', 'alex-cave', 'ameria'],
+    cast: ['mefisa', 'hikari', 'luna', 'nyau', 'phidra', 'katherine', 'merwen-gray', 'maria', 'alex-cave', 'ameria', 'youshihan'],
     bond: B({ hikari: 90, luna: 97, mefisa: 90, nyau: 82 }),
   },
   {
@@ -595,7 +595,7 @@ const ga3t4: Evt[] = [
     summary: '六年前，小学六年级的恋兔光随「成绩最差」的诗涵队赴沙漠讨伐能使人梦见「最恐惧之物」的魇视鳌虾。副队长米拉坠入噩梦沦为丧尸；'
       + '恋兔光以掌中小吉他轰出陨石坑消灭终末，却被副会长派系「尖啸之枪」从天而降灭口。队长吴诗涵以盾相护、抵达「到达点」，巨翼黑光吞没白光，救下恋兔光后倒下。'
       + '现框：小吴每周来访，恋兔光抽走文件给她看鳌虾条目，二人同塌睡午觉——「……啊。有小吴的味道。」',
-    entities: ['NO.2873 魇视鳌虾', 'NO.1897 99％圣诞帽'], chars: ['hikari'],
+    entities: ['NO.2873 Cherax Noctivisus', 'NO.1897 99％圣诞帽'], chars: ['hikari'],
     // 现场在场名册（依原文逐事件判定；含 roster 里的外场角色）
     cast: ['hikari', 'youshihan'],
     bond: B({ hikari: 96, luna: 100, mefisa: 92, nyau: 87 }),

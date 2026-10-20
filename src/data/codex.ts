@@ -96,6 +96,23 @@ export const CODEX: EndEntry[] = [
     ref: 'V1',
   },
   {
+    id: 'silk-clown-residue',
+    name: '丝绸小丑的残骸',
+    alias: 'SILK CLOWN · No.1821',
+    no: '1821',
+    stage: 2,
+    stageKw: '『播种』',
+    classes: ['不明'],
+    state: '收容',
+    seen: true,
+    origin: '柬埔寨，金边市区。2021 年 8 月发现。',
+    detail: '咧嘴露出满足笑容的小丑头部，脖子上还挂着几颗干瘪的小型人类头颅。发现经过伴随连串怪死：'
+      + '声称「自己是从丝绸小丑那里逃过来的」男性在收容设施中自焚、头部无伤；第一名发现遗体的警察留下遗书后跳楼身亡，头部同样没有伤痕。'
+      + '研究所内仅隔着玻璃观察、未展开调查；原文旁白写着「明明说Stage2的终末都是杂鱼的！」——故 Stage 记为 2。',
+    counter: '（未调查）性质不明，委员会列为暂缓对象。不得把头带离收容处。',
+    ref: 'V1',
+  },
+  {
     id: 'clay-mask',
     name: '泥塑面具',
     alias: 'CLAY MASK',
@@ -210,7 +227,7 @@ export const CODEX: EndEntry[] = [
   },
   {
     id: 'star-hand',
-    name: '星之手™',
+    name: '星之手TM',
     alias: 'STAR HAND™',
     no: '6765',
     stage: 2,
@@ -448,11 +465,11 @@ export const CODEX: EndEntry[] = [
   },
   {
     id: 'future-ellif',
-    name: '艾莉芙・安纳托利亚（未来）',
+    name: '艾莉芙・安纳托利亚',
     alias: 'ELLIF OF THE FUTURE · No.87865',
     no: '87865',
     stage: 8,
-    stageKw: '『大火灾』',
+    stageKw: '『大』',
     classes: ['天使之律'],
     state: '已清除',
     seen: true,
@@ -461,6 +478,40 @@ export const CODEX: EndEntry[] = [
       + '世界已否定了她的存在，心叶只余「必须记起某人的名字」的执念——这是全作最大的「记忆之谜」伏笔。'
       + '（尾声-b 的「我叫，艾莉芙・安纳托利亚」是失忆少女的自白，并非代价本身。）',
     counter: '（时间干涉体）不可对抗，只可铭记。',
+    ref: 'V3',
+  },
+
+  {
+    id: 'oni',
+    name: '鬼',
+    alias: 'ONI · No.无',
+    no: '无',
+    stage: 0,
+    stageKw: '『种子』',
+    classes: ['共同幻想'],
+    state: '去向不明',
+    seen: true,
+    origin: '广泛见于各种传说与民间故事的人型怪异。',
+    detail: '具备高智能与卓越的身体能力，被赋予与人类敌对的「恶」的性质。借万仙阵自「最后一战」复苏，'
+      + '身高约三米的赤鬼与青鬼举起铁棒，与来自死灵次元的亡者军团在秋叶原街头相搏——'
+      + '「替我们流传下去吧。我们的故事。可永远都不要忘记了啊。」',
+    counter: '（协力者）共同幻想，非讨伐对象。万仙阵关闭后自行退场。',
+    ref: 'V3',
+  },
+  {
+    id: 'inugami',
+    name: '犬神',
+    alias: 'INUGAMI · No.无',
+    no: '无',
+    stage: 0,
+    stageKw: '『种子』',
+    classes: ['共同幻想'],
+    state: '去向不明',
+    seen: true,
+    origin: '通过犬的怨念进行仪式所形成的怪异。',
+    detail: '过去是为了憎恨人类、杀死人类的存在，后与水子的神话交融，蜕变为守护孩子的诅咒幻想；'
+      + '最终在某位少女的祈愿下得以净化，如今作为神圣的神犬守护着人们。它驮着孩童、在铃与笛声中奔跑于秋叶原街头。',
+    counter: '（协力者）共同幻想，非讨伐对象。万仙阵关闭后自行退场。',
     ref: 'V3',
   },
 
@@ -664,7 +715,7 @@ export const CODEX: EndEntry[] = [
   },
   {
     id: 'dancing-hamburger',
-    name: '要来一份会跳舞的汉堡肉吗？',
+    name: '要来一份会跳舞的汉堡肉吗?',
     alias: 'DANCING HAMBURGER · No,1672',
     no: '1672',
     stage: 1,
@@ -682,8 +733,8 @@ export const CODEX: EndEntry[] = [
   /* ==================== 外传 S1 ==================== */
   {
     id: 'cherax',
-    name: '魇视鳌虾',
-    alias: 'Cherax Noctivisus',
+    name: 'Cherax Noctivisus',
+    alias: '魇视鳌虾',
     no: '2873',
     stage: 4,
     stageKw: '『活性化』',

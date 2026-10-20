@@ -52,7 +52,7 @@ import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/r
 import type { ConcludedMark, PendingBattleMark } from '../lib/plotpending'
 import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
-import { clearStorageFault, noteStorageFault, storageFault, subscribeStorageFault } from '../lib/slots'
+import { clearStorageFault, noteStorageFault, setPlotLogsSource, storageFault, subscribeStorageFault } from '../lib/slots'
 import { relName } from '../data/rel'
 import { Portrait } from '../components/Portrait'
 /* 会话流那套壳（旁白块 / 台词框 / 推演折叠 / 接续选项 / 输入带）**住在
@@ -267,6 +267,18 @@ function writeLogs(next: Record<string, ChatMsg[]>): void {
     noteStorageFault(LOG_KEY, e)
   }
 }
+/* 自动档那条路（terminal/Terminal.tsx 里的 writeAutosave）走的是 lib/slots 的
+   captureSnapshot —— 它照旧从存储读会话账。写失败期间存储里比屏幕上少一条，
+   于是「内存里的真账」进不了自动档。这里把它接上：captureSnapshot 认这唯一一个
+   读取源，读到什么就落什么（只交出去**读 / 作废两个函数**，账的所有权仍在本模块）。
+   模块级注册而不是 effect 里注册：账本身（unsavedLogs）就是模块级的，看不看在
+   场都该是同一份；Plot 卸载后自动档照样能捞回那条没写进去的话。
+   reset 交给读档那一路（lib/slots 的 applySnapshot / clearRunStorage）：换了一整轮运行态，
+   这份内存账就属于上一轮了，抹掉之后 currentLogs() 自然回到读存储。 */
+setPlotLogsSource({
+  read: currentLogs,
+  reset: () => { unsavedLogs = null },
+})
 
 /**
  * 换掉「版式改过」的开场白：开场白是**原文**、不是对话记录，它在代码里改了排印
@@ -294,6 +306,24 @@ function dropMsg(evId: string, id: string): Record<string, ChatMsg[]> {
 
 /** 当前挂载中的剧情推进视图数：0 = 观测者不在本页，这一回合是在后台跑完的 */
 let plotMounts = 0
+
+/**
+ * **回合令牌**：每开一个新回合就 +1，补收（reaskDirective）启动时记下当时的值。
+ *
+ * 补收是异步的、又**不占 busy**（主回合的 finally 早就把 busy 放掉了）：观测者完全
+ * 可能在这半分钟里再发一条。那一条一落地，世界变量 / 记录 / 收束都已经是「新回合之后」
+ * 的样子 —— 补收再照着它启动时那份快照写一遍，就是拿旧账盖新账（用户口径：
+ * 「补收的落地要么被判过期丢弃，要么与新回合串行」）。
+ *
+ * 选的为什么是令牌而不是串行队列：落地的**目标**是「当前这一回合之后的档」，
+ * 而补收那句话属于**上一个回合** —— 串起来写只是把覆盖推迟，写进去的仍然是过期结论
+ * （它还会把新回合的 eventDone / 收束状态反向改掉）。令牌让它干脆不写，并在屏上
+ * 留一句可诊断的话。
+ *
+ * 模块级而不是 useRef：Plot 卸载再挂回来时回合仍然要接着数（组件重挂载不该把
+ * 在飞的那条补收重新变成「有效」）。
+ */
+let turnSeq = 0
 
 /** 剧情会话历史（最近 N 条）→ 模型消息 */
 function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
@@ -885,10 +915,13 @@ export function Plot() {
    *
    * 为什么不会重复写一段：报文里明说「仅输出指令本身，无需展开叙述」，
    * 而回来的东西只走 applyReply（落变量），不走 appendMsg（不写正文）。
+   *
+   * `turn` 是**发起这一趟时**的回合令牌（见 turnSeq 那一段）：落地前比对，不是
+   * 当前回合就整条丢弃 —— 补收不占 busy，观测者可能已经又推了一回合。
    * @returns 有没有真的补到
    */
   const reaskDirective = useCallback(
-    async (ev: TimelineEvent, prior: ChatTurn[], shownText: string, where: string): Promise<boolean> => {
+    async (ev: TimelineEvent, prior: ChatTurn[], shownText: string, where: string, turn: number): Promise<boolean> => {
       if (!cfgMain || !isReady(cfgMain)) return false
       /* 闸挡下**必须说话**：静默的「点了没反应 / 上一回合没补收」比失败难查得多。
          闸本身有到期时间，最多 180s 自己就放开（见 DIRECTIVE_GATE_MS）。 */
@@ -922,6 +955,16 @@ export function Plot() {
           const res = await chatCompletion(cfgMain, msgs, { maxTokens: 2048 })
           const again = parseDirectorReply(res)
           if (again.found) {
+            /* 落地前先验令牌：这一趟起步于第 `turn` 回合，现在还是不是它？
+               不是就**一个字都不写** —— 世界变量、记录、收束全归新的那一回合，
+               拿这半分钟前问回来的指令写一遍就是互相覆盖。
+               判据放在设 needDir 之前：needDir 是「当前回合还缺指令」的全局标记，
+               过期的那条没资格改它。 */
+            if (turn !== turnSeq) {
+              push('warn', '补收指令已过期', '补收回来的指令属于上一个回合 —— 那之后你又推了一回合，这一条按过期丢弃（变量与收束以新回合为准）。', false)
+              console.info(`[plot] 补收指令被判过期丢弃：起于第 ${turn} 回合，当前第 ${turnSeq} 回合`)
+              return false
+            }
             needDir.current = false
             applyReply(again, ev.id)
             push('success', '已自动补收事件指令', '本回合的变量、羁绊与收束已按补发的指令落地。', false)
@@ -1047,6 +1090,9 @@ export function Plot() {
     async (evId: string, userMsg?: string, baseOverride?: ChatMsg[], opts?: { long?: boolean; idle?: boolean }) => {
       const ev = EPISODES.find((e) => e.id === evId)
       if (!ev || busy || !ready) return
+      /* 新回合开张：令牌 +1（见 turnSeq 那一段）。本轮补收把它记下来，
+         落地前比对 —— 中途又开了一回合，它就作废。 */
+      const turn = ++turnSeq
       setBusy(true)
       setErr(null)
 
@@ -1146,7 +1192,7 @@ export function Plot() {
               // 先留痕再补收：留痕是为了**事后**能查出是哪种失败，补收是为了**当场**把它救回来
               traceDirectiveMiss(full, opts?.long ? '事件衔接' : '回合推演')
               push('warn', '未解析到事件指令 · 正在自动补收', '叙述已上屏；已自动向通道补问一次指令（只问指令、不重写正文）。收到即静默落地。', false)
-              void reaskDirective(ev, outbox, full, opts?.long ? '事件衔接' : '回合推演')
+              void reaskDirective(ev, outbox, full, opts?.long ? '事件衔接' : '回合推演', turn)
             }
             const shown = replyDisplayText(parsed, acc)
             if (shown) {

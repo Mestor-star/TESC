@@ -112,6 +112,16 @@ export const ARMS: ArmEntry[] = [
     ref: 'V3',
   },
   {
+    id: 'youshihan-four-beasts', kind: '弹痕', name: '四大凶兽', sub: 'FOUR FIERCE BEASTS',
+    holder: '吴诗涵', holderNote: '苍之学园・万年留级生（恋兔的前辈）',
+    holderId: 'youshihan',
+    phrase: '「这孩子是浑沌。是『化无为有』的生物哟！」',
+    power: '「操控四大凶兽」的弹痕——按持有者吴诗涵的意志召唤四大凶兽：化「无」为「有」的浑沌、倒「是」为「非」的穷奇、'
+      + '变「知」为「惑」的梼杌、转「魔」为「圣」的饕餮。它们是拥有意志的生物，无法保证必定服从命令，每天最多只能召唤一只。'
+      + '「四大凶兽」也是她精神特质的具现——弹痕强烈地反映了她的四重人格。',
+    ref: 'V2',
+  },
+  {
     id: 'kokoro-noapusa', kind: '弹痕', name: 'noapusa', sub: 'NOAPUSA',
     holder: '言万心叶', holderNote: '苍之学园・体验入学 · 低语者（Susurrador）',
     revealAt: 'v2-2',
@@ -142,6 +152,15 @@ export const ARMS: ArmEntry[] = [
     ref: 'V1',
   },
   {
+    id: 'isis-extra-extra', kind: '斩击', name: '号外号外', sub: 'EXTRA! EXTRA!',
+    holder: '伊西斯・哈利德', holderNote: '卡乌斯学院・记者',
+    holderId: 'isis-halid',
+    phrase: '把半径 500 米内的景象写进记录世界',
+    power: '「铭刻记忆」的斩击：一把银色的克赫帕什镰形刀。可以将她半径 500 米内的景象转写进记录世界，只有伊西斯能够自由进出；'
+      + '记录世界可以投影在屏幕上，最多保存 1 年。她以它做现场直播——捕捉独家新闻，也把战场上的每一秒留成证据。',
+    ref: 'V2',
+  },
+  {
     id: 'nadia-news', kind: '斩击', name: '喜讯喜讯', sub: 'GOOD NEWS, GOOD NEWS',
     holder: '娜蒂雅・哈利德', holderNote: '卡乌斯学院',
     phrase: '全体化——把祝福喊给所有人听',
@@ -156,6 +175,26 @@ export const ARMS: ArmEntry[] = [
     phrase: '重量自由增减的金属球棒',
     power: '一根金属球棒，可将击中对象的重量任意增减——增物重至三倍、或把对方自重提至数十倍，令其寸步难行；'
       + '把体重降到几十分之一，则令其一击即飞。奈奈抡起它时，连终末都要先掂量掂量自己有多重。',
+    ref: 'V4',
+  },
+  {
+    id: 'danae-serious-sss', kind: '斩击', name: '认真模式SSS', sub: 'SERIOUS MODE SSS',
+    holder: '达娜厄・惠特摩尔', holderNote: '卡乌斯学院・黑锤部队[Écraseurs] 队长（RANK7）',
+    holderId: 'danae-whitmore',
+    phrase: '把情感转化为暴力',
+    power: '「转为暴力」的斩击：能将达娜厄・惠特摩尔的情感转化为暴力、使其变身的太刀。情感数值未达到一定阈值便无法完成变身；'
+      + '变身后她将获得「比交战对象更强」的反现实性，持续时间约三分钟——身高超过一米九，眼中盛满光辉，与平日怯生生的娇小少女判若两人。',
+    ref: 'V4',
+  },
+  {
+    id: 'emei-orleans', kind: '斩击', name: '奥尔良的盟约', sub: 'THE COVENANT OF ORLÉANS',
+    holder: '艾梅・库尔・杜・琉米爱尔', holderNote: '卡乌斯学院・评议会[The Council] 副议长',
+    holderId: 'emei',
+    phrase: '让所有奇迹以 50% 的概率发生',
+    power: '让所有的奇迹以 50% 的概率发生的斩击——就算是陨石偶然坠落砸中这样的奇迹，对「奥尔良的盟约」来说也只是寻常之事。'
+      + '她以一把银色的海军刀挥出这份「传达心意」的力量。',
+    awakened: '到达点「奥尔良的盟约——传达不到的爱恋」：把她的记忆、感情与经历，继承给另一个次元里将要与心叶相遇的自己——'
+      + '「请替我告诉他，我爱他。」',
     ref: 'V4',
   },
   {
@@ -180,6 +219,15 @@ export const ARMS: ArmEntry[] = [
     power: '将「英雄不灭」的渴望化为片羽：受到的伤害越重，凯特琳便越强——濒死即是她的完全体。'
       + '这份力量让她能以凡人之躯正面迎战天空竞技祭的大将，也让 Corporations 学会了敬畏她。',
     awakened: '终焉的火焰——不再以「受伤变强」，而是直接燃烧自己的生命换取力量；那是英雄赌上性命的最后加护。',
+    ref: 'V2',
+  },
+  {
+    id: 'phidra-false-claim', kind: '片羽', name: '申告虚伪', sub: 'FALSE DECLARATION',
+    holder: '菲德拉・雷诺兹', holderNote: 'Corporations・下任学生会长',
+    holderId: 'phidra',
+    phrase: '复制二十四小时内见过的能力',
+    power: '「复制」的片羽：菲德拉・雷诺兹可以再现并使用他在 24 小时以内观测到的弹痕・斩击・片羽，同一时间只能使用一种能力。'
+      + '此外，被他观测过的对象会产生「菲德拉・雷诺兹的能力是操控复数的羽翼」这一虚假情报——情报本身也是他的武器。',
     ref: 'V2',
   },
   {

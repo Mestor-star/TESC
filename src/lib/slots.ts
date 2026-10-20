@@ -228,8 +228,55 @@ export function canContinue(): boolean {
   return !!a && Object.keys(a.snapshot.epDone).length > 0
 }
 
-/** 由当前运行档（含会话日志）组一份快照 */
-export function captureSnapshot(run: RunStateInput): RunSnapshot {
+/* ---------- 会话账的「内存真账」来源（配额满时的补档路） ----------
+ *
+ * 剧情推进页写失败之后，那一条正文只活在它的模块变量里（见 views/Plot.tsx 的
+ * unsavedLogs / currentLogs）—— 存储里比屏幕上少一条。自动档若照旧从存储读
+ * `zts-plot:v1`，那份真账就永远进不了档：刷新之后退回上一次成功的那一份，
+ * 丢掉的那条连自动档里都找不回来。
+ *
+ * 所以 captureSnapshot 认一个**可覆盖的会话账**：调用方给了就用调用方的
+ * （第二参数，显式优先）；否则若 Plot 注册了「内存真账」读取源就用它；
+ * 都没有才照旧读存储 —— 既有调用方（首启迁移、读档回写）行为不变。
+ *
+ * ⚠️ 这里只握一对**函数**，不握 unsavedLogs 本身：账的所有权留在视图那一侧，
+ * 本模块照旧无 React、不 import 任何视图（否则 slots ↔ Plot 会绕成环）。
+ *
+ * 为什么还要 reset：内存真账是**上一轮**的账。读档（applySnapshot）换的是整整一轮运行态，
+ * 存储里的 `zts-plot:v1` 被覆写成刚读进来的那一档，而视图那份 unsavedLogs 若还留着，
+ * 同一会话里先撞过配额、再去读另一档时，它就会压过刚读进来的档 —— Plot 的 state 初值
+ * （useState(currentLogs)）与写失败后的兜底写都读 currentLogs，读到的全是旧账。
+ * 所以 applySnapshot 写完存储之后调一次 reset，账本所有权那侧把 unsavedLogs 抹掉，
+ * currentLogs() 自然回到读存储。
+ */
+export interface PlotLogsBridge {
+  /** 读当前真账（写失败过就是内存那份，否则读存储） */
+  read: () => Record<string, ChatMsg[]>
+  /** 作废内存真账（读档 / 重置用）—— 之后 read() 必须回到读存储 */
+  reset?: () => void
+}
+
+let plotLogsBridge: PlotLogsBridge | null = null
+
+/** 注册「内存真账」的读 / 作废源（传 null 撤销） */
+export function setPlotLogsSource(bridge: PlotLogsBridge | null): void {
+  plotLogsBridge = bridge
+}
+
+/** 作废内存真账：没注册、或注册方没给 reset 都当没有，绝不因此抛 */
+function resetPlotLogs(): void {
+  try {
+    plotLogsBridge?.reset?.()
+  } catch {
+    /* noop */
+  }
+}
+
+/** 由当前运行档（含会话日志）组一份快照；sessions.plot 覆盖会话账（默认读存储） */
+export function captureSnapshot(
+  run: RunStateInput,
+  sessions?: { plot?: Record<string, ChatMsg[]> },
+): RunSnapshot {
   return {
     schema: 1,
     operatorName: run.operatorName,
@@ -238,7 +285,7 @@ export function captureSnapshot(run: RunStateInput): RunSnapshot {
     cur: run.cur,
     focusId: run.focusId,
     world: run.world,
-    plot: readLogs(PLOT_KEY),
+    plot: sessions?.plot ?? plotLogsBridge?.read() ?? readLogs(PLOT_KEY),
     tavern: readLogs(TAVERN_KEY),
     // 引导进度一并入档：这一档存的是「梅芙讲到哪儿了」，读档时原样放回去
     guide: readGuide(),
@@ -390,6 +437,11 @@ export async function applySnapshot(snapshot: RunSnapshot): Promise<void> {
   } catch (e) {
     noteStorageFault(TAVERN_KEY, e)
   }
+  /* 三条键都写完了，才轮到作废**内存真账** —— 顺序不能反：先 reset 再写存储，
+     写失败时（配额满）存储里还是上一档，而内存那份又已经抹掉，两头都空。
+     放在这儿而不是调用方那一侧：读档 = 换一整轮运行态，账的作废与键的覆写是同一件事，
+     以后谁再调 applySnapshot（Title / Terminal 四条入口）都自动带上。 */
+  resetPlotLogs()
   /* 读档 = 这一轮的运行态整个换掉：与重置共用 RUN_STATE_KEYS（收束栏 / 待战按钮、
      约会名册、自建群、未读角标、短信任务、主动来信节拍）。不跟着搬，否则新档一进来就可能
      顶着上一档那一段的收束栏（段 id 偶尔会撞上），名册上还挂着上一档的空线程、侧栏还亮着
@@ -435,6 +487,9 @@ export function clearRunStorage(): void {
       /* noop */
     }
   }
+  /* 档连存储都清了，内存那份真账更不能留着 —— 否则下一次 currentLogs() 还端出上一档的账，
+     而下一次写成功又把它整本回写进刚清空的 zts-plot:v1。与读档同一条路。 */
+  resetPlotLogs()
   // 新的一档就是新的一轮：连同梅芙讲到哪儿一起清掉，引导从头再来
   resetGuide()
 }
