@@ -52,6 +52,7 @@ import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/r
 import type { ConcludedMark, PendingBattleMark } from '../lib/plotpending'
 import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
+import { clearStorageFault, noteStorageFault, storageFault, subscribeStorageFault } from '../lib/slots'
 import { relName } from '../data/rel'
 import { Portrait } from '../components/Portrait'
 /* 会话流那套壳（旁白块 / 台词框 / 推演折叠 / 接续选项 / 输入带）**住在
@@ -64,6 +65,21 @@ import {
 import css from './Plot.module.css'
 
 const LOG_KEY = 'zts-plot:v1'
+
+/**
+ * 一段会话**一次铺多少条**。
+ *
+ * 本机量过（headless Edge · 单事件 300 条 / 322KB 正文 / 2970 个台词框）：
+ * 整本一次铺上屏，切进「剧情推进」要 **1316ms**、两个长任务（445ms、190ms）；
+ * 滚动的 p95 帧间隔 109ms、3 帧掉出 50ms；切走再回来是一次整页重建，**869ms**。
+ * 这不是数据量的问题，是**一次画多少 DOM** 的问题：一条正文要切段、要逐句认说话人、
+ * 要过一遍链接化，300 条就是几千个块。
+ *
+ * 所以只铺**最近**这么多条，更早的按「加载更早」一截一截往前翻 —— 消息一条不删、
+ * 顺序不动、落盘与自动存档的触发点一个字没改，改的只是「这一帧画多少」。
+ * 60 条足够盖住屏幕上正在读的那几屏，且让首屏回到百毫秒级。
+ */
+const THREAD_WINDOW = 60
 
 /**
  * 拼导演提示词之前，先把**事件详纲**那张表拉回来。
@@ -199,14 +215,49 @@ function idFor(): string {
  * 先落盘再回写状态（以存储为准），免得「卸载期间写进去的消息」被手上的旧 state 盖掉。
  */
 function persistMsg(evId: string, m: ChatMsg): Record<string, ChatMsg[]> {
-  const next = { ...loadLogs() }
+  const next = { ...currentLogs() }
   next[evId] = [...(next[evId] ?? []), m]
+  writeLogs(next)
+  return next
+}
+
+/**
+ * **内存里的真账**（只在写失败之后存在）。
+ *
+ * 配额满那一刻最坏的不是「这一条没存下」，而是接下来那条回执：
+ * 它照旧 `loadLogs()` 从**存储**取账 —— 存储里比屏幕上少一条 ——
+ * 追加完再整本回写（那时空间刚好够），于是丢的那条被彻底盖掉，
+ * 连痕迹都不留（本机复现：5,246,617 字符写失败 → 下一条以 5,121,717 字符回写）。
+ *
+ * 所以写失败之后**以内存这一份为准**：后面的读（persistMsg / retextMsg / dropMsg /
+ * 重挂载时的初值）全部走 currentLogs()，标记 dirty；下一次写成功时整本落盘、
+ * 标记自动清掉 —— 自愈，不需要用户做什么。
+ */
+let unsavedLogs: Record<string, ChatMsg[]> | null = null
+
+/** 当前真账：写失败过就以内存那份为准，否则读存储 */
+function currentLogs(): Record<string, ChatMsg[]> {
+  return unsavedLogs ?? loadLogs()
+}
+
+/**
+ * 会话账落盘（唯一出口）。
+ *
+ * 写不进去**不再静默**：记一条故障，剧情推进页顶上那条横幅会明说
+ * 「这一条没能存下来、刷新会丢」，并给出「导出备份 / 清理往期正文」两条路。
+ * 同时把这一份挂成 unsavedLogs —— 见上面那一段：不许用存储里的旧账回写。
+ */
+function writeLogs(next: Record<string, ChatMsg[]>): void {
   try {
     localStorage.setItem(LOG_KEY, JSON.stringify(next))
-  } catch {
-    /* 隐私模式下降级为仅内存 */
+    /* 写成了：存储与内存重新一致，dirty 撤掉、故障也撤掉 */
+    unsavedLogs = null
+    clearStorageFault(LOG_KEY)
+  } catch (e) {
+    /* 隐私模式 / 配额满：这份账还在内存里，绝不退回存储里那份旧的 */
+    unsavedLogs = next
+    noteStorageFault(LOG_KEY, e)
   }
-  return next
 }
 
 /**
@@ -215,13 +266,9 @@ function persistMsg(evId: string, m: ChatMsg): Record<string, ChatMsg[]> {
  * 只换那一条、只换文本；其余消息一概不碰 —— 见调用处的判据。
  */
 function retextMsg(evId: string, id: string, text: string): Record<string, ChatMsg[]> {
-  const next = { ...loadLogs() }
+  const next = { ...currentLogs() }
   next[evId] = (next[evId] ?? []).map((m) => (m.id === id ? { ...m, text } : m))
-  try {
-    localStorage.setItem(LOG_KEY, JSON.stringify(next))
-  } catch {
-    /* 隐私模式下降级为仅内存 */
-  }
+  writeLogs(next)
   return next
 }
 
@@ -231,13 +278,9 @@ function retextMsg(evId: string, id: string, text: string): Record<string, ChatM
  * 代码里那一项已经删了，存档里这条就不该再挂着 —— 只撤这一条，后面的话照旧。
  */
 function dropMsg(evId: string, id: string): Record<string, ChatMsg[]> {
-  const next = { ...loadLogs() }
+  const next = { ...currentLogs() }
   next[evId] = (next[evId] ?? []).filter((m) => m.id !== id)
-  try {
-    localStorage.setItem(LOG_KEY, JSON.stringify(next))
-  } catch {
-    /* 隐私模式下降级为仅内存 */
-  }
+  writeLogs(next)
   return next
 }
 
@@ -420,7 +463,14 @@ export function Plot() {
 
   const [cfgMain, setCfgMain] = useState<ApiSettings | null | undefined>(undefined)
   const [mode, setMode] = useState<'online' | 'offline'>('online')
-  const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(loadLogs)
+  /* 初值也认内存那份：写失败后切走再回来，屏幕上该还是**含刚丢那条**的真账 */
+  const [logs, setLogs] = useState<Record<string, ChatMsg[]>>(currentLogs)
+  /** 本段一次铺多少条（见 THREAD_WINDOW）；切段时回到默认窗口 */
+  const [shown, setShown] = useState(THREAD_WINDOW)
+  /** 落盘故障（配额满 / 隐私模式）—— 顶上那条横幅读的就是它 */
+  const fault = useSyncExternalStore(subscribeStorageFault, storageFault)
+  /** 「清理往期正文」的二次确认（与「回退到上一段」同一套口径） */
+  const [confirmClearPast, setConfirmClearPast] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -597,6 +647,28 @@ export function Plot() {
     if (pendingBattle && (pendingBattle.evId !== focusEv?.id || epDone[pendingBattle.evId])) applyBattle(null)
   }, [concluded, pendingBattle, focusEv?.id, epDone, applyConcluded, applyBattle])
   const activeLog = focusEv ? logs[focusEv.id] ?? [] : []
+  /* 「加载更早」的窗口：只渲染最近 shown 条（消息本身、顺序、落盘全不变） */
+  const shownStart = Math.max(0, activeLog.length - shown)
+  /* 换段 = 重新从最近那一截看起（窗口不跨段沿用，二次确认也一并复位） */
+  useEffect(() => {
+    setShown(THREAD_WINDOW)
+    setConfirmClearPast(false)
+  }, [focusEv?.id])
+
+  /**
+   * 配额满时的第二条出路：把**往期事件**的正文从这本账上摘掉。
+   *
+   * 摘的只有「别段的会话正文」——本段一条不碰，收束记录 / 世界变量 / 羁绊
+   * 也一条不碰（它们不住在 `zts-plot:v1` 里）。写成了故障自己就撤掉，
+   * 横幅跟着消失；没写成就还是一行红字，不会假装成功。
+   */
+  const clearPastLogs = useCallback(() => {
+    if (!focusEv) return
+    const next: Record<string, ChatMsg[]> = { [focusEv.id]: logs[focusEv.id] ?? [] }
+    writeLogs(next)
+    setLogs(next)
+    setConfirmClearPast(false)
+  }, [focusEv, logs])
   /* 本段是否由导演自动开篇（只有序章与第 1 话）。自由段一律不算 —— 它在
      `TIMELINE` 里根本没有下标（findIndex 读作 -1，照原样判就会落进「自动开篇」）；
      何况自由时间没有原文可铺陈，开篇本就该等操作员先开口。 */
@@ -647,11 +719,7 @@ export function Plot() {
   const persistedRef = useRef<Record<string, ChatMsg[]> | null>(null)
   useEffect(() => {
     if (persistedRef.current === logs) return
-    try {
-      localStorage.setItem(LOG_KEY, JSON.stringify(logs))
-    } catch {
-      /* 隐私模式下降级为仅内存 */
-    }
+    writeLogs(logs)
   }, [logs])
 
   useEffect(() => {
@@ -1090,8 +1158,19 @@ export function Plot() {
               return
             }
             settled = true
+            /* 传输中途断掉（网关超时、代理掐线、断网）：与「主动中断」同一口径 ——
+               已经写出来的那半段照样上屏，一个指令也不落地。从前这里直接把活气泡
+               清掉，收到的一半正文跟着一起没了，主人只看到一句英文错误。 */
+            const partial = extractLiveDisplay(acc).trim()
             clearLive()
             const msg = e instanceof Error ? e.message : String(e)
+            if (partial) {
+              appendMsg(evId, { id: idFor(), from: 'them', text: partial, time: clock() })
+              needDir.current = true
+              setErr(`推演中断：${msg}。已保留收到的部分正文 —— 可重试，或点「要求补发指令」补收指令。`)
+              push('danger', '推演中断', `${msg} · 已保留收到的一半正文，未落地任何指令。`, false)
+              return
+            }
             setErr(`推演中断：${msg}`)
             push('danger', '推演中断', msg, false)
             return
@@ -1966,6 +2045,41 @@ export function Plot() {
                 </div>
               ) : null}
 
+              {/* —— 落盘故障（配额满 / 隐私模式）：明说 + 给出路 ——
+                  从前这几处全是静默 catch：消息照常上屏、刷新就没了，
+                  自动档也停在上一次成功的那一份，界面上一个字都不提。
+                  横幅只在这个键真写过失败时出现；写成了自己就撤（见 slots 的故障通道）。 */}
+              {fault ? (
+                <div className={css.warn} data-storage-fault={fault.key}>
+                  <b>
+                    {fault.key === 'zts-slots:v1'
+                      ? '自动存档写不进去了'
+                      : fault.key === LOG_KEY ? '本地存储已满，这一条没能存下来' : '有一份进度没能写进去'}
+                  </b>
+                  <span>
+                    {fault.key === 'zts-slots:v1'
+                      ? '刷新之后会退回上一次成功的自动档。先导出一份备份，再清理往期正文腾出空间。'
+                      : '正文还在屏幕上，但刷新之后会丢；后续回合仍以屏幕上这一份为准，不会把它盖掉。先导出备份，再清理往期正文腾空间 —— 腾出来之后下一回合会把整本账写回去。'}
+                  </span>
+                  <button className="btn btn--amber" style={{ fontSize: 12 }} data-storage-fault-export="1" onClick={() => navigate('settings')}>
+                    导出备份
+                  </button>
+                  {pastBlocks.length > 0 ? (
+                    <button
+                      className="btn btn--ghost"
+                      style={{ fontSize: 12 }}
+                      data-storage-fault-clear="1"
+                      onClick={() => (confirmClearPast ? clearPastLogs() : setConfirmClearPast(true))}
+                      title="把别段事件的会话正文从本地账上摘掉（本段、收束记录、世界变量都不动）"
+                    >
+                      {confirmClearPast ? `再按一次确认清理（${pastBlocks.length} 段）` : `清理往期正文（${pastBlocks.length} 段）`}
+                    </button>
+                  ) : (
+                    <span className="muted tiny">本段之外没有正文可清 —— 也可用面板头那枚「清空」清掉本段会话。</span>
+                  )}
+                </div>
+              ) : null}
+
               {showOnline && ready && autoOpens && !skipAutoOpen.current && activeLog.length === 0 && !busy ? (
                 <div className={css.hintLine}>
                   <span className={css.typingDot} /> 正在读取事件大纲并铺陈开场叙述…
@@ -2002,6 +2116,21 @@ export function Plot() {
                     <span className="muted tiny">{focusEv?.group} · {focusEv?.phase}</span>
                   </div>
                 ) : null}
+                {shownStart > 0 ? (
+                  /* 「加载更早」：往期一截一截往前翻，不看的那部分根本不画。
+                     一个渲染窗口，不是一次删除 —— 账里的消息一条不少。 */
+                  <div data-load-earlier="1" style={{ display: 'flex', justifyContent: 'center', padding: '2px 0 10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      style={{ fontSize: 12 }}
+                      onClick={() => setShown((n) => n + THREAD_WINDOW)}
+                      title="再往前铺 60 条；正文一条不删、顺序不动"
+                    >
+                      加载更早 · 还有 {shownStart} 条
+                    </button>
+                  </div>
+                ) : null}
                 {activeLog.length === 0 ? (
                   <EmptyHint
                     title={ready ? '从头推演这一事件' : '此段尚无会话'}
@@ -2012,8 +2141,11 @@ export function Plot() {
                       : '配置主线通道后即可在线推演；当前可切「离线通读」阅读本段原文。'}
                   />
                 ) : (
-                  activeLog.map((m, i) =>
-                    m.from === 'them' ? (
+                  activeLog.slice(shownStart).map((m, off) => {
+                    /* 索引一律用**绝对下标**（shownStart + off）：底下的「从此重来 /
+                       重写此回复」认的是整条账里的位置，不能跟着窗口一起从头数 */
+                    const i = shownStart + off
+                    return m.from === 'them' ? (
                       <NarrBlock
                         key={m.id}
                         label={m.meta?.opening ? '开场白 · 原文' : m.meta?.battle ? '交战 · 成文' : '导演叙述'}
@@ -2059,8 +2191,8 @@ export function Plot() {
                           </span>
                         }
                       />
-                    ),
-                  )
+                    )
+                  })
                 )}
                 {live && live.evId === focusEv.id && live.text ? (
                   <NarrBlock

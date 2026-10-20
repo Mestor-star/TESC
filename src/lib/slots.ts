@@ -27,6 +27,76 @@ export const SLOT_COUNT = 8
 /** 每条会话日志保留上限（自动/手动快照都裁剪） */
 const LOG_CAP = 80
 
+/* ---------- 写盘故障（配额满 / 隐私模式）的**明说**通道 ----------
+ *
+ * 从前这几处全是 `catch { /* noop *\/ }`：写不进去就写不进去，界面上一个字都没有。
+ * 本机量过的那条路是这样丢消息的 —— 5.14M 字符的账上再发一条长消息，
+ * `zts-plot:v1` 抛 QuotaExceededError、被静默吃掉；那条消息照常上屏，
+ * 刷新之后消失；下一条回执又拿**存储里的旧账**回写，把它彻底盖掉。
+ * 自动档同理：边缘上写不进去，槽里留着的仍是上一次成功的那一份。
+ *
+ * 所以「写失败」不再是一个吞掉的异常，而是一条可订阅的**故障**：
+ * 写成的键自己会清掉它，订阅方（剧情推进页顶上那条横幅）据此给出路。
+ * 这里只管记账与通知，不 import 任何 UI —— 本模块照旧无 React、可测。
+ *
+ * ⚠️ 故障按**键**分开记：只留一条最近的在屏上，够用且不吵。
+ */
+export interface StorageFault {
+  /** 写失败的那个 key（`zts-plot:v1` / `zts-slots:v1` …） */
+  key: string
+  /** 人话理由：配额满 / 隐私模式 / 其它 */
+  reason: string
+  at: number
+}
+
+/* 按**键**分开记：一次配额满往往同时打中会话账与自动档，屏上那条横幅
+   要挑最该说的那一条 —— 会话账在前（丢的是刚写的话），自动档在后。 */
+const faults = new Map<string, StorageFault>()
+const faultListeners = new Set<() => void>()
+
+/** 屏上优先说哪一个：会话正文 > 自动档 > 其余最近的那一个 */
+function primary(): StorageFault | null {
+  const plot = faults.get(PLOT_KEY)
+  if (plot) return plot
+  const slots = faults.get(SLOTS_KEY)
+  if (slots) return slots
+  let last: StorageFault | null = null
+  for (const f of faults.values()) last = f
+  return last
+}
+
+/** 人话理由：配额满与「浏览器不让存」分开说，前者有出路，后者没有 */
+function reasonOf(key: string, e: unknown): string {
+  const name = e instanceof Error ? e.name : ''
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+    return `${key} 写不进去：本地存储配额已满`
+  }
+  return `${key} 写不进去：${e instanceof Error ? e.message : String(e)}`
+}
+
+/** 记一次写失败（同一个键只留一条，连报就刷新它的时间戳） */
+export function noteStorageFault(key: string, e: unknown): void {
+  faults.delete(key)
+  faults.set(key, { key, reason: reasonOf(key, e), at: Date.now() })
+  for (const fn of faultListeners) fn()
+}
+
+/** 写成功了就撤掉**这个键**的故障（其它键的故障不受影响） */
+export function clearStorageFault(key: string): void {
+  if (!faults.delete(key)) return
+  for (const fn of faultListeners) fn()
+}
+
+/** 当前要在屏上说的那一条；订阅用同一对 getter/subscribe（useSyncExternalStore 口径） */
+export function storageFault(): StorageFault | null {
+  return primary()
+}
+
+export function subscribeStorageFault(fn: () => void): () => void {
+  faultListeners.add(fn)
+  return () => { faultListeners.delete(fn) }
+}
+
 /** 运行档中需要入快照的部分（由 TerminalProvider 的 saved 提供） */
 export interface RunStateInput {
   operatorName: string
@@ -114,8 +184,12 @@ function readFile(): SlotsFile {
 function saveFile(f: SlotsFile): void {
   try {
     localStorage.setItem(SLOTS_KEY, JSON.stringify(f))
-  } catch {
-    /* 配额/隐私模式静默 */
+    /* 这一趟写成了：之前挂着的「自动档写不进去」就不该再在屏上 */
+    clearStorageFault(SLOTS_KEY)
+  } catch (e) {
+    /* 配额 / 隐私模式：不再静默 —— 记一条故障，剧情推进页顶上会明说
+       「自动存档写不进去、刷新会退回上一次成功的自动档」并给出路 */
+    noteStorageFault(SLOTS_KEY, e)
   }
 }
 
@@ -305,13 +379,16 @@ export async function applySnapshot(snapshot: RunSnapshot): Promise<void> {
   }
   try {
     localStorage.setItem(PLOT_KEY, JSON.stringify(trimLogs(snapshot.plot)))
-  } catch {
-    /* noop */
+    clearStorageFault(PLOT_KEY)
+  } catch (e) {
+    /* 读档回写同样可能撞配额：这时候「当前会话」根本没换过去，必须让界面说出来 */
+    noteStorageFault(PLOT_KEY, e)
   }
   try {
     localStorage.setItem(TAVERN_KEY, JSON.stringify(trimLogs(snapshot.tavern)))
-  } catch {
-    /* noop */
+    clearStorageFault(TAVERN_KEY)
+  } catch (e) {
+    noteStorageFault(TAVERN_KEY, e)
   }
   /* 读档 = 这一轮的运行态整个换掉：与重置共用 RUN_STATE_KEYS（收束栏 / 待战按钮、
      约会名册、自建群、未读角标、短信任务、主动来信节拍）。不跟着搬，否则新档一进来就可能

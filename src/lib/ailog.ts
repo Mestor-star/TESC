@@ -17,6 +17,29 @@ export const AILOG_KEY = 'zts-ailog:v1'
 export const AILOG_MAX = 30
 /** 单条提示词的保存上限（字符），超出只留头尾 */
 const PROMPT_CAP = 16000
+/**
+ * 整个环里**提示词**合计留多少字符。
+ *
+ * 光有条数上限不够 —— 每条都能到 16K 字符，30 条就是 ~480K，
+ * 而**每进一条都要把整份环重写一遍**：本机量过，连续 20 回合往
+ * `zts-ailog:v1` 写进去 **3.47MB**（平均 173KB/次），比会话账本身还大，
+ * 是长档里最大的一处写入放大。所以再按字符给一个总预算：
+ * 最新的那几条优先拿满，老记录先丢提示词正文（其余读数一条不少）——
+ * 核对「设置有没有送到后台」要看的是**最近一趟**，不是三十趟之前。
+ */
+const PROMPT_BUDGET = 48000
+
+/** 按总预算重新分提示词：从最新往老发，发完就只留摘要 */
+function capPrompts(list: AiLogRecord[]): AiLogRecord[] {
+  let left = PROMPT_BUDGET
+  return list.map((r) => {
+    if (!r.prompt) return r
+    if (left <= 0) return { ...r, prompt: '' }
+    const keep = Math.min(r.prompt.length, left)
+    left -= keep
+    return keep < r.prompt.length ? { ...r, prompt: trim(r.prompt, keep) } : r
+  })
+}
 /** 回复保存的开头长度 */
 const REPLY_CAP = 400
 
@@ -107,7 +130,7 @@ export function clearAiLogs(): void {
 export function pushAiLog(rec: Omit<AiLogRecord, 'id' | 'ts'>): void {
   try {
     const full: AiLogRecord = { ...rec, id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ts: Date.now() }
-    const list = [full, ...listAiLogs()].slice(0, AILOG_MAX)
+    const list = capPrompts([full, ...listAiLogs()].slice(0, AILOG_MAX))
     localStorage.setItem(AILOG_KEY, JSON.stringify(list))
     notify()
   } catch {

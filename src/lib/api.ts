@@ -215,6 +215,64 @@ function settle(
   })
 }
 
+/* ============================================================
+   失败路径的归一（全是给人读的）
+   ------------------------------------------------------------
+   上游回来的失败形状千奇百怪：JSON 里一句 `error.message`、nginx 的整页
+   HTML、一段纯文本、空包、连接直接断。原样塞进界面就是
+   「推演中断：Failed to fetch」那样 —— 看得见，读不懂。
+   这里只做两件事：① 状态码翻成人话，正文只留能读的那一截（HTML 去标签、
+   压空白、截断）；② fetch 那一层的网络异常换一句有出路的说法。
+   注意：**AbortError 一律原样放行** —— 那是操作员按的停止，不是失败。
+   ============================================================ */
+
+/** 这一趟是不是操作员主动中断（调用方按名字认，别把它折成错误） */
+function isAbortError(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as Error).name === 'AbortError'
+}
+
+/** 正文里能读的那一截：JSON 取 error.message；HTML 去标签；纯文本压空白；都截到 120 字 */
+function readableBody(body: string): string {
+  const raw = (body ?? '').trim()
+  if (!raw) return ''
+  try {
+    const j = JSON.parse(raw) as { error?: { message?: unknown } | string; message?: unknown }
+    const m = typeof j.error === 'string' ? j.error : (j.error?.message ?? j.message)
+    if (typeof m === 'string' && m.trim()) return m.trim().slice(0, 120)
+  } catch { /* 不是 JSON —— 往下走纯文本那一路 */ }
+  const text = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  return text.slice(0, 120)
+}
+
+/** 非 2xx 的一句话说明：状态码先说清是哪一类，再附上游自己的那句话 */
+function httpReason(status: number, body: string): string {
+  const hint =
+    status === 401 ? '密钥被拒（未授权）'
+      : status === 403 ? '密钥没有这个模型的权限'
+        : status === 404 ? '接口地址不对（找不到 /chat/completions）'
+          : status === 429 ? '请求太密被限流，稍等再试'
+            : status >= 500 ? '通道自己出错了'
+              : status >= 400 ? '请求被通道拒绝'
+                : '通道返回了异常状态'
+  const detail = readableBody(body)
+  return `HTTP ${status} · ${hint}${detail ? `：${detail}` : ''}`
+}
+
+/** 连不上 / 传到一半断了 —— 换一句有出路的说法。
+    浏览器那几句原文（Failed to fetch / network error / Load failed）一个字也读不出
+    所以然，塞给主人只是噪音；真正有信息量的（比如代理报的那句）才原样附上。 */
+function netReason(e: unknown, what: string): Error {
+  const raw = (e instanceof Error ? e.message : String(e)).trim()
+  const opaque = !raw || /failed to fetch|network ?error|load failed|fetch failed|terminated/i.test(raw)
+  return new Error(`${what}${opaque ? '' : `（${raw}）`} —— 检查网络、接口地址与本地代理后重试`)
+}
+
+/** fetch 那一层：网络异常换成可读说法；中断原样放行 */
+function netErr(e: unknown, what: string): never {
+  if (isAbortError(e)) throw e
+  throw netReason(e, what)
+}
+
 /** 调起一次 OpenAI 兼容的 chat/completions */
 export async function chatCompletion(
   cfg: ApiSettings,
@@ -243,25 +301,30 @@ export async function chatCompletion(
         max_tokens: maxTokens,
         stream: false,
       }),
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      const detail = (() => {
-        try {
-          const j = JSON.parse(body) as { error?: { message?: string } }
-          return j.error?.message ?? ''
-        } catch {
-          return ''
-        }
-      })()
-      throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
-    }
-    const data = (await res.json().catch(() => null)) as {
+    }).catch((e: unknown) => netErr(e, '连不上推演通道'))
+    if (!res.ok) throw new Error(httpReason(res.status, await res.text().catch(() => '')))
+    /* 先读正文再解析：空包与「回了个网页」是两种事，界面上该分得开 */
+    const body = await res.text().catch(() => '')
+    type ChatBody = {
       choices?: {
         message?: { content?: string | null; reasoning_content?: string | null }
         finish_reason?: unknown
       }[]
-    } | null
+    }
+    let data: ChatBody | null = null
+    try {
+      data = body.trim() ? (JSON.parse(body) as ChatBody) : null
+    } catch {
+      data = null
+    }
+    if (!data) {
+      const head = readableBody(body)
+      throw new Error(
+        body.trim()
+          ? `通道的回包不是 JSON（HTTP 200）：${head || '正文无法解析'}`
+          : '通道返回了空包（HTTP 200，正文 0 字节）',
+      )
+    }
     const text = data?.choices?.[0]?.message?.content?.trim() ?? ''
     /* 收尾读数先报出去（正文空不空都报）：空的那一路下面会抛，
        而「为什么空」的答案常常就写在这儿（length = 预算被思考吃光了）。 */
@@ -359,28 +422,20 @@ async function streamBody(
       max_tokens: maxTokens,
       stream: true,
     }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    const detail = (() => {
-      try {
-        const j = JSON.parse(body) as { error?: { message?: string } }
-        return j.error?.message ?? ''
-      } catch {
-        return ''
-      }
-    })()
-    throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
-  }
+  }).catch((e: unknown) => netErr(e, '连不上推演通道'))
+  if (!res.ok) throw new Error(httpReason(res.status, await res.text().catch(() => '')))
   if (!res.body) throw new Error('当前环境不支持流式读取')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   const out: StreamResult = { text: '' }
   let buf = ''
+  /** 有没有真的收到过 SSE 事件行 —— 没有就是「回了 200，但不是流」 */
+  let sawEvent = false
 
   const handleLine = (rawLine: string) => {
     const line = rawLine.trim()
     if (!line.startsWith('data:')) return
+    sawEvent = true
     const payload = line.slice(5).trim()
     if (payload === '[DONE]') return true
     let j: { model?: unknown; choices?: Array<{ delta?: { content?: unknown; reasoning_content?: unknown; refusal?: unknown }; finish_reason?: unknown; refusal?: unknown }> }
@@ -410,7 +465,12 @@ async function streamBody(
   }
 
   for (;;) {
-    const { done, value } = await reader.read()
+    /* 流读到一半断掉（网关超时、代理掐线、断网）抛的是 TypeError，
+       而这里只认 AbortError 是「操作员按的停止」；别的都换成一句可读的话，
+       好让上层把已经收到的半段正文保住、把原因说清楚。 */
+    const { done, value } = await reader
+      .read()
+      .catch((e: unknown) => netErr(e, '流式回包中途断开'))
     if (done) break
     buf += decoder.decode(value, { stream: true })
     let nl: number
@@ -421,6 +481,12 @@ async function streamBody(
     }
   }
   if (buf.trim()) handleLine(buf)
+  /* 一条 data: 都没收到 = 回的是 200 却不是流（中继把 stream:true 吞了、
+     塞回来一个整包 JSON 或一张网页）。这跟「流发完但正文为空」是两种事，
+     对应的出路也不同（关掉流式再试），所以在这儿分开报。 */
+  if (!sawEvent) {
+    throw new Error('通道没有回可读的流式内容（HTTP 200，但正文里一条 data: 都没有）：多半是这个中继不支持 stream，可在终端设置里关掉该通道的「流式生成」后重试')
+  }
   return out
 }
 
@@ -434,18 +500,8 @@ export async function listModels(cfg: ApiSettings, opts?: { signal?: AbortSignal
   const headers: Record<string, string> = {}
   if (cfg.apiKey.trim()) headers.Authorization = `Bearer ${cfg.apiKey.trim()}`
   const res = await fetch(`${base}/models`, { method: 'GET', headers, signal: opts?.signal })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    const detail = (() => {
-      try {
-        const j = JSON.parse(body) as { error?: { message?: string } }
-        return j.error?.message ?? ''
-      } catch {
-        return ''
-      }
-    })()
-    throw new Error(`HTTP ${res.status}${detail ? ` · ${detail}` : body ? ` · ${body.slice(0, 200)}` : ''}`)
-  }
+    .catch((e: unknown) => netErr(e, '连不上推演通道的模型列表'))
+  if (!res.ok) throw new Error(httpReason(res.status, await res.text().catch(() => '')))
   const data = (await res.json().catch(() => null)) as { data?: { id?: unknown }[] } | null
   const ids = (data?.data ?? [])
     .map((m) => m.id)
