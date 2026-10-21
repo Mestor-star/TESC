@@ -23,7 +23,7 @@
    ============================================================ */
 
 import { personOf } from '../data/castmeta'
-import { LEVEL_BASE_COST, LEVEL_RATE, LEVEL_STEP_PCT } from './battle/store'
+import { LEVEL_BASE_COST, LEVEL_LINEAR_LEVELS, LEVEL_TAIL_RATE, LEVEL_STEP_PCT } from './battle/store'
 
 /** 气泡挂在锚点的哪一侧 */
 export type GuideSide = 'top' | 'bottom' | 'left' | 'right'
@@ -956,7 +956,7 @@ const SHOP: GuideTour = {
         '剧情里的终末 Stage 是那个人命里带来的东西，按原文读数记在档案上，谁也不能改。',
         '这一栏记的是另一回事。',
         `终端替在册者记的常驻强化评级 —— 每升一级，本人的五轴与生命整体上抬 ${LEVEL_STEP_PCT}%，不封顶。`,
-        `价往上翻：第一级 ${LEVEL_BASE_COST} 贡献点，之后每一级都在上一级的价上乘 ${LEVEL_RATE}。`,
+        `价往上翻：第一级 ${LEVEL_BASE_COST} 贡献点，前 ${LEVEL_LINEAR_LEVELS} 级每级加一点，之后每一级都按 ${LEVEL_TAIL_RATE} 倍往上走。`,
         '所以先给主力升，别平摊。',
         '平摊是给贡献点多得没处放的人准备的。',
         say('termi', '「……听见了就好。」'),

@@ -54,6 +54,68 @@ export const ITEMS: ItemDef[] = [
     price: 2250,
     effect: { heal: 0.6, cleanse: true },
   },
+  /* ————— 2026-09-21 扩编：4 种 → 10 种，补的是四个空着的战术格 —————
+     原有四样（口粮 / 镇静剂 / 稳定剂 / 残液）一件没动 —— 语义、数值、价都照旧，
+     只在下半张里**另加六样**：护盾 / 缓速 / 破绽（显影、掀壳）/ 战场预读 / 顶层治疗。
+     配发的那四样压在 1250~1875（一件低阶装具的价），柜台那两样 2500 / 3000 ——
+     也就是「买一件装具」与「备一批药」之间真的是同一笔钱在选（见 tuning 的 bagDefault）。
+     每一格的机制都**走引擎既有的效果键**（shield / slow / mark / breakGuard /
+     guardClear / accUp / evade / heal），没有一处新开引擎分支 —— 道具这一路本来就落
+     applyEffect，加一格不需要碰 engine。 */
+  {
+    // 护盾格：一次性箔膜。效果键 shield 与「反现实护板」那件装具同源，只是不占装备位
+    id: 'wardfilm',
+    name: '反现实护膜',
+    desc: '观测科配发的一次性箔膜。展开后几拍里，打上来的东西会先被压回薄薄一层现实。',
+    target: 'allyAll',
+    price: 1500,
+    effect: { shield: 0.3 },
+  },
+  {
+    // 缓速格：把目标那一片的现实密度压厚 → 充能慢下来（slow 走的是敌向那一圈）
+    id: 'settler',
+    name: '惰性沉降剂',
+    desc: '打碎了撒在目标脚下。那一片的现实密度变厚，它的动作跟着沉下去。',
+    target: 'enemyOne',
+    price: 1250,
+    effect: { slow: 0.4 },
+  },
+  {
+    // 破防 · 显影：借审问目镜那一款，把破绽钉在视野里并当场削掉两点壳
+    id: 'revealer',
+    name: '破绽显影弹',
+    desc: '审问目镜的同源装药。打上去，对方的破绽会自己浮出来，壳也跟着掉一层。',
+    target: 'enemyOne',
+    price: 1875,
+    effect: { mark: 0.3, breakGuard: 2 },
+  },
+  {
+    // 情报格：把观测科的战场记录发给全队 —— 命中与闪避一起抬（照着它记下的动作打）
+    id: 'record',
+    name: '观测记录 · 战场预读',
+    desc: '观测科这一轮的战场记录，压成一小段。丢给全队：照着它记下的动作打，就打得中，也躲得开。',
+    target: 'allyAll',
+    price: 1750,
+    effect: { accUp: 0.3, evade: 0.1 },
+  },
+  {
+    // 破防 · 掀壳：护盾一次清到零、这一整段不许重凝（与「破绽尽碎」同一条引擎路）
+    id: 'breach',
+    name: '破片装药',
+    desc: '整块壳一起掀掉：护盾清零，且这一整段不许重凝。只卖不配发 —— 它是柜台上的货。',
+    target: 'enemyOne',
+    price: 2500,
+    effect: { guardClear: true, mark: 0.15 },
+  },
+  {
+    // 顶层治疗：没兑过残渣的一管，全队回一大截并洗掉负面
+    id: 'soulstock',
+    name: '灵魂流动体 · 原液',
+    desc: '没有兑过残渣的一管原液。从魂的底子上把整队拉回来 —— 只卖不配发。',
+    target: 'allyAll',
+    price: 3000,
+    effect: { heal: 0.8, cleanse: true },
+  },
 ]
 
 export const ITEM_OF: Record<string, ItemDef> = Object.fromEntries(ITEMS.map((i) => [i.id, i]))
@@ -83,7 +145,7 @@ export const GEARS: GearDef[] = [
     sub: 'OBSERVER SCOPE',
     desc: '委员会观测科的制式目镜。看得清，就打得准。',
     mods: { 破坏力: 6 },
-    price: 1500,
+    price: 1250,
     rank: 1,
   },
   {
@@ -92,7 +154,7 @@ export const GEARS: GearDef[] = [
     sub: 'WARD PLATE',
     desc: '从被压制的反现实实体身上剥下的板片，重新铆成护胸。沉，但顶用。',
     mods: { 物理抗性: 12, shield: 0.06 },
-    price: 2250,
+    price: 1875,
     rank: 1,
   },
   {
@@ -101,7 +163,7 @@ export const GEARS: GearDef[] = [
     sub: 'BOOSTER RIG',
     desc: '装在小腿外侧的干涉装置。它不管你怎么走，只负责让你更快到。',
     mods: { spd: 0.18, 敏捷度: 4 },
-    price: 2750,
+    price: 3125,
     rank: 2,
   },
   {
@@ -110,7 +172,7 @@ export const GEARS: GearDef[] = [
     sub: 'SCRUBBER',
     desc: '异端审问室的随身滤芯。把灌进肺里的杂音滤掉。',
     mods: { 意志力: 8 },
-    price: 3250,
+    price: 3750,
     rank: 2,
     skill: {
       name: '滤净',
@@ -125,7 +187,7 @@ export const GEARS: GearDef[] = [
     sub: 'ACCUMULATOR PART',
     desc: '灵魂蓄积器TM 被砸碎后的核心残件。委员会回收了它，装了条背带。',
     mods: { 意志力: 10, atk: 0.1 },
-    price: 3750,
+    price: 4375,
     rank: 2,
   },
   {
@@ -134,7 +196,7 @@ export const GEARS: GearDef[] = [
     sub: 'INQUISITOR VISOR',
     desc: '异端审问室用的那一款。戴上它，对方的破绽会自己浮出来。',
     mods: { 反现实亲和: 12 },
-    price: 4250,
+    price: 5000,
     rank: 2,
     skill: {
       name: '标记破绽',
@@ -149,7 +211,7 @@ export const GEARS: GearDef[] = [
     sub: 'GLIDE BOOTS',
     desc: '鞋底嵌了一层反现实薄膜。踩下去时，地面会先让开。',
     mods: { evade: 0.15, 敏捷度: 6 },
-    price: 4750,
+    price: 6375,
     rank: 3,
     // 脏器公寓那一案的现场缴获被复刻成了制式件：正史走到那里才配发
     unlockMain: 'v1-5',
@@ -161,7 +223,7 @@ export const GEARS: GearDef[] = [
     sub: 'FIELD FABRICATOR',
     desc: '境界领域商会流出的小型打印机，比小柴琳那台差得远，但也能立起一堵墙。',
     mods: { 反现实亲和: 8 },
-    price: 7000,
+    price: 7875,
     rank: 3,
     // 商会的制品：天空要塞一役之后，委员会才拿到可供拆解的同源件
     unlockMain: 'v2-8',
@@ -179,7 +241,7 @@ export const GEARS: GearDef[] = [
     sub: 'FEATHER FRAGMENT',
     desc: '不知从何处剥落的一小片翼羽，被仔细地包在树脂里。它不是天使给的——它只是从那儿掉下来的。',
     mods: { 破坏力: 12, atk: 0.22, 反现实亲和: 6 },
-    price: 7750,
+    price: 9375,
     rank: 3,
     // 斩击的天使落下的那一片：直到戴上 a Session. 才有人看懂它是什么
     unlockMain: 'v4-5',

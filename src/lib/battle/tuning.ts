@@ -175,7 +175,14 @@ export const TUNING = {
           于是装具相对变贵：从前最贵那一件约两场中期主线，现在约五场。
      两刀合起来到的位置：一场中期主线 3750 → 1575，第一级 3000 = 打两场。 */
   coinPerStage: 75,        // 阶段基数：阶段 × 此值（6 × 12.5）
-  coinMainlineMul: 2,      // 剧情任务（正史复盘）按基数加倍
+  /* 2 → 3（2026-09-21，与 store 的分段曲线同一轮）：曲线在前三级便宜、后三级陡，
+     总账上「升满」要的币一分没少（1670452 对 1643853），所以收入这一头必须跟着抬一档，
+     否则省下来的那一段只够抵消涨价、玩家体感仍是纯 grind。
+     3 是 mech 那条手感守卫允许的上限附近的数：中期主线一场 1575 → 2138，
+     而第一级仍是 3000，于是「一场买不到、两场买得到」那句话照旧成立（3000 ∈ (2138, 4276]）。
+     ⚠️ coinPerStage / coinMainlineBase 两个数被 mech 与 COIN_SCALE 栅格钉死，不能动；
+     收入要调就调这一个倍率（或 coinWinBonus），它才是那条守卫留出来的旋钮。 */
+  coinMainlineMul: 3,      // 剧情任务（正史复盘）按基数加倍（2026-09-21 由 2 抬到 3）
   coinMainlineBase: 300,   // 剧情任务另加的固定份量 —— 一份正史换一笔点数（24 × 12.5）
   coinPatrolMul: 0.35,     // 巡逻任务只是维持观测，给得少
   /* 胜利点数加成 —— **每场都算**，与掉不掉装具无关（装具是 lootBase 那一支单独掷的）。
@@ -186,7 +193,14 @@ export const TUNING = {
   lootPerStage: 0.045,   // 阶段每高一级的追加概率
   lootCap: 0.85,         // 再高也不会必出
   reviveHp: 0.35,        // 复活类道具拉回时的生命比例
-  bagDefault: { ration: 3, sedative: 2, stabilizer: 2, soulcell: 1 } as Record<string, number>,
+  /* 初始补给池（2026-09-21 由 4 种扩到 8 种；原有那四样的件数**一件没减**）。
+     新增的四样是补那一格缺口：护盾、缓速、破绽显影、战场预读。
+     「破片装药」「灵魂流动体 · 原液」两样刻意不给初始配给 —— 那两样是柜台上的货，
+     要拿点数换（见 gear 的 ITEMS 价位表）。 */
+  bagDefault: {
+    ration: 3, sedative: 2, stabilizer: 2, soulcell: 1,
+    wardfilm: 1, settler: 1, revealer: 1, record: 1,
+  } as Record<string, number>,
 
   /* —— 节拍（各人自带那一份；出手从本人这里扣，防御回一点，但不多） ——
      与下面那条「小队出击体力」是两回事：这一份一人一条，那一池整队共用。 */

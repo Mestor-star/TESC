@@ -35,6 +35,7 @@ import { Portrait, useCharImg } from '../components/Portrait'
 import { CgSlot } from '../components/CgSlot'
 import { intimArtDir } from '../lib/rendezvous'
 import { inkOf } from '../lib/hue'
+import { researchBonus, useResearch } from '../lib/research'
 
 import css from './Archive.module.css'
 
@@ -257,11 +258,58 @@ function appearanceOf(id: string): string[] {
   return sec ? [...sec.lines] : []
 }
 
+/**
+ * 科研给这一轴的那一份（比例）—— 只有两条轴吃得到：
+ * 物理抗性 与 反现实亲和（见 lib/battle/derive 的 researchAxes）。
+ * 攻击与生命不在五轴上，摆在下面那一行 `ResearchNote` 里。
+ */
+function researchPctOf(k: string): number {
+  const rb = researchBonus()
+  if (k === '物理抗性') return rb.resPhysical
+  if (k === '反现实亲和') return rb.aff
+  return 0
+}
+
+/**
+ * 研究室那一行（摆在五轴读数底下）。
+ *
+ * 读的是 `lib/research.ts` 的 `researchBonus()` —— 与战斗那一侧**同一份**：
+ * derive 把我方单位的轴 / 生命 / 攻击按这份比例推上去，档案这一行只是把它念出来。
+ * 所以「档案上写着 +16.5%」与「下场之后那一手确实重了一截」是同一条账，不会各说各的。
+ * 没有成果时也照样摆一行 —— 得让人知道还有这个去处（入口在武装图鉴里，不另开导航）。
+ */
+function ResearchNote() {
+  useResearch()
+  const rb = researchBonus()
+  const parts = [
+    { k: '攻击', v: rb.atk },
+    { k: '生命', v: rb.hp },
+    { k: '物理抗性', v: rb.resPhysical },
+    { k: '反现实亲和', v: rb.aff },
+  ].filter((x) => x.v > 0)
+  return (
+    <div
+      className="tiny muted"
+      style={{ marginTop: 8, lineHeight: 1.7 }}
+      data-research-note={parts.length ? 'on' : 'off'}
+    >
+      研究室 · 全队加成：
+      {parts.length
+        ? parts.map((x) => `${x.k} +${(x.v * 100).toFixed(1)}%`).join(' · ')
+        : '尚无成果'}
+      {parts.length
+        ? '（乘在我方战斗面板上；敌方不吃这一份）'
+        : '（去「武装图鉴 · 研究室」投入研究点）'}
+    </div>
+  )
+}
+
 function Meters({ row }: { row: Row }) {
   return (
     <>
       {AXIS_ORDER.map((k, i) => {
         const v = row.axis[i] ?? 0
+        const rp = researchPctOf(k)
         const lim = row.axisLimit[i] ?? null
         const vW = axisW(v)
         const limW = lim === null ? vW : Math.max(vW, axisW(lim))
@@ -275,7 +323,13 @@ function Meters({ row }: { row: Row }) {
         return (
           <div key={k} className={css.stat}>
             <small>{k}</small>
-            <div className="meter" title={showLimit ? `常态 ${axisText(v)} · 极限 ${axisText(lim)}` : undefined}>
+            <div
+              className="meter"
+              title={[
+                showLimit ? `常态 ${axisText(v)} · 极限 ${axisText(lim)}` : '',
+                rp > 0 ? `研究室：这一轴对全队 +${(rp * 100).toFixed(1)}%（下场时乘在面板上）` : '',
+              ].filter(Boolean).join(' · ') || undefined}
+            >
               {lim !== null && limW > vW ? (
                 <div
                   className={`meter__fill ${limInf ? css.infFill : css.limitFill}`}
@@ -897,6 +951,12 @@ export function Archive() {
 
   const rows = useMemo(buildRows, [])
   const focus = rows.find((r) => r.id === openId) ?? null
+
+  /* 研究室那一份存档：订阅它，研成一件 / 花掉一点，这一页的读数就立刻跟着变。
+     合计 = 四条比例相加（见下面那枚 chip 的注释）。 */
+  const researchSave = useResearch()
+  const rbNow = researchBonus()
+  const researchSum = rbNow.atk + rbNow.hp + rbNow.resPhysical + rbNow.aff
   /**
    * 这一张卡翻不翻得过去：只要**有底档**（女角色）就翻得开 —— 私密档案不封存。
    * 门槛在翻之前就判 —— 翻到一半被人拦下会剩一张空白的背面。
@@ -1079,6 +1139,16 @@ export function Archive() {
           </div>
           <div className="vhead__right">
             <span className="chip chip--warn">五轴以 RANK 与正文为参照</span>
+            {/* 研究室：全队加成合计（四条比例相加 —— 它是个「一共加了多少」的读数，
+                不是可以互相折算的同一把尺；分项在每人的档案里） */}
+            <span
+              className="chip"
+              data-research-chip={researchSum}
+              data-research-points={researchSave.points}
+              title="研究室：全队加成合计（攻击 / 生命 / 物理抗性 / 反现实亲和四条比例相加）"
+            >
+              科研 · {researchSum > 0 ? `全队加成合计 +${(researchSum * 100).toFixed(1)}%` : '尚未开研'}
+            </span>
             <span className="chip">全员 24 · 含羁绊</span>
             <span className="chip">入学后开放 · 逐人解封</span>
           </div>
@@ -1460,6 +1530,7 @@ export function Archive() {
                 {focus.axis.includes('∞') || focus.axisLimit.includes('∞') ? (
                   <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的『∞』读数无法测量——已超出委员会可评定的量程。</div>
                 ) : null}
+                <ResearchNote />
               </div>
 
               <div className={css.dialogSection}>

@@ -19,6 +19,8 @@ import { opBuiltinOf, opPeriodAtProgress } from '../operator-arc'
 import type { OpAbility, OpPeriod } from '../operator-arc'
 import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
+import { researchBonus } from '../research'
+import type { ResearchBonus } from '../research'
 import { ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
@@ -239,6 +241,33 @@ function gearAxes(gearId: string | undefined, axes: AxisSheet): AxisSheet {
   return out
 }
 
+/* ---------- 科研（研究室）→ 我方单位 ---------- */
+
+/**
+ * 全队科研加成落在轴上的那两笔。
+ *
+ * 只认两条轴：物理抗性（一头减伤、一头经 hpPerResist 抬生命）与反现实亲和
+ * （亲和系那一手的出力）。**攻击那一笔不在这里** —— 它加在 `gearAtk` 上，
+ * 因为引擎的 `atkMulOf` 本来就是「1 + 增益 + 装具 + 被动」那条加法链，
+ * 科研与装具是同一层的东西，不该各走一条路。
+ *
+ * ⚠️ **全为 0 时原样返回同一个对象** —— 没有科研时逐字节等于改动前：
+ * 不复制、不乘 1、不重新取整（`gearAxes` 出来的值可能是小数，取整就会动数值）。
+ * ⚠️ **只给我方**：敌阵走 `buildFoe`，那里一处都不读科研（见 tuning 的敌方曲线注释）。
+ */
+function researchAxes(axes: AxisSheet, rb: ResearchBonus): AxisSheet {
+  if (!rb.resPhysical && !rb.aff) return axes
+  const out = { ...axes }
+  if (rb.resPhysical) out.物理抗性 = out.物理抗性 * (1 + rb.resPhysical)
+  if (rb.aff) out.反现实亲和 = out.反现实亲和 * (1 + rb.aff)
+  return out
+}
+
+/** 科研对最大生命的那一笔（同一口径：0 时原样返回，连乘 1 都不做） */
+function researchHp(base: number, rb: ResearchBonus): number {
+  return rb.hp ? base * (1 + rb.hp) : base
+}
+
 /* ---------- 武装 → 技能 ---------- */
 
 const FX_OF_KIND: Record<string, FxKind> = {
@@ -386,12 +415,15 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     // 自带装备：某几段时期他身上本来就带着一件东西（如露娜的丝线），
     // 玩家另外装配的优先——那是他自己买的，比身上的旧物更贴手。
     const gid = gearId ?? opBuiltinOf(per, progress)
-    const axes = gearAxes(gid, axisSheetOf(id, progress, growthPct))
+    // 科研：全队加成先生成一份，轴 / 生命 / 攻击三处共用（见文件头的 researchAxes）
+    const rb = researchBonus()
+    const axes = researchAxes(gearAxes(gid, axisSheetOf(id, progress, growthPct)), rb)
     const gear = gid ? GEAR_OF[gid] : undefined
-    const hpMax = Math.round(
+    const hpMax = Math.round(researchHp(
       (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
       * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
-    )
+      rb,
+    ))
     const skills = opSkillsOf(per, progress)
     const gs = gid ? gearSkillOf(gid, id) : null
     // 装具技的 id 不掺角色：与名册那边同一件装通用一枚图标、一份冷却
@@ -449,19 +481,23 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       // 弹痕持有者才蓄印记：主角身上是不是弹痕，看他这一段时期拿的是什么
       scar: /弹痕/.test(per.armSub),
       gear: gid,
-      gearAtk: gear?.mods.atk ?? 0,
+      // 科研的攻击那一笔与装具同一条加法链（见 atkMulOf）—— 0 时加的是 0，数值不动
+      gearAtk: (gear?.mods.atk ?? 0) + rb.atk,
       gearSpd: gear?.mods.spd ?? 0,
       gearBasic: (gear?.mods.basicMul ?? 0) + (per.passive?.basicMul ?? 0),
       tags: ['委员会'],
       note: `${per.vol.split(' · ')[0]} · ${per.arm}`,
     }
   }
-  const axes = gearAxes(gearId, axisSheetOf(id, progress, growthPct))
+  // 科研：同主角那一支（全为 0 时这三处一个字节都不动）
+  const rb = researchBonus()
+  const axes = researchAxes(gearAxes(gearId, axisSheetOf(id, progress, growthPct)), rb)
   const gear = gearId ? GEAR_OF[gearId] : undefined
-  const hpMax = Math.round(
+  const hpMax = Math.round(researchHp(
     (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
     * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
-  )
+    rb,
+  ))
   const name = p?.name ?? id
   const role = ROSTER[id]
   const arm = armOf(id)
@@ -517,7 +553,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     cds: {},
     scar: isScar(id),
     gear: gearId,
-    gearAtk: gear?.mods.atk ?? 0,
+    // 科研的攻击那一笔（与上面那一支同一条口径）
+    gearAtk: (gear?.mods.atk ?? 0) + rb.atk,
     gearSpd: gear?.mods.spd ?? 0,
     gearBasic: (gear?.mods.basicMul ?? 0) + (role?.passive?.basicMul ?? 0),
     tags: ['委员会'],

@@ -189,12 +189,50 @@ const LEVEL_KEY = 'level'
 export const LEVEL_STEP_PCT = 10
 /** 第 0 级（→ 第 1 级）的价格 —— 整支货币 ×12.5 之后从 80 抬到 1000，2026-09-16 再抬到 3000 */
 export const LEVEL_BASE_COST = 3000
-/** 每一级在上一级价格上乘的倍率 —— 就是这条曲线的「指数」（2026-09-16 从 1.6 收到 1.85） */
+/**
+ * 曲线的「指数」基准 —— **2026-09-21 起它不再是整条曲线的倍率**，只作为
+ * 「当年那条纯指数曲线」的存档值与文案基准（军需处那段引导文案读的就是它）。
+ * 真实价格一律走下面的 levelCostOf()：前三级线性、之后按 LEVEL_TAIL_RATE 指数。
+ * 保留这个名字与这个数，是因为 mech 与引导文案都钉着它（见 scripts/mech/run.ts
+ * 的「主人定的那条曲线就是这几笔」一条）；改这里的数等于同时改两条守卫。
+ */
 export const LEVEL_RATE = 1.85
+/**
+ * 前几级走**线性**：第 0→1 级 LEVEL_BASE_COST，之后每级加 LEVEL_LINEAR_STEP。
+ * 这一段是「前期便宜」——旧版纯指数曲线在第三级就跳到 10268（≈6.5 场中期主线），
+ * 新手把前两级买完就被挡住了；线性段把 1→2、2→3 压在 3600 / 4200。
+ */
+export const LEVEL_LINEAR_LEVELS = 3
+export const LEVEL_LINEAR_STEP = 600
+/**
+ * 第 LEVEL_LINEAR_LEVELS 级起改走指数，倍率比旧版的 1.85 更陡（2.3）。
+ * 这一段是「后期陡」——第 8 级以后每一级都是一次长期目标，
+ * 「再升一级」与「买一件装具 + 一批补给」之间必须真的二选一。
+ *
+ * 前后对照（逐级，括注旧版 3000×1.85 的指数；两列都由脚本现算，不是估的）：
+ *   0→1  3000（3000）     1→2  3600（5550）      2→3  4200（10268）
+ *   3→4  9660（18995）    4→5  22218（35141）    5→6  51101（65010）
+ *   6→7  117533（120268） 7→8  270326（222497）  8→9  621751（411619）
+ *   9→10 1430027（761495） 10→11 3289061（1408765）
+ * 累计：到第 3 级 10800（旧 18818，便宜 43%）；到第 5 级 42678（旧 72954，便宜 42%）；
+ * 到第 6 级 93779（旧 137964，68%）；到第 8 级 481638（旧 480729，就此拉平）；
+ * 到第 9 级 1103389（旧 892348，+24%）；到第 10 级 2533416（旧 1653843，+53%）。
+ * 也就是说**前中期省下来的钱，全在第 8 级之后还回去** —— 这正是主人要的那条台阶。
+ * 单级对价也落在这一步上：第 3→4 级 9660 ≈ 最贵那件装具（9375），第 4→5 级 22218 ≈ 两件半，
+ * 于是「再升一级」与「换一件装 + 备一批药」真的是同一笔钱在挑 —— 这就是要的那个选择。
+ */
+export const LEVEL_TAIL_RATE = 2.3
 
-/** 从 n 级升到 n+1 级要多少终末点数（n 从 0 起） */
+/**
+ * 从 n 级升到 n+1 级要多少终末点数（n 从 0 起）。
+ * 分段：前 LEVEL_LINEAR_LEVELS 级线性（便宜、可预期），之后指数（陡）。
+ * 两段的接缝落在第 LEVEL_LINEAR_LEVELS - 1 级那一格的价上，所以曲线连续、没有断崖。
+ */
 export function levelCostOf(n: number): number {
-  return Math.round(LEVEL_BASE_COST * Math.pow(LEVEL_RATE, Math.max(0, n)))
+  const k = Math.max(0, Math.floor(n))
+  if (k < LEVEL_LINEAR_LEVELS) return LEVEL_BASE_COST + k * LEVEL_LINEAR_STEP
+  const seam = LEVEL_BASE_COST + (LEVEL_LINEAR_LEVELS - 1) * LEVEL_LINEAR_STEP
+  return Math.round(seam * Math.pow(LEVEL_TAIL_RATE, k - (LEVEL_LINEAR_LEVELS - 1)))
 }
 
 export async function readLevels(): Promise<Record<string, number>> {

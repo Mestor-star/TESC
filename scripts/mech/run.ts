@@ -127,7 +127,7 @@ import {
 } from '../../src/lib/battle/derive'
 import { AXIS_RESCALE, BATTLE_AXIS } from '../../src/lib/battle/battle-axis'
 import {
-  effectiveGrowth, LEVEL_BASE_COST, LEVEL_RATE, LEVEL_STEP_PCT, levelCostOf,
+  effectiveGrowth, LEVEL_BASE_COST, LEVEL_RATE, LEVEL_TAIL_RATE, LEVEL_LINEAR_LEVELS, LEVEL_STEP_PCT, levelCostOf,
 } from '../../src/lib/battle/store'
 import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
@@ -4830,13 +4830,16 @@ export function run(): MechReport {
       s3 === null, s3?.id ?? '（没讲）')
 
     /* 终末等级那两句是**照常数算的**，不是抄死在文案里 —— 主人哪天再调一次曲线，
-       （1000 / ×1.6 / +10%）文案跟着走。抄死的话，讲的和柜台里卖的就是两回事。 */
+       文案跟着走。抄死的话，讲的和柜台里卖的就是两回事。
+       2026-10-21 起曲线改成分段：前 LEVEL_LINEAR_LEVELS 级每级加一点，之后按 LEVEL_TAIL_RATE
+       翻倍（LEVEL_RATE 只剩存档里的旧口径，不再决定文案）—— 所以这条断言也跟着看新的三个数。 */
     const lvStep = shopTour?.steps.find((st) => (st.at ?? '').includes('终末等级'))
     const lvText = (lvStep?.lines ?? []).map(lineText).join('\n')
     ok('梅芙引导：军需处那一段讲的价与加成，是从 store 的常数现算的（不是抄死的数）',
-      !!lvStep && lvText.includes(String(LEVEL_BASE_COST)) && lvText.includes(String(LEVEL_RATE))
+      !!lvStep && lvText.includes(String(LEVEL_BASE_COST))
+      && lvText.includes(`前 ${LEVEL_LINEAR_LEVELS} 级`) && lvText.includes(String(LEVEL_TAIL_RATE))
       && lvText.includes(`${LEVEL_STEP_PCT}%`),
-      `第一级 ${LEVEL_BASE_COST} · 每级 ×${LEVEL_RATE} · 每级 +${LEVEL_STEP_PCT}% 都在文案里`)
+      `第一级 ${LEVEL_BASE_COST} · 前 ${LEVEL_LINEAR_LEVELS} 级每级加一点 · 之后 ×${LEVEL_TAIL_RATE} · 每级 +${LEVEL_STEP_PCT}% 都在文案里`)
 
     /* 锚点核账：军需处那一段的每一步，属性都得在 Missions.tsx 里真的挂着 */
     const missionSrc = readFileSync('src/views/Missions.tsx', 'utf8')

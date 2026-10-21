@@ -429,6 +429,9 @@ const SMS_UNREAD_KEY = 'zts-sms-unread:v1'
 const SMS_TASKS_KEY = 'zts-sms-tasks:v1'
 /** 主动来信节拍（lib/smsauto.ts 的 AUTO_KEY）—— 同上，字面值以那一行为准 */
 const SMS_AUTO_KEY = 'zts-sms-auto:v1'
+/** 科研树已完成节点（lib/research.ts 的 KEY）—— 研究点本身按来源现算，但「已研成」
+ *  是这一档的成果，读档/重置必须一起清；否则下一档会带着上一档的科研加成开局。 */
+const RESEARCH_KEY = 'zts-research:v1'
 
 /** 「这一档的运行态」键清单 —— 读档与重置共用（见上）。
  *  ⚠️ 只覆盖 localStorage。IndexedDB 'zts-battle' 走 resetBattleToInitial()，
@@ -440,6 +443,7 @@ export const RUN_STATE_KEYS: readonly string[] = [
   SMS_UNREAD_KEY,
   SMS_TASKS_KEY,
   SMS_AUTO_KEY,
+  RESEARCH_KEY,
 ]
 
 /** 逐键清；键不在、localStorage 抛（隐私模式 / 配额）都不炸 —— 幂等且容错 */
