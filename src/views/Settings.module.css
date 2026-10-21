@@ -18,15 +18,20 @@
 .fieldRow { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
 .fieldRow > span {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.16em;
   color: var(--ink-mute);
   text-transform: uppercase;
 }
-.fieldRow .sub { font-family: inherit; font-size: 11.5px; letter-spacing: 0.02em; color: var(--ink-faint); text-transform: none; }
+.fieldRow .sub { font-family: inherit; font-size: 12px; letter-spacing: 0.02em; color: var(--ink-faint); text-transform: none; }
 
 .rowInline { display: flex; gap: 10px; align-items: center; }
 .rowInline .field { flex: 1; }
+/* 勾选框那一行的标签（Settings.tsx:767 那枚 `<label className={css.ck}>` 包着
+   「流式生成 STREAM」的 checkbox）。这条类**原来在这个模块里没写** —— 另两处
+   （LorebookModal.module.css:304 / PresetManager.module.css:162）都有，就这儿漏了，
+   于是那一行的标签鼠标扫过去不变手型。补上，一处不多写。 */
+.ck { cursor: var(--cursor-point); }
 .modelRow { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
 .modelRow .field { width: 100%; }
 .eyeBtn {
@@ -65,7 +70,7 @@
   background: var(--bg-2);
   padding: 12px 14px;
   border-radius: var(--radius-sm);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.85;
   color: var(--ink-mute);
 }
@@ -107,7 +112,7 @@
 .importInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .importInfo b { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
 .importInfo b svg { color: var(--ink-mute); flex: 0 0 auto; }
-.importInfo span { font-size: 11.5px; color: var(--ink-faint); line-height: 1.6; }
+.importInfo span { font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
 .importAct { flex: 0 0 auto; }
 .confirmNote {
   border-left: 2px solid var(--red);
@@ -158,8 +163,8 @@
   background: var(--amber);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -174,7 +179,7 @@
   background: var(--bg-2);
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   line-height: 1.5;
   vertical-align: middle;
@@ -186,7 +191,7 @@
    而金边必须跟着「生效」走 —— 否则列表上亮着的那一行和实际生效的那一份能对不上。 */
 .schemeRow.isOn {
   border-color: var(--amber);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 12%, transparent), color-mix(in srgb, var(--amber) 3%, transparent) 55%, var(--bg-1));
+  background: color-mix(in srgb, var(--amber) 8%, var(--bg-1));
   /* 只留那条 `inset` 硬环（零模糊的一圈金线），外圈的柔光随方贴纸稿撤走。 */
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 38%, transparent);
   position: relative;
@@ -199,12 +204,12 @@
   bottom: 0;
   width: 3px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, var(--amber), var(--amber-deep));
+  background: var(--amber);
 }
 .onMark {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   color: var(--amber-deep);
   border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent);
@@ -272,7 +277,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   letter-spacing: 0.02em;
 }
 .logWarnIcon { color: var(--red-deep); flex: none; }
@@ -288,19 +293,19 @@
   display: grid;
   grid-template-columns: 62px 1fr;
   gap: 4px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .logKv span { color: var(--ink-faint); }
-.logKv b { font-weight: 500; color: var(--ink-mute); font-family: var(--font-mono); word-break: break-all; }
-.logBlock { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
-.logBlock > b { color: var(--amber-deep); font-size: 11.5px; letter-spacing: 0.06em; }
+.logKv b { font-weight: 400; color: var(--ink-mute); font-family: var(--font-mono); word-break: break-all; }
+.logBlock { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.logBlock > b { color: var(--amber-deep); font-size: 12px; letter-spacing: 0.06em; }
 .logHits { display: flex; flex-wrap: wrap; gap: 5px; }
 .logHit {
   border: 1px solid var(--line-2);
   background: var(--bg-2);
   border-radius: var(--radius-pill);
   padding: 1px 6px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-mute);
 }
 .logOk { color: var(--jade-deep); }
@@ -327,8 +332,17 @@
   .volGrid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 }
 
-/* 手机档 · 粗指针：那几个方块（音量那枚 42px）与两处可点行（26 / 34px）抬到 44 */
+/* 手机档 · 粗指针：那几个方块（音量那枚 42px）与两处可点行（26 / 34px）抬到 44。
+   滑杆那两条也在这一节 —— tokens.css 全局那一段抬不动它们（见下）。 */
 @media (pointer: coarse) {
   .eyeBtn { min-width: 44px; min-height: 44px; }
   .logHead, .schemeRow { min-height: 44px; }
+  /* 温度与三格音量那四枚滑杆（桌面量到 18 / 16px 高，是全站唯二跌破 24 的控件之一）。
+     ⚠️ **必须写在这个模块里**：上面 `.tempWrap / .vol input[type='range']` 那两条是
+     (0,2,1)，压过 tokens.css 的 `input[type='range']`(0,1,1) —— 写在全局那一段，
+     这两支的高度照旧是 16/18。这里同特异度、后写，说了算。
+     抬的是**整条可抓高度**：轨道与滑块本体不动（那两支是伪元素，由 tokens.css 的
+     粗指针段统一放大），浏览器把轨道居中摆在 40px 的盒子里。 */
+  .tempWrap input[type='range'],
+  .vol input[type='range'] { height: 40px; }
 }

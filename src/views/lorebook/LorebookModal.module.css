@@ -34,19 +34,19 @@
 }
 .kicker {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   color: var(--ink-faint);
   margin-bottom: 3px;
 }
 .title {
-  font-size: 17px;
+  font-size: 16px;
   color: var(--ink);
 }
 .titleInput {
   width: 100%;
-  font-size: 17px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--ink);
   background: transparent;
   border: none;
@@ -102,7 +102,7 @@
   gap: 6px;
   text-align: center;
   color: var(--ink-mute);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.8;
 }
 .empty b { font-size: 14px; color: var(--ink); }
@@ -152,11 +152,11 @@
   flex-direction: column;
   gap: 2px;
 }
-.rowMain b { font-size: 13.5px; color: var(--ink); }
+.rowMain b { font-size: 14px; color: var(--ink); }
 .count {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-mute);
   white-space: nowrap;
 }
@@ -219,7 +219,7 @@
   cursor: var(--cursor-point);
 }
 .entryRow b {
-  font-size: 12.5px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -258,7 +258,7 @@
 
 /* 整本批量开关 + 关闭计数 */
 .bulkSw { display: inline-flex; gap: 4px; margin-left: auto; }
-.offCount { color: var(--amber-deep); font-weight: 700; }
+.offCount { color: var(--amber-deep); font-weight: 600; }
 
 .form {
   overflow: auto;
@@ -273,7 +273,7 @@
   padding: 30px 20px;
   text-align: center;
   color: var(--ink-mute);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.9;
   display: flex;
   flex-direction: column;
@@ -308,7 +308,13 @@
   .entryList { max-height: 220px; border-right: none; border-bottom: 1px solid var(--line); }
 }
 
-/* 手机档 · 粗指针：词条那一行（桌面 28px）抬到 44 —— 整行可点，别只点得中字 */
+/* 手机档 · 粗指针：词条那一行（桌面 28px）抬到 44 —— 整行可点，别只点得中字。
+   同页另两枚小件一并按 tokens.css 那一档收齐：
+     `.iconBtn`（关闭 / 返回列表，桌面 30×30）—— 图标钮**两个方向**都给 40，
+       只给高度它还是竖着一条；
+     `.toggle`（「启用」，桌面 58×27）—— 次级控件给 34。 */
 @media (pointer: coarse) {
   .entryRow { min-height: 44px; }
+  .iconBtn { min-width: 40px; min-height: 40px; }
+  .toggle { min-height: 34px; }
 }

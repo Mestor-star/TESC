@@ -14,7 +14,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
-const URL_ = process.env.ZTS_URL || 'http://127.0.0.1:5174/'
+/* 默认走 localhost 而不是 127.0.0.1：本机 node 把 localhost 解析到 ::1，
+   vite dev 也就只绑在 [::1] 上 —— 写死 127.0.0.1 会连不上（look.mjs 同此）。 */
+const URL_ = process.env.ZTS_URL || 'http://localhost:5174/'
 const VW = Number(process.argv[2] || 390)
 const VH = Number(process.argv[3] || 844)
 const OUT = process.argv[4] || path.join(tmpdir(), 'zts-mobile')
