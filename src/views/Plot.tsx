@@ -14,7 +14,7 @@ import { clampBudget } from '../lib/budget'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
-import { applyDirective, buildDirectorSystem, createRetryGate, directiveHasFx, extractLiveDisplay, parseDirectorReply, replyDisplayText } from '../lib/plot'
+import { TICKS_PER_DAY, applyDirective, buildDirectorSystem, createRetryGate, dayLabel, dayOf, directiveHasFx, extractLiveDisplay, nextTick, parseDirectorReply, replyDisplayText, tickGapFor } from '../lib/plot'
 import { EPISODES, isFreeId, nextEpisodeAfter } from '../lib/freetime'
 import {
   effectiveGrowth, listRecords, readBag, readEquip, readGearBag, readGrowth,
@@ -439,7 +439,7 @@ export function Plot() {
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, flagKeys, completeEvent, reopenEvent,
     records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast, placeOfEvent, setPlace,
-    bumpActs, setRel, relOf,
+    bumpActs, setRel, relOf, advanceTick,
     freeMode, setFreeMode, closeFreeSlot,
     dateRequest, clearDateRequest,
   } = useTerminal()
@@ -856,6 +856,14 @@ export function Plot() {
         setPlace(evId, fx.place)
         push('info', '地点变更', `此刻这一场已挪到：${fx.place}。`, false)
       }
+      /* 叙事时钟：模型**明说了**「过了几天」才走到这儿（`advanceDays` 1~7，见 plot.ts）。
+         一「天」= 2 格（半天），落进 world.tick；段头与右栏当场跟着往前走。
+         没给这一项就一格都不走 —— 时间不会自己走。 */
+      if (fx.advanceDays) {
+        const add = fx.advanceDays * TICKS_PER_DAY
+        advanceTick(add)
+        push('info', '时间推进', `时间推进：${dayLabel({ tick: nextTick(world, add) })} —— 过了 ${fx.advanceDays} 天。`, false)
+      }
       /* 私密档案推进：报一句「动的是哪一位的哪一处」，数本身在档案页看 */
       if (fx.intim.length) {
         const parts = fx.intim
@@ -939,7 +947,7 @@ export function Plot() {
         push('warn', '路线偏离', '本段已偏离原著走向，相关分歧以标记为准。', false)
       }
     },
-    [meetChar, bumpBond, registerEnd, setFlag, flagKeys, setCast, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel, push, freeOf],
+    [meetChar, bumpBond, registerEnd, setFlag, flagKeys, setCast, bumpIntim, bumpAttire, dryAttireAll, bumpActs, setRel, advanceTick, push, freeOf, world],
   )
 
   /**
@@ -1418,6 +1426,21 @@ export function Plot() {
     await pushTurn(focusEv.id, t)
   }
 
+  /**
+   * 收束推进到**下一段**时，时钟自然顺延。
+   *
+   * 判据全在 `tickGapFor`（lib/plot.ts）里：两头都读得出天数就按差值走、只增不减；
+   * 下一段没有时间标（卷 2 以后整段 `day: ''`）就一格都不走 —— 这一条宁可不动，
+   * 也不要凭一段猜出来的数把整条时间线推偏。
+   */
+  const advanceByDayGap = (prev: TimelineEvent, next: TimelineEvent | null | undefined) => {
+    if (!next) return
+    const gap = tickGapFor(prev.day, next.day)
+    if (gap <= 0) return
+    advanceTick(gap)
+    push('info', '时间推进', `时间推进：${dayLabel({ tick: nextTick(world, gap) })} —— 接下一段（${next.day}）。`, false)
+  }
+
   /** 「进入下一事件」（收束栏主按钮）：此刻才写记录并推进到下一事件，随后让导演生成自然衔接开场 */
   const advanceFromConcluded = async () => {
     const ev = focusEv
@@ -1439,6 +1462,8 @@ export function Plot() {
     applyConcluded(null)
     push('decode', '事件收束 · 已写入记录', `${ev.title}（已写入低语者日志）`, false)
     const nextEv = nextEpisodeAfter(ev.id, epDone)
+    // 时钟顺延：下一段的 day 与本段不同时才走（见 advanceByDayGap）
+    advanceByDayGap(ev, nextEv)
     if (BRIDGE_ON_ADVANCE && nextEv && showOnline && ready) {
       const lastUser = [...(logs[ev.id] ?? [])].reverse().find((m) => m.from === 'user')?.text
       skipAutoOpen.current = true // 先按住自动开场，避免抢跑
@@ -1481,6 +1506,7 @@ export function Plot() {
     }
     applyConcluded(null)
     setLastEnded({ id: ev.id, title: ev.title, digest, diverged: !!cur?.diverged, mode: 'manual' })
+    advanceByDayGap(ev, nextEpisodeAfter(ev.id, epDone))
     push('decode', '事件收束 · 人工判定', `${ev.title}（已写入低语者日志）`, false)
   }
 
@@ -1500,7 +1526,22 @@ export function Plot() {
     if (!closeFreeSlot(ev.id)) return
     applyConcluded(null)
     setLastEnded(null)
+    advanceByDayGap(ev, nextEpisodeAfter(ev.id, epDone))
     push('decode', '自由时间 · 到此为止', `${ev.group} —— 推演接回主线。这一格发生过的事仍留在会话里，可重读。`, false)
+  }
+
+  /**
+   * 「等一等」—— **玩家显式拨钟**（右栏那两枚：半天 / 一天）。
+   *
+   * 三条推进路径里唯一不要模型参与的一条：按一下就落盘、写一条观测记录，
+   * 正文一个字都不动。一格 = 半天（见 lib/plot.ts 的叙事时钟那一节），
+   * 所以半天推 1 格、一天推 2 格。
+   */
+  const waitAWhile = (halfDays: number) => {
+    advanceTick(halfDays)
+    const unit = halfDays >= TICKS_PER_DAY ? '一天' : '半天'
+    const day = Math.floor(nextTick(world, halfDays) / TICKS_PER_DAY)
+    push('info', `时间推进 · ${unit}`, `时间推进：第 ${day} 日 · ${unit}`, false)
   }
 
   /** 补发指令：仅要求模型回一个事件指令块 */
@@ -1643,6 +1684,7 @@ export function Plot() {
     completeEvent(ev.id, ev.summary, 'offline')
     skipAutoOpen.current = false
     setLastEnded({ id: ev.id, title: ev.title, digest: ev.summary, diverged: false, mode: 'offline' })
+    advanceByDayGap(ev, nextEpisodeAfter(ev.id, epDone))
     push('decode', '事件收束 · 已写入记录', `${ev.title}（离线通读）`, false)
   }
 
@@ -1751,7 +1793,10 @@ export function Plot() {
           </div>
           <b style={{ fontSize: 17, lineHeight: 1.4 }}>{focusEv.title}</b>
           <div className="muted tiny" style={{ marginTop: 3, color: 'var(--ink-mute)' }}>
-            {placeOfEvent(focusEv)}{focusEv.day ? ` · ${focusEv.day}` : ''}
+            {placeOfEvent(focusEv)} · <b data-clock-day={dayOf(world)}>{dayLabel(world)}</b>
+            {/* 时间以**时钟**为准（world.tick）；原文那句 `day` 退成副标 ——
+                它说的是「原著这一段在第几日」，玩家自己把日子推过去了，就该读后者。 */}
+            {focusEv.day ? <span>（原文 {focusEv.day}）</span> : null}
           </div>
         </div>
         {isFreeId(focusEv.id) ? (
@@ -1971,12 +2016,35 @@ export function Plot() {
           <span className="tag">{isFreeId(focusEv.id) ? 'FREE TIME' : focusEv.id.toUpperCase()}</span>
           <b>{focusEv.title}</b>
           <span className="muted tiny" style={{ color: 'var(--ink-mute)' }}>
-            {focusEv.group} · {focusEv.phase} · {placeOfEvent(focusEv)}{focusEv.day ? ` · ${focusEv.day}` : ''}
+            {focusEv.group} · {focusEv.phase} · {placeOfEvent(focusEv)} ·{' '}
+            {/* 段头的时间同样**以时钟为准**，原文时间标退成副标（理由见右栏事件卡那一处）。 */}
+            <b data-plot-day={dayOf(world)}>{dayLabel(world)}</b>
+            {focusEv.day ? <span className="muted">（原文 {focusEv.day}）</span> : null}
           </span>
         </div>
         <div className={css.barRight}>
           <span className="chip">{doneCount}/{total} 事件</span>
           <span className="chip" data-records={records.length}>{records.length} 记录</span>
+          {/* 「等一等」：玩家显式让时间往前走，**不经过模型** —— 三条推进路径里最短的一条。
+              一格 = 半天，所以两档各推 1 / 2 格；按一下同时写一条观测记录。 */}
+          <button
+            className="btn btn--ghost"
+            style={{ fontSize: 12 }}
+            data-wait="half"
+            onClick={() => waitAWhile(1)}
+            title="等半天：时钟往前推一格，段头的「第 N 日」跟着走。"
+          >
+            等一等（半天）
+          </button>
+          <button
+            className="btn btn--ghost"
+            style={{ fontSize: 12 }}
+            data-wait="day"
+            onClick={() => waitAWhile(TICKS_PER_DAY)}
+            title="等一天：时钟往前推两格，段头的「第 N 日」跟着走。"
+          >
+            等一等（一天）
+          </button>
           {/* 自由活动开关。与卷间那一格**同一个状态**：开到哪儿都算「这一段羁绊不动」。
               卷间那一格自己就是开着的（段 id 带 free:）—— 这一枚按钮照的是**段外**的那一路，
               所以它只改操作员按下与否，不改段本身。 */}

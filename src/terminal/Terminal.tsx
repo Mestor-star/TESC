@@ -223,6 +223,16 @@ export interface TerminalState {
   setRel: (charId: string, tier: RelId) => void
 
   /**
+   * **推进叙事时钟**（一格 = 半天：+1 = 半天，+2 = 一天）。
+   *
+   * 三条路都走这一个入口：右栏那两枚「等一等」、导演回执的 `advanceDays`
+   * （乘 2 落进来，见 lib/plot.ts 的 `TICKS_PER_DAY`）、以及收束推进到下一段时的
+   * 自然顺延（`tickGapFor` 按两段 `day` 的差值算）。
+   * **只增不减**：给 0 / 负数什么都不做 —— 时间没有回拨这条路。
+   */
+  advanceTick: (halfDays: number) => void
+
+  /**
    * **自由活动**开关（`WorldState.free`）—— 主线走到一半想脱纲一会儿时按下去。
    *
    * 它动的只有一条规矩：**这期间羁绊一律不动**（拦在落地那一层，见 lib/plot.ts 的
@@ -389,7 +399,7 @@ function takePendingView(): ViewId | null {
 function emptyWorld(): WorldState {
   return {
     offset: {}, locked: {}, flags: {}, met: {}, ends: {}, own: [], cg: {}, cgVariant: {}, cast: {},
-    intim: {}, attire: {}, acts: {}, rel: {}, records: [],
+    intim: {}, attire: {}, acts: {}, rel: {}, tick: 0, records: [],
   }
 }
 
@@ -636,6 +646,9 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     /* 自由活动开关（后加）：旧档没有 → 关着。它只是个开关，不落档也不会怎样 ——
        读作关就是当初的样子（主线一段咬着一段走）。 */
     free: raw?.free === true,
+    /* 叙事时钟（后加）：旧档没有这一格 → 从 0 起算（第 0 日），不报错。
+       坏值（负 / NaN / 小数）一律抹平到 0 或整数 —— 这一格只增不减，读档不该把它读坏。 */
+    tick: typeof raw?.tick === 'number' && Number.isFinite(raw.tick) && raw.tick > 0 ? Math.floor(raw.tick) : 0,
     records: [],
   }
   const doneIds = new Set(Object.keys(epDone))
@@ -1283,6 +1296,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
+   * 叙事时钟往前推 n 格（一格 = 半天）。**只增不减** —— 0 / 负数一律不动。
+   *
+   * 旧档没有 `world.tick` 时按 0 起算（第 0 日），不必先补一格；
+   * 读档那一路由 `hydrateWorld` 已经把坏值抹平（见那儿的一行注释）。
+   */
+  const advanceTick = useCallback((halfDays: number) => {
+    const add = Number.isFinite(halfDays) ? Math.floor(halfDays) : 0
+    if (add <= 0) return
+    setWorld((prev) => ({ ...prev, tick: (typeof prev.tick === 'number' ? prev.tick : 0) + add }))
+  }, [])
+
+  /**
    * 自由活动开关。写进 `world.free` —— 它跟存档走，读档回来还在原来的状态。
    *
    * 同一状态还有第二个入口：卷与卷之间那一格（`isFreeId(ev.id)`）。
@@ -1639,6 +1664,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     bumpActs,
     relOf,
     setRel,
+    advanceTick,
     freeMode,
     setFreeMode,
     closeFreeSlot,

@@ -14,7 +14,7 @@
 
 import type {
   ActCount, ActKind, AttireProgress, AttireSlot, AttireWear, FlagValue, IntimateProgress,
-  IntimateSlot, RelId, TimelineEvent,
+  IntimateSlot, RelId, TimelineEvent, WorldState,
 } from '../data/types'
 import { INTIMATE_BOND, INTIMATE_SLOTS, hasIntimate } from '../data/intimate'
 import { ATTIRE_SLOTS, WET_PER_LEWD, hasAttire } from '../data/attire'
@@ -36,6 +36,89 @@ import { FREE_BOND_NOTE, FREE_FRAME, isFreeId } from './freetime'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 import { canonFlagKey, snapFlagKey } from './flagname'
+
+/* ============================================================
+   叙事时钟（WorldState.tick）
+   ------------------------------------------------------------
+   「过了几天」从前只活在正文里：玩家写一句「三天后」，系统侧一动不动 ——
+   在场、地点、锚点全当没这回事。这一格就是给它们读的钟。
+
+   单位是**半天**（1 格 = 半天，2 格 = 一天）。取半天有三条理由：
+     · 玩家右栏那两枚「等一等」正是半天 / 一天 —— 各推 1 / 2 格，一个整数就够；
+     · 模型给的 `advanceDays` 是天数，乘 2 落进来，不产生小数；
+     · 换算是 `dayOf = Math.floor(tick / 2)` —— 卷一的 `day` 标从「第 0 日」
+       起算，旧档没有这一格时读出来也是第 0 日，两边对得上。
+   不做日历：这一档只服务「等一等」与「过了几天」，不记月日、不记节气。
+
+   **只增不减** —— `nextTick` 只做加法，没有回拨的写法。锚点的「到期」判定
+   下一批接在 `dayOf` 上；本轮只导出接口，不做判定。
+   ============================================================ */
+
+/** 一「天」等于几格 tick（tick 的单位是半天） */
+export const TICKS_PER_DAY = 2
+
+/** 模型给的 `advanceDays` 上限（给多了钳到这儿：一回合最多推进一周） */
+export const ADVANCE_DAYS_MAX = 7
+
+/** 读出时钟。旧档没有这一格 / 坏值 → 0，不抛也不报错。 */
+export function tickOf(world: Pick<WorldState, 'tick'> | null | undefined): number {
+  const t = world?.tick
+  return typeof t === 'number' && Number.isFinite(t) && t > 0 ? Math.floor(t) : 0
+}
+
+/**
+ * **第几日** —— 只读，给锚点（到期判定）与段头共用。
+ *
+ * 从 0 起算：卷一的 `day` 标就是「第 0 日」；旧档没有 tick 时也读作第 0 日。
+ */
+export function dayOf(world: Pick<WorldState, 'tick'> | null | undefined): number {
+  return Math.floor(tickOf(world) / TICKS_PER_DAY)
+}
+
+/**
+ * 推进之后的那一格 —— **只增不减**：给 0 或负数一律不动（没有回拨这条路）。
+ */
+export function nextTick(world: Pick<WorldState, 'tick'> | null | undefined, halfDays: number): number {
+  const add = Number.isFinite(halfDays) ? Math.floor(halfDays) : 0
+  return tickOf(world) + Math.max(0, add)
+}
+
+/** 段头与观测记录念的那一句：「第 3 日」/ 落在半天上时「第 3 日 · 半天」 */
+export function dayLabel(world: Pick<WorldState, 'tick'> | null | undefined): string {
+  const t = tickOf(world)
+  const d = Math.floor(t / TICKS_PER_DAY)
+  return t % TICKS_PER_DAY === 0 ? `第 ${d} 日` : `第 ${d} 日 · 半天`
+}
+
+/** 从 `day` 时间标里读天数（「第 3 日」→ 3；读不出 → null） */
+export function dayNumber(day: string | null | undefined): number | null {
+  const m = /\d+/.exec(day ?? '')
+  return m ? Number(m[0]) : null
+}
+
+/**
+ * 收束并推进到下一段时，时钟该走几格。
+ *
+ * 保守优先 —— 这一条是三条推进路径里最容易算错的那一条：
+ *   · 下一段没有时间标（卷 2 以后整段 `day: ''`）→ **一格都不走**；
+ *   · 两头都读得出天数 → 按差值走，**只增不减**（持平或往下掉都当 0）；
+ *   · 标换了却读不出数 → 按「一天」走（算不准就用 1）。
+ * 宁可不走，也不要凭一段猜出来的数把整条时间线推偏。
+ */
+export function tickGapFor(
+  prevDay: string | null | undefined,
+  nextDay: string | null | undefined,
+): number {
+  const next = (nextDay ?? '').trim()
+  if (!next) return 0
+  const a = dayNumber(prevDay)
+  const b = dayNumber(next)
+  if (a !== null && b !== null) {
+    const diff = b - a
+    return diff > 0 ? diff * TICKS_PER_DAY : 0
+  }
+  return (prevDay ?? '').trim() === next ? 0 : TICKS_PER_DAY
+}
 
 /* ============================================================
    指令 schema
@@ -91,6 +174,14 @@ export interface PlotDirective {
    * 约会那一场的地点走 `date.place`，短信根本没有地点）。
    */
   place?: string
+  /**
+   * **时间真的过去了几天**（1~7）—— 叙事时钟往前推这么多个半天×2。
+   *
+   * 只在他**明确说**「过了几天」「等到某天」「三天后」时给；没明说就整条省略
+   * （省略即不动 —— 时间不会自己走）。数不可信时也照给，落地那一层会钳到
+   * 1~7：给了这一项就是「时间真的走了」，只是数按最近的整数算。
+   */
+  advanceDays?: number
   /** 该段收束是否为分歧路线（与原著相异时置 true） */
   diverged?: boolean
   /** 关键收束达成 → 完结当前事件并写记录（缺省 false） */
@@ -237,6 +328,9 @@ const KNOWN_FIELDS = new Set([
   'date', 'intim', 'attire',
   // 次数账与关系档位：同上 —— 漏在名单外就整条安静地丢，账永远记不上
   'acts', 'rel',
+  // 叙事时钟：漏在名单外的话，「过了三天」那条指令整个被静默丢掉，
+  // 时间一格都不走，而界面上一点提示都没有（这一栏最容易踩的就是这个坑）
+  'advanceDays',
 ])
 
 /** 一次私密推进的开发度增量上限（一次一小步：一回合跳满等于没有过程） */
@@ -551,6 +645,10 @@ export function sanitizeDirective(v: unknown): PlotDirective {
   }
 
   if (src.diverged === true) out.diverged = true
+  /* 时钟：越界钳制（1~7）。给 0 / 负数也钳到 1 —— 「给了这一项」本身就是
+     「时间真的走了」的信号，数是不可信的；不给才是「不动」。 */
+  const advDays = finiteNum(src.advanceDays)
+  if (advDays !== null) out.advanceDays = clamp(Math.round(advDays), 1, ADVANCE_DAYS_MAX)
   if (src.eventDone === true) out.eventDone = true
 
   const digest = typeof src.digest === 'string' ? src.digest.trim() : ''
@@ -1031,6 +1129,8 @@ export interface DirectiveEffects {
   diverged: boolean
   eventDone: boolean
   digest?: string
+  /** 这一回合时间走了几天（调用方乘 TICKS_PER_DAY 落在 world.tick 上） */
+  advanceDays?: number
   /** 角色发出的邀约（调用方落成一场约会线程） */
   date?: { kind?: 'date' | 'intimate'; title?: string; place?: string; time?: string }
   /** 本次实际推进的私密读数（供提示条念一句；部位与色情度可以只来其一） */
@@ -1174,6 +1274,9 @@ export function applyDirective(
     fx.rel.push({ char, tier })
   }
   if (d.date) fx.date = d.date
+  /* 时钟不在这儿落盘：applyDirective 手里没有世界写的入口（与 cg / cast 同一分工），
+     调用方读 fx.advanceDays 自己调 advanceTick。 */
+  if (d.advanceDays) fx.advanceDays = d.advanceDays
   fx.diverged = d.diverged === true
   fx.eventDone = d.eventDone === true
   if (d.digest) fx.digest = d.digest
@@ -1192,6 +1295,7 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       Boolean(d.cg) ||
       d.cast !== undefined ||
       Boolean(d.place) ||
+      Boolean(d.advanceDays) ||
       d.diverged === true ||
       d.eventDone === true ||
       Boolean(d.battle?.name) ||
@@ -1942,6 +2046,8 @@ ${free ? '' : `  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊
                                                // 名单照本节【在场角色】那一份的 id 写；人都还在原处就整条省略，别每回合都给
                                                // **场上一个人都不剩就给空数组 []** —— 「他把人都支走了」不是「省略这一项」
   "place":  "此刻这一场在哪儿",                // 只在**真的换了地方**时给（他去了别处、把人都支走、换了个房间）；没挪就整条省略
+  "advanceDays": 1,                           // **时间真的过去了几天**（1~7）：他明说「过了三天」「等到某一天」时给
+                                              // 没说就别给 —— 这一项一给，段头的「第 N 日」就跟着往前走；不给就不走
   "diverged": true,                           // 已与原著相异（否则省略）
 ${free ? '' : `  "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
   "digest": "第三人称收官记录两三句",
