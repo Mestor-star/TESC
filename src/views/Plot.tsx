@@ -4,8 +4,9 @@ import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicW
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
-import { OPERATOR_ID, PERSON_IDS, personOf } from '../data/castmeta'
-import { rosterRowsFor } from '../lib/cast'
+import { OPERATOR_ID, PERSON_IDS, personOf, speakerOf, VOICE_ONLY } from '../data/castmeta'
+import { castOf, rosterRowsFor } from '../lib/cast'
+import { inferRoster } from '../lib/castinfer'
 import { SCENES } from '../data/scenes'
 import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
@@ -67,6 +68,13 @@ import {
 import css from './Plot.module.css'
 
 const LOG_KEY = 'zts-plot:v1'
+
+/** 两份在场名册算不算同一份：不看顺序（只换了次序不算「导演改了名册」）。 */
+const sameCastIds = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every((id) => set.has(id))
+}
 
 /**
  * 一段会话**一次铺多少条**。
@@ -751,6 +759,77 @@ export function Plot() {
     () => (focusEv ? rosterRowsFor(castOfEvent(focusEv)) : []),
     [focusEv, castOfEvent],
   )
+  /* 导演那层实时名册（world.cast）与**本段原文名册**（castOf）的差 —— 只在真有差的时候
+     摆一行小字与一枚手动退路。**绝不**自动合并：导演把人移出场面是剧情（人真的走了），
+     自动按回去等于替剧情翻案。谁不在了就由这一行数出来，不再给幽灵行。 */
+  const srcCast = useMemo(() => (focusEv ? castOf(focusEv) : []), [focusEv])
+  const liveCast = focusEv ? world.cast?.[focusEv.id] : undefined
+  const castDiffers = liveCast !== undefined && !sameCastIds(liveCast, srcCast)
+  /** 手动把这一段的名册退回原文（只有玩家按下这一枚才走，见上方那条规矩） */
+  const resetCastToCanon = useCallback(() => {
+    if (!focusEv) return
+    const ids = castOf(focusEv)
+    setCast(focusEv.id, ids)
+    push('info', '在场名册', `在场名册：已按本段原文重置（${ids.length} 人）。`, false)
+  }, [focusEv, setCast, push])
+  /* ============================================================
+     在场名册 · 自动修正（lib/castinfer 的**唯一**接线点）
+     ------------------------------------------------------------
+     导演每回合给的 `cast` 是整份覆盖，一旦漏人（真实案例：v1-5 只剩小柴），
+     右栏与提示词就跟着只剩一个人。这一层从本回合正文里找证据把名册往回修
+     一点点 —— 规则全在 `lib/castinfer.ts`，这里只管三件事：喂什么、何时跑、账怎么记。
+
+     · **每条正文只跑一次**：按消息 id 记账（`castSeenRef`）。回退之后重推会
+       生成新的消息 id，那一次照跑 —— 但它读的是**已落地的名册**，人在册就不
+       再补，所以账上不会有第二笔。刷新不会重放任何正文，自然也不会重跑。
+     · `prev` 取**这一回合刚给过的 cast**（`directorCast`），不取 `castOfEvent(ev)`：
+       同一个 tick 里 `world.cast` 还是旧的那一份（setCast 刚派发、尚未回流），
+       读它会把导演刚落地的那一份漏掉。
+     · 闸：只处理**已落地的完整正文**（调用点在流式收口之后）· 只在主线那一路上
+       （约会专线另有一套名册口径）· 名册真的变了才落盘。
+     · 失败一律吞掉 —— 一条推断不该把推演打断（诊断走 console.warn）。
+     ============================================================ */
+  const castSeenRef = useRef<Set<string>>(new Set())
+  const autoFixCast = useCallback(
+    (ev: TimelineEvent, evId: string, msgId: string, text: string, directorCast?: string[]) => {
+      try {
+        if (!msgId || !text.trim()) return
+        if (laneMemo !== 'main') return
+        if (castSeenRef.current.has(msgId)) return
+        castSeenRef.current.add(msgId)
+        const prevIds = directorCast ?? castOfEvent(ev)
+        const canon = castOf(ev)
+        /* 白名单：名录里认识的人（在册 25 位 + 操作员 + 只在台词里登场的那几位），
+           再并上名册里**本来就在**的 id —— 推断只认别名表上的名字，并上它们是为了
+           让「越界一律丢」只丢真幻觉，不误伤旧档里已有的写法。 */
+        const known = new Set<string>([
+          ...PERSON_IDS, OPERATOR_ID, ...VOICE_ONLY.map((p) => p.id), ...prevIds, ...canon,
+        ])
+        const result = inferRoster({ prev: prevIds, canon, operatorId: OPERATOR_ID, text, known })
+        if (!result.added.length && !result.removed.length) return
+        if (sameCastIds(result.next, prevIds)) return
+        setCast(evId, result.next)
+        /* 账上只留**两笔**出处（原句照抄，≤40 字已在 castinfer 里截过）——
+           再多就成了把正文复述一遍。 */
+        const quotes = new Map<string, string>()
+        for (const e of result.evidence) {
+          if (quotes.size >= 2) break
+          if (!quotes.has(e.id)) quotes.set(e.id, e.quote)
+        }
+        const nameOf = (id: string) => speakerOf(id)?.name ?? id
+        const part = (ids: string[]) => (ids.length
+          ? ids.map((id) => {
+            const q = quotes.get(id)
+            return q ? `${nameOf(id)}（「${q}」）` : nameOf(id)
+          }).join('、')
+          : '—')
+        push('decode', '在场名册 · 自动修正', `补上：${part(result.added)} · 移出：${part(result.removed)}`, false)
+      } catch (e) {
+        console.warn('[castinfer] 在场名册自动修正失败（已忽略）', e)
+      }
+    },
+    [castOfEvent, setCast, push],
+  )
   const openProfile = useCallback((id: string) => {
     requestProfile(id)
     navigate('archive')
@@ -850,7 +929,9 @@ export function Plot() {
         const names = fx.cast.map((id) => personOf(id)?.name ?? id).join(' · ')
         /* 空名册也要报一句 —— 「他把人都支走了」「他独自离开」是剧情上真发生的事，
            静默落盘会让人以为指令没生效。 */
-        push('info', '在场名册', fx.cast.length ? `此刻在场上的是：${names}。` : '此刻场上一个人也没有 —— 这一段往后只有他自己（或谁都不在）。', false)
+        /* 标题带「导演修正」：同一回合若接着又跑了一次自动修正（见 autoFixCast），
+           账上要能看出**先后** —— 导演那一份先落，推断再往上补。 */
+        push('info', '在场名册 · 导演修正', fx.cast.length ? `此刻在场上的是：${names}。` : '此刻场上一个人也没有 —— 这一段往后只有他自己（或谁都不在）。', false)
       }
       /* 地点：导演真的把人挪到别处时才给；段头与提示词都读 world.place 那一层 */
       if (fx.place) {
@@ -1250,9 +1331,11 @@ export function Plot() {
               void reaskDirective(ev, outbox, full, opts?.long ? '事件衔接' : '回合推演', turn)
             }
             const shown = replyDisplayText(parsed, acc)
+            /* 这一条正文的消息 id：落地与「在场名册 · 自动修正」的幂等账共用它 */
+            const msgId = idFor()
             if (shown) {
               appendMsg(evId, {
-                id: idFor(),
+                id: msgId,
                 from: 'them',
                 text: shown,
                 time: clock(),
@@ -1265,6 +1348,11 @@ export function Plot() {
               })
             }
             applyReply(parsed, evId)
+            /* 正文已落地、指令也落完，才让推断看一眼本回合正文：
+               导演那一份 cast 先进 world.cast（账上先记「导演修正」），推断再往上补
+               （后记「自动修正」）。流式这一笔早已收口（settled / clearLive 在上面），
+               拿到的必然是完整正文。 */
+            if (shown) autoFixCast(ev, evId, msgId, shown, parsed.directive?.cast)
             // 观测者已切到别的模块：这一回合是在后台跑完的，报一声，别忘了它
             if (plotMounts === 0) {
               const evTitle = EPISODES.find((e) => e.id === evId)?.title ?? '本段'
@@ -1308,7 +1396,7 @@ export function Plot() {
         setBusy(false)
       }
     },
-    [busy, ready, cfgMain, directorPromptFor, logs, appendMsg, applyReply, reaskDirective, push],
+    [busy, ready, cfgMain, directorPromptFor, logs, appendMsg, applyReply, autoFixCast, reaskDirective, push],
   )
 
   /**
@@ -1861,6 +1949,25 @@ export function Plot() {
                 </button>
               )
             })}
+            {/* 导演改过名册、又与原文不一样时的那一枚手动退路：把「原文几人 / 此刻几人」
+                数出来，谁被移出场面就看得见差异，不再静默消失（也不给幽灵行）。
+                **只手动** —— 自动合并会把「人真的走了」又按回去。 */}
+            {castDiffers ? (
+              <div className={css.castDiff} data-plot-cast-diff={focusEv.id}>
+                <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>
+                  本段原文在场 {srcCast.length} 人 · 此刻场面 {liveCast?.length ?? 0} 人
+                </span>
+                <button
+                  type="button"
+                  className={css.castReset}
+                  data-plot-cast-reset={focusEv.id}
+                  onClick={resetCastToCanon}
+                  title="把这一段的在场名册退回原文那几个人（导演改过的那一份就此撤掉）"
+                >
+                  按原文重置在场名册
+                </button>
+              </div>
+            ) : null}
             {/* 在场 0 人也要读得出来：导演把名册清空（他把人支走了、独自离开）与
                 「这一段原文里本来就没别人」是两件事，文案分开写，都不留空白。 */}
             {castRows.length === 0 ? (

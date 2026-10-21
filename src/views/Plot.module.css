@@ -743,6 +743,38 @@
   border-color: color-mix(in srgb, var(--c) 40%, transparent);
 }
 
+/* —— 名册差异那一行（+ 手动退回原文的那一枚）——
+   只在导演改过名册、且跟原文不一样时才出现；平时整行不存在，手机档不会为它留位。
+   窄屏上小字与按钮各占一行（flex-wrap），不挤旁边任何东西。 */
+.castDiff {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding-left: 6px;
+}
+.castReset {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--steel) 35%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--steel-deep);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.6;
+  cursor: var(--cursor-point);
+  transition: background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
+}
+.castReset:hover {
+  background: color-mix(in srgb, var(--steel) 12%, transparent);
+  border-color: var(--steel);
+}
+/* Tab 焦点要有看得见的一圈（键鼠都按得到这一枚） */
+.castReset:focus-visible {
+  outline: 2px solid var(--steel-deep);
+  outline-offset: 2px;
+}
+
 /* ============ 手机档（≤720px）============
    生成框里那个输入格定的 180px 下限，在 390 屏上会把右边那枚按钮挤出去。 */
 @media (max-width: 720px) {
@@ -766,4 +798,6 @@
 /* 手机档 · 粗指针：在场人物那一行（26px）与在线/离线那两枚（30px）抬到 44 */
 @media (pointer: coarse) {
   .castRow, .segBtn { min-height: 44px; }
+  /* 次级那一档（tokens.css 末节口径 34~40）：小字按钮在指头底下也要够按 */
+  .castReset { min-height: 34px; }
 }
