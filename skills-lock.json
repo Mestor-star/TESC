@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "cumcm-a": {
+      "source": "Slatermy/math-modeling-skills",
+      "sourceType": "github",
+      "skillPath": "cumcm-a/SKILL.md",
+      "computedHash": "37543db0b838c8151a269f64b4e35f296a3e0c4bbf7f812130cfe3ca9dfad986"
+    },
+    "cumcm-b": {
+      "source": "Slatermy/math-modeling-skills",
+      "sourceType": "github",
+      "skillPath": "cumcm-b/SKILL.md",
+      "computedHash": "613d9b0b2fc601173373ce120dea1fabc4d4e45473eec9d47e4dd71219309c6d"
+    },
+    "cumcm-c": {
+      "source": "Slatermy/math-modeling-skills",
+      "sourceType": "github",
+      "skillPath": "cumcm-c/SKILL.md",
+      "computedHash": "51141575ad5eea6ab4009df9c12b3faa0f801e2dd223d434f93d483800743261"
+    },
+    "cumcm-workflow": {
+      "source": "Slatermy/math-modeling-skills",
+      "sourceType": "github",
+      "skillPath": "cumcm-workflow/SKILL.md",
+      "computedHash": "7e1cdbf46dfbf7d564e73aa7956494688411570f310a965d3fc7f16913d33d0a"
+    }
+  }
+}
