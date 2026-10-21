@@ -91,6 +91,9 @@ export function SlotGrid({ mode, beforeLoad }: { mode: 'load' | 'manage'; before
                   placeholder="存档名称"
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
+                    // 输入法选词那一下的回车不算提交 —— 改名框里更不能拿半截词
+                    // 去覆盖存档名。keyCode === 229 兜旧浏览器 / Safari。
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return
                     if (e.key === 'Enter') commitSave(i)
                     else if (e.key === 'Escape') cancelEdit()
                   }}

@@ -229,10 +229,20 @@ export interface ComposerProps {
   sendTitle?: string
 }
 
+/** 单条发言的字符上限。
+ *  8000 ≈ 一段正文的合理长度：推演侧一条回执本来也就在这个量级，玩家要说
+ *  得更长就是粘错了东西。它同时是一道配额闸门 —— 存档走 localStorage 约 5MB，
+ *  1MB 一条发言光是入账前的 JSON.stringify 就要几毫秒，五条就顶爆。
+ *  超限**不截断**已输入的内容（截断会在用户无感时改掉他要说的话），只拦提交。 */
+export const SAY_LIMIT = 8000
+
 export function Composer({
   draft, onDraft, onSend, onStop, busy, disabled, sendWhenEmpty, placeholder, acts, rootProps,
   sendAttrs, sendLabel, sendTitle,
 }: ComposerProps) {
+  // 按 UTF-16 码元计（与 maxLength 同口径）；中文一字一元，够用。
+  const overBy = draft.length - SAY_LIMIT
+  const tooLong = overBy > 0
   return (
     <div className={css.composer} {...rootProps}>
       <input
@@ -240,13 +250,17 @@ export function Composer({
         placeholder={placeholder}
         value={draft}
         disabled={disabled}
+        data-composer-limit={SAY_LIMIT}
         onChange={(e) => onDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            if (busy) onStop()
-            else onSend()
-          }
+          // 输入法选词那一下的回车不是「提交」：中文/日文候选窗里的回车要留给
+          // 候选词，放过去就是半截句子直接飞出去。isComposing 是标准口径，
+          // keyCode === 229 兜旧浏览器 / Safari（composing 期间它们不上报 isComposing）。
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return
+          if (e.key !== 'Enter') return
+          e.preventDefault()
+          if (busy) onStop()
+          else if (!tooLong) onSend()
         }}
       />
       {acts}
@@ -258,14 +272,24 @@ export function Composer({
         <button
           className={`btn btn--primary ${css.composerBtn}`}
           onClick={onSend}
-          disabled={disabled || (!sendWhenEmpty && !draft.trim())}
+          disabled={disabled || tooLong || (!sendWhenEmpty && !draft.trim())}
           aria-label={sendLabel ?? '送出'}
-          title={sendTitle}
+          title={tooLong ? `已超 ${SAY_LIMIT} 字上限` : sendTitle}
           {...sendAttrs}
         >
           <PaperPlaneTilt size={18} weight="bold" />
         </button>
       )}
+      {tooLong ? (
+        <div
+          role="status"
+          className="tiny"
+          data-composer-over={overBy}
+          style={{ flex: '0 0 100%', color: 'var(--red-deep)', letterSpacing: '0.04em' }}
+        >
+          {SAY_LIMIT} 字上限，已超 {overBy} 字 —— 先删掉一些再送
+        </div>
+      ) : null}
     </div>
   )
 }

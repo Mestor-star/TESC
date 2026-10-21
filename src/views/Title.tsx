@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowClockwise, FolderOpen, Plug, Play, SignOut, X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
-import { canContinue, fmtSlotTime, readAutosave, readSlotsList } from '../lib/slots'
+import { canContinue, fmtSlotTime, hasRunProgress, readAutosave, readSlotsList } from '../lib/slots'
+import { startTabLock, subscribeTabLock, tabLockState, tabWriteBlocked, takeoverTabLock } from '../lib/tablock'
 import { SlotGrid } from '../components/SlotGrid'
 import { BootSeq } from '../components/BootSeq'
 import { TitleCard } from '../components/TitleCard'
@@ -60,6 +61,32 @@ export function TitleMenu() {
   const [pending, setPending] = useState<{ run: () => void } | null>(null)
   const gate = (run: () => void) => setPending({ run })
 
+  /* 多标签页：标题菜单也可能开在**第二页**上。进来就把心跳立起来（判据只在
+     lib/tablock 那一份，不在这儿另起炉灶），这一页才判得出自己是只读的；
+     入口那三枚按钮的拦截在 Terminal 一侧（tabWriteBlocked → 说人话），
+     这里补的是「话里提到的那枚按钮得点得到」—— 从标题页进不了剧情推进页，
+     没有这块就等于让人去找一个够不着的东西。 */
+  const tabLock = useSyncExternalStore(subscribeTabLock, tabLockState)
+  useEffect(() => { startTabLock() }, [])
+
+  /* 被拦下的那一下要**留在屏上**：标题菜单这一阶段没有 ToastHost（App 的 Gate 在
+     `stage !== 'game'` 时只画 TitleMenu），Terminal 那边那句 toast 在这一屏是看不见的 ——
+     只发 toast 等于静默。所以这里自己记一句，压在常驻提示里。 */
+  const [blocked, setBlocked] = useState(false)
+  /** 要写档的入口统一走这儿：只读页 → 不执行动作，把话留在屏上 */
+  const tryGate = (run: () => void) => {
+    if (tabWriteBlocked()) { setBlocked(true); return }
+    setBlocked(false)
+    gate(run)
+  }
+
+  /** 「行动继续」：有进度时它只是**读**（不写运行档），只读页照样放行 —— 挡住它等于把
+      人关在门外；没有进度时它要先读自动档（applySnapshot 会覆写运行档指针），那一下必须拦。 */
+  const onResume = () => {
+    if (hasRunProgress()) { setBlocked(false); gate(resume); return }
+    tryGate(resume)
+  }
+
   /* 开了浮层就把 Esc 收作「关」—— 幕布点一下也能关。 */
   useEffect(() => {
     if (!slotsOpen) return
@@ -92,7 +119,7 @@ export function TitleMenu() {
             className="btn btn--ghost"
             style={{ fontSize: 11, padding: '5px 11px' }}
             disabled={!auto}
-            onClick={() => gate(loadAutosave)}
+            onClick={() => tryGate(loadAutosave)}
             title="以自动存档覆盖当前进度并进入终端"
           >
             读取
@@ -121,8 +148,49 @@ export function TitleMenu() {
           <span className={css.orn} aria-hidden="true">✦</span>
         </header>
 
+        {/* 只读页（另一个标签页在玩同一份进度）——常驻提示 + 接手。
+            与 Plot 那条同一条判据（tabLockState），只是这里得能**点到**「在这一页接手」：
+            从标题页走不到剧情推进页去点那一枚。单标签页时这一块压根不存在。 */}
+        {tabLock.readonly || blocked ? (
+          <div
+            data-tab-lock="readonly"
+            role="status"
+            style={{
+              display: 'grid',
+              gap: 6,
+              justifyItems: 'center',
+              margin: '0 auto 14px',
+              maxWidth: 520,
+              padding: '10px 14px',
+              border: '2px solid var(--line-2)',
+              background: 'var(--bg-2)',
+              textAlign: 'center',
+            }}
+          >
+            <b style={{ fontSize: 12.5, color: 'var(--ink)' }}>
+              这一页是只读的 —— 另一个标签页在玩同一份进度
+            </b>
+            <span style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--ink-mute)' }}>
+              要在这里开始，先点「在这一页接手」；不接手的话「行动开始 / 读取存档」不会写档。
+            </span>
+            {blocked ? (
+              <span data-tab-blocked="1" style={{ fontSize: 11, lineHeight: 1.55, color: 'var(--red-deep)' }}>
+                刚才那一下没有执行 —— 这一页只读，写进去会把那边正玩着的进度盖掉。
+              </span>
+            ) : null}
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 11, padding: '5px 11px' }}
+              data-tab-takeover="1"
+              onClick={() => { takeoverTabLock(); setBlocked(false) }}
+            >
+              在这一页接手
+            </button>
+          </div>
+        ) : null}
+
         <nav className={css.menu} aria-label="终端菜单">
-          <button className={`${css.menuBtn} ${css.menuPrimary}`} onClick={() => gate(resume)} disabled={!canGo}>
+          <button className={`${css.menuBtn} ${css.menuPrimary}`} onClick={onResume} disabled={!canGo}>
             <span className={css.ic}><ArrowClockwise size={17} weight="bold" /></span>
             <span className={css.menuTxt}>
               行动继续
@@ -134,7 +202,7 @@ export function TitleMenu() {
             </span>
           </button>
 
-          <button className={css.menuBtn} onClick={() => gate(startNew)}>
+          <button className={css.menuBtn} onClick={() => tryGate(startNew)}>
             <span className={css.ic}><Play size={16} weight="bold" /></span>
             <span className={css.menuTxt}>
               行动开始
@@ -206,7 +274,7 @@ export function TitleMenu() {
                     按「读取」以该档续接观测 —— 会覆盖当前运行进度。
                     写档在终端内进行：左侧底部「存读档」可把当前进度写入任一槽。
                   </div>
-                  <SlotGrid mode="load" beforeLoad={gate} />
+                  <SlotGrid mode="load" beforeLoad={tryGate} />
                 </div>
               </div>
             </div>,

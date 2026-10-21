@@ -21,6 +21,7 @@ import { ensureBriefs } from '../data/briefs'
 import { ensureBudgetFloor, ensureBuiltinPresets } from '../lib/builtin-presets'
 import { ensureBuiltinGroups } from '../lib/smsthreads'
 import { requestRemount } from '../lib/remount'
+import { subscribeTabLock, tabLockState, tabWriteBlocked } from '../lib/tablock'
 import { sfx } from '../lib/audio'
 import { resetBattleStore } from '../lib/battle/store'
 import {
@@ -351,6 +352,25 @@ function pushToast(kind: ToastKind, title: string, body?: string, live?: boolean
 
 function dismissToast(id: number): void {
   commitToasts(toastList.filter((x) => x.id !== id))
+}
+
+/**
+ * 只读页（另一个标签页正在玩同一份进度）按下「要写档」的入口时的**唯一**台词。
+ *
+ * 为什么必须说话：这几个入口（行动开始 / 自动档读取 / 手动档读取）底下的写盘函数
+ * （clearRunStorage / applySnapshot / saveFile）已经各自被 tabWriteBlocked() 拦下了，
+ * 但拦住之后是**静默 return** —— 界面上按下去什么都不发生，人会以为按钮坏了。
+ * 更糟的是旧版这里根本拦不住运行档指针：拦在存储层的只有正文账，
+ * 而「开始新游戏」会重挂载一次 provider，新实例用一份空 epDone/cur 把
+ * `zts-terminal:v3` 整份覆写掉（第一页下一次世界变化才自愈）。所以判据要提到入口这一层，
+ * 并且**明说**该怎么办。
+ */
+function speakReadonly(): void {
+  pushToast(
+    'warn',
+    '这一页是只读的 —— 另一个标签页在玩同一份进度',
+    '要在这里开始，先点「在这一页接手」（剧情推进页顶部那条常驻提示里）。',
+  )
 }
 
 function takePendingView(): ViewId | null {
@@ -746,13 +766,21 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [authed, unlocked, epDone, cur, operatorName, focusId, world],
   )
 
+  /* 多标签页：只读页**不写运行档指针**。
+     这一条正是那个漏点 —— 入口那一层拦的是 clearRunStorage / applySnapshot（正文账），
+     可「开始新游戏」在只读页上还会重挂载一次 provider，新实例带着一份空的
+     epDone / cur 走到这里，把 `zts-terminal:v3`（运行档指针）整份覆写成 0；
+     第一页要等下一次世界变化才自愈。所以写之前再问一次写权。
+     代次进依赖：在这一页接手之后要立刻补写一次，不必等下一次世界变化。 */
+  const tabLock = useSyncExternalStore(subscribeTabLock, tabLockState)
   useEffect(() => {
+    if (tabWriteBlocked()) return
     try {
       localStorage.setItem(KEY, JSON.stringify(saved))
     } catch {
       /* 隐私模式等场景下静默降级 */
     }
-  }, [saved])
+  }, [saved, tabLock.epoch])
 
   /* 自动存档 = 现有运行档的 1.5s 防抖镜像（日志限量；配额/隐私模式静默降级） */
   useEffect(() => {
@@ -825,6 +853,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setSetupMode(false)
     const a = readAutosave()
     if (!hasRunProgress() && a) {
+      /* 这一支就是「读自动档」：只读页上它会覆写运行档指针，入口层先说人话。 */
+      if (tabWriteBlocked()) { speakReadonly(); return }
       // 读档带 IDB 那一趟：'zts-battle' 的初值重置清不掉同步，必须 await 在重挂载之前
       void (async () => {
         await applySnapshot(a.snapshot)
@@ -840,6 +870,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   /** 读取自动存档：无视当前运行档，直接以自动档覆盖并全量重挂载（标题页「自动存档 · 读取」） */
   const loadAutosave = useCallback((): boolean => {
+    /* 只读页：判据在最前面 —— 说人话，再什么都不动（标题页「自动存档 · 读取」）。 */
+    if (tabWriteBlocked()) { speakReadonly(); return false }
     const a = readAutosave()
     if (!a) return false
     // 同上：先把 'zts-battle' 收回初值，再写回快照并重挂载（返回值仍同步给出去）
@@ -857,6 +889,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录落到终端总览 */
   const hardReset = useCallback(async (title: string, body: string) => {
+    /* 只读页：「行动开始 / 重置」= 把另一个标签页正玩着的那一档整份删掉。
+       clearRunStorage() 自己也会拦（存储层），但那儿是静默 return；这里拦在入口上，
+       并且明说「先点在这一页接手」—— 否则按下去只像按钮坏了。 */
+    if (tabWriteBlocked()) { speakReadonly(); return }
     clearRunStorage()
     // 军需（终末点数）/ 小队体力 / 作战记录 存在 IndexedDB 'zts-battle' 里，
     // 不在 clearRunStorage 管的那几个 localStorage key 内 —— 不显式清，
@@ -913,6 +949,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /** 读档：写回快照后置位旗标 → 全量重挂载（新 provider 从存储重建） */
   const loadSlot = useCallback(
     (i: number) => {
+      /* 只读页：「读取存档」= 拿一份档把整本账（含运行档指针）覆写掉。同上，先说人话。 */
+      if (tabWriteBlocked()) { speakReadonly(); return }
       const slot = readSlot(i)
       if (!slot) {
         push('warn', '空存档位', `第 ${i + 1} 槽还没有存档。`)

@@ -3174,6 +3174,32 @@ export function run(): MechReport {
        `own` 那道筛子不能省：`enemyAct` 打完一手会跟一记 `fireRivalLink`，
        而连携的伤害走 `damageOf` 里单独的一项 `mate`（`k.linkUnits` 里别人的轴），
        与本体自己的轴无关 —— 不筛掉的话，清零对照里会冒出「别人的轴打出来的那一笔」。 */
+    /* —— 定种随机（本节唯一的随机源）——
+       这一节量的是「两档各有多痛」，可它一直在量骰子：`advance` 里挑目标、
+       连携、以及 `enemyAct` 那记 `Math.random() < 0.35` 的重手（规划器那一路是
+       `TUNING.foeHeavyRate`）、`damageOf` 里的 `rollJitter` 浮动，全走 `Math.random`。于是**同一份代码**
+       会给出两条相反的读数（实测：8 趟里 2 趟红，看的就是这条：
+       1348 红 / 1432 绿，两次的差全在「这一趟骰到哪一手、糊到谁身上、
+       浮动落在哪一头」）。这种红既不能指示回归、也不能指示退化 —— 它是噪声。
+       做法：每一场都换一条**定种**流（mulberry32，种子写死），两档拿到的是**同一副骰子**，
+       于是「黑金狮子更痛」这件事只在单位本身变了的时候才会翻。
+       种子取自然序第一个（1），不是挑出来的；换种子得连这段一起改。 */
+    const seededRandom = (seed: number) => {
+      let a = seed >>> 0
+      return () => {
+        a = (a + 0x6d2b79f5) >>> 0
+        let t = Math.imul(a ^ (a >>> 15), 1 | a)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+      }
+    }
+    /** 在这一段范围内把 `Math.random` 换成定种流（每次都从种子重来：两档同骰子） */
+    const withSeed = <T>(f: () => T): T => {
+      const real = Math.random
+      Math.random = seededRandom(1)
+      try { return f() } finally { Math.random = real }
+    }
+
     const painOf = (bossId: string, prep: (w: BattleState) => Combatant) => {
       const w = createBattle({
         mission: { ...two, bossId }, squad: SQUAD, progress: 1, growth: {}, sp: 100, spMax: 100, bond: {}, ...NO_CRIT,
@@ -3218,12 +3244,12 @@ export function run(): MechReport {
     }
 
     const mm = (xs: number[]) => ({ lo: xs.length ? Math.min(...xs) : 0, hi: xs.length ? Math.max(...xs) : 0 })
-    const mask = painOf('masked-kokonoha', (w) => w.enemies[0]!)
+    const mask = withSeed(() => painOf('masked-kokonoha', (w) => w.enemies[0]!))
     /* 对照尺：同一条梯子上已经站好的那一位（凯特琳 RANK6 / hpMul 1.35），
        用同一套沙包场量一遍。不拿「level-0 队友的血」当尺 —— 那会把到达点本来就该有的
        量误判成「秒杀」：凯特琳那一记 5.0×破456 ≈ 2280，与面具心叶的 4.6×亲472 ≈ 2171
        本就同档，那不是新病，是那把尺拍错了。 */
-    const ctrl = painOf('katherine', (w) => w.enemies[0]!)
+    const ctrl = withSeed(() => painOf('katherine', (w) => w.enemies[0]!))
     const C = mm(ctrl.shot)
     const { lo, hi } = mm(mask.shot)
     ok('具名首领 · 面具心叶：他一拳打得痛（没有一手落在 TUNING.floor 上）',
@@ -3234,7 +3260,7 @@ export function run(): MechReport {
       lo >= C.lo * 0.5 && hi <= C.hi * 2,
       `对照（凯特琳）${C.lo}~${C.hi}　面具心叶 ${lo}~${hi}`)
 
-    const lion = painOf('masked-kokonoha', mkLion)
+    const lion = withSeed(() => painOf('masked-kokonoha', mkLion))
     const L = mm(lion.shot)
     ok('具名首领 · 黑金狮子：它一拳打得痛（没有一手落在 TUNING.floor 上）',
       lion.shot.length >= 4 && lion.shot.every((d) => d > TUNING.floor * 5),
@@ -3252,11 +3278,11 @@ export function run(): MechReport {
 
     /* 对照：把五轴清零，同一手必须只剩 floor —— 证明上面那几条量的是**轴**，不是别的。
        少了这一条，将来谁把 `damageOf` 里那个 `* axes[...]` 改成别的算法，上面照样绿。 */
-    const broke = painOf('masked-kokonoha', (w) => {
+    const broke = withSeed(() => painOf('masked-kokonoha', (w) => {
       const b = w.enemies[0]!
       for (const k of AXES5) b.axes[k] = 0
       return b
-    })
+    }))
     ok('具名首领（对照）：五轴清零之后，同一手只剩 TUNING.floor',
       broke.shot.length > 0 && broke.shot.every((d) => d === TUNING.floor),
       `打出 ${broke.shot.join('/') || '（一手也没打）'}（floor=${TUNING.floor}）`)

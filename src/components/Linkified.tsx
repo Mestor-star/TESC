@@ -33,6 +33,14 @@ type Run =
 /** 最短词长：2 字符以上才可点，杜绝单字/标点误链 */
 const MIN_LEN = 2
 
+/** 拆词的闸门：正文超过这么长就**不做内链拆分**，原样渲染纯文本。
+ *  拆词是逐字符 × 整张词表的 startsWith 扫描（O(n·词表)）—— headless Edge 实测
+ *  1MB 正文要 0.6~1.7s（机器越快越接近 0.6），而玩家自己的发言（YouFrame）也走
+ *  这条路。20000 字已是一屏读完的几十倍，到这个体量没人会去点里面的词，
+ *  省下的是整帧的卡顿（同一段 1MB 走闸门后 2~3ms）。
+ *  不是截断、不是异步：原样一个字不动，只把「可点」这层壳摘掉。 */
+export const LINKIFY_LIMIT = 20000
+
 const LINKS: Target[] = (() => {
   const seen = new Set<string>()
   const list: Target[] = []
@@ -66,9 +74,13 @@ export function Linkified({ text }: { text: string }) {
     [requestProfile, requestCodex],
   )
 
+  const s = text ?? ''
+  const tooLong = s.length > LINKIFY_LIMIT
+
   /** 一段正文拆成若干游程：可点词另算一条，引号里的对话另算一条 */
-  const parts = useMemo(() => {
+  const parts = useMemo<Run[]>(() => {
     const s = text ?? ''
+    if (s.length > LINKIFY_LIMIT) return [{ kind: 'text', s, q: false }]
     const nodes: Run[] = []
     let plain = ''
     let depth = 0
@@ -124,6 +136,15 @@ export function Linkified({ text }: { text: string }) {
     e.stopPropagation()
     e.preventDefault()
     open(t)
+  }
+
+  // 超长正文：一个字都不改，只摘掉「可点」那层 —— 留个把手便于诊断
+  if (tooLong) {
+    return (
+      <span data-linkified="skipped" title={`正文超 ${LINKIFY_LIMIT} 字，已跳过内链拆分`}>
+        {s}
+      </span>
+    )
   }
 
   return (

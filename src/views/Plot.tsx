@@ -2085,7 +2085,11 @@ export function Plot() {
           placeholder="存当前参数为方案…"
           value={presetName}
           onChange={(e) => setPresetName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveCurrentAsScheme() } }}
+          onKeyDown={(e) => {
+            // 输入法选词那一下的回车不算提交（方案名是中文，最容易撞上）
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            if (e.key === 'Enter') { e.preventDefault(); void saveCurrentAsScheme() }
+          }}
         />
         <button
           className="btn btn--ghost"
