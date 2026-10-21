@@ -17,6 +17,8 @@ import {
   MEM_SECTIONS, memCounts, relationsOf, deedsOf, threadsOf, sightsOf, mindsOf, skillsOf, chronicleOf,
 } from '../lib/memory'
 import type { MemInput, MemSection } from '../lib/memory'
+import { listRuntimeVoices } from '../lib/voices'
+import type { RuntimeVoice } from '../lib/voices'
 
 import css from './Memory.module.css'
 
@@ -91,6 +93,24 @@ export function Memory() {
 
   const mindRows = minds.reduce((n, g) => n + g.rows.length, 0)
   const mindSealed = minds.reduce((n, g) => n + (g.done ? 0 : g.total), 0)
+  /* 「本次推演」那一组：推演里读到的心声，另是一本账（lib/voices.ts）。
+     原作那本（MINDS）按卷封存，这一本**不封存** —— 它读到的就是已经上屏的东西，
+     摆出来不算剧透。按段落在哪一卷归组、按时间倒序（最近读到的在最前）。
+     分组顺序跟着第一次出现的顺序走：上面已经倒序排过，所以是「最近有动静的卷」在前。 */
+  const runtimeVoices = useMemo<RuntimeVoice[]>(
+    () => listRuntimeVoices().slice().sort((a, b) => b.ts - a.ts),
+    [],
+  )
+  const runtimeGroups = useMemo(() => {
+    const byGroup = new Map<string, RuntimeVoice[]>()
+    for (const v of runtimeVoices) {
+      const arr = byGroup.get(v.group)
+      if (arr) arr.push(v)
+      else byGroup.set(v.group, [v])
+    }
+    return [...byGroup.entries()].map(([group, rows]) => ({ group, rows }))
+  }, [runtimeVoices])
+  const runtimeCount = runtimeVoices.length
   const displayOp = operatorName.trim() ? operatorName : '言万心叶'
 
   /* 七栏的收合。**默认全收起** —— 七栏叠起来是本很长的账，一屏放不下，
@@ -361,14 +381,25 @@ export function Memory() {
 
           {/* —————————— 五、心迹 —————————— */}
           <section className="panel" id="mem-4" data-mem-section="心迹">
-            {head('心迹', mindRows, mindSealed > 0 ? (
-              <span className="chip chip--off" title="整卷读完才回放">封存 {mindSealed} 条</span>
-            ) : null)}
+            {head('心迹', mindRows, (
+              <>
+                {/* 本次推演读到的那几条（不封存：读到即已上屏）。留在这一栏头上，
+                    一眼就能看出「这一趟推演里心迹多出来了没有」。 */}
+                {runtimeCount > 0 ? (
+                  <span className="chip chip--on" data-mem-rvoice-count={runtimeCount}>本次 {runtimeCount} 条</span>
+                ) : null}
+                {/* 原作那一本照旧按卷封存：整卷读完才回放，没读完只报条数 */}
+                {mindSealed > 0 ? (
+                  <span className="chip chip--off" title="整卷读完才回放">封存 {mindSealed} 条</span>
+                ) : null}
+              </>
+            ))}
             <div className="panel__body" data-fold-body>
               {minds.length === 0 ? (
                 <div className={css.empty}>
                   <b>还没有读到谁的心声</b>
                   <span>心声按卷存放。整卷的每一段都归档了，这一卷的心声才现形 —— 提前摆出来就是剧透。</span>
+                  <span>推演中读到的心声会出现在这里。</span>
                 </div>
               ) : (
                 <div className={css.mindList}>
@@ -397,6 +428,32 @@ export function Memory() {
                       )}
                     </div>
                   ))}
+                  {/* 「本次推演」：推演里读到的心声（另一本账），按卷分组、按时间倒序。
+                      每条带 kind（表层 / 伪装 / 深声）与出处段落标题；不封存 ——
+                      它读到的就是已经上屏的东西，摆出来不算剧透。 */}
+                  {runtimeGroups.map((g) => (
+                    <div key={`run-${g.group}`} className={css.mindGroup} data-mem-rvoice-group={g.group}>
+                      <div className={css.mindHead}>
+                        <b>本次推演 · {g.group}</b>
+                        <span className="chip chip--on">{g.rows.length} 条</span>
+                      </div>
+                      {g.rows.map((v) => (
+                        <div key={v.id} className={css.mind} data-mem-rvoice={v.id}>
+                          <div className={css.mindWho}>
+                            <b>{v.speaker}</b>
+                            <span className="chip chip--off">{v.kind}</span>
+                            <span className="tiny muted">{v.scene}</span>
+                          </div>
+                          <p className={css.mindText}>『{v.text}』</p>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  {runtimeCount === 0 ? (
+                    <div className={css.sealed} data-mem-rvoice-empty="1">
+                      推演中读到的心声会出现在这里 —— 这一趟还没读到（读到的按卷另起一组，不封存）。
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>

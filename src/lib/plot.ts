@@ -26,7 +26,7 @@ import { briefOf } from '../data/briefs'
 import { personaCardOf } from '../data/persona'
 import { temperAt } from '../data/temper'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
-import { OPERATOR_ID, genderOf, personOf, PERSON_IDS } from '../data/castmeta'
+import { OPERATOR_ID, genderOf, personOf, PERSON_IDS, speakerOf } from '../data/castmeta'
 import { addressOf } from '../data/address'
 import { furthestDone } from './operator'
 import { castOf } from './cast'
@@ -232,6 +232,33 @@ export interface PlotDirective {
    * 拿不准就别给 —— 不给即维持此刻那一档。
    */
   rel?: Record<string, RelId>
+  /**
+   * **这一回合读心者听到的那几句心声**（引擎机制，不是正文里的旁白）。
+   *
+   * 心声只有言万心叶（低语者）听得到，所以它不进正文、单独走这一栏：
+   * 一回合至多三条，每条**一句**、≤60 字；`kind` 分三层 ——
+   * 表层（此刻正在想）/ 伪装（摆给人读的假货）/ 深声（压得最深、读到会有代价）。
+   *
+   * `char` 是**登记名 id**；名录之外的人写 "other" 并另给 `speaker` 记名。
+   * 净化阶段与**在场名册**交叉校验（`castOfEvent` 那一份由调用方递进来）——
+   * 不在场的人一条都不收：心声是「此刻谁在心里响」，不是「谁可能在想什么」。
+   */
+  voices?: VoiceDirective[]
+}
+
+/** 心声的层数（闭集）—— 表层 / 伪装 / 深声，分寸见提示词那一节 */
+export type VoiceKind = '表层' | '伪装' | '深声'
+
+/** 一条心声：谁、想了什么、属于哪一层 */
+export interface VoiceDirective {
+  /** 登记名 id；名录之外的人一律 'other'（此时 speaker 必填） */
+  char: string
+  /** 那一句心声（一句，≤60 字；不要旁白） */
+  line: string
+  /** 表层 / 伪装 / 深声 */
+  kind: VoiceKind
+  /** char 为 'other' 时记的名（例如「拉斐尔」） */
+  speaker?: string
 }
 
 /** 一条私密推进：某角色的某个部位，这一次走到了哪儿 */
@@ -333,6 +360,8 @@ const KNOWN_FIELDS = new Set([
   // 叙事时钟：漏在名单外的话，「过了三天」那条指令整个被静默丢掉，
   // 时间一格都不走，而界面上一点提示都没有（这一栏最容易踩的就是这个坑）
   'advanceDays',
+  // 心声（读心者听到的那几句）：漏在名单外就整条安静地丢 —— 心声区永远空着，也不报错
+  'voices',
 ])
 
 /** 一次私密推进的开发度增量上限（一次一小步：一回合跳满等于没有过程） */
@@ -348,6 +377,15 @@ const INTIM_ITEMS_MAX = 8
 
 /** 约会指令里 cg id 的长度上限（够长到写得下 `cg-date-street`，短到拦得住整段串词） */
 const CG_ID_MAX = 64
+
+/** 一回合最多记几条心声 —— 再宽就成内心弹幕了，读起来与旁白没有分别 */
+const VOICE_MAX = 3
+/** 一条心声的字数上限：**一句**。超了截断（宁短勿长：心声一长就成了独白） */
+const VOICE_LINE_MAX = 60
+/** char 为 'other' 时那个记名的长度上限 */
+const VOICE_SPEAKER_MAX = 20
+/** 心声的三层（闭集）—— 与类型 VoiceKind 是同一份，别处要遍历就引这一份 */
+export const VOICE_KINDS = ['表层', '伪装', '深声'] as const
 
 /**
  * 湿润读数一次能挪多少（绝对值）。
@@ -380,8 +418,12 @@ function sanitizeFlagValue(v: unknown): FlagValue | null {
 /**
  * 白名单校验：去掉未知字段、坏标量；绝不 throw。
  * 返回的指令对象可能为空 {}（仍视为「解析成功、无变化」）。
+ *
+ * `present` 是**此刻真的在场的人**（`castOfEvent` 的那一份）。只有心声（voices）读它：
+ * 心声是「此刻谁在心里响」，不在场的人一条都不收。别的字段与在场与否无关，照旧只认名录。
+ * 不传（短信 / 约会那几路、以及补收）就是不判在场、只做名录校验 —— 那几路不摆心声。
  */
-export function sanitizeDirective(v: unknown): PlotDirective {
+export function sanitizeDirective(v: unknown, present?: readonly string[] | null): PlotDirective {
   const out: PlotDirective = {}
   if (!v || typeof v !== 'object' || Array.isArray(v)) return out
   const src = v as Record<string, unknown>
@@ -608,6 +650,71 @@ export function sanitizeDirective(v: unknown): PlotDirective {
     if (!raw.length || cast.length) out.cast = [...new Set(cast)].slice(0, 12)
   }
 
+  /* 心声（voices）：读心者听到的那几句 —— 一回合至多三条，每条一句。
+     收法有三道闸，每道都是「宁可这一条不要，也不许屏幕上多一句错的话」：
+       ① char 必须在**登记名录**里；名录之外的人一律写 'other' 并另给 speaker 记名 ——
+          写了个谁也不认识、又没记名的 id，整条丢（心声挂不到人身上就等于挂在空气里）；
+       ② 与**在场名册**交叉校验：present 给了就只收此刻真在场上的人——
+          'other' 那一支按记名与在场者的名字比对（对不上就丢）。不在场者的心声
+          听起来像「他提前知道了下一场的事」，那正是这一条要堵的剧透；
+       ③ kind 只认三层；写了别的（例如 '潜层'）整条丢 —— 三层的分寸在提示词里，
+          认不出的档位没有分寸可言。
+     三道之外还有两道数量闸：至多 VOICE_MAX 条、每条截到 VOICE_LINE_MAX 字。
+     丢弃一律留一行 console.warn 诊断 —— 这类坏法在界面上只表现为「这一回合没心声」，
+     不报错、不冒泡，事后查不出是哪一条被谁吃掉的。 */
+  if (Array.isArray(src.voices)) {
+    /* 在场的两份索引：id 一份（登记角色直接比 id），名字一份（'other' 按记名比） */
+    const onScene = present ? new Set(present) : null
+    const sceneNames = present
+      ? present.map((id) => speakerOf(id)?.name ?? personOf(id)?.name ?? id).filter(Boolean)
+      : []
+    const nameOnScene = (who: string) => sceneNames.some((n) => n.includes(who) || who.includes(n))
+    const voices: VoiceDirective[] = []
+    for (const item of src.voices) {
+      if (!item || typeof item !== 'object') continue
+      const o = item as Record<string, unknown>
+      const line = typeof o.line === 'string' ? o.line.trim().slice(0, VOICE_LINE_MAX) : ''
+      if (!line) continue
+      const rawKind = typeof o.kind === 'string' ? o.kind.trim() : ''
+      const kind = (VOICE_KINDS as readonly string[]).includes(rawKind)
+        ? (rawKind as VoiceKind)
+        : rawKind === '' ? '表层' as VoiceKind : null
+      if (kind === null) {
+        console.warn('[voices] 心声的 kind 不在三层里，整条丢弃：', rawKind, line)
+        continue
+      }
+      const char = typeof o.char === 'string' ? o.char.trim() : ''
+      const speaker = typeof o.speaker === 'string' ? o.speaker.trim().slice(0, VOICE_SPEAKER_MAX) : ''
+      const anonymous = char === 'other'
+      if (!anonymous && !CHAR_IDS.has(char)) {
+        console.warn('[voices] 心声的 char 不在名录里（应写 other 并给 speaker），整条丢弃：', char, line)
+        continue
+      }
+      if (anonymous && !speaker) {
+        console.warn('[voices] 心声 char=other 却没给 speaker，整条丢弃：', line)
+        continue
+      }
+      if (onScene) {
+        if (!anonymous && !onScene.has(char)) {
+          console.warn('[voices] 心声的人此刻不在场，整条丢弃：', char, line)
+          continue
+        }
+        if (anonymous && !nameOnScene(speaker)) {
+          console.warn('[voices] 心声的记名不在在场名册里，整条丢弃：', speaker, line)
+          continue
+        }
+      }
+      voices.push({
+        char: anonymous ? 'other' : char,
+        line,
+        kind,
+        ...(anonymous ? { speaker } : {}),
+      })
+      if (voices.length >= VOICE_MAX) break
+    }
+    if (voices.length) out.voices = voices
+  }
+
   /* 此刻这一场在哪儿：短串，与约会那一支的 `date.place` 同一条上限。
      空串不算数（省了这一项＝地点没变）。 */
   if (typeof src.place === 'string') {
@@ -818,7 +925,7 @@ function repairJson(s: string): string {
  * 容错解析：优先取「最后一个 ```json 围栏块」；其次退化扫描平衡 {…}。
  * 永不 throw。directive 恒为净化后的对象（可能为空 {}）；找不到返回 null。
  */
-export function parsePlotReply(raw: string): PlotReply {
+export function parsePlotReply(raw: string, present?: readonly string[] | null): PlotReply {
   const text = typeof raw === 'string' ? raw : ''
   if (!text.trim()) return { narrative: '', directive: null, found: false }
 
@@ -856,7 +963,7 @@ export function parsePlotReply(raw: string): PlotReply {
     try {
       // 修过格式再 parse：尾逗号 / 注释 / 零宽字符只让 JSON.parse 抛，不该让整块指令陪着丢
       const parsed: unknown = JSON.parse(repairJson(segment))
-      directive = sanitizeDirective(parsed)
+      directive = sanitizeDirective(parsed, present)
       found = true
     } catch {
       directive = null
@@ -966,11 +1073,14 @@ function stripBlockTags(s: string): string {
 /**
  * 容错双格式解析：先按原 JSON 路径兜底；检测到标签则叠加标签解析。
  * 永不 throw。directive/found 语义与 parsePlotReply 一致，供 needDir 复用。
+ *
+ * `present` 只喂给心声那一道在场闸（见 sanitizeDirective）：主线那一趟传 `castOfEvent`
+ * 的那一份，别的几路不传 —— 不传就是不判在场，行为与从前一模一样。
  */
-export function parseDirectorReply(raw: string): DirectorReply {
+export function parseDirectorReply(raw: string, present?: readonly string[] | null): DirectorReply {
   // 先把外来标签清干净：body 脱壳，旁注块整块去掉，再走本终端自己的协议
   const text = stripAlienTags(typeof raw === 'string' ? raw : '')
-  const json = parsePlotReply(text)
+  const json = parsePlotReply(text, present)
   const base: DirectorReply = {
     ...json,
     options: [],
@@ -1001,7 +1111,7 @@ export function parseDirectorReply(raw: string): DirectorReply {
        坏在「found 仍然是 true、directive 是 {}」：面板报「已收到指令」，什么也没落地，
        查都没处查。这里自己再解一遍，解得动就用它。 */
     const loose = parseVarsRaw(varsRaw)
-    directive = sanitizeDirective(loose ?? parsed.varsCommands.merge)
+    directive = sanitizeDirective(loose ?? parsed.varsCommands.merge, present)
     found = true
   } else {
     directive = json.directive
@@ -1305,7 +1415,11 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       Boolean(d.intim?.length) ||
       Boolean(d.attire?.length) ||
       Boolean(d.acts && Object.keys(d.acts).length) ||
-      Boolean(d.rel && Object.keys(d.rel).length),
+      Boolean(d.rel && Object.keys(d.rel).length) ||
+      /* 心声也算落地了东西（记忆库那一栏会多出条目）—— 只给了心声的一回合，
+         不该还挂着「重写此回复」（重写会把同样那几条再记一遍，去重挡得住重复，
+         但一个「这一回合什么都没落地」的提示就是在骗人）。 */
+      Boolean(d.voices?.length),
   )
 }
 
@@ -1631,6 +1745,30 @@ export function speechContract(castRef = '【本事件出场角色】'): string 
 
 一回合里的**配比**：旁白（叙述、动作、神态、场景、心理）可以多写，台词也不能少 —— 不要整段只有叙述、一句台词都没有，也不要通篇都是对白、没有旁白垫着。
 台词要**多样**：按在场各人自己的性子、身份、此刻的心境来写，各人说话的用词、句子长短、称呼习惯要分得开；不要反复引用原文里的原句，也不要把几个人写成同一个腔调 —— 对着大纲里的原文台词照抄，正文就成了复述。`
+}
+
+/**
+ * 心声那一节（引擎机制，不是正文写法）。
+ *
+ * 与 speechContract 同一位置、同一分量：两者都是「终端怎么读你写的字」——
+ * 台词行契约管**气泡**，这一节管**正文下方那一小段灰字**（心声区）。
+ * 为什么非得单开一节而不是塞进台词行契约：正文里再长一句「他听见……」，终端也认不出来；
+ * 它只认事件指令里的 `voices`，而那一段只该写一句心里话。不把这条说明白，模型会二选一地坏：
+ *   ① 把心声当旁白写进正文（读起来像低语者以外谁都能听见，气氛全塌）；
+ *   ② 干脆不给 —— 界面上的心声区永远空着，而没有任何地方报错。
+ * 三层分寸也在这一节里：kind 不是标签，是「这一句有多深、读到要付什么代价」。
+ */
+export function voicesContract(): string {
+  return `【心声 · 引擎机制，不要写成正文里的旁白】
+言万心叶是「低语者」：在场者的心声只有他一个人听得到。终端为它单开一栏（正文下方那一小段灰字），**不要**把它写成正文里的旁白 —— 「他听见……」「她心里想着……」这类句子只用来说明他听见这个动作，心声本身走下面事件指令里的 voices 一栏（一句一条），不进正文。
+· 一回合至多**三条**；这一回合没有值得记的，就整条省略（宁少勿凑）。
+· kind 分三层，分寸各不相同：
+  表层 —— 她此刻正在想、来不及藏的那一句；
+  伪装 —— 她摆出来给人读的那一层，是假货：要读得出「这不是真的」；
+  深声 —— 压得很深、读到会有代价的那一层。给得越少越重，别每回合都给。
+· 每条**一句**、≤60 字：只写她心里那一句话，不写旁白、不写动作、不加引号。
+· 只给**本段确实在场**的人：char 写角色 id；名录之外的人写 "other" 并另给 "speaker" 记名。
+  不在场的人一条都不给 —— 引擎会按在场名册交叉校验，不在场的当场丢掉（那不是他耳朵够得着的地方）。`
 }
 
 /**
@@ -2058,6 +2196,8 @@ ${baseline.trim() || '（无）'}
 ${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${factsSection}${smsSection}${varBlock}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
+
+${voicesContract()}
 
 ${ANTI_AI_STYLE}
 

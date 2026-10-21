@@ -14,7 +14,7 @@ import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
 import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
-import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
+import type { ChatMsg, ChatMsgMeta, RecordMode, TimelineEvent } from '../data/types'
 import { TICKS_PER_DAY, applyDirective, buildDirectorSystem, createRetryGate, dayLabel, dayOf, directiveHasFx, extractLiveDisplay, nextTick, parseDirectorReply, replyDisplayText, tickGapFor } from '../lib/plot'
 import { nextAnchor } from '../lib/anchors'
 import { EPISODES, isFreeId, nextEpisodeAfter } from '../lib/freetime'
@@ -33,7 +33,8 @@ import type { Mission } from '../data/types'
 import { Battle } from './Battle'
 import { recentBattleContext } from '../lib/battle/narrate'
 import { battleStoryBrief, narrateStorylog } from '../lib/battle/storylog'
-import type { BattleFacts, PlotReply } from '../lib/plot'
+import type { BattleFacts, PlotReply, VoiceDirective } from '../lib/plot'
+import { appendVoices } from '../lib/voices'
 import { loadActiveBooks } from '../lib/lorestore'
 import { applySchemePersisted, capturePersisted, importChatPresetFile, listSchemes, patchScheme, readJsonFile, storeSchemes } from '../lib/schemes'
 import { ensureBriefs } from '../data/briefs'
@@ -74,6 +75,37 @@ const sameCastIds = (a: string[], b: string[]): boolean => {
   if (a.length !== b.length) return false
   const set = new Set(a)
   return b.every((id) => set.has(id))
+}
+
+/** 一条已落地的心声（说话人在这里已经换成显示名 —— 'other' 那一支用导演记的名） */
+type VoiceNote = VoiceDirective & { speaker: string }
+
+/**
+ * 心声 —— 正文下方的一小段，**不是气泡**。
+ *
+ * 为什么不做成气泡：气泡是「在场的人都听见了」的那种格式；心声只有低语者一个人听得到，
+ * 混在气泡里就把「谁听见了」这件事写错了。所以它走灰调的一小段，左侧一条细线，
+ * 每条 `说话人：「……」`，前面那一枚小标签写明是哪一层（表层 / 伪装 / 深声）。
+ *
+ * 无障碍：`role="note"` + `aria-label="心声"`，读屏能念出这是旁注而不是台词；
+ * 整块不可聚焦（不抢 Tab 的顺序，它只是正文的附注）。
+ */
+function VoiceNotes({ list }: { list?: VoiceNote[] }) {
+  if (!list || !list.length) return null
+  return (
+    <div className={css.voices} role="note" aria-label="心声" data-voices={list.length}>
+      <span className={css.voicesMark} aria-hidden="true">≈</span>
+      <div className={css.voicesBody}>
+        {list.map((v, i) => (
+          <p key={`${v.char}-${i}`} className={css.voice} data-voice={v.char} data-voice-kind={v.kind}>
+            <b className={css.voiceName}>{v.speaker}</b>
+            <span className={css.voiceText}>「{v.line}」</span>
+            <span className={css.voiceKind}>{v.kind}</span>
+          </p>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 /**
@@ -298,15 +330,29 @@ setPlotLogsSource({
 })
 
 /**
- * 换掉「版式改过」的开场白：开场白是**原文**、不是对话记录，它在代码里改了排印
- * （如改成「角色名：台词」行，好让终端切得出气泡），旧存档里那条仍是老样子。
- * 只换那一条、只换文本；其余消息一概不碰 —— 见调用处的判据。
+ * 换掉某一条的文本（唯一出口，仍然走 `writeLogs` —— 配额满时照样落进内存真账）。
+ * 两个调用面：
+ *   · 版式改过之后换开场白（开场白是**原文**，旧档里那条仍是老样子）；
+ *   · 操作员手改任意一条（见「编辑」）—— 这一类多传一个 `edited`，给该条打上
+ *     `meta.edited` 记号，渲染时在底部显一枚「手改」小 chip。
+ * 只换文本 / 记号：**不重跑指令、不重新生成**（要重推请走「改口重来」）。
  */
-function retextMsg(evId: string, id: string, text: string): Record<string, ChatMsg[]> {
+function retextMsg(evId: string, id: string, text: string, edited?: boolean): Record<string, ChatMsg[]> {
   const next = { ...currentLogs() }
-  next[evId] = (next[evId] ?? []).map((m) => (m.id === id ? { ...m, text } : m))
+  next[evId] = (next[evId] ?? []).map((m) => {
+    if (m.id !== id) return m
+    if (!edited) return { ...m, text }
+    const meta = { ...(m.meta ?? {}) } as ChatMsgMeta & { edited?: boolean }
+    meta.edited = true
+    return { ...m, text, meta }
+  })
   writeLogs(next)
   return next
+}
+
+/** 这一条被手改过没有（`meta.edited` 不在 `ChatMsgMeta` 上 —— 与 voices 同一个写法，交出一格就走了） */
+function editedOf(m: ChatMsg): boolean {
+  return (m.meta as (ChatMsgMeta & { edited?: boolean }) | undefined)?.edited === true
 }
 
 /**
@@ -442,6 +488,62 @@ function restoreLane(): { lane: PlotLane; pick: string | null } {
   return { lane: 'main', pick: null }
 }
 
+/* ---------- 就地编辑框 ---------- */
+
+/**
+ * 一条正文的编辑框（点「编辑」之后顶掉那条气泡，就地在原位长出来）。
+ *
+ * 规矩：
+ *   · 保存 = 只换文字 + 打 `meta.edited`（「手改」小 chip），**不重跑指令、不重新生成**；
+ *   · 玩家那条另有一枚「改口重来」：保存文本后截断它之后的所有内容并重新推进一次
+ *     （二次确认文案里写死「此前已落地的羁绊 / 旗标 / 图鉴不会回滚」）；
+ *   · 键盘：Ctrl/Cmd+Enter 保存、Esc 取消；等宽、按内容行数自动长高。
+ */
+function MsgEditBox({ isUser, text, retryArmed, onText, onSave, onCancel, onRetry }: {
+  isUser: boolean
+  text: string
+  retryArmed: boolean
+  onText: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+  onRetry: () => void
+}) {
+  const rows = Math.min(16, Math.max(3, text.split('\n').length + Math.floor(text.length / 46)))
+  return (
+    <div className={css.editBox} data-msg-edit={isUser ? 'user' : 'them'}>
+      <textarea
+        className={css.editArea}
+        data-msg-edit-area="1"
+        value={text}
+        rows={rows}
+        autoFocus
+        spellCheck={false}
+        onChange={(e) => onText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+          else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave() }
+        }}
+      />
+      <div className={css.editHint}>
+        台词行请以『角色名：』开头 —— 名字写错，这一句会掉回旁白。只改文字：不重跑指令，也不重新生成。
+      </div>
+      {retryArmed ? (
+        <div className={css.editWarn} data-msg-retry-note="1">
+          改口重来会截断这一条之后的所有内容并重新推进一次 —— <b>此前已落地的羁绊 / 旗标 / 图鉴不会回滚</b>。
+        </div>
+      ) : null}
+      <div className={css.editActs}>
+        <button type="button" className="btn btn--primary" style={{ fontSize: 12 }} data-msg-save="1" onClick={onSave}>保存</button>
+        <button type="button" className="btn btn--ghost" style={{ fontSize: 12 }} data-msg-cancel="1" onClick={onCancel}>取消</button>
+        {isUser ? (
+          <button type="button" className="btn btn--ghost" style={{ fontSize: 12 }} data-msg-retry="1" onClick={onRetry}>
+            {retryArmed ? '确认改口重来' : '改口重来'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 export function Plot() {
   const {
     operatorName, navigate, push,
@@ -553,7 +655,12 @@ export function Plot() {
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
   /** 「回退到上一段」的二次确认（与设置页「再按一次确认」同一套口径） */
   const [confirmBack, setConfirmBack] = useState(false)
-  /**
+
+  /* —— 消息编辑（两类共用一格 `editId`：一次只编一条，切走即收）—— */
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  /** 「改口重来」的二次确认：第一次只把按钮变成「确认改口重来」并摊开那句文案 */
+  const [retryArm, setRetryArm] = useState(false)  /**
    * 「事件已收束、待手动推进」：收束正文留在原地不消失；点「进入下一事件」才写记录并推进
    * （期间不锁输入，继续回话即留在本事件）。
    *
@@ -1322,7 +1429,8 @@ export function Plot() {
               return
             }
 
-            const parsed = parseDirectorReply(full)
+            /* 在场名册一并递进去：心声（voices）只收此刻真在场上的人（见 plot.ts 的 sanitizeDirective） */
+            const parsed = parseDirectorReply(full, castOfEvent(ev))
             needDir.current = !parsed.found
             if (!parsed.found) {
               // 先留痕再补收：留痕是为了**事后**能查出是哪种失败，补收是为了**当场**把它救回来
@@ -1333,21 +1441,46 @@ export function Plot() {
             const shown = replyDisplayText(parsed, acc)
             /* 这一条正文的消息 id：落地与「在场名册 · 自动修正」的幂等账共用它 */
             const msgId = idFor()
+            /* 心声（读心者听到的那几句）：这一回合读到的，记在两处，各管一段 ——
+               · 随正文进账（`meta.voices`）：正文下方那一小段由它铺出来，刷新之后还在；
+               · 进运行时的「心迹」账（lib/voices.ts）：记忆库那一栏按卷摆，按时间倒序。
+               两条路都去重（同 evId + speaker + text 只记一次）：补收 / 重试会把同一回合
+               再解析一遍，按内容认比按 id 认稳。
+               说话人在这里定：登记角色取显示名，'other' 用导演记的那个名。 */
+            const voices = parsed.directive?.voices ?? []
+            const voiceNotes: VoiceNote[] = voices.map((v) => ({
+              ...v,
+              speaker: v.char === 'other' ? (v.speaker ?? '他人') : (speakerOf(v.char)?.name ?? v.char),
+            }))
             if (shown) {
               appendMsg(evId, {
                 id: msgId,
                 from: 'them',
                 text: shown,
                 time: clock(),
+                /* meta 的类型在 data/types.ts（那份不归本视图改），心声这一栏由本视图
+                   自己加上去 —— 交集的写法不触发多余属性检查，落地仍是原来那份 meta。 */
                 meta: {
                   source: parsed.source,
                   options: parsed.options.length ? parsed.options : undefined,
                   thinking: parsed.thinking || undefined,
                   hasFx: directiveHasFx(parsed.directive),
-                },
+                  ...(voiceNotes.length ? { voices: voiceNotes } : {}),
+                } as ChatMsgMeta & { voices?: VoiceNote[] },
               })
             }
             applyReply(parsed, evId)
+            if (voiceNotes.length) {
+              appendVoices(voiceNotes.map((v) => ({
+                evId,
+                group: ev.group,
+                who: v.char,
+                speaker: v.speaker,
+                scene: ev.title,
+                text: v.line,
+                kind: v.kind,
+              })))
+            }
             /* 正文已落地、指令也落完，才让推断看一眼本回合正文：
                导演那一份 cast 先进 world.cast（账上先记「导演修正」），推断再往上补
                （后记「自动修正」）。流式这一笔早已收口（settled / clearLive 在上面），
@@ -1396,7 +1529,7 @@ export function Plot() {
         setBusy(false)
       }
     },
-    [busy, ready, cfgMain, directorPromptFor, logs, appendMsg, applyReply, autoFixCast, reaskDirective, push],
+    [busy, ready, cfgMain, directorPromptFor, logs, appendMsg, applyReply, autoFixCast, reaskDirective, push, castOfEvent],
   )
 
   /**
@@ -1493,6 +1626,78 @@ export function Plot() {
     needDir.current = false
     setErr(null)
     push('info', '从此重来', '已截断至此，本段会话从这一条重新起步。此前已落地的羁绊/图鉴/记录不会回滚。', false)
+  }
+
+  /* ---------- 消息编辑（两类） ---------- */
+
+  /** 进入编辑态：预填该条此刻的文本（重复点同一条只重填一次，不叠加） */
+  const startEdit = (m: ChatMsg) => {
+    if (busy) return
+    setEditId(m.id)
+    setEditText(m.text)
+    setRetryArm(false)
+    setErr(null)
+  }
+
+  const cancelEdit = () => {
+    setEditId(null)
+    setEditText('')
+    setRetryArm(false)
+  }
+
+  /**
+   * 保存（两类共用）：走 `retextMsg`（`writeLogs` 唯一出口，配额失败仍进内存真账），
+   * 只换文字、给该条打「手改」记号 —— **绝不重跑指令、不重新生成**。
+   * 幂等：保存成功即退出编辑态，同一条再点保存没有第二次机会（按钮已经不在了）。
+   */
+  const saveEdit = () => {
+    if (!focusEv || !editId) return
+    const text = editText.replace(/\s+$/, '')
+    if (!text.trim()) {
+      setErr('改完不能是空的 —— 想撤掉这一条，请用「从此重来」。')
+      return
+    }
+    setLogs(retextMsg(focusEv.id, editId, text, true))
+    setEditId(null)
+    setEditText('')
+    setRetryArm(false)
+    setErr(null)
+    push('info', '消息已手改', '只换了文字，没有重跑指令、也没有重新生成。', false)
+  }
+
+  /**
+   * 改口重来（只给自己的发言）：改写这一条 → 截断它之后的所有内容 → 重新推进一次。
+   *
+   * 两段式确认（第一次只摊开那句写死的提醒）；执行前先清收束栏 / 待战按钮 ——
+   * 那两格指着的是「截断之前那一段的画面」，留着就是幽灵按钮。
+   * 幂等：退出编辑态在 `pushTurn` 之前完成，同一条重复点保存不会重复推演。
+   */
+  const retryEdit = async () => {
+    if (!focusEv || !editId || busy || !ready) return
+    if (!retryArm) { setRetryArm(true); return }
+    const text = editText.trim()
+    if (!text) {
+      setErr('改口重来得留下话说 —— 想整条撤掉，请用「从此重来」。')
+      return
+    }
+    const list = logs[focusEv.id] ?? []
+    const idx = list.findIndex((m) => m.id === editId)
+    if (idx < 0) { cancelEdit(); return }
+    applyConcluded(null)
+    applyBattle(null)
+    const kept = list.slice(0, idx)
+    const meta = { ...(list[idx]!.meta ?? {}) } as ChatMsgMeta & { edited?: boolean }
+    meta.edited = true
+    const next = { ...currentLogs(), [focusEv.id]: [...kept, { ...list[idx]!, text, meta }] }
+    writeLogs(next)
+    setLogs(next)
+    needDir.current = false
+    setErr(null)
+    setEditId(null)
+    setEditText('')
+    setRetryArm(false)
+    push('info', '改口重来', '这一条已改写、其后内容已截断，正在重新推进。此前已落地的羁绊 / 旗标 / 图鉴不会回滚。', false)
+    await pushTurn(focusEv.id, text, kept)
   }
 
   /** 重写此回复：仅当末条为导演叙述、上一条是操作员发言、且该叙述未产生世界变化 */
@@ -2555,6 +2760,22 @@ export function Plot() {
                     /* 索引一律用**绝对下标**（shownStart + off）：底下的「从此重来 /
                        重写此回复」认的是整条账里的位置，不能跟着窗口一起从头数 */
                     const i = shownStart + off
+                    /* 这一条正在被编辑：原位顶掉气泡，长成编辑框（保存后气泡按新文字
+                       重新过一遍 splitSpeech —— 名字写错就掉回旁白，框下有提醒）。 */
+                    if (editId === m.id) {
+                      return (
+                        <MsgEditBox
+                          key={m.id}
+                          isUser={m.from === 'user'}
+                          text={editText}
+                          retryArmed={retryArm}
+                          onText={setEditText}
+                          onSave={saveEdit}
+                          onCancel={cancelEdit}
+                          onRetry={() => void retryEdit()}
+                        />
+                      )
+                    }
                     return m.from === 'them' ? (
                       <NarrBlock
                         key={m.id}
@@ -2564,6 +2785,11 @@ export function Plot() {
                         text={m.text}
                         opName={opName}
                       >
+                        {editedOf(m) ? <span className={css.editedChip} data-edited="1">手改</span> : null}
+
+                        {/* 本回合读到的心声：紧贴正文下方（不是气泡，见 VoiceNotes） */}
+                        <VoiceNotes list={(m.meta as (ChatMsgMeta & { voices?: VoiceNote[] }) | undefined)?.voices} />
+
                         {m.meta?.thinking ? (
                           <ThinkFold
                             open={foldOpen.has(m.id)}
@@ -2580,6 +2806,7 @@ export function Plot() {
 
                         {showOnline && ready && !busy && !m.meta?.opening ? (
                           <RowActs>
+                            <button type="button" className="linkGo" onClick={() => startEdit(m)}>编辑</button>
                             <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
                             {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true ? (
                               <button type="button" className="linkGo" onClick={() => void rewriteReply(i)}>重写此回复</button>
@@ -2595,8 +2822,12 @@ export function Plot() {
                         foot={
                           <span className={`muted tiny ${css.youFoot}`}>
                             {m.time}
+                            {editedOf(m) ? <span className={css.editedChip} data-edited="1">手改</span> : null}
                             {showOnline && ready && !busy ? (
-                              <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                              <>
+                                <button type="button" className="linkGo" data-you-edit="1" onClick={() => startEdit(m)}>编辑</button>
+                                <button type="button" className="linkGo" onClick={() => rollbackAt(i)}>从此重来</button>
+                              </>
                             ) : null}
                           </span>
                         }

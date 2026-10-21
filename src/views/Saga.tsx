@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ArrowRight, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/react'
 
@@ -27,7 +27,7 @@ function seqOf(eventId: string): number {
 }
 
 export function Saga() {
-  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile, castOfEvent } = useTerminal()
+  const { operatorName, epDone, unlocked, navigate, bondNow, world, isMet, records, requestProfile, castOfEvent, rewindTo, push } = useTerminal()
 
   const focusIdx = useMemo(() => TIMELINE.findIndex((e) => !epDone[e.id]), [epDone])
   const doneCount = useMemo(() => TIMELINE.filter((e) => epDone[e.id]).length, [epDone])
@@ -58,6 +58,33 @@ export function Saga() {
   const regCount = Object.keys(world.ends).length
 
   const offsetOf = (char: string) => world.offset[char] ?? 0
+
+  /* —— 「回到这一段之前」（多步回退）——
+     两段式确认：第一次只把按钮变成「再按一次确认」并给一句说明，第二次才真的撤。
+     撤多少归 `Terminal.rewindTo`（它照 `lib/rewind.ts` 的 planRewind 算），本页只负责
+     两件事：① 把「撤了哪几段」写进观测记录（push 就是观测记录那一列）；
+     ② 撤完让上下文带着新状态重渲染（epDone / records / world 都从 useTerminal 来，
+        无须 requestRemount —— 那是换整个运行态时才做的事）。
+     只有已归档（有记录）的段才有这一枚；自由段没有记录，自然不出现。 */
+  const [rewindArm, setRewindArm] = useState<string | null>(null)
+  const doRewind = useCallback((eventId: string) => {
+    if (rewindArm !== eventId) {
+      setRewindArm(eventId)
+      return
+    }
+    setRewindArm(null)
+    const at = seqOf(eventId)
+    /* 名单在撤之前算 —— 撤完 records 里就没有它们了 */
+    const names = records
+      .filter((r) => seqOf(r.eventId) > 0 && seqOf(r.eventId) >= at)
+      .map((r) => `《${TIMELINE.find((e) => e.id === r.eventId)?.title ?? r.eventId}》`)
+    if (!rewindTo(eventId)) {
+      push('warn', '回退未生效', '这一段不在读序里（旧档遗留段），没有撤任何东西。', false)
+      return
+    }
+    push('info', '回退到这一段之前 · 已撤回',
+      `${names.join('、') || '（无记录）'}已从低语者日志撤下，推演退回这一段之前。正文与已登记的角色 / 图鉴不会回滚；回退不回拨时钟。`, false)
+  }, [rewindArm, records, rewindTo, push])
 
   return (
     <div className="vpage">
@@ -275,6 +302,24 @@ export function Saga() {
                       <span>{ev ? `${ev.group} · ${ev.phase}` : r.eventId}</span>
                       {ev ? <span>{ev.place}</span> : null}
                       {ev && ev.entities.some((x) => x !== '——') ? <span>实体：{ev.entities.filter((x) => x !== '——').slice(0, 3).join('、')}</span> : null}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 10px', marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        style={{ fontSize: 12 }}
+                        data-rewind-event={r.eventId}
+                        data-rewind-arm={rewindArm === r.eventId ? '1' : undefined}
+                        onClick={() => doRewind(r.eventId)}
+                        title="把这一段与它之后的所有记录一并撤下，推演退回这一段之前"
+                      >
+                        {rewindArm === r.eventId ? '再按一次确认' : '回到这一段之前'}
+                      </button>
+                      {rewindArm === r.eventId ? (
+                        <span className="tiny" data-rewind-note="1" style={{ color: 'var(--ink-mute)', lineHeight: 1.7 }}>
+                          这一段与它之后的记录都会撤下；正文、已登记的角色 / 图鉴不会回滚。
+                        </span>
+                      ) : null}
                     </div>
                   </article>
                 )

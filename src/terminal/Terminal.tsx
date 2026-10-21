@@ -5,6 +5,8 @@ import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { ANCHORS } from '../data/anchors'
+import { planRewind } from '../lib/rewind'
+import { writeConcluded, writePendingBattle } from '../lib/plotpending'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, CAST, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import type { CastPerson } from '../data/castmeta'
@@ -25,6 +27,7 @@ import { requestRemount } from '../lib/remount'
 import { subscribeTabLock, tabLockState, tabWriteBlocked } from '../lib/tablock'
 import { sfx } from '../lib/audio'
 import { resetBattleStore } from '../lib/battle/store'
+import { syncResearch } from '../lib/research'
 import {
   applySnapshot,
   captureSnapshot,
@@ -272,6 +275,23 @@ export interface TerminalState {
    * 事实，与进度无关）、以及别段的任何东西。返回是否真的撤了。
    */
   reopenEvent: (id: string) => boolean
+
+
+  /**
+   * 回退到「某一段之前」（多步回退）：把目标段**及它之后所有已归档段**一次撤干净。
+   *
+   * 与 `reopenEvent` 的差别只有一处 —— **一格 vs 到某段之前**：
+   *   · `reopenEvent(id)` 只撤那一段（目标永远是「上一段」，用于一路推着撤）；
+   *   · `rewindTo(id)` 撤目标段 + 它之后全部（用户在低语者日志里点「回到这一段之前」）。
+   * 撤的东西同一口径：`epDone` 若干格、`world.records` 里对应记录、这些段 `lock`
+   * 写下的羁绊下限（按**剩下还收着的段**重算）、指针 `cur` 落回目标段之前。
+   * `rewindTo` 另多做两件：`world.anchors` 里这些段的锚点登记一并撤销（锚点跟着段走），
+   * 以及清掉 `zts-plot-pending:v1`（收束栏 / 待战按钮不许残留成幽灵按钮）。
+   *
+   * **不撤**：会话正文、`world.cast`、`met`、图鉴登记、作战记录、`world.tick`
+   * （tick 只增不减是既有口径 —— 回退不回拨时钟）。返回是否真的撤了。
+   */
+  rewindTo: (id: string) => boolean
 
   /** 跨视图「打开某角色档案」意图（正文关键词跳转 → 档案页就近展开） */
   profileRequest: { id: string; name: string; ts: number } | null
@@ -743,6 +763,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [epDone, setEpDone] = useState<Record<string, true>>(initial.epDone)
   const [cur, setCur] = useState<string | null>(initial.cur)
   const [world, setWorld] = useState<WorldState>(() => hydrateWorld(initial.epDone, initial.cur, initial.world))
+
+  /* 科研（研究室）的研究点：按来源重算一遍（幂等，见 lib/research 的 syncResearch）。
+     挂在这里而不是收束那一刻的某个回调里，是因为「段数」这件事只有一个出处 ——
+     在线推演收束、离线通读收束、读档回填，三条路最后都落到这一个 epDone 上。 */
+  useEffect(() => {
+    void syncResearch(Object.keys(epDone).length)
+  }, [epDone])
   /** 变量面板浮层开关 */
   const [varsOpen, setVarsOpen] = useState(false)
   /** 「存读档」浮层开关 */
@@ -1542,6 +1569,67 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   )
 
   /**
+   * 回退到「某一段之前」（多步回退）—— `reopenEvent` 的多步版，契约见
+   * `TerminalState.rewindTo`。方案由 `lib/rewind.ts` 的 `planRewind` 算出（纯函数，
+   * 读序取 `EPISODES` 下标，含卷间自由段）；这里只负责照着落盘。
+   *
+   * 一次撤干净（①~⑥）：
+   *   ① `epDone` 删掉 `plan.drop` 全部；
+   *   ② `cur` 置为 `plan.cursor`（drop 之前最近的一段，没有就 null）；
+   *   ③ 低语者记录按 `plan.drop` 逐条 filter（自由段本无记录，兜住即可）；
+   *   ④ 羁绊下限 `world.locked` **只按 `plan.keep` 重算**（不是整份清空）；
+   *   ⑤ `world.anchors` 按 `plan.anchors` 逐键 delete（着段走的锚点登记一并撤）；
+   *   ⑥ 清 `zts-plot-pending:v1`（收束栏 / 待战按钮不许残留成幽灵按钮）。
+   *
+   * 与 `reopenEvent` 的差异只有「撤多少」：它撤**一格**，这里撤**这一段及其之后全部**。
+   * `reopenEvent` 不碰的这几样，这里同样不碰：会话正文（`zts-plot`，推过的正文
+   * 还留着能重读）、`world.cast`、`met`、图鉴登记（`world.ends`）、作战记录
+   * （battle store）、`world.tick` —— **回退不回拨时钟**（tick 只增不减，既有口径）。
+   */
+  const rewindTo = useCallback(
+    (id: string): boolean => {
+      const plan = planRewind(id, epDone)
+      if (!plan) return false
+      const dropped = new Set(plan.drop)
+
+      setEpDone((prev) => {
+        const next = { ...prev }
+        for (const evId of plan.drop) delete next[evId]
+        return next
+      })
+      setCur(plan.cursor)
+
+      setWorld((prev) => {
+        /* ④ 羁绊下限只按 keep 重算 —— 与 reopenEvent 同一条口径，范围换成「剩下的全部」 */
+        const locked: Record<string, number> = {}
+        for (const evId of plan.keep) {
+          const ev = TIMELINE.find((e) => e.id === evId)
+          for (const l of ev?.lock ?? []) {
+            if (l.value > (locked[l.char] ?? 0)) locked[l.char] = l.value
+          }
+        }
+        const anchors = { ...(prev.anchors ?? {}) }
+        for (const a of plan.anchors) delete anchors[a]
+        return {
+          ...prev,
+          locked,
+          anchors,
+          records: prev.records.filter((r) => !dropped.has(r.eventId)),
+        }
+      })
+
+      /* ⑥ 收束栏 / 待战按钮：两半各写各的，两下都清干净（见 lib/plotpending.ts） */
+      writeConcluded(null)
+      writePendingBattle(null)
+
+      /* 观测记录（toast）由调用方推：它比这里更清楚「用户点的是哪一段」——
+         Saga 那枚「回到这一段之前」推的就是 plan.drop 那份名单。 */
+      return true
+    },
+    [epDone],
+  )
+
+  /**
    * 回退到上一段（用户口径：「退干净：连日志那一条一起撤」）。
    * 撤 `epDone` 那一格、低语者日志里那一条记录、这一段写下的羁绊下限，并把指针
    * 退回它前面最近一段；会话正文与「见过 / 登记过」的既成事实一律不动。
@@ -1704,6 +1792,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     meetChar,
     completeEvent,
     reopenEvent,
+    rewindTo,
     profileRequest,
     requestProfile,
     clearProfileRequest,

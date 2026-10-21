@@ -801,3 +801,127 @@
   /* 次级那一档（tokens.css 末节口径 34~40）：小字按钮在指头底下也要够按 */
   .castReset { min-height: 34px; }
 }
+/* ============ 心声（读心者听到的那几句）============
+   正文下方的一小段，**不是气泡**：气泡说的是「在场的人都听见了」，而心声只有低语者一个人听得到。
+   所以这里走灰调、比正文小一号、左侧一条细竖线（外加一枚波浪记号），整块不进 Tab 顺序。
+   颜色一律走 tokens（--bg-2 / --line-2 / --ink-mute / --ink-faint），不新增硬编码色。 */
+.voices {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 2px;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border-left: 2px solid var(--line-2);
+}
+.voicesMark {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: 0.08em;
+}
+.voicesBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.voice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink-mute);
+}
+.voiceName { font-weight: 700; }
+.voiceText { min-width: 0; }
+.voiceKind {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 1px solid var(--line-2);
+  color: var(--ink-faint);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+/* ============ 消息编辑（编辑文字 / 改口重来）============
+   点「编辑」之后**原位**长出来的那一块（顶掉那条气泡）：等宽、按行数自动长高、
+   键盘可用（Ctrl+Enter 保存 / Esc 取消）。颜色一律走 tokens，不新增硬编码色。 */
+.editBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  min-width: 0;
+}
+.editArea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.85;
+  resize: vertical;
+}
+.editArea:focus-visible {
+  outline: 2px solid var(--steel-deep);
+  outline-offset: 1px;
+  border-color: var(--steel);
+}
+.editHint {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+/* 改口重来的那一条：与「回退」同一个口吻 —— 左侧一道琥珀杠，提醒这是会截断的动作 */
+.editWarn {
+  padding: 7px 10px;
+  border-left: 2px solid var(--amber);
+  background: var(--bg-1);
+  color: var(--ink-mute);
+  font-size: 11.5px;
+  line-height: 1.75;
+}
+.editWarn b { color: var(--amber-deep); }
+.editActs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* 「手改」小 chip：挂在那条正文的底部（玩家那条挂在时刻旁边） */
+.editedChip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 5px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink-mute);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* 手机档：编辑框收边，按钮均分一行 —— 三枚按钮加起来比 390 屏那一格窄，不横溢 */
+@media (max-width: 720px) {
+  .editBox { padding: 8px 9px; }
+  .editArea { font-size: 13px; }
+  .editActs > :global(.btn) { flex: 1 1 auto; min-width: 0; }
+}
+@media (pointer: coarse) {
+  .editActs > :global(.btn) { min-height: 40px; }
+}
