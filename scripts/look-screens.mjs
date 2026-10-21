@@ -32,10 +32,10 @@ const SHOTS = process.env.SHOTS !== '0'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 mkdirSync(OUT, { recursive: true })
 
-/* 11 屏，按导航那一排的原名点名（goto 就是按按钮文字找）。
+/* 12 屏，按导航那一排的原名点名（goto 就是按按钮文字找）。
    名字与 src/App.tsx 的 NAV 一字不差 —— 那儿改了名，这儿跟着改。 */
 const SCREENS = [
-  '终端总览', '剧情推进', '低语者日志', '情景记忆库', '智库', '武装图鉴',
+  '终端总览', '剧情推进', '地图', '低语者日志', '情景记忆库', '智库', '武装图鉴',
   '角色档案', '任务简报', '终末图鉴', '短信', '终端设置',
 ]
 

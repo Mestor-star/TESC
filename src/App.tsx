@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { ArrowLeft, ArrowCounterClockwise, Brain, Gauge, Users, MapPin, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowCounterClockwise, Brain, Gauge, Users, MapPin, MapTrifold, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -95,6 +95,7 @@ const view = <K extends string>(name: K, load: () => Promise<Record<K, Component
 
 const Dashboard = view('Dashboard', () => import('./views/Dashboard'))
 const Plot = view('Plot', () => import('./views/Plot'))
+const MapView = view('Map', () => import('./views/Map'))
 const Saga = view('Saga', () => import('./views/Saga'))
 const Memory = view('Memory', () => import('./views/Memory'))
 const Lore = view('Lore', () => import('./views/Lore'))
@@ -114,6 +115,7 @@ function ViewLoading() {
 const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
   { id: 'dashboard', en: 'DASHBOARD', cn: '终端总览', icon: <Gauge size={21} weight="bold" /> },
   { id: 'plot', en: 'PLOT / STORY', cn: '剧情推进', icon: <Play size={21} weight="bold" /> },
+  { id: 'map', en: 'FIELD / MAP', cn: '地图', icon: <MapTrifold size={21} weight="bold" /> },
   { id: 'saga', en: 'RECORD / TIMELINE', cn: '低语者日志', icon: <Scroll size={21} weight="bold" /> },
   { id: 'memory', en: 'MEMORY / SITUATIONAL', cn: '情景记忆库', icon: <Brain size={21} weight="bold" /> },
   { id: 'lore', en: 'THINK TANK', cn: '智库', icon: <Vault size={21} weight="bold" /> },
@@ -128,6 +130,7 @@ const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
 const TITLE: Record<ViewId, { en: string; cn: string }> = {
   dashboard: { en: 'TERMINAL / DASHBOARD', cn: '终端总览' },
   plot: { en: 'PLOT / STORY', cn: '剧情推进' },
+  map: { en: 'FIELD / SURVEY MAP', cn: '地图' },
   saga: { en: 'RECORD / WHISPERER LOG', cn: '低语者日志' },
   memory: { en: 'MEMORY / SITUATIONAL', cn: '情景记忆库' },
   lore: { en: 'DATA / THINK TANK', cn: '智库' },
@@ -435,6 +438,7 @@ function Stage() {
     switch (view) {
       case 'dashboard': return <Dashboard />
       case 'plot': return <Plot />
+      case 'map': return <MapView />
       case 'saga': return <Saga />
       case 'memory': return <Memory />
       case 'lore': return <Lore />

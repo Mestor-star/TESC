@@ -1,0 +1,265 @@
+/* ===== 地图：世界图 / 区域图 · 四层（地表 / 地下 / 浮空 / 异次元）=====
+
+   两条硬规矩落在这一份里：
+   ① **页面不许横向溢出** —— 图自己单独一层滚动容器（.canvasWrap），
+      窄屏就让它横着滚，别把 vpage 撑宽；
+   ② 颜色一律走 tokens。层色是本地四个变量（--map-layer-*），
+      它们只是给「这一格属于哪一层」上色，不当字色用。 */
+
+.page {
+  --map-layer-surface: var(--jade);
+  --map-layer-underground: var(--amber);
+  --map-layer-sky: var(--steel);
+  --map-layer-otherworld: var(--red);
+}
+
+/* ---------- 两条横档 ---------- */
+.bars { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
+.seg { display: inline-flex; align-items: stretch; border: 1px solid var(--line-2); border-radius: var(--radius-pill); overflow: hidden; background: var(--bg-1); }
+.segBtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
+  cursor: var(--cursor-point);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.segBtn + .segBtn { border-left: 1px solid var(--line); }
+.segBtn:hover { background: var(--bg-2); color: var(--ink); }
+.segBtn.isOn { background: var(--bg-3); color: var(--violet-deep); }
+
+.zoomNow {
+  display: inline-flex; align-items: center; padding: 0 4px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute);
+}
+
+.iconBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; min-height: 30px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  background: var(--bg-1); color: var(--ink-dim);
+  cursor: var(--cursor-point);
+  transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+}
+.iconBtn:hover { border-color: var(--steel); color: var(--ink); background: var(--bg-2); }
+.iconBtn[disabled] { opacity: 0.4; pointer-events: none; }
+
+/* ---------- 层筛 ---------- */
+.legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.legendCap { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; color: var(--ink-faint); text-transform: uppercase; }
+.layerBtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-pill);
+  background: var(--bg-1); color: var(--ink-dim);
+  font-size: 11.5px; font-weight: 700;
+  cursor: var(--cursor-point);
+  transition: opacity var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.layerBtn:hover { border-color: var(--line-3); color: var(--ink); }
+.layerBtn.isOff { opacity: 0.42; }
+/* 图例里的小样照抄图上那枚点：实线=地表 · 虚线=地下 · 点线=浮空 · 外环=异次元 */
+.layerDot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--lc);
+  background: var(--bg-1);
+}
+.layerDot[data-shape='underground'] { border-style: dashed; background: color-mix(in srgb, var(--lc) 14%, var(--bg-1)); }
+.layerDot[data-shape='sky'] { border-style: dotted; }
+.layerDot[data-shape='otherworld'] { box-shadow: 0 0 0 2px color-mix(in srgb, var(--lc) 26%, transparent); }
+
+/* ---------- 版式 ---------- */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
+
+/* **唯一**的滚动容器：窄屏横滚，图不撑页面 */
+.canvasWrap {
+  min-width: 0;
+  overflow: auto;
+  padding: 26px 28px 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 4%, transparent), transparent 38%),
+    var(--bg-1);
+}
+.canvas { position: relative; min-width: 440px; aspect-ratio: 1 / 1; margin: 0 auto; }
+
+.edges { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.edge {
+  stroke: var(--line-3);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+.edge[data-edge-layer='underground'] { stroke-dasharray: 4 3; }
+.edge[data-edge-layer='sky'] { stroke-dasharray: 1 3; }
+.edge[data-edge-layer='otherworld'] { stroke-dasharray: 7 3; }
+
+/* ---------- 节点 ---------- */
+.node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  padding: 0; border: 0; background: none;
+  cursor: var(--cursor-point);
+}
+.node:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+.node.isCursor { z-index: 3; }
+.node.isOn { z-index: 4; }
+
+.dot {
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--lc);
+  background: var(--bg-1);
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast);
+}
+.node:hover .dot { transform: scale(1.25); }
+.dot[data-shape='underground'] { border-style: dashed; background: color-mix(in srgb, var(--lc) 16%, var(--bg-1)); }
+.dot[data-shape='sky'] { border-style: dotted; }
+.dot[data-shape='otherworld'] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc) 24%, transparent); }
+
+.k-district .dot { width: 18px; height: 18px; }
+.k-site .dot { width: 13px; height: 13px; }
+.k-room .dot { width: 9px; height: 9px; }
+
+.mark {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--lc) 34%, var(--ink));
+}
+.k-room .mark { display: none; }
+
+/* 「你在这里」：紫环那一圈是此刻，和选中态那圈墨线各说各的 */
+.node.isHere .dot {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 26%, transparent);
+}
+.node.isOn .dot { border-width: 3px; }
+
+.label {
+  position: absolute;
+  bottom: calc(100% + 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--bg-1);
+  color: var(--ink-dim);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast);
+}
+.labelOn,
+.node:hover .label,
+.node:focus-visible .label { opacity: 1; }
+
+.hereTag {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--violet) 16%, var(--bg-1));
+  border: 1px solid color-mix(in srgb, var(--violet) 55%, transparent);
+  color: var(--violet-deep);
+  font-size: 9.5px; font-weight: 900; letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* ---------- 右栏详情 ---------- */
+.side {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  padding: 14px 16px;
+  position: sticky;
+  top: 12px;
+}
+.sideEmpty { display: flex; flex-direction: column; gap: 8px; color: var(--ink-mute); font-size: 12.5px; line-height: 1.75; }
+.sideEmpty svg { color: var(--steel-deep); }
+.sideEmpty p { margin: 0; }
+.hint { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--ink-mute); }
+
+.sideTop { display: flex; align-items: center; gap: 10px; }
+.sideKicker {
+  flex: 1; min-width: 0;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.sideName { margin: 8px 0 0; font-size: 18px; font-weight: 900; letter-spacing: 0.01em; color: var(--ink); }
+
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tag {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--lc, var(--line-2)) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--lc, var(--bg-2)) 10%, transparent);
+  color: color-mix(in srgb, var(--lc, var(--ink-mute)) 55%, var(--ink));
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em;
+}
+.tagLayer { border-style: dashed; }
+.tagHere { --lc: var(--violet); font-weight: 800; }
+.tagFaint { --lc: var(--line-3); color: var(--ink-faint); }
+
+.sideNote { margin: 12px 0 0; font-size: 13px; line-height: 1.85; color: var(--ink-dim); }
+
+.sideBlock { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
+.sideRow { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
+.sideCap {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.sideRow .sideCap { min-width: 42px; }
+
+.jumps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.jump {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-pill);
+  background: var(--bg-2); color: var(--ink-dim);
+  font-size: 11.5px; font-weight: 700;
+  cursor: var(--cursor-point);
+  transition: border-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
+}
+.jump:hover { border-color: var(--violet); color: var(--violet-deep); transform: translateY(-2px); box-shadow: var(--offset-sm); }
+.jumpKid { border-style: dashed; color: var(--ink-mute); }
+
+.refList { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.refList li { display: flex; align-items: baseline; gap: 7px; font-size: 12px; line-height: 1.6; }
+.refId { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); }
+.refTitle { color: var(--ink-dim); flex: 1; min-width: 0; }
+.refNow { font-size: 9.5px; font-weight: 900; color: var(--violet-deep); }
+
+.offChip { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); word-break: break-all; }
+
+.sideFoot { margin-top: 16px; }
+
+.foot { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 14px; }
+
+/* ---------- 窄屏：一列，图自己滚 ---------- */
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; }
+  .canvasWrap { padding: 18px 18px 22px; }
+  .canvas { min-width: 420px; }
+}
+
+/* ---------- 粗指针：点得着的尺寸（主控件 44 / 次级 34~40） ---------- */
+@media (pointer: coarse) {
+  .node { width: 44px; height: 44px; }
+  .iconBtn { min-width: 40px; min-height: 40px; }
+  .segBtn { min-height: 40px; }
+  .layerBtn { min-height: 34px; }
+  .jump { min-height: 34px; }
+}

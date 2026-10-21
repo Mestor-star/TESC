@@ -1994,6 +1994,13 @@ try {
   }
   await sleep(150)
   await ev(`(()=>{const b=document.querySelector('[data-launch]');if(b)b.click();return true})()`)
+  /* 作战屏现在先出「选目标」那一层（可打的目标不止一个时）：方向键挑、Z 开打。
+     只有一个目标时它会自动进入，按不到这一层 —— 所以先探一下，有就按 Z。 */
+  const nPick = await ev(`(()=>{const p=document.querySelector('[data-target-picker]');if(!p)return 0;return p.querySelectorAll('[data-target-option]').length})()`)
+  if (nPick) {
+    await ev(`(()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',bubbles:true}));return true})()`)
+    await sleep(120)
+  }
   await poll(`!!document.querySelector('[data-battle]')`, 12000, 'N battle mounted')
   const nFoe = await ev(`(()=>{const f=document.querySelector('[data-foe-card]');const a=document.querySelector('[data-atb]');
     const p=document.querySelector('[data-party-field]');
@@ -3747,7 +3754,7 @@ try {
   /* M2 十一个视图：一屏一屏走，每屏都不许有元素探出视口。
      这条路是**全部**手机档改动的总账 —— 任何一处漏了 `min-width: 0`、
      少了一条窄屏规则、或者把那几处内联 px 忘在了原地，都会在这一条上现形。 */
-  const Z_NAVS = ['终端总览', '剧情推进', '低语者日志', '情景记忆库', '智库', '武装图鉴', '角色档案', '任务简报', '终末图鉴', '短信', '终端设置']
+  const Z_NAVS = ['终端总览', '剧情推进', '地图', '低语者日志', '情景记忆库', '智库', '武装图鉴', '角色档案', '任务简报', '终末图鉴', '短信', '终端设置']
   const zBad = []
   for (const v of Z_NAVS) {
     await goto(v)
@@ -3755,7 +3762,7 @@ try {
     const o = JSON.parse(await ev(zOverSrc))
     if (o.n !== 0) zBad.push(v + ' → ' + JSON.stringify(o.top))
   }
-  ok('Z2 十一个视图逐个走一遍：每一屏都没有元素探出视口（横滑条里的不算）',
+  ok('Z2 十二个视图逐个走一遍：每一屏都没有元素探出视口（横滑条里的不算）',
     zBad.length === 0, zBad.join(' | '))
 
   /* M3 顶栏折两行：读数那一簇落到标题那一簇的**下面**，并且它自己横滑得起来
