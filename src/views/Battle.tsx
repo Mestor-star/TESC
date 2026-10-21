@@ -50,13 +50,14 @@ import {
 } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
+import { foePoolOf } from '../lib/battle/foegen'
 import { enemyFormation } from '../lib/battle/derive'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { dutyOf } from '../lib/battle/duty'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
 import { endOf, isDebuff } from '../lib/battle/types'
-import type { BattleRecord, BattleState, Combatant, DutyId, EnemyIntent, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
+import type { BattleRecord, BattleState, Combatant, DutyId, EnemyIntent, FoeTarget, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
@@ -80,6 +81,8 @@ interface Props {
   morphPool?: string[]
   /** 每人与你的羁绊读数（0~100）—— 决定连携接得多快、本人多硬气 */
   bond: Record<string, number>
+  /** 玩家挑中的那一位（外层 Battle 选中后传进来；直接调用的地方不用给） */
+  target?: FoeTarget
   /* 这里从前有一个 `coin`（玩家的终末点数余额）。2026-09-16 拆了 ——
      它唯一的去处是被塞进 createBattle，于是「本场战果」变成「钱包 + 战果」，
      结算再把这一整笔加回钱包（见 engine 的 `coin: 0` 那一处说明）。
@@ -233,14 +236,14 @@ const SFX_OF_FX: Record<FxKind, SfxName> = {
    放模块级：StrictMode 的「装 → 清 → 再装」要跨两次 effect 实例才能配对。 */
 let releaseTimer = 0
 
-export function Battle({
-  mission, squad, progress, growth, stamina, equip, owned, bag, morphPool, bond,
+function BattleField({
+  mission, squad, progress, growth, stamina, equip, owned, bag, morphPool, bond, target,
   onExit, onSettled,
 }: Props) {
   const [st, setSt] = useState<BattleState>(() =>
     createBattle({
       mission, squad, progress, growth, gear: equip,
-      sp: stamina.cur, spMax: stamina.max, bag, morphPool, bond,
+      sp: stamina.cur, spMax: stamina.max, bag, morphPool, bond, target,
     }),
   )
   const [shown, setShown] = useState(0)
@@ -1159,6 +1162,7 @@ export function Battle({
       className={css.root}
       data-battle="1"
       data-phase={st.phase} data-command={st.command}
+      data-forced={mission.forced ? '1' : undefined}
       data-fx-level={fxLevel}
       data-shake={fxLevel === 'standard' && shake ? '1' : undefined}>
       {/*
@@ -1277,6 +1281,12 @@ export function Battle({
               ? (st.phase === 'think' ? '敌方指挥中…' : '敌方 · AI 指挥')
               : '敌方 · 离线判断'}
           </span>
+          {/* 伏击那一场：不能挑对手。字段写在任务上（mission.forced），这里只念出来 */}
+          {mission.forced ? (
+            <span className={css.cmdChip} data-forced-chip title="被袭击 / 伏击 —— 对手由现场决定，这一场挑不了">
+              伏击 · 不可挑目标
+            </span>
+          ) : null}
           <span className={css.siteR} data-r-badge data-r-src={siteR.reading.src} title={`${siteR.reading.note}
 ${siteR.f.word}`}>
             R {siteR.reading.r.toFixed(3)}
@@ -3265,4 +3275,111 @@ function Result({
       </button>
     </div>
   )
+}
+
+/* ============================================================
+   作战屏 · 选目标那一层（按场面生成的目标池）
+   ------------------------------------------------------------
+   进来先看这一段的**敌阵目标池**（lib/battle/foegen 的 foePoolOf）：
+   不止一位时先让玩家挑打谁；只有一位、或任务明写 forced（被袭击 /
+   伏击）时直接进战斗 —— 不是把入口藏起来，是那一条本来就没得选。
+   键盘：← → 挑，Z / Enter 开打；鼠标点哪一张就是哪一张。
+   ============================================================ */
+function TargetPicker({
+  mission, pool, onPick, onExit,
+}: {
+  mission: Mission
+  pool: FoeTarget[]
+  onPick: (t: FoeTarget) => void
+  onExit: () => void
+}) {
+  const [idx, setIdx] = useState(0)
+  const i = Math.min(idx, Math.max(0, pool.length - 1))
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setIdx((v) => (v + pool.length - 1) % pool.length)
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        setIdx((v) => (v + 1) % pool.length)
+      } else if (e.key === 'z' || e.key === 'Z' || e.key === 'Enter') {
+        e.preventDefault()
+        const t = pool[i] ?? pool[0]
+        if (t) onPick(t)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onExit()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [i, pool, onPick, onExit])
+
+  return createPortal(
+    <div className={css.pickMask} data-target-picker="1" data-forced={mission.forced ? '1' : undefined}>
+      <div className={css.pickCard} role="dialog" aria-label="选择交战目标">
+        <header className={css.pickHead}>
+          <span className="mono tiny">{mission.no} / S{mission.stage}</span>
+          <b>{mission.title}</b>
+          <span className="tiny muted">{mission.place}</span>
+        </header>
+        <p className={css.pickLead}>
+          这一段能撞上的对手不止一位。挑一个打 —— 不同的目标，难度、掉落与情报都不一样。
+        </p>
+        <div className={css.pickList} role="listbox" aria-label="可遭遇的对手">
+          {pool.map((t, k) => (
+            <button
+              key={t.key}
+              type="button"
+              role="option"
+              aria-selected={k === i}
+              className={css.pickRow}
+              data-target-option={t.key}
+              data-boss-id={t.bossId}
+              data-focus={k === i ? '1' : undefined}
+              onMouseEnter={() => setIdx(k)}
+              onClick={() => onPick(t)}
+            >
+              <span className={css.pickSigil}>{t.name.slice(0, 1)}</span>
+              <span className={css.pickBody}>
+                <b>{t.name}</b>
+                <em>来源 · {t.origin}</em>
+                <span>{t.why}</span>
+                {t.variant ? <i>变体 · {t.variant.label}</i> : null}
+              </span>
+              <span className={css.pickStage}>S{t.stage}</span>
+            </button>
+          ))}
+        </div>
+        <footer className={css.pickFoot}>
+          <span className={css.kbdHint}>← → 挑 · Z 开打</span>
+          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={onExit}>
+            <ArrowLeft size={13} /> 撤出
+          </button>
+        </footer>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+/**
+ * 作战屏入口。
+ *
+ * 池子只认**这一段**（mission 的 at / bossId / foeSeeds / nature），不是整张图鉴；
+ * 同一段多次进入必得同一批（foePoolOf 是确定性哈希）。
+ * 挑中的那一位以 target 传进 BattleField → createBattle → enemiesOf，
+ * 从「谁站在对面」到「它带什么招」全在档案里，不在这里另写一份。
+ */
+export function Battle(props: Props) {
+  const pool = useMemo(() => foePoolOf(props.mission, props.progress), [props.mission, props.progress])
+  const [pick, setPick] = useState<FoeTarget | null>(
+    () => (props.mission.forced || pool.length <= 1 ? pool[0] ?? null : null),
+  )
+  const exit = useCallback(() => props.onExit(props.stamina.cur, props.equip), [props])
+  if (!pick) {
+    return <TargetPicker mission={props.mission} pool={pool} onPick={setPick} onExit={exit} />
+  }
+  return <BattleField key={pick.key} {...props} target={pick} />
 }

@@ -12,6 +12,9 @@
 import { TIMELINE } from '../../data/timeline'
 import type { Mission } from '../../data/types'
 import { namedBossOf } from './bosses'
+import { codexEntityOf, isFoeEntity } from './foeclass'
+import { sceneExcludes } from './foegen'
+import { resolveEntityToCodexId } from '../../data/codex'
 
 /** 事件里没有实体（'——'）就不成其为一场作战 */
 const NO_FOE = '——'
@@ -49,7 +52,6 @@ export const EVENT_HEAD: Record<string, string> = {
   'v1-6': 'clay-mask',        // 泥塑面具（「丝绸小丑的残骸」图鉴未收录，进不了这一张表）
   'v1-8': 'guardian',         // 守护者 —— 深海异界里挡在路上的那一具
   'v1-9': 'death-god',        // 死骸机关之神。黄金狮子是露娜的终末，站在这边，不能算对手
-  'v2-2': 'deep-hole',        // 深穴 —— 心叶与兰对赌的那座迷宫
   'v2-8': 'master-craft',     // 巨匠。他吞下黑之魔王、又招来二级天使（三形态，见 endfoes）
   'v3-2': 'chain-detective',  // 锁链的侦探 —— 自天坠落、把集市变成地狱的那一位
   'v3-3': 'rose-detective',   // 蔷薇的侦探。这一话是她处决了侦探；铁之心脏是争夺的对象，不是对手
@@ -90,6 +92,10 @@ export const EVENT_HEAD: Record<string, string> = {
  */
 const NO_FIGHT: Record<string, string> = {
   's1-4': '人造仿生人类观测套件 —— 制造的是「观测人生」，非现实干涉（图鉴 counter 一栏）。',
+  /* 深穴：图鉴 counter 一栏明写「（学园设施）」，是试炼用的迷宫。
+     它站不到对面去 —— 那一段真打的是迷宫里的东西，没有指名实体。
+     （2026-09-18：非生物不进敌阵，见 foeclass.ts。） */
+  'v2-2': '深穴 —— 苍之学园实习用的迷宫（设施），不是站到对面的个体。',
 }
 
 /**
@@ -105,7 +111,10 @@ const NO_FIGHT: Record<string, string> = {
 export function headFoeOf(evId: string): string | undefined {
   if (NO_FIGHT[evId]) return undefined
   const id = EVENT_HEAD[evId]
-  return id && namedBossOf(id) ? id : undefined
+  if (!id || !namedBossOf(id)) return undefined
+  /* 非生物不进敌阵：地点 / 现象 / 设施 / 器物（见 foeclass.ts）连当「头名」都不行。 */
+  const e = codexEntityOf(id)
+  return e && !isFoeEntity(e) ? undefined : id
 }
 
 /**
@@ -203,7 +212,18 @@ export function mainlineMissions(
     if (frontier) return
     if (claimed[e.id]) return
     if (!epDone[e.id]) return
-    const foes = (e.entities ?? []).filter((x) => x && x !== NO_FOE)
+    const listed = (e.entities ?? []).filter((x) => x && x !== NO_FOE)
+    if (!listed.length) return
+    /* 简报上「对手是……」只念**真会站到对面**的那几位：
+       · 图鉴里 nature 是地点 / 现象 / 设施 / 器物的，不算对手（见 foeclass）；
+       · 这一段明写着不上场的（sceneExcludes，如 v1-5 的黑曜石），也不算。
+       一个都不剩，就说明这一段没有对手 —— 不立牌面。 */
+    const foes = listed.filter((x) => {
+      const id = resolveEntityToCodexId(x)
+      if (!id) return true
+      const ent = codexEntityOf(id)
+      return (!ent || isFoeEntity(ent)) && !sceneExcludes(e.id, id)
+    })
     if (!foes.length) return
     const done = won(e.id)
     if (!done) frontier = true

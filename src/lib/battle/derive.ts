@@ -22,13 +22,14 @@ import { furthestDone } from '../operator'
 import { ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
+import { targetBossOf } from './foegen'
 import { critMulOf, critOf } from './duty'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { AXIS_SCALE, START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
 import { battleAxisOf } from './battle-axis'
 import { rFactor, rOfPlace } from './rvalue'
 import type {
-  AxisKey, AxisRef, AxisSheet, Combatant, FxKind, SkillEffect, SkillSpec, Target,
+  AxisKey, AxisRef, AxisSheet, Combatant, FoeTarget, FxKind, SkillEffect, SkillSpec, Target,
 } from './types'
 
 const AXES: AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
@@ -913,7 +914,7 @@ const SUMMON_MOVE: FoeSkill = {
  * 增益只给血量与破坏力 —— 充能不给，免得快起来的是「出手次数」，
  * 那一条已经在血量的马拉松里被算过一遍了（见 tuning 的 enemyAtkPerStage）。
  */
-export function enemiesOf(m: Mission, progress = 0): Combatant[] {
+export function enemiesOf(m: Mission, progress = 0, target?: FoeTarget): Combatant[] {
   const count = m.stage >= 5 ? 3 : 1
   const seed: FoeSeed = {
     missionId: m.id, nature: m.nature, place: m.place, stage: m.stage, progress,
@@ -924,7 +925,9 @@ export function enemiesOf(m: Mission, progress = 0): Combatant[] {
   for (let i = 0; i < count; i++) {
     // 指名首领：任务挂了 bossId、且那份档案对得上时，场上的头一名就换成他
     // （见 bosses.ts —— 那一类对手是有名有姓有 RANK 的真人，不是现推的观测体）。
-    const named = i === 0 ? namedBossOf(m.bossId) : undefined
+    /* 玩家挑中的那一条（见 lib/battle/foegen）优先：它带着「这一场打谁」。
+       没挑（平衡脚本 / 旧入口）就照旧读任务挂的 bossId —— 数值一个字节不动。 */
+    const named = i === 0 ? (target ? targetBossOf(target) : namedBossOf(m.bossId)) : undefined
     // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到 bossTierStage 时升格为「首领」。
     // 一支小队清完一整场却没碰上一个像样的东西，那不算作战，只算打扫。
     // 危险度那道线**不是** ultStage（那管的是终结技能，见 tuning 的 bossTierStage）。

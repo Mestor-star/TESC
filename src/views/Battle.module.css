@@ -3490,3 +3490,157 @@
   .fxPreviewStage { height: 220px; }
   .fxPreviewBar button { min-height: 40px; }
 }
+
+/* ============================================================
+   选目标那一层（按场面生成的目标池，见 Battle.tsx 的 TargetPicker）
+   ------------------------------------------------------------
+   方贴纸稿：零圆角、实心边、无柔影；焦点那一下靠左边线加粗与底色，
+   不靠光晕。键盘（← → + Z）与鼠标（点卡）读的是同一份 data-focus。
+   ============================================================ */
+.pickMask {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+
+.pickCard {
+  width: min(720px, 100%);
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-3);
+}
+
+.pickHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pickHead b {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+
+.pickLead {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+
+.pickList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.pickRow {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0, var(--bg-1));
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.pickRow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 0 var(--steel);
+}
+
+.pickRow[data-focus='1'] {
+  border-color: var(--amber);
+  border-left-color: var(--amber-deep);
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-1));
+}
+
+.pickSigil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  font-size: 18px;
+  color: var(--amber-deep);
+}
+
+.pickBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pickBody b {
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+}
+
+.pickBody em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickBody span {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-dim, var(--ink-mute));
+}
+
+.pickBody i {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--violet-deep);
+}
+
+.pickStage {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--red-deep);
+}
+
+.pickFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 640px) {
+  .pickMask { padding: 12px; }
+  .pickCard { padding: 14px; }
+  .pickRow { grid-template-columns: 36px minmax(0, 1fr) auto; gap: 8px; }
+  .pickSigil { width: 34px; height: 34px; font-size: 15px; }
+}

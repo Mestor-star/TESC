@@ -1225,3 +1225,49 @@ export interface GearDef {
    */
   maxOwn?: number
 }
+
+/* ============================================================
+   敌阵 · 目标池（按场面生成，玩家挑一个打）
+   ------------------------------------------------------------
+   这一栏不是「图鉴的索引」，是**这一场原文里可遭遇的那几位**：
+   foePoolOf 以这一段列出的实体 / 指名首领为种子，同族同卷里
+   补一两个变体，每一条都带着「从哪份档案来、为什么在这一段」。
+   玩家挑中的那一条随之进入 createBattle({ target })，enemiesOf
+   拿它当场上头名；不挑（平衡脚本、旧入口）就照旧走现推的观测体。
+   ============================================================ */
+export interface FoeTargetVariant {
+  /** 变体标签（挂在名牌尾巴上） */
+  label: string
+  /** 血量倍数（叠在档案自己的 hpMul 上） */
+  hpMul: number
+  /** 五轴偏置（乘在档案读数上） */
+  bias?: Partial<Record<AxisKey, number>>
+  /**
+   * 换弱点：写 null = 这一形态没有破绽；不写 = 照档案。
+   * 只允许「本来就有破绽」的那几只换轴 —— 给没有破绽的糊一层是替它新造机制。
+   */
+  guardAxis?: AxisKey | null
+  /** 换招：把档案里第 index 手（0 起）的说明与效果换掉，名字照旧挂变体标签 */
+  tune?: { index: number; effect?: SkillEffect; note: string }
+}
+
+export interface FoeTarget {
+  /** 池内唯一键（同一场里不重号） */
+  key: string
+  /** 档案 id；缺省 = 这一段没有可归档的对手，上现推的观测体 */
+  bossId?: string
+  /** 牌面名 */
+  name: string
+  /** 这一位按哪一档站 */
+  stage: number
+  tier: 'boss' | 'elite'
+  /** 来源：哪份档案 / 哪一条原文 */
+  origin: string
+  /** 为什么在这一段出现 */
+  why: string
+  /** 这一场不能挑（被袭击 / 伏击，玩家没得选） */
+  forced: boolean
+  variant?: FoeTargetVariant
+  /** 它喊上来的同行者（档案 id，按顺序） */
+  escortIds?: string[]
+}

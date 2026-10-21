@@ -21,12 +21,13 @@ import {
   rivalArchiveIdOf, rivalOf, speedOf,
 } from './derive'
 import { namedBossOf } from './bosses'
+import { targetBossOf } from './foegen'
 import { dutyOf } from './duty'
 import { GEAR_OF, ITEM_OF } from './gear'
 import { isDebuff, isSpec, toneOf } from './types'
 import type {
   AxisKey, AxisSheet, BattleState, BuffKey, Combatant, LogEntry, PassiveSpec, SkillSpec,
-  TalentSpec, TalentTrigger, EnemyIntent,
+  TalentSpec, TalentTrigger, EnemyIntent, FoeTarget,
 } from './types'
 import type { Mission } from '../../data/types'
 
@@ -283,6 +284,11 @@ export interface CreateOpts {
    * 写 false 就是「这一场不暴击」，敌我都不暴。
    */
   crit?: boolean
+  /**
+   * 玩家在这一场挑中的对手（见 lib/battle/foegen 的 foePoolOf）。
+   * 不传 = 照旧按任务挂的 bossId / 现推观测体开场 —— 平衡复核走的就是这一路。
+   */
+  target?: FoeTarget
 }
 
 export function createBattle(opts: CreateOpts): BattleState {
@@ -292,7 +298,7 @@ export function createBattle(opts: CreateOpts): BattleState {
   // 羁绊：谁站在场上（队伍协同 + 双人）＋ 每人与你的交情攒到了哪一档
   applySynergies(allies, undefined, bond)
   // 敌方也读时期：同一档危险度，小队走到哪一卷，站上来的东西就硬到哪一档
-  const enemies = enemiesOf(mission, progress)
+  const enemies = enemiesOf(mission, progress, opts.target)
   const base: BattleState = {
     missionId: mission.id,
     no: mission.no,
@@ -306,7 +312,7 @@ export function createBattle(opts: CreateOpts): BattleState {
     /* 第二阶段：这一场的指名首领写了「他倒下之后谁顶上来」就记在这儿。
        只记 id、不预先造人 —— 顶上来的那一位的数值要照**顶上来的那一刻**算
        （地点 R 值与时期增幅都取当时那一份），提前造好就是拿开局的口径打收尾的仗。 */
-    nextBoss: namedBossOf(mission.bossId)?.next,
+    nextBoss: (opts.target ? targetBossOf(opts.target) : namedBossOf(mission.bossId))?.next,
     tick: 0,
     beatActs: 0,
     // 本回合已出过手的我方（endBeat 清空）—— 收拍的判据，见 types 的 BattleState.acted

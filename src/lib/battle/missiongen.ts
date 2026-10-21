@@ -20,6 +20,12 @@ interface Template {
   reward: string[]
   /** 该模板适合的危险度区间 */
   stages: [number, number]
+  /**
+   * 目标池的种子（档案 / 图鉴 id，见 lib/battle/foegen）。
+   * 写了就按它出「这一段能遇到的那几位」；不写按 nature 同族同卷补。
+   * ⚠️ 地点永远不是种子 —— 脏器公寓那一条写的是狂热者格尔，不是那座馆。
+   */
+  foeSeeds?: string[]
 }
 
 const TEMPLATES: Template[] = [
@@ -36,6 +42,7 @@ const TEMPLATES: Template[] = [
   },
   {
     key: 'workshop',
+    foeSeeds: ['soul-reservoir'],
     place: '第 6 区 · 工房街',
     nature: '流通型 · 反现实旧物',
     title: '工房街 · 商会制品盯梢',
@@ -58,6 +65,7 @@ const TEMPLATES: Template[] = [
   },
   {
     key: 'organ',
+    foeSeeds: ['fanatic-ger'],
     place: '第 4 区 · 脏器公寓',
     nature: '异端 · 讨伐',
     title: '脏器公寓 · 不死者狂热者余党',
@@ -69,6 +77,7 @@ const TEMPLATES: Template[] = [
   },
   {
     key: 'ship',
+    foeSeeds: ['black-maou'],
     place: '太平洋公海 · 货船',
     nature: '异端 · 魔王',
     title: '公海货船 · 「黑之魔王」观测',
@@ -80,6 +89,7 @@ const TEMPLATES: Template[] = [
   },
   {
     key: 'arena',
+    foeSeeds: ['hundred-wings'],
     place: '第 6 区 · 天空竞技祭会场',
     nature: '反现实机械工学 · 灵魂保存型',
     title: '竞技祭会场 · 灵魂保存装置拆除',
@@ -91,6 +101,7 @@ const TEMPLATES: Template[] = [
   },
   {
     key: 'bonfire',
+    foeSeeds: ['thread-person'],
     place: '篝火之国 · 边境',
     nature: '龙花 · 异界',
     title: '篝火之国 · 异界裂隙巡查',
@@ -219,6 +230,7 @@ export function genBoard(seed: number, progress: number, count = 5): Mission[] {
       deadline: pick(rnd, DURATION),
       desc: t.desc,
       reward: t.reward,
+      ...(t.foeSeeds ? { foeSeeds: t.foeSeeds } : {}),
     })
   }
   return out.sort((a, b) => b.stage - a.stage)

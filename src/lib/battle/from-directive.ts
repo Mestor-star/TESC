@@ -16,6 +16,13 @@ import { TUNING } from './tuning'
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 
+/**
+ * 被袭击 / 伏击的那几场：玩家没得挑。
+ * 判据只读模型写下的这一场（名字 + 性质 + 描述），不认任务 id ——
+ * 这一栏是**原文的样子**，不是某一段的暗桩。
+ */
+const AMBUSH = /(袭击|伏击|偷袭|突袭|遭袭|被拖入|拖进)/
+
 let seq = 0
 
 /**
@@ -75,6 +82,8 @@ export function battleMissionOf(b: PlotBattle, evId: string): Mission {
     desc: `${b.name} 出现在现场。交战由观测现场触发——按在场的成员与眼前的敌人开打，打完即回到正文。`
       + (head ? `\n档案上这一段的头一位是 ${head.name}；${head.from}。` : ''),
     reward: ['现场压制', '观测继续'],
+    /* 明写「这一场不能挑」——作战屏读到它就不出选目标那一层，而不是把入口藏起来。 */
+    ...(AMBUSH.test(b.name + ' ' + (b.nature ?? '') + ' ' + (b.place ?? '')) ? { forced: true } : {}),
     /* 这一段是正史里真打过的那一场（事件原文列了实体）→ 它就是任务简报上
        那一段主线。带上这个记号，归档才会走「详细战斗过程」那一路，
        作战记录里也会挂着「主线」—— 与简报上的那一条对得上号。 */

@@ -149,6 +149,21 @@ export interface Mission {
    * 例：第 2 卷天空竞技祭的先锋 / 中坚 / 副将三战。
    */
   bossId?: string;
+  /**
+   * 敌阵种子（图鉴 / 档案 id，按顺序）。
+   *
+   * 只喂给「按场面生成」的目标池（见 lib/battle/foegen）。和 bossId 的分工：
+   *   · bossId 是**这一场正史里站到对面的头一位**，derive 直接认它；
+   *   · foeSeeds 是**可供玩家挑选的那几条**，用于没有 bossId、却明知
+   *     这一段对手是谁的场合（例如脏器公寓那一段只打狂热者格尔）。
+   * 不写就按 mission.at 的实体 / nature 与卷次自行推池子。
+   */
+  foeSeeds?: string[];
+  /**
+   * 这一场不能挑对手（被袭击 / 伏击 / 拖入战场）。
+   * 明写出来，而不是靠界面藏入口 —— 生成目标池与作战屏都读它。
+   */
+  forced?: boolean;
 }
 
 /** 图鉴「处置状态」。基础四态来自委员会口径；后三态为考据后新增：
@@ -967,3 +982,58 @@ export interface ArmEntry {
   /** 门禁取并/或：缺省 = holder 或 reveal 任一满足即显 */
   gate?: 'holder' | 'event'
 }
+
+/* ============================================================
+   地图（数据见 data/map.ts · 视图见 views/Map.tsx）
+   ------------------------------------------------------------
+   两张图共用一份节点表，靠 `scale` 分：
+   · world  = 大地理单元（天空都市・弗尔克图斯 / 篝火之国 / 太平洋公海 / 死灵次元…）；
+   · region = 大区 → 场所 → 房间/街区（第 12 区 / 旧集市 / 异端审问室…）。
+   `layer` 说的是这一处**在立体上属于哪一层** —— 地表 / 地下 / 浮空 / 别的次元。
+   原文里「部分地点在下面」那几处（浅间神社、B-267、骨之圣堂、王宫地下祭祀场、
+   尸肉神殿）全靠它读得出来。
+   `xy` 与 RegionReading.xy 同一把尺（0~100 归一化，挨得近 = 走得近，不是测绘）。
+   每个节点的 `refs` 至少一处，是它存在过的凭据 —— 查不到依据的地点不入表。
+   ============================================================ */
+
+/** 地图档：世界层 / 区域层 */
+export type MapScale = 'world' | 'region';
+
+/** 节点层级：大区 / 场所 / 房间·街区 */
+export type MapKind = 'district' | 'site' | 'room';
+
+/** 立体分层：地表 / 地下 / 浮空 / 别的次元 */
+export type MapLayer = 'surface' | 'underground' | 'sky' | 'otherworld';
+
+/** 节点的原文依据（至少给一处） */
+export interface MapRefs {
+  /** 时间线段 id（其 place 里写到过这一处） */
+  events?: string[];
+  /** 终末图鉴条目 id（地点/设施类实体） */
+  codex?: string[];
+  /** public/offtext/ 里的原文切片（文件 id，如 'v1-6'）—— 只读语料 */
+  offtext?: string;
+}
+
+export interface MapNode {
+  id: string;
+  name: string;
+  /** 世界层 / 区域层 */
+  scale: MapScale;
+  kind: MapKind;
+  layer: MapLayer;
+  /** 上级节点 id（区域层的大区、或它所属的世界层单元）；最外层为 null */
+  parent: string | null;
+  /** 落点（0~100） */
+  xy: [number, number];
+  /** 该处 R 值（只在侦察网标定过的几处给；没标定的留空，界面照实读「未标定」） */
+  r?: number;
+  /** 危险度 0~10 */
+  threat?: number;
+  /** 一句说明 */
+  note: string;
+  refs: MapRefs;
+  /** 可达（同一张图上画得出线的那几处） */
+  links: string[];
+}
+
