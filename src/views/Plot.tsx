@@ -188,6 +188,7 @@ const MODE_LABEL: Record<RecordMode, string> = {
   online: '在线推演',
   offline: '离线通读',
   legacy: '旧档回填',
+  manual: '人工判定',
 }
 
 function loadLogs(): Record<string, ChatMsg[]> {
@@ -437,7 +438,7 @@ export function Plot() {
     operatorName, navigate, push,
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, flagKeys, completeEvent, reopenEvent,
-    records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast,
+    records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast, placeOfEvent, setPlace,
     bumpActs, setRel, relOf,
     freeMode, setFreeMode, closeFreeSlot,
     dateRequest, clearDateRequest,
@@ -843,10 +844,17 @@ export function Plot() {
       }
       /* 在场的实时名册：导演只在人真的换了的时候给（谁先离席、谁刚赶到）。
          落盘要配着事件 id —— 右栏与提示词都读 world.cast 那一层。 */
-      if (fx.cast?.length) {
+      if (fx.cast !== undefined) {
         setCast(evId, fx.cast)
         const names = fx.cast.map((id) => personOf(id)?.name ?? id).join(' · ')
-        push('info', '在场名册', `此刻在场上的是：${names}。`, false)
+        /* 空名册也要报一句 —— 「他把人都支走了」「他独自离开」是剧情上真发生的事，
+           静默落盘会让人以为指令没生效。 */
+        push('info', '在场名册', fx.cast.length ? `此刻在场上的是：${names}。` : '此刻场上一个人也没有 —— 这一段往后只有他自己（或谁都不在）。', false)
+      }
+      /* 地点：导演真的把人挪到别处时才给；段头与提示词都读 world.place 那一层 */
+      if (fx.place) {
+        setPlace(evId, fx.place)
+        push('info', '地点变更', `此刻这一场已挪到：${fx.place}。`, false)
       }
       /* 私密档案推进：报一句「动的是哪一位的哪一处」，数本身在档案页看 */
       if (fx.intim.length) {
@@ -1085,6 +1093,8 @@ export function Plot() {
         /* 在场名册取**此刻**的那一份（导演实时改过就用改过的）：提示词里的
            【在场角色 · 性情锚】与关系读数、短信摘录都用同一个名单。 */
         castNow: castIds,
+        /* 此刻的地点同上：导演改过就以改过的为准，提示词的【当前事件】跟着挪 */
+        placeNow: placeOfEvent(ev),
         /* 各人此刻的关系档位（由剧情给过的那一档）——与羁绊读数并列摆进关系那一行 */
         relOf,
         /* 近期短信：只取与**此刻在场者**有关的那几本（无关线程一个字都不给，见 lib/crosslink），
@@ -1111,7 +1121,7 @@ export function Plot() {
         },
       }
     },
-    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, battleFact, castOfEvent, relOf, freeOf],
+    [epDone, world.ends, world.flags, operatorName, bondNow, battleLog, battleFact, castOfEvent, placeOfEvent, relOf, freeOf],
   )
 
   const pushTurn = useCallback(
@@ -1441,6 +1451,40 @@ export function Plot() {
   }
 
   /**
+   * 「这一段落幕（我判定）」—— 收束的人工通道。
+   *
+   * 模型不给 eventDone 不等于这一段没走完：有时它把话收住了却漏了指令，有时这一段
+   * 的了结本来就是操作员一手推出来的。这一枚让他自己判。
+   *
+   * **门禁一条都不放**：`completeEvent` 里本来就拦（gateMissing），这里先拦一道
+   * 是为了给出与「进入下一事件」**同一句**提示 —— 两条路读起来得是一回事。
+   * 摘要沿用已有规则（`concluded.digest || ev.summary`），不另造一种写法。
+   */
+  const concludeManual = () => {
+    const ev = focusEv
+    if (!ev || busy || !ready) return
+    // 与「进入下一事件」同一口径：这一段还有没了结的交战，谁判都收不了
+    if (pendingBattle && pendingBattle.evId === ev.id) {
+      push('warn', '尚有交战未了', `《${pendingBattle.name}》还在现场 —— 打赢它，这一段才继续。`, false)
+      return
+    }
+    const cur = concluded && concluded.evId === ev.id ? concluded : null
+    const digest = cur?.digest || ev.summary
+    const miss = gateMissing(ev.id)
+    if (miss.length) {
+      push('warn', '这一段还收不了', `还差：${gateText(miss)}。先把这段关系走到那儿。`, false)
+      return
+    }
+    if (!completeEvent(ev.id, digest, 'manual', cur?.diverged)) {
+      push('warn', '这一段还收不了', '记录没有写成 —— 这一段的关系门槛还没走到。', false)
+      return
+    }
+    applyConcluded(null)
+    setLastEnded({ id: ev.id, title: ev.title, digest, diverged: !!cur?.diverged, mode: 'manual' })
+    push('decode', '事件收束 · 人工判定', `${ev.title}（已写入低语者日志）`, false)
+  }
+
+  /**
    * 结束卷间那一格自由时间（「进入下一卷」）。
    *
    * 与 `advanceEvent` 的分工写在 `closeFreeSlot` 的契约里：自由段**不是原文里的一段**，
@@ -1707,7 +1751,7 @@ export function Plot() {
           </div>
           <b style={{ fontSize: 17, lineHeight: 1.4 }}>{focusEv.title}</b>
           <div className="muted tiny" style={{ marginTop: 3, color: 'var(--ink-mute)' }}>
-            {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
+            {placeOfEvent(focusEv)}{focusEv.day ? ` · ${focusEv.day}` : ''}
           </div>
         </div>
         {isFreeId(focusEv.id) ? (
@@ -1766,8 +1810,12 @@ export function Plot() {
                 </button>
               )
             })}
+            {/* 在场 0 人也要读得出来：导演把名册清空（他把人支走了、独自离开）与
+                「这一段原文里本来就没别人」是两件事，文案分开写，都不留空白。 */}
             {castRows.length === 0 ? (
-              <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>本段无在册在场者。</span>
+              <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>
+                {world.cast?.[focusEv.id] !== undefined ? '此刻无人在场 —— 名册已被清空。' : '此刻无人在场。'}
+              </span>
             ) : null}
           </div>
         </div>
@@ -1923,7 +1971,7 @@ export function Plot() {
           <span className="tag">{isFreeId(focusEv.id) ? 'FREE TIME' : focusEv.id.toUpperCase()}</span>
           <b>{focusEv.title}</b>
           <span className="muted tiny" style={{ color: 'var(--ink-mute)' }}>
-            {focusEv.group} · {focusEv.phase} · {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
+            {focusEv.group} · {focusEv.phase} · {placeOfEvent(focusEv)}{focusEv.day ? ` · ${focusEv.day}` : ''}
           </span>
         </div>
         <div className={css.barRight}>
@@ -2382,6 +2430,8 @@ export function Plot() {
                 </div>
               ) : null}
 
+              {/* 收束栏（模型宣布过收束）：data-concluded 在冒烟里是「这一段已被判定收束」的把手，
+                  含义只归模型那一枚 —— 人工通道另开一格（下面那一栏），别把这枚含义借走。 */}
               {concluded && concluded.evId === focusEv.id && ready && !busy ? (
                 <div className={css.concludedBar} data-concluded="1">
                   <div className={css.concludedHead}>
@@ -2398,11 +2448,49 @@ export function Plot() {
                       <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('saga')}>
                         查看记录
                       </button>
+                      {/* 他判定的那一档：与「进入下一事件」落同一条记录，只是模式记 manual */}
+                      <button
+                        className="btn btn--ghost"
+                        style={{ fontSize: 12 }}
+                        data-conclude-manual="1"
+                        onClick={concludeManual}
+                        title="你自己判定这一段走完了：按「人工判定」写入记录并推进（关系门槛没走到会拦下）"
+                      >
+                        这一段落幕（我判定）
+                      </button>
                     </div>
                   </div>
                   <div className={css.concludedDigest} title={concluded.digest}>{concluded.digest}</div>
                   <span className={css.concludedNote}>
                     {concluded.diverged ? '分歧路线 · ' : ''}结尾叙述已完整上屏。点「进入下一事件」即写入记录并衔接下一段；正文不会消失，也可继续发话留在此事件。
+                  </span>
+                </div>
+              ) : null}
+
+              {/* 收束的人工通道：模型没给 eventDone 时，操作员自己判这一段是不是走完了。
+                  落地与上面那一栏同一个函数（concludeManual），门禁照拦、提示同一句。
+                  两处不摆：自由时间（那儿的收束是「进入下一卷」）、一回合都还没推过的空格
+                  （免得开局先递一把落幕的刀）。 */}
+              {ready && !busy && !isFreeId(focusEv.id) && !(concluded && concluded.evId === focusEv.id)
+                && (logs[focusEv.id]?.length ?? 0) > 0 ? (
+                <div className={css.concludedBar} data-conclude-bar="1">
+                  <div className={css.concludedHead}>
+                    <b>这一段落幕 · 由你判定</b>
+                    <div className={css.concludedActs}>
+                      <button
+                        className="btn btn--ghost"
+                        style={{ fontSize: 12 }}
+                        data-conclude-manual="1"
+                        onClick={concludeManual}
+                        title="你自己判定这一段走完了：按「人工判定」写入记录并推进（关系门槛没走到会拦下）"
+                      >
+                        这一段落幕（我判定）
+                      </button>
+                    </div>
+                  </div>
+                  <span className={css.concludedNote}>
+                    模型还没宣布这一段收束。你判断该了结的事已经了结，就按这一枚写下记录 —— 摘要照这一段原有的规则取
+                    （有收官叙述就用它，没有就用本段概述）；关系门槛没走到会被拦下。
                   </span>
                 </div>
               ) : null}

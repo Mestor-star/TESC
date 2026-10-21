@@ -440,8 +440,11 @@ export interface OwnEndEntry {
   ts: number
 }
 
-/** 「记录」的产生方式：online=AI 在线推演 · offline=离线通读原文 · legacy=旧存档回填 */
-export type RecordMode = 'online' | 'offline' | 'legacy'
+/**
+ * 「记录」的产生方式：online=AI 在线推演 · offline=离线通读原文 · legacy=旧存档回填 ·
+ * manual=操作员人工判定（模型没给 eventDone，由他按「这一段落幕（我判定）」写下）
+ */
+export type RecordMode = 'online' | 'offline' | 'legacy' | 'manual'
 
 /** 低语者日志里归档的一条「记录」——一个事件收束后的摘录 */
 export interface WorldRecord {
@@ -763,8 +766,18 @@ export interface WorldState {
    * （`TimelineEvent.cast`，见 lib/cast.ts）说的是「这一段大体上有谁」，
    * 可这一段里人会走会来：谁先离席、谁刚赶到，右栏得跟着变，不能等到下一段。
    * **没给过的段没有这一项**，那时右栏照静态名册摆（`rosterRowsOf`）。
+   * 给了**空数组**是有意义的一种：那一刻场上一个人都没有（他独自离开／把人全支走了）。
+   * 于是「没给」与「给了空」读起来是两件事 —— 别把空数组当缺省。
    */
   cast?: Record<string, string[]>
+  /**
+   * 各事件段**此刻**的地点：段 id → 地点名。
+   *
+   * 由导演在事件指令里实时修正（`PlotDirective.place`）—— `TimelineEvent.place`
+   * 说的是「这一段大体上在哪儿」，可玩家会走开、会把人都支走：现场挪了，段头就得跟着挪。
+   * **没给过的段没有这一项**，那时照静态地点读（`ev.place`）。
+   */
+  place?: Record<string, string>
   /** 已归档的「记录」（事件收束后追加；旧档缺此字段由 hydrate 回填 legacy） */
   records: WorldRecord[]
   /**

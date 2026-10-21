@@ -81,6 +81,16 @@ export interface PlotDirective {
    * 缺省（从没给过）时右栏照静态名册摆。
    */
   cast?: string[]
+  /**
+   * **此刻这一场在哪儿**（地名短串）：剧情段头的实时修正。
+   * 事件静态地点（`TimelineEvent.place`）说的是「这一段大体上在哪儿」，
+   * 可玩家会走开、会把人都支走 —— 现场挪了，段头与提示词都得跟着挪。
+   * 只在**真的换了地方**时给；地点没变就整条省略。
+   *
+   * **只有主线导演放行**（`dateDirective` / `smsDirective` 不放行：
+   * 约会那一场的地点走 `date.place`，短信根本没有地点）。
+   */
+  place?: string
   /** 该段收束是否为分歧路线（与原著相异时置 true） */
   diverged?: boolean
   /** 关键收束达成 → 完结当前事件并写记录（缺省 false） */
@@ -215,7 +225,7 @@ const CHAR_IDS = new Set<string>(PERSON_IDS)
 const SQUAD_IDS = new Set<string>([...PERSON_IDS, OPERATOR_ID])
 
 const KNOWN_FIELDS = new Set([
-  'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'diverged', 'eventDone', 'digest', 'battle',
+  'met', 'bond', 'ends', 'flag', 'cg', 'cast', 'place', 'diverged', 'eventDone', 'digest', 'battle',
   // 约会的**节拍**（这一场走到哪一步了，给带 `needs` 的那几张画当前提）：同上 ——
   // 漏在名单外就整条安静地丢，那张画永远差一步，而且不报错。
   'beat',
@@ -486,14 +496,27 @@ export function sanitizeDirective(v: unknown): PlotDirective {
   }
 
   /* 在场的实时名册：只收名录里认识的角色 id（与 met / bond 同一套白名单），
-     去重、封顶 12 人。**空数组不算数** —— 给出空名单等于把右栏清空，
-     而「此刻一个人都不在」这种情况由「省略这一项」表达，不由空数组表达。 */
+     去重、封顶 12 人。**空数组照收** —— 「他把人都赶走了」「他独自离开」是剧情上
+     真会发生的局面，得能从数据上表达出来。于是「省略这一项」= 名册没变，
+     `[]` = 此刻场上一个人都没有，两件事分得开。
+     （名录之外的 id 先滤掉：全滤空了也就是空名单。） */
   if (Array.isArray(src.cast)) {
-    const cast = src.cast
+    const raw = src.cast
       .filter((x): x is string => typeof x === 'string')
       .map((x) => x.trim())
-      .filter((x) => CHAR_IDS.has(x))
-    if (cast.length) out.cast = [...new Set(cast)].slice(0, 12)
+      .filter(Boolean)
+    const cast = raw.filter((x) => CHAR_IDS.has(x))
+    /* 「给了一个人都不剩」与「给的名字一个都不认识」必须分开：
+       前者是他真把人支走了（[] 要落盘），后者是模型写了不存在的名字 ——
+       那一下不能顺手把整份名册清空，当作没给。 */
+    if (!raw.length || cast.length) out.cast = [...new Set(cast)].slice(0, 12)
+  }
+
+  /* 此刻这一场在哪儿：短串，与约会那一支的 `date.place` 同一条上限。
+     空串不算数（省了这一项＝地点没变）。 */
+  if (typeof src.place === 'string') {
+    const place = src.place.trim().slice(0, 40)
+    if (place) out.place = place
   }
 
   /* 约会那一档的 CG 点名。这里**只做形状校验**（非空字符串、长度封顶），不做清单校验 ——
@@ -998,8 +1021,13 @@ export interface DirectiveEffects {
   cg?: string
   /** 这一次走到了哪个节拍（约会那一路：调用方按**这一场约会**落到 Rendezvous.beats） */
   beat?: string
-  /** 导演修正的在场名册（调用方按**当前事件**落到 world.cast[evId]，全量覆盖） */
+  /**
+   * 导演修正的在场名册（调用方按**当前事件**落到 world.cast[evId]，全量覆盖）。
+   * **空数组也是有效值** —— 那就是「此刻场上一个人都没有」。
+   */
   cast?: string[]
+  /** 导演修正的地点（调用方按**当前事件**落到 world.place[evId]） */
+  place?: string
   diverged: boolean
   eventDone: boolean
   digest?: string
@@ -1072,8 +1100,11 @@ export function applyDirective(
   if (d.cg) fx.cg = d.cg
   // 节拍同理：手里没有「这是哪一场」，调用方读 fx.beat 配着自己知道的约会 id 落
   if (d.beat) fx.beat = d.beat
-  // 在场的实时名册同理：手里没有「当前事件 id」，由调用方读 fx.cast 自己写
-  if (d.cast?.length) fx.cast = d.cast
+  // 在场的实时名册同理：手里没有「当前事件 id」，由调用方读 fx.cast 自己写。
+  // 空数组也是一个有效值（场上没人），所以判的是「给没给」而不是「长不长」
+  if (d.cast) fx.cast = d.cast
+  // 地点同理：调用方拿它写 world.place[当前事件 id]
+  if (d.place) fx.place = d.place
   /* 私密推进：一条一项地合成成 IntimateProgress 递下去。
      破处对象由这一层定 —— `first` 置位即记为「言万心叶」（'you'），
      底下的合成规则只认第一次落下的那个，之后再给也改不动；
@@ -1159,7 +1190,8 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
       (d.ends && d.ends.length) ||
       (d.flag && Object.keys(d.flag).length) ||
       Boolean(d.cg) ||
-      (d.cast && d.cast.length) ||
+      d.cast !== undefined ||
+      Boolean(d.place) ||
       d.diverged === true ||
       d.eventDone === true ||
       Boolean(d.battle?.name) ||
@@ -1311,8 +1343,14 @@ export interface DirectorCtx {
    * 给了就以它为准、不给才退回事件静态名册（`ev.cast`）—— 于是这一段里
    * 谁先离席、谁刚赶到，下一回合的提示词里也就跟着变了。
    * 【在场角色 · 性情锚】与前面那份关系读数都读同一个名单，两处不会各说各话。
+   * **空数组也是有值的一档**：场上没人（他独自离开／把人全支走），别把它当缺省回落。
    */
   castNow?: string[]
+  /**
+   * **此刻**这一场在哪儿（`world.place[ev.id]` 那一层实时修正）：
+   * 给过就以它为准，没给过才退回 `ev.place`。
+   */
+  placeNow?: string
   /**
    * 此刻各角色的**关系档位**（`world.rel[charId]`，由剧情给过的那一档）。
    *
@@ -1395,6 +1433,26 @@ function outlineRules(opName: string, free = false): string {
 ${PROSE_RULES}`
 }
 
+/**
+ * 自由度的上限 —— 三条硬话（摆在导演铁律之后、大纲之前）。
+ *
+ * 前面那一节把「他写的说了算」讲到了头，可没有上限的自由会塌成两种坏结果：
+ * ①**假装没发生** —— 照原著往下写，他那一步等于白走（脱纲要留痕，才谈得上后来）；
+ * ②**抢跑** —— 把还没到的大事件提前写掉、替它定下结局，此后原著那一拍就没了。
+ * 这两条都要用一句硬话钉住；第三条是它们的反面：锚点真的到期时也不许绕开，
+ * 只放开**形式、代价、在场者、关系后果** —— 事情得发生，但是以玩家写的那一种发生。
+ *
+ * 三条都极短：这一节是**边界**，不是又一份剧本，长了反而把上面的意志压下去。
+ */
+function freedomLimits(): string {
+  return `
+
+【自由度的上限 · 三条】
+· 可以脱纲，但必须留痕 —— 他做出与原著相反的选择时，照他的选择写，并把这一偏离记为**既成事实**（diverged 置 true）：此后一律从偏离之后的局面往下走，不许假装没发生，也不许下一回合悄悄拐回原著。
+· 锚点未到不许抢跑 —— 操作员还没给出某个锚点的具体条件之前，不许把「原著那个大事件」提前写掉，也不许替它安排结果。
+· 锚点到期不许绕开 —— 若上下文里已经给出锚点（后续批次会给出这一类），条件满足时那一件事**照旧到来**（既不拖、也不取消，更不许换成别的事）；但它的**形式、代价、在场的都是谁、关系上的后果**可以由他改写。`
+}
+
 /** 角色显示名（主役取 characters，登场者取 castmeta；都不认得就回 id） */
 function nameOfChar(charId: string): string {
   return CHARACTERS.find((c) => c.id === charId)?.name ?? personOf(charId)?.name ?? charId
@@ -1451,6 +1509,11 @@ export function speechContract(castRef = '【本事件出场角色】'): string 
 · 台词与名字之间不换行，也不要把旁白与台词挤在同一行。
 · 不要缩成简称、也不要带称呼后缀 —— 别人怎么叫他与署名无关：言万心叶开口就写「言万心叶：」，
   写成「言万：」「言万同学：」终端认不出来，那一句会整行掉回旁白（正史里主角的话就是这么漏掉气泡的）。
+· 引用原文台词**逐字照抄**，只补「角色名：」前缀 —— 一个标点都不许改，也不许改写、润色、合并、删减或调换顺序。
+· 前缀按**原文话轮归属**：谁是发问者、谁是回答者，以原文「」前后那几句叙述里的「她／少女／我」为准；
+  不要按左右交替排布，也不要按「一人一句」去凑。
+· 输出前**逐句自检**：这句话谈的是谁的经历／秘密，谁在问谁 —— 拿不准就照原文的话轮原样归（原文怎么写就怎么归）；
+  同一个人连着说两句，就各起一行、各挂一次前缀，**不要合并台词**（合并会改文本）。
 只有确实作为某角色口中说出的话才用此格式；神态、动作与叙述行一律不要加名字前缀，否则会被终端当成台词，切出不该有的气泡。
 
 一回合里的**配比**：旁白（叙述、动作、神态、场景、心理）可以多写，台词也不能少 —— 不要整段只有叙述、一句台词都没有，也不要通篇都是对白、没有旁白垫着。
@@ -1495,6 +1558,7 @@ function willSection(opName: string, action: string): string {
   三分留给大纲里**不是情节的那一半**：地点与时间、已成立的设定与事实、在场者各自的性格与说话方式、谁知道什么／谁不知道什么，以及他们对这一笔**自主的反应**。这些照原著走，别因为他改了走向，就连人带景一起换掉。
   唯独大纲里的**情节顺序**（那几条按先后排好的事）就此作废：没发生就是没发生，不要为凑齐它们把人往回拽，也不要替他把没写到的场面补发生。
 · 相合 —— 照**原文案**写：台词与措辞用【本事件补充设定 · 原文摘录】与实施细则里的原文（逐字，不改写、不润色、不续写），情节按原著那几步走。
+· 他把自己挪去了别处、或把人都支走了 —— 现场就跟着挪：地点与在场名册照他说的改，并在事件指令里给出（\`place\` 写此刻新的地名；\`cast\` 给**改完之后**的全量名单 —— 一个人都没剩下就给空数组 \`[]\`，别用「省略这一项」糊过去）。
 
 只有他**没有写到**的地方，才轮到原著走向与在场者的自主反应去填。`
 }
@@ -1613,9 +1677,12 @@ const TEMPER_SECTIONS = ['性格', '说话方式', '禁忌·雷区']
  * 卡面与提示词两边都跟着错。名册为空时才退回全体主役。
  */
 function presentOf(ev: TimelineEvent, ctx?: DirectorCtx): string[] {
-  // 导演实时改过的名册优先（谁走了、谁刚来），没改过才照静态名册
+  /* 导演实时改过的名册优先（谁走了、谁刚来），没改过才照静态名册。
+     **给过空名单就是空名单** —— 「他独自离开」那一刻场上确实没人，
+     落回静态名册（乃至全体主役）等于把这个场面从提示词里抹掉。 */
   const live = ctx?.castNow
-  const ids = live && live.length ? live : castOf(ev)
+  if (live) return live
+  const ids = castOf(ev)
   return ids.length ? ids : (CHARACTERS.map((c) => c.id) as string[])
 }
 
@@ -1826,9 +1893,9 @@ ${relLadderText()}
   // 近期短信：同一格，紧挨着它 —— 两边都是「他做过什么、与谁说过什么」
   const smsSection = ctx.smsLog ? `\n\n${ctx.smsLog}` : ''
 
-  return `${outlineRules(ctx.operatorName || '言万心叶', free)}${presetSection(ctx.presetPre)}
+  return `${outlineRules(ctx.operatorName || '言万心叶', free)}${freedomLimits()}${presetSection(ctx.presetPre)}
 
-【当前事件】${ev.group} · ${ev.phase}｜${ev.place}${ev.day ? `｜${ev.day}` : ''}
+【当前事件】${ev.group} · ${ev.phase}｜${ctx.placeNow ?? ev.place}${ev.day ? `｜${ev.day}` : ''}
 标题：${ev.title}
 
 【事件大纲 · 原文走向（参照系，不锁结局）】
@@ -1844,7 +1911,7 @@ ${ev.summary}${briefSection(ev)}${notesSection}`}
 ${entList}
 
 【本事件出场角色】${
-    roster ? `\n${roster}` : '\n（暂无已建立关系的角色在场）'
+    roster ? `\n${roster}` : '\n（此刻无人在场 —— 这一场里一个人也没有）'
   }${temperSection(ev, ctx)}
 
 【此刻的羁绊 · 照此写关系，不要照原著写】
@@ -1873,6 +1940,8 @@ ${free ? '' : `  "bond":   [{ "char": "角色id", "delta": 整数 }],  // 羁绊
                                                // 同一个意思换个写法就落成两个键，面板上看着像两件事
   "cast":   ["此刻真在场上的人id"],            // **只在在场的人变了的时候给**（谁先离席、谁刚赶到、换了个房间）：给的是此刻这一场的**全量**名单，不是增减
                                                // 名单照本节【在场角色】那一份的 id 写；人都还在原处就整条省略，别每回合都给
+                                               // **场上一个人都不剩就给空数组 []** —— 「他把人都支走了」不是「省略这一项」
+  "place":  "此刻这一场在哪儿",                // 只在**真的换了地方**时给（他去了别处、把人都支走、换了个房间）；没挪就整条省略
   "diverged": true,                           // 已与原著相异（否则省略）
 ${free ? '' : `  "eventDone": true,                          // 这一段该了结的事已经了结才置 true —— 以**此刻实际发生的**为准，不是以大纲里那几条为准；他把它推去了别处，就以那个别处为落点收束，别为凑齐大纲往回拽
   "digest": "第三人称收官记录两三句",

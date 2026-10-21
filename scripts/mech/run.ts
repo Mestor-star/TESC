@@ -6321,10 +6321,13 @@ export function run(): MechReport {
       JSON.stringify(castD.cast) === JSON.stringify(['luna', 'hikari']),
       JSON.stringify(castD.cast))
 
-    ok('在场名册：空名单不算数（「此刻一个人都不在」由省略这一项表达，不由空数组表达）',
-      sanitizeDirective({ cast: [] }).cast === undefined
+    /* 语义在 2026-10-21 变了：省略 = 没变，`[]` = 此刻一个人都不在（他真把人支走了）。
+       但「给了一个都不认识的名字」仍是「没给」—— 不能顺手把名册清空。 */
+    ok('在场名册：空数组 = 此刻无人（落盘为 []）；只给认不出的名字 = 没给（不清人）',
+      Array.isArray(sanitizeDirective({ cast: [] }).cast)
+      && (sanitizeDirective({ cast: [] }).cast as string[]).length === 0
       && sanitizeDirective({ cast: ['__nobody__'] }).cast === undefined,
-      '空数组 → 不落盘')
+      JSON.stringify([sanitizeDirective({ cast: [] }).cast, sanitizeDirective({ cast: ['__nobody__'] }).cast]))
 
     ok('在场名册：它算「本回合有变化」（只有 cast 的回执不会面板报有变化、实际什么都没落地）',
       directiveHasFx({ cast: ['luna'] }), 'directiveHasFx({cast}) = true')

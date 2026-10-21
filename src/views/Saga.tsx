@@ -18,6 +18,7 @@ const REC_MODE_LABEL: Record<RecordMode, string> = {
   online: '在线推演',
   offline: '离线通读',
   legacy: '旧档回填',
+  manual: '人工判定',
 }
 
 /** 序号：按阅读序全局排序 1-based */

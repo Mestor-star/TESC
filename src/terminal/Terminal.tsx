@@ -168,8 +168,15 @@ export interface TerminalState {
    * 没改过照事件静态名册（`castOf`）。右栏与提示词都取这一个入口。
    */
   castOfEvent: (ev: Pick<TimelineEvent, 'id' | 'cast' | 'chars'>) => string[]
-  /** 导演实时修正某段的在场名册（全量覆盖；空名单不写） */
+  /**
+   * 导演实时修正某段的在场名册（全量覆盖）。
+   * **空数组合法** —— 「他把人都赶走了」「他独自离开」就得靠它落地。
+   */
   setCast: (id: string, ids: string[]) => void
+  /** 该段**此刻**的地点：导演改过就用改过的（`world.place`），没改过照 `ev.place` */
+  placeOfEvent: (ev: Pick<TimelineEvent, 'id' | 'place'>) => string
+  /** 导演实时修正某段的地点（段 id → 地名） */
+  setPlace: (id: string, place: string) => void
 
   /**
    * 私密档案（只对女角色生效）。`intimOf` 返回**底档 + 已落地的推进**合成之后的一页；
@@ -1159,11 +1166,22 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   /**
    * 导演实时修正某段的在场名册（`PlotDirective.cast`）。
    * 给的是**全量**名单、后一次覆盖前一次 —— 右栏要摆的是「此刻这一场里都有谁」，
-   * 不是「来过哪些人」。空名单不写（那由「省略这一项」表达，见 sanitizeDirective）。
+   * 不是「来过哪些人」。**空名单照写** —— 场上一个人都没有也是一种要摆出来的局面；
+   * 「名册没变」由调用方省略这一项表达（见 sanitizeDirective）。
    */
   const setCast = useCallback((id: string, ids: string[]) => {
-    if (!ids.length) return
     setWorld((prev) => ({ ...prev, cast: { ...prev.cast, [id]: [...ids] } }))
+  }, [])
+
+  /** 某段此刻的地点（导演改过 → world.place，否则照静态地点） */
+  const placeOfEvent = useCallback(
+    (ev: Pick<TimelineEvent, 'id' | 'place'>): string => world.place?.[ev.id] ?? ev.place,
+    [world.place],
+  )
+  /** 导演实时修正某段的地点（`PlotDirective.place`）：后一次覆盖前一次 */
+  const setPlace = useCallback((id: string, place: string) => {
+    if (!place.trim()) return
+    setWorld((prev) => ({ ...prev, place: { ...prev.place, [id]: place.trim() } }))
   }, [])
 
   /**
@@ -1610,6 +1628,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setCg,
     castOfEvent,
     setCast,
+    placeOfEvent,
+    setPlace,
     intimOf,
     bumpIntim,
     attireOf: attireOfFn,

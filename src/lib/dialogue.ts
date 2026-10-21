@@ -80,8 +80,9 @@ const TAIL_MARK = /^(?:\*\*|__|＊)+/
 /** 名字后**直接**接引号的写法（`露娜「…….」`）→ 该开引号对应的收尾引号 */
 const OPEN_CLOSE: Record<string, string> = { '「': '」', '『': '』', '“': '”', '"': '"' }
 
-/** 若该行以某登记名/别名 + 冒号开头 → 返回匹配；否则 null（整行留旁白） */
-function matchSpeaker(line: string): { id: string; body: string } | null {
+/** 若该行以某登记名/别名 + 冒号开头 → 返回匹配；否则 null（整行留旁白）。
+    `colonOnly`：只认「名字 + 冒号」（嵌套前缀的解包用，见 unwrapNested）。 */
+function matchSpeaker(line: string, colonOnly = false): { id: string; body: string } | null {
   const head = line.replace(LEAD_MARK, '')
   const folded = foldedHead(head)
   for (const sp of SPEAKER_TABLE) {
@@ -101,7 +102,7 @@ function matchSpeaker(line: string): { id: string; body: string } | null {
     // 放开成「名字后见引号就认」则会把「露娜「影」是异端」这类叙述也切成台词，
     // 所以宁可留着这条尾巴不认，也别把旁白切碎。
     const close = ch ? OPEN_CLOSE[ch] : ''
-    if (close && head.length >= k + 3 && head.endsWith(close)) {
+    if (!colonOnly && close && head.length >= k + 3 && head.endsWith(close)) {
       const body = head.slice(k + 1, -1).trim()
       if (!body) continue
       return { id: sp.id, body }
@@ -126,6 +127,25 @@ function stripOuterQuotes(s: string): string {
     }
   }
   return t
+}
+
+/**
+ * 解一层（或几层）**嵌套前缀**：模型偶尔把两层名字串成一行 ——
+ * `黑之魔王：言万心叶：……`。按外层算，整句会挂给错的人；这里按**内层**归属。
+ *
+ * 只认「名字 + 冒号」这一种、且内层必须**换人**才剥：
+ *   · 名字后接引号的写法不剥，所以 `黑之魔王：「露娜：你怎么看？」` 原样是外层在说话；
+ *   · 同一个名字连写两遍也停下（宁可留着，也不猜它写了两次是什么意思）；
+ *   · 正文开头不是登记名（叙述、括号神态）本就匹配不上 —— 一条「猜谁在说话」的逻辑都没有。
+ */
+function unwrapNested(m: { id: string; body: string }): { id: string; body: string } {
+  let cur = m
+  for (let i = 0; i < 4; i++) {
+    const inner = matchSpeaker(cur.body, true)
+    if (!inner || inner.id === cur.id) break
+    cur = inner
+  }
+  return cur
 }
 
 /**
@@ -164,11 +184,12 @@ export function splitSpeech(raw: unknown): DialogueSeg[] {
       flushNarr()
       continue
     }
-    const m = matchSpeaker(trimmed)
-    if (!m) {
+    const hit = matchSpeaker(trimmed)
+    if (!hit) {
       narrBuf.push(trimmed)
       continue
     }
+    const m = unwrapNested(hit)
     flushNarr()
     const body = stripOuterQuotes(m.body)
     if (!body) continue // 剥引号后为空 → 不算台词，留旁白
