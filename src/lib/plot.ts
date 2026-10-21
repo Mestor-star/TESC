@@ -13,7 +13,7 @@
    ============================================================ */
 
 import type {
-  ActCount, ActKind, AttireProgress, AttireSlot, AttireWear, FlagValue, IntimateProgress,
+  ActCount, ActKind, AnchorLog, AttireProgress, AttireSlot, AttireWear, FlagValue, IntimateProgress,
   IntimateSlot, RelId, TimelineEvent, WorldState,
 } from '../data/types'
 import { INTIMATE_BOND, INTIMATE_SLOTS, hasIntimate } from '../data/intimate'
@@ -36,6 +36,7 @@ import { FREE_BOND_NOTE, FREE_FRAME, isFreeId } from './freetime'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 import { canonFlagKey, snapFlagKey } from './flagname'
+import { anchorStatus, anchorsPrompt } from './anchors'
 
 /* ============================================================
    叙事时钟（WorldState.tick）
@@ -1515,6 +1516,13 @@ export interface DirectorCtx {
    * 给了 operatorAction 就走 willSection，只给 idle 就走 idleSection，两个都不给则整节不出现。
    */
   idle?: boolean
+  /**
+   * **世界线锚点要读的两格**：叙事时钟（`world.tick`）与落地账（`world.anchors`）。
+   *
+   * 单开一格而不是散着传，是因为它们同属一件事 —— 「世界线走到哪儿了」。
+   * 不给（旧调用点、离线脚本）就按「tick 0 + 一条都没落地」算：与没有这一层时行为一致。
+   */
+  worldline?: { tick?: number; anchors?: Record<string, AnchorLog> }
 }
 
 /** 预设段：非空时前置两个换行，与 loreSection / anchor 同款写法 */
@@ -1972,6 +1980,23 @@ ${relLadderText()}
 省略即维持此刻那一档，不必每段都动。`
     : ''
 
+  /* —— 世界线锚点（data/anchors.ts 那 24 条真锚点）——
+     摆在【事件大纲】之前：先读「这一段有哪件事不可动摇」，再读「原著是怎么走的」。
+     条数受控（due 全摆 / 错过最多 2 条 / 还没到期最多 3 条），一条都不沾就整节不出现。
+     判定是纯函数（lib/anchors.ts），这里只是把此刻的读数喂进去。 */
+  const anchorsSection = anchorsPrompt(
+    anchorStatus({
+      epDone: ctx.epDone,
+      tick: ctx.worldline?.tick,
+      place: ctx.placeNow ?? ev.place,
+      cast: present,
+      flags: ctx.flags,
+      // 「玩家主动踩上去」读的是操作栏这一回合有没有他写下的话 —— 粗判即可，
+      // 真正到不到底由下面的 fallback 兜（错过的那几条会念 fallback）
+      playerAct: !!ctx.operatorAction,
+      landed: ctx.worldline?.anchors,
+    }),
+  )
   const notesSection = notesSectionFor(ev)
   /* 后接事件锚在自由时间里换一副说法：那一段还是要来的，但**这一格不该往它收**
      （收不收由操作员按「进入下一卷」说了算）。照原样摆出「软门禁 · 置 eventDone」
@@ -2000,7 +2025,7 @@ ${relLadderText()}
   return `${outlineRules(ctx.operatorName || '言万心叶', free)}${freedomLimits()}${presetSection(ctx.presetPre)}
 
 【当前事件】${ev.group} · ${ev.phase}｜${ctx.placeNow ?? ev.place}${ev.day ? `｜${ev.day}` : ''}
-标题：${ev.title}
+标题：${ev.title}${anchorsSection}
 
 【事件大纲 · 原文走向（参照系，不锁结局）】
 ${free ? FREE_FRAME

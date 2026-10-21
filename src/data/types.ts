@@ -714,6 +714,72 @@ export type RelId =
   | 'pledged'    // 誓约
 
 /** 持久化世界状态（随存档读写 · 全部为可增删变量） */
+/* ============================================================
+   世界线锚点（docs/大事件锚点.md §8–§9 · docs/自由度改造方案.md §D4 与第 6 节契约）
+   ------------------------------------------------------------
+   锚点只写「世界状态的那一笔」：谁—变成—什么。**过程一个字都不写** ——
+   过程由导演按言万心叶这一回合的行动现写，形式 / 代价 / 在场者 / 关系后果都可改。
+   于是「大事件仍会发生」第一次有了可校验的载体：数据说结果，运行时判「到没到」。
+   ============================================================ */
+
+/** 锚点的可变量（形式 / 代价 / 关系 / 见证人 / 时机）—— 只有这五个取值 */
+export type AnchorVariable = 'form' | 'cost' | 'relation' | 'who' | 'when'
+
+/**
+ * 锚点的触发条件组 —— **给了的每一条都要满足**才算出「到来」。
+ *
+ * 没有「或」：一个锚点若真有两种到法，就该拆成两条锚点各自写清，
+ * 否则运行时说不清此刻到底是哪一条到了。
+ */
+export interface AnchorWhen {
+  /** 这些段都收束之后，它才**可能**到来（通常填紧邻的前一段） */
+  afterDone?: string[]
+  /** 时间格（半天）到这儿就必然到来 —— 硬期限 */
+  minTick?: number
+  /** 此刻在此地（与 world.place[段] / 原文 place 逐字比对） */
+  place?: string
+  /** 这些人里**至少一人在场**（空数组视为「此刻无人」→ 不满足） */
+  cast?: string[]
+  /** 这些变量都已登记成这个值 */
+  flag?: Record<string, boolean | number | string>
+  /** 玩家主动踩上去（这一回合他亲口写了要去做这件事） */
+  playerAct?: boolean
+}
+
+/**
+ * 一条真锚点。字段口径见 docs/自由度改造方案.md 第 6 节的 10 字段契约。
+ *
+ * id 一旦进存档就不能改（WorldState.anchors 靠它记落地）；
+ * outcome 可以改文案 —— 那只是提示词。
+ */
+export interface Anchor {
+  /** 'anc-v1-09-contract' —— 稳定不变 */
+  id: string
+  /** 原文出处（卷 / 话），只作考据，不进提示词 */
+  sourceRef: { vol: number; ch: string }
+  /** 挂靠的 TimelineEvent.id；跨段锚为 null */
+  evId: string | null
+  title: string
+  /** 那一句**状态句**：谁—变成—什么（只写状态，不写过程） */
+  outcome: string
+  variable: AnchorVariable[]
+  when: AnchorWhen
+  /** 玩家绕开时的替代形态 —— 答不上来就不该登记成锚点 */
+  fallback: string
+  /** 未到时给导演的一句禁令 */
+  guard: string
+  /** 这段原文的跨度（格，1 格 = 半天），配合 minTick 与收束判定 */
+  span: { min: number; max: number }
+}
+
+/** 一条锚点的落地账（WorldState.anchors[id]） */
+export interface AnchorLog {
+  /** 落地时的时钟格 */
+  tick: number
+  /** 按原样演出来了 / 走的是 fallback 那条替代形态 */
+  how: 'played' | 'fallback'
+}
+
 export interface WorldState {
   /**
    * 与原著基准的偏差量（操作员抉择累积）。
@@ -832,10 +898,20 @@ export interface WorldState {
    * 卷一的 `day` 标从「第 0 日」起算，旧档没有这一格时读出来也是 0，正好对得上。
    *
    * **只增不减**：任何一处推进都走 `nextTick`（只做加法），没有回拨的写法 ——
-   * 时间不会倒流。锚点的「到期」判定下一批接在这一格上（读 `dayOf`），
-   * 本轮只留接口、不做判定。
+   * 时间不会倒流。世界线锚点的「到期」判定就接在这一格上（见 `lib/anchors.ts`，
+   * 它只拿这一格比大小、不写状态；界面那行「第 N 日之后」也读它）。
    */
   tick?: number
+  /**
+   * **世界线锚点的落地账**（锚点 id → 落在哪一格、怎么落的）。
+   *
+   * 旧档没有这一栏 → 空表（= 一条都还没落地，正是旧档该有的语义）。
+   * 写入口只有两处：① 锚点对应的段被 completeEvent 收束时记 played
+   * （见 terminal/Terminal.tsx）；② 走 fallback 形态落地时记 fallback
+   * （由操作员 / 后续批次写入）。判定侧只读它来排除已落地的锚点 ——
+   * 判定本身（lib/anchors.ts）不写任何状态。
+   */
+  anchors?: Record<string, AnchorLog>
 }
 
 /** 低语者读到的心声（逐字原文） */

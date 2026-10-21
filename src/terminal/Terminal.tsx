@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, AttireProfile, AttireProgress, ActCount, RelId, TimelineEvent } from '../data/types'
+import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, AttireProfile, AttireProgress, ActCount, RelId, TimelineEvent, AnchorLog } from '../data/types'
 import { castOf } from '../lib/cast'
 import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
+import { ANCHORS } from '../data/anchors'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, CAST, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import type { CastPerson } from '../data/castmeta'
@@ -649,6 +650,10 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     /* 叙事时钟（后加）：旧档没有这一格 → 从 0 起算（第 0 日），不报错。
        坏值（负 / NaN / 小数）一律抹平到 0 或整数 —— 这一格只增不减，读档不该把它读坏。 */
     tick: typeof raw?.tick === 'number' && Number.isFinite(raw.tick) && raw.tick > 0 ? Math.floor(raw.tick) : 0,
+    /* 世界线锚点的落地账（后加）：旧档没有 → 空表，也正是旧档该有的语义
+       （一条都还没落地）；有的一律原样带走 —— 这里的键是锚点 id，改一次就等于
+       把所有旧档的「这件大事已经演过了」抹掉，之后它会再提醒一遍。 */
+    anchors: raw?.anchors ?? {},
     records: [],
   }
   const doneIds = new Set(Object.keys(epDone))
@@ -661,6 +666,19 @@ function hydrateWorld(epDone: Record<string, true>, cur: string | null, raw: Par
     }
   }
   w.records = sortRecords(records)
+  /* 锚点的**旧档回填**：存档里根本没有 anchors 这一栏（这一层是后加的）时，
+     已收束的那些段所对应的锚点一律按「早就演过了」补记。
+     不回填的后果不是少一条提示，而是**多二十四条**：一份读到第六卷的旧档
+     在第一回合会把所有锚点一起判成「此刻到期」，提示词里一次涌出二十四句结果。
+     判据只认「raw.anchors === undefined」—— 新写的档一定带着这张表（哪怕是空的），
+     所以这条回填只对旧档生效，不会把新档里「还没演」的锚点误标成演过。 */
+  if (raw?.anchors === undefined) {
+    const back: Record<string, AnchorLog> = {}
+    for (const a of ANCHORS) {
+      if (a.evId && epDone[a.evId]) back[a.id] = { tick: w.tick ?? 0, how: 'played' }
+    }
+    w.anchors = back
+  }
   const readIdx = Math.max(
     cur !== null ? readingIndexOf(cur) : -1,
     ...[...doneIds].map((id) => readingIndexOf(id)).filter((i) => i >= 0),
@@ -1499,10 +1517,22 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
           const had = locked?.[l.char] ?? 0
           if (l.value > had) locked = { ...locked, [l.char]: l.value }
         }
+        /* —— 世界线锚点：这一段收束了，挂在这一段上的锚点就算**演出来了** ——
+           记一笔 played（`WorldState.anchors`），于是下一回合的判定不再复述它、
+           界面那行「下一个锚点」也往后挪一格。记在收束这一处（而不是某个视图里），
+           是因为「这一段走完了」这件事只有这一个入口 —— 放别处会漏掉离线通读那条路。
+           走 fallback 形态的那种由后续批次写 'fallback'，这里不猜。 */
+        let anchors = prev.anchors
+        const onThis = ANCHORS.filter((a) => a.evId === id && !anchors?.[a.id])
+        if (onThis.length) {
+          anchors = { ...anchors }
+          for (const a of onThis) anchors[a.id] = { tick: prev.tick ?? 0, how: 'played' }
+        }
         const rec: WorldRecord = { eventId: id, mode, digest: body, diverged: !!diverged, ts: Date.now() }
         return {
           ...prev,
           ...(locked !== prev.locked ? { locked } : null),
+          ...(anchors !== prev.anchors ? { anchors } : null),
           records: sortRecords([...prev.records.filter((r) => r.eventId !== id), rec]),
         }
       })

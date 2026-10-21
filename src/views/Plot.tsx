@@ -15,6 +15,7 @@ import { loadOfflineText } from '../lib/offtext'
 import { clock } from '../lib/format'
 import type { ChatMsg, RecordMode, TimelineEvent } from '../data/types'
 import { TICKS_PER_DAY, applyDirective, buildDirectorSystem, createRetryGate, dayLabel, dayOf, directiveHasFx, extractLiveDisplay, nextTick, parseDirectorReply, replyDisplayText, tickGapFor } from '../lib/plot'
+import { nextAnchor } from '../lib/anchors'
 import { EPISODES, isFreeId, nextEpisodeAfter } from '../lib/freetime'
 import {
   effectiveGrowth, listRecords, readBag, readEquip, readGearBag, readGrowth,
@@ -977,6 +978,7 @@ export function Plot() {
         await withBriefs()
         const system = buildDirectorSystem(ev, {
           operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+          worldline: { tick: world.tick, anchors: world.anchors },
           freeMode: freeOf(ev.id),
         })
         /* 问两次再交回给操作员。只问一次的话，模型答偏一次就得他自己点「要求补发指令」——
@@ -1092,6 +1094,8 @@ export function Plot() {
         epDone,
         flags: world.flags,
         needDirective: extra.needDirective,
+        // 世界线的两格（时钟 + 锚点落地账）：锚点那一节靠它们判「到没到」
+        worldline: { tick: world.tick, anchors: world.anchors },
         loreContext: loreBlock || undefined,
         nextEvent: nextEv,
         presetPre: preset.pre || undefined,
@@ -1340,6 +1344,7 @@ export function Plot() {
       await withBriefs()
       const system = buildDirectorSystem(ev, {
         operatorName, bondNow, epDone, flags: world.flags, needDirective: false,
+        worldline: { tick: world.tick, anchors: world.anchors },
       })
       const messages: ChatTurn[] = [
         { role: 'system', content: system },
@@ -1563,6 +1568,7 @@ export function Plot() {
       await withBriefs()
       const system = buildDirectorSystem(ev, {
         operatorName, bondNow, epDone, flags: world.flags, needDirective: true,
+        worldline: { tick: world.tick, anchors: world.anchors },
         freeMode: freeOf(ev.id),
         // 补发的是「落地」不是「重写」：他这一回合说了什么，仍要摆在最末一节里当判据
         operatorAction: lastActOf(logs[ev.id]) || undefined,
@@ -1933,6 +1939,20 @@ export function Plot() {
 
   const quickReady = !busy && showOnline && ready
 
+  /* —— 世界线 · 下一个锚点（观测频道那一行）——
+     只念「还有哪件大事没来」，不画整条脊梁（那是下一批）。
+     判据全是纯函数（lib/anchors.ts）：前一段已收束 + 时钟到了 + 现场条件；只读、不写状态。
+     「玩家主动」读的是输入框里此刻有没有他写下的话 —— 与提示词那一侧同一条粗判。 */
+  const anchorNow = nextAnchor({
+    epDone,
+    tick: world.tick,
+    place: placeOfEvent(focusEv),
+    cast: castOfEvent(focusEv),
+    flags: world.flags,
+    playerAct: draft.trim().length > 0,
+    landed: world.anchors,
+  })
+
   /* —— 台词框渲染辅助 ——
      排法本身住在 components/PlotFlow.tsx（约会专线取的是同一份）；
      这里只备一个名字 —— `.dlgName` 铭牌上要写操作员叫什么。 */
@@ -2167,6 +2187,32 @@ export function Plot() {
               离线通读
             </button>
           </div>
+          ) : null}
+          {/* —— 世界线 · 下一个锚点 ——
+              只一行：还有哪件大事没来、第 N 日之后。到期时这一行变红、写「此刻到期」
+              （判据见 lib/anchors.ts；整条脊梁图是下一批的事，这里不画）。 */}
+          {anchorNow ? (
+            <span
+              className="muted tiny"
+              data-anchor-next={anchorNow.anchor.id}
+              data-anchor-due={anchorNow.due ? '1' : '0'}
+              style={{
+                flexBasis: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                color: anchorNow.due ? 'var(--red-deep)' : 'var(--ink-mute)',
+                fontWeight: anchorNow.due ? 700 : 400,
+              }}
+              title={anchorNow.due ? `已到期：${anchorNow.anchor.outcome}` : anchorNow.anchor.guard}
+            >
+              世界线 · 下一个锚点：{anchorNow.anchor.title}
+              {anchorNow.due
+                ? ' · 此刻到期'
+                : anchorNow.dayAfter !== null
+                  ? `（第 ${anchorNow.dayAfter} 日之后）`
+                  : null}
+            </span>
           ) : null}
         </div>
       </div>
