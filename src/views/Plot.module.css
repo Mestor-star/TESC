@@ -313,6 +313,17 @@
   border: 1px solid color-mix(in srgb, var(--violet) 34%, transparent);
   border-radius: var(--radius-pill);
 }
+/* 无名台词框：与台词框同一套版式，但没有立绘位与名牌（说话人未写明，不猜）。
+   只把底色压一档、边线换成更淡的一档，与「有主的台词」区分开。 */
+.quoteFrame {
+  border-style: dashed;
+  border-color: var(--line-2);
+  background: var(--bg-2);
+}
+.quoteFrame .bubble {
+  padding-left: 18px;
+}
+
 .sayFrame .dlgName { left: 16px; }
 .youFrame .dlgName {
   right: 16px;

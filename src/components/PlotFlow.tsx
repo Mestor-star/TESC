@@ -61,6 +61,23 @@ export function YouFrame({ text, opName, foot }: { text: string; opName: string;
   )
 }
 
+/**
+ * 无名台词那一行：与台词框同一套版式，但**没有立绘位、没有名牌**。
+ * 模型偶尔把一句台词整段包在「」里却不写说话人；从前这种整行落成旁白，
+ * 屏上就是「该出气泡的地方没出气泡」。这一框只交文本，不猜是谁说的。
+ */
+export function QuoteFrame({ text }: { text: string }) {
+  return (
+    <div className={css.sayRow} data-quote="1">
+      <div className={`${css.frame} ${css.quoteFrame}`}>
+        <div className={css.frameRow}>
+          <span className={css.bubble}><Linkified text={text} /></span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** 别的角色那一行：整框靠左、立绘嵌左缘、名字嵌左上顶边（颜色取她本人的本色） */
 export function SayFrame({ id, text }: { id: string; text: string }) {
   const c = speakerOf(id)
@@ -93,6 +110,7 @@ export function Speech({ text, opName, keyPrefix }: { text: string; opName: stri
           return <div key={key} className={css.narrText}><Linkified text={seg.text} /></div>
         }
         if (seg.kind === 'you') return <YouFrame key={key} text={seg.text} opName={opName} />
+        if (seg.kind === 'quote') return <QuoteFrame key={key} text={seg.text} />
         return <SayFrame key={key} id={seg.id} text={seg.text} />
       })}
     </>

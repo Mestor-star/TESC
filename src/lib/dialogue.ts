@@ -20,6 +20,13 @@ export type DialogueSeg =
   | { kind: 'say'; id: string; text: string }
   /** 操作员（言万心叶）的台词（右头像，恒为我们自己的回合） */
   | { kind: 'you'; text: string }
+  /**
+   * 无名台词：整段/整行被引号包住、却**没有写说话人**（模型常这么写）。
+   * 从前这种整行落进旁白 —— 屏上就是「该出气泡的地方没出气泡」。
+   * 这里只交出**文本**（已剥掉外层那一对引号），**不挂 id、不猜是谁说的**：
+   * 猜错比不美化更糟。渲染层给它一枚中性气泡。
+   */
+  | { kind: 'quote'; text: string }
 
 /** 最短变体长度：避免单字别名误伤普通叙述行（如「娜：……」首字撞「娜」） */
 const SPEAKER_MIN = 2
@@ -186,6 +193,15 @@ export function splitSpeech(raw: unknown): DialogueSeg[] {
     }
     const hit = matchSpeaker(trimmed)
     if (!hit) {
+      /* 认不出说话人，但整行**就是一句引号台词**（「……」「……」/『……』/“……”,整行被同一对包住）：
+         交出去当一枚无名气泡，而不是埋进旁白。判据只有一条 —— 剥掉外层那一对引号后
+         **文本变短了**，也就是整行确实被它包住；行内引号（旁白夹一句）照旧留旁白。 */
+      const bare = stripOuterQuotes(trimmed)
+      if (bare !== trimmed && bare.length >= 2) {
+        flushNarr()
+        out.push({ kind: 'quote', text: bare })
+        continue
+      }
       narrBuf.push(trimmed)
       continue
     }
