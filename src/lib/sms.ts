@@ -11,7 +11,7 @@
 
 import { charOf, profileLinesOf, voiceLinesOf } from '../data/personas'
 import { INTIMATE_BOND } from '../data/intimate'
-import type { ChatMsg } from '../data/types'
+import type { ChatMsg, ChatMsgMeta } from '../data/types'
 import { clock } from './format'
 import { nameKey } from './namekey'
 import { extractLiveDisplay } from './plot'
@@ -106,6 +106,69 @@ export function appendSmsMsgs(
   writeSmsLogs(next)
   bumpSmsVersion()
   return next
+}
+
+/**
+ * **改一条**的通用骨架：读盘 → 就地改 → 写盘 → **回声**，与 appendSmsMsgs 同一套口径。
+ *
+ * 与 appendSmsMsgs 的差别只在「改哪一段」由调用方给：`up` 收到这一线程的账，
+ * 交回新的一份；交回 `null` = **没认领到那一条**（id 不在账上），此时**盘上不动、
+ * 也不回声** —— 宁可什么都没发生，也不要凭一个失效的 id 把整本账重写一遍。
+ *
+ * 落盘失败（隐私模式 / 配额满）由 writeSmsLogs 照旧静默吞掉：与 appendSmsMsgs
+ * 完全同一条路，这一层不另立规矩。**回声照发** —— 那一声才是「盘上变了，
+ * 挂着的人重读」的信号（约会专线就是这么吃账的，见文件头那一节）。
+ */
+function editSmsThread(
+  threadId: string, up: (list: ChatMsg[]) => ChatMsg[] | null,
+): boolean {
+  const all = loadSmsLogs()
+  const next = up(all[threadId] ?? [])
+  if (!next) return false
+  writeSmsLogs({ ...all, [threadId]: next })
+  bumpSmsVersion()
+  return true
+}
+
+/**
+ * 换掉某一线程里**那一条**的文本（可选打 `meta.edited` 记号 → 界面显一枚「手改」）。
+ *
+ * 规矩（与主线 `Plot.tsx` 的 retextMsg 同一条）：**只换这一条的文字** ——
+ * 不增删、不改序号、不重跑指令、不重新生成。要重推请先 truncateSmsAfter 再发一次。
+ * 旧档没有 `meta` 时照常工作（现补一格）；找不到那一条 → 返回 false，盘上不动。
+ */
+export function retextSmsMsg(
+  threadId: string, msgId: string, text: string, edited?: boolean,
+): boolean {
+  return editSmsThread(threadId, (list) => {
+    let hit = false
+    const next = list.map((m) => {
+      /* 坏行（旧档里混进来的 null / 非对象）原样放过：逐条跳过，不为一条脏数据
+         把整本账弄崩 —— 与 loadSmsLogs 的容错口径一致。 */
+      if (!m || m.id !== msgId) return m
+      hit = true
+      if (!edited) return { ...m, text }
+      const meta = { ...(m.meta ?? {}) } as ChatMsgMeta & { edited?: boolean }
+      meta.edited = true
+      return { ...m, text, meta }
+    })
+    return hit ? next : null
+  })
+}
+
+/**
+ * 截断到某一条（**含**它），其后全删 —— 给「改口重来」用。
+ *
+ * 保留的那一条原样留着（文字自己先用 retextSmsMsg 换好）：两句各管一件事，
+ * 谁先谁后都读得懂，合在一起就分不清「截断」到底动不动文字了。
+ * 找不到那一条 → 返回 false，一条都不删。
+ */
+export function truncateSmsAfter(threadId: string, msgId: string): boolean {
+  return editSmsThread(threadId, (list) => {
+    const at = list.findIndex((m) => !!m && m.id === msgId)
+    if (at < 0) return null
+    return list.slice(0, at + 1)
+  })
 }
 
 /** 删掉整个线程的会话（群聊线程名册的清理在 lib/smsthreads.ts） */

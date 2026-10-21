@@ -19,6 +19,7 @@ import type { Key, ReactNode } from 'react'
 import { PaperPlaneTilt, Stop } from '@phosphor-icons/react'
 
 import { OPERATOR_ID, speakerOf } from '../data/castmeta'
+import type { ChatMsg, ChatMsgMeta } from '../data/types'
 import { splitSpeech } from '../lib/dialogue'
 import { inkOf } from '../lib/hue'
 import { Linkified } from './Linkified'
@@ -204,6 +205,91 @@ export function OptRow({ options, disabled, onPick, title = '接续选项' }: {
 export function RowActs({ children }: { children?: ReactNode }) {
   if (!children) return null
   return <div className={css.rowActs}>{children}</div>
+}
+
+/* ---------- 就地编辑一条（编辑框 + 「手改」） ---------- */
+
+/**
+ * 这一条被手改过没有。
+ *
+ * `edited` 不在 `ChatMsgMeta` 上（它是界面记号，不是回执字段）—— 与 voices 同一个
+ * 写法：用的时候现 cast 一格，交出去就走，谁也不往 data/types 里加。
+ */
+export function editedOf(m: ChatMsg): boolean {
+  return (m.meta as (ChatMsgMeta & { edited?: boolean }) | undefined)?.edited === true
+}
+
+/** 「手改」小 chip：挂在被编辑过的那一条上（正文挂在旁白块底，玩家那条挂在时刻旁边） */
+export function MsgEditChip() {
+  return <span className={css.editedChip} data-edited="1">手改</span>
+}
+
+export interface MsgEditorProps {
+  /** 玩家自己那条（多一枚「改口重来」；文案也更直白一点） */
+  isUser: boolean
+  value: string
+  onChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+  /** 「改口重来」的第二段：第一次点只摊开提醒，再点才真截断重推 */
+  retryArmed?: boolean
+  onRetry?: () => void
+  /** 框下那句提醒（默认是主线那句：名字写错 → 掉回旁白） */
+  hint?: ReactNode
+  /** 改口重来的提醒（默认是主线那句：羁绊 / 旗标 / 图鉴不回滚） */
+  retryNote?: ReactNode
+}
+
+/**
+ * 一条正文的编辑框：点「编辑」之后**原位**顶掉那条气泡，就地在原处长出来。
+ *
+ * 规矩（主线与约会专线同一条，所以只写这一次）：
+ *   · 保存 = **只换文字**（+ 打 `meta.edited` → 「手改」chip），不重跑指令、不重新生成；
+ *   · 玩家那条另有一枚「改口重来」：截断其后内容并重新推进一次（提醒里写死
+ *     「此前已落地的…不会回滚」）；
+ *   · 键盘：Ctrl/Cmd+Enter 保存、Esc 取消；等宽、按内容行数自动长高。
+ *
+ * `autoFocus` 只管这一格自己：编辑时焦点落进 textarea，底下的输入带一个字都不动
+ * （它没有受控的 focus，也不会被 setState 顶掉）。
+ */
+export function MsgEditor({
+  isUser, value, onChange, onSave, onCancel, retryArmed, onRetry, hint, retryNote,
+}: MsgEditorProps) {
+  const rows = Math.min(16, Math.max(3, value.split('\n').length + Math.floor(value.length / 46)))
+  return (
+    <div className={css.editBox} data-msg-edit={isUser ? 'user' : 'them'}>
+      <textarea
+        className={css.editArea}
+        data-msg-edit-area="1"
+        value={value}
+        rows={rows}
+        autoFocus
+        spellCheck={false}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+          else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave() }
+        }}
+      />
+      <div className={css.editHint}>
+        {hint ?? '台词行请以『角色名：』开头 —— 名字写错，这一句会掉回旁白。只改文字：不重跑指令，也不重新生成。'}
+      </div>
+      {retryArmed ? (
+        <div className={css.editWarn} data-msg-retry-note="1">
+          {retryNote ?? <>改口重来会截断这一条之后的所有内容并重新推进一次 —— <b>此前已落地的羁绊 / 旗标 / 图鉴不会回滚</b>。</>}
+        </div>
+      ) : null}
+      <div className={css.editActs}>
+        <button type="button" className="btn btn--primary" style={{ fontSize: 12 }} data-msg-save="1" onClick={onSave}>保存</button>
+        <button type="button" className="btn btn--ghost" style={{ fontSize: 12 }} data-msg-cancel="1" onClick={onCancel}>取消</button>
+        {isUser && onRetry ? (
+          <button type="button" className="btn btn--ghost" style={{ fontSize: 12 }} data-msg-retry="1" onClick={onRetry}>
+            {retryArmed ? '确认改口重来' : '改口重来'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 /* ---------- 还没开口 / 正在生成 ---------- */

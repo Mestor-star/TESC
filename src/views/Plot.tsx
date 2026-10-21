@@ -63,7 +63,8 @@ import { Portrait } from '../components/Portrait'
    components/PlotFlow.tsx** —— 约会专线取的是同一份（主人：两边要原模原样）。
    这里只引，不再自己排一遍。 */
 import {
-  Composer, EmptyHint, NarrBlock, OptRow, RowActs, Speech, ThinkFold, Thinking, YouFrame, opNameOf,
+  Composer, EmptyHint, MsgEditChip, MsgEditor, NarrBlock, OptRow, RowActs, Speech, ThinkFold, Thinking,
+  YouFrame, editedOf, opNameOf,
 } from '../components/PlotFlow'
 
 import css from './Plot.module.css'
@@ -350,11 +351,6 @@ function retextMsg(evId: string, id: string, text: string, edited?: boolean): Re
   return next
 }
 
-/** 这一条被手改过没有（`meta.edited` 不在 `ChatMsgMeta` 上 —— 与 voices 同一个写法，交出一格就走了） */
-function editedOf(m: ChatMsg): boolean {
-  return (m.meta as (ChatMsgMeta & { edited?: boolean }) | undefined)?.edited === true
-}
-
 /**
  * 撤掉一条开场白。开场白只在**它真是原文**的那一段（第一卷第一章）才留着；
  * 别的段曾经铺过的那一条是转述，顶着「· 原文」的名头摆在最前，比干脆没有更糟。
@@ -488,62 +484,8 @@ function restoreLane(): { lane: PlotLane; pick: string | null } {
   return { lane: 'main', pick: null }
 }
 
-/* ---------- 就地编辑框 ---------- */
-
-/**
- * 一条正文的编辑框（点「编辑」之后顶掉那条气泡，就地在原位长出来）。
- *
- * 规矩：
- *   · 保存 = 只换文字 + 打 `meta.edited`（「手改」小 chip），**不重跑指令、不重新生成**；
- *   · 玩家那条另有一枚「改口重来」：保存文本后截断它之后的所有内容并重新推进一次
- *     （二次确认文案里写死「此前已落地的羁绊 / 旗标 / 图鉴不会回滚」）；
- *   · 键盘：Ctrl/Cmd+Enter 保存、Esc 取消；等宽、按内容行数自动长高。
- */
-function MsgEditBox({ isUser, text, retryArmed, onText, onSave, onCancel, onRetry }: {
-  isUser: boolean
-  text: string
-  retryArmed: boolean
-  onText: (v: string) => void
-  onSave: () => void
-  onCancel: () => void
-  onRetry: () => void
-}) {
-  const rows = Math.min(16, Math.max(3, text.split('\n').length + Math.floor(text.length / 46)))
-  return (
-    <div className={css.editBox} data-msg-edit={isUser ? 'user' : 'them'}>
-      <textarea
-        className={css.editArea}
-        data-msg-edit-area="1"
-        value={text}
-        rows={rows}
-        autoFocus
-        spellCheck={false}
-        onChange={(e) => onText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.preventDefault(); onCancel() }
-          else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave() }
-        }}
-      />
-      <div className={css.editHint}>
-        台词行请以『角色名：』开头 —— 名字写错，这一句会掉回旁白。只改文字：不重跑指令，也不重新生成。
-      </div>
-      {retryArmed ? (
-        <div className={css.editWarn} data-msg-retry-note="1">
-          改口重来会截断这一条之后的所有内容并重新推进一次 —— <b>此前已落地的羁绊 / 旗标 / 图鉴不会回滚</b>。
-        </div>
-      ) : null}
-      <div className={css.editActs}>
-        <button type="button" className="btn btn--primary" style={{ fontSize: 12 }} data-msg-save="1" onClick={onSave}>保存</button>
-        <button type="button" className="btn btn--ghost" style={{ fontSize: 12 }} data-msg-cancel="1" onClick={onCancel}>取消</button>
-        {isUser ? (
-          <button type="button" className="btn btn--ghost" style={{ fontSize: 12 }} data-msg-retry="1" onClick={onRetry}>
-            {retryArmed ? '确认改口重来' : '改口重来'}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  )
-}
+/* 就地编辑框与「手改」chip 已抽到 components/PlotFlow.tsx（`MsgEditor` / `MsgEditChip`）：
+   约会专线用的是同一份壳，两处再各写一遍就会长歪。这里只引。 */
 export function Plot() {
   const {
     operatorName, navigate, push,
@@ -2764,12 +2706,12 @@ export function Plot() {
                        重新过一遍 splitSpeech —— 名字写错就掉回旁白，框下有提醒）。 */
                     if (editId === m.id) {
                       return (
-                        <MsgEditBox
+                        <MsgEditor
                           key={m.id}
                           isUser={m.from === 'user'}
-                          text={editText}
+                          value={editText}
+                          onChange={setEditText}
                           retryArmed={retryArm}
-                          onText={setEditText}
                           onSave={saveEdit}
                           onCancel={cancelEdit}
                           onRetry={() => void retryEdit()}
@@ -2785,7 +2727,7 @@ export function Plot() {
                         text={m.text}
                         opName={opName}
                       >
-                        {editedOf(m) ? <span className={css.editedChip} data-edited="1">手改</span> : null}
+                        {editedOf(m) ? <MsgEditChip /> : null}
 
                         {/* 本回合读到的心声：紧贴正文下方（不是气泡，见 VoiceNotes） */}
                         <VoiceNotes list={(m.meta as (ChatMsgMeta & { voices?: VoiceNote[] }) | undefined)?.voices} />
@@ -2822,7 +2764,7 @@ export function Plot() {
                         foot={
                           <span className={`muted tiny ${css.youFoot}`}>
                             {m.time}
-                            {editedOf(m) ? <span className={css.editedChip} data-edited="1">手改</span> : null}
+                            {editedOf(m) ? <MsgEditChip /> : null}
                             {showOnline && ready && !busy ? (
                               <>
                                 <button type="button" className="linkGo" data-you-edit="1" onClick={() => startEdit(m)}>编辑</button>

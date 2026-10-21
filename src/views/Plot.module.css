@@ -925,3 +925,13 @@
 @media (pointer: coarse) {
   .editActs > :global(.btn) { min-height: 40px; }
 }
+/* ============ 消息编辑 · 约会专线接入后补的两条（追加，不改上面任何一条）============
+   ① 操作行与时刻行在窄屏上**折行**：约会专线那条消息底下现在多了「编辑 / 改口重来」，
+      与「重写此回复」挤在一排时 390 屏会横溢（`.rowActs` 原来是 nowrap 的一排）。
+   ② 编辑框那几句提醒在窄屏收一号，跟着 `.editArea` 一起收 —— 仍然走 tokens。 */
+@media (max-width: 720px) {
+  .rowActs { flex-wrap: wrap; row-gap: 6px; }
+  .youFoot { flex-wrap: wrap; row-gap: 6px; }
+  .editHint,
+  .editWarn { font-size: 11px; }
+}
