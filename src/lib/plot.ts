@@ -32,6 +32,7 @@ import { furthestDone } from './operator'
 import { castOf } from './cast'
 import { bondName, clamp } from './format'
 import { PROSE_RULES, haremRule } from './worldrules'
+import { ANTI_AI_STYLE } from './writing-rules'
 import { FREE_BOND_NOTE, FREE_FRAME, isFreeId } from './freetime'
 import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
@@ -1671,6 +1672,9 @@ function willSection(opName: string, action: string): string {
   唯独大纲里的**情节顺序**（那几条按先后排好的事）就此作废：没发生就是没发生，不要为凑齐它们把人往回拽，也不要替他把没写到的场面补发生。
 · 相合 —— 照**原文案**写：台词与措辞用【本事件补充设定 · 原文摘录】与实施细则里的原文（逐字，不改写、不润色、不续写），情节按原著那几步走。
 · 他把自己挪去了别处、或把人都支走了 —— 现场就跟着挪：地点与在场名册照他说的改，并在事件指令里给出（\`place\` 写此刻新的地名；\`cast\` 给**改完之后**的全量名单 —— 一个人都没剩下就给空数组 \`[]\`，别用「省略这一项」糊过去）。
+· **换场不等于清空名册**。\`cast\` 说的是「这一段里参与的人」，不是「此刻镜头里站着几个人」：
+  镜头切到别处、只跟着一个人写，**不是把其他人从这一段删掉**。只有人**真的**离开或到场时才给 \`cast\`；
+  同行的、约好会合的、这一段该到的人都得在列。拿不准就**省略这一项**（名册不变），别顺手缩成一个名字。
 
 只有他**没有写到**的地方，才轮到原著走向与在场者的自主反应去填。`
 }
@@ -2022,6 +2026,8 @@ ${relLadderText()}
   // 近期短信：同一格，紧挨着它 —— 两边都是「他做过什么、与谁说过什么」
   const smsSection = ctx.smsLog ? `\n\n${ctx.smsLog}` : ''
 
+  /* 文风那一节摆在台词行契约之后、事件指令之前：两节都是「正文怎么写」，
+     都要离输出最近才压得住预设段里的「文本格式」与模型自己的惯性。 */
   return `${outlineRules(ctx.operatorName || '言万心叶', free)}${freedomLimits()}${presetSection(ctx.presetPre)}
 
 【当前事件】${ev.group} · ${ev.phase}｜${ctx.placeNow ?? ev.place}${ev.day ? `｜${ev.day}` : ''}
@@ -2052,6 +2058,8 @@ ${baseline.trim() || '（无）'}
 ${free ? `\n${FREE_BOND_NOTE}\n` : ''}${reask}${loreSection}${opsSection}${factsSection}${smsSection}${varBlock}${intimSection}${relSection}${anchor}${presetSection(ctx.presetPost)}${will}
 
 ${speechContract()}
+
+${ANTI_AI_STYLE}
 
 【事件指令 · 每回合末尾必须输出】
 标签行（单独一行）：

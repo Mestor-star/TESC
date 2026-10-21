@@ -16,6 +16,7 @@ import { clock } from './format'
 import { nameKey } from './namekey'
 import { extractLiveDisplay } from './plot'
 import { BOTTOM_RULES } from './worldrules'
+import { ANTI_AI_STYLE_SHORT } from './writing-rules'
 
 export const SMS_LOG_KEY = 'zts-tavern:v1'
 
@@ -228,7 +229,9 @@ ${BOTTOM_RULES}${intimate ? `
    这些话要顺着两个人的交情**自然**地露出来，不必每句都往那儿靠，也不要一次说完；
    对方问起时坦然接住，对方没那层意思时不硬拐过去。
 7. 她可以**直接开口约**（或答应对方的约）。约成了由她在末尾给出 date 字段（见下），
-   见面时的推进不在信里发生 —— 信里只到「说定了」为止。` : ''}`
+   见面时的推进不在信里发生 —— 信里只到「说定了」为止。` : ''}
+
+${ANTI_AI_STYLE_SHORT}`
 }
 
 /**
@@ -265,7 +268,9 @@ ${roster}
 3. 每人一到两句，口语自然，贴合各自人物卡的口癖；绝不替${you}说话。
 4. 使用简体中文，不用 Markdown、不加星号动作、不发编号，像在群聊软件里直接打字。
 5. 被问及剧透、真实世界、系统或 AI 时，用角色的口吻轻描淡写带过，并拉回当下情境。
-${BOTTOM_RULES}`
+${BOTTOM_RULES}
+
+${ANTI_AI_STYLE_SHORT}`
 }
 
 /** 聊天历史（最近 N 条）→ 模型消息；群聊时给角色发言补上「【名】」前缀，与提示词的格式对齐 */

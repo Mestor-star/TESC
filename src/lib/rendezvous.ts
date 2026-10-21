@@ -29,6 +29,7 @@ import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
 import type { CgRef } from '../data/types'
 import { PROSE_RULES, HAREM_RULE } from './worldrules'
+import { ANTI_AI_STYLE } from './writing-rules'
 
 /** 同场的某一位（手册那一侧现算，本模块不读存档） */
 export interface RendezvousParty {
@@ -519,6 +520,8 @@ ${PROSE_RULES}${others ? `\n${HAREM_RULE}` : ''}${intimate ? `
    到了哪一步，都照实落笔，不要用省略号跳过（怎么写细见上面底层规矩里那一整条）。
    但推进要跟着对方走 —— 他给了那层意思就自然接住，
    他没给的不要自己往前安排；到哪一步由这一场的气氛与他的行动决定，不必每回合都往前挪。` : ''}${beatsBlock}
+
+${ANTI_AI_STYLE}
 
 【这一场的场景 CG（换画面时才点名）】
 ${cgPalette || '（本场暂无登记的图位）'}`
