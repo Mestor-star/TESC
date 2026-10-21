@@ -1,0 +1,428 @@
+/* ============================================================
+   Galgame —— 约会剧演（galgame 样式的舞台）
+   ------------------------------------------------------------
+   一块舞台 + 一只通栏文本框，构图的理由写在 components/Galgame.tsx 文件头。
+   这里只记几条**改版式时别踩**的：
+
+     · 舞台高度 min(56vh, 520px)（窄屏 44vh），文本框**在舞台里面**贴底 ——
+       它不另占一行，所以舞台那一格就是「这一路的主体」，
+       换视口时文本框跟着舞台走，不会自己飘。
+     · 立绘一律 aspect-ratio 9 / 16（public/charimg 下那批整身图就是这个比例），
+       高度用百分比定、宽度由比例算出来 —— 换视口只缩放，不变形。
+     · 「谁在说话谁亮」压在 .dim 上（0.55）；.dim 必须写在 .peer 之后，
+       两者特异性一样，靠次序赢。
+     · 颜色/间距一律走 tokens.css 的设计变量，这里不写第二个色值。
+
+   窄屏（≤720）那一档只改三件事：舞台矮下来、文本框收到 12px、同行者往右再挪一格。
+   ============================================================ */
+
+.gal {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+}
+
+/* ---------- 舞台 ---------- */
+
+.stage {
+  position: relative;
+  height: min(56vh, 520px);
+  min-height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-3) 100%);
+  cursor: var(--cursor-point);
+}
+
+/* CG 铺成背景（探到了才铺 —— 缺图时舞台不顶一行「待补」，见 tsx） */
+.cg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 34%;
+}
+
+/* 自下而上的一层：走 --bg-1 的透明色，把图压下去，让文本框与字浮上来 */
+.scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--bg-1) 96%, transparent) 0%,
+    color-mix(in srgb, var(--bg-1) 68%, transparent) 30%,
+    color-mix(in srgb, var(--bg-1) 18%, transparent) 62%,
+    transparent 88%
+  );
+}
+
+/* ---------- 立绘：左边是当前角色，右边一路推过去 ---------- */
+
+.figures {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lead,
+.peer {
+  position: absolute;
+  bottom: 0;
+  aspect-ratio: 9 / 16;
+  transition: opacity 160ms linear;
+  /* 这批整身图是**白底 jpg**（public/charimg），直接摆上去就是一叠白卡片。
+     multiply 让白色退成舞台那一层浅底、人留在上面 —— 不必抠图，也不动素材；
+     CG 铺在后面时同理，人压在画上而不是压在一块白板上。
+     ⚠️ 只能挂在这两位身上：它们是这一层的 stacking context 根，
+     挂进 .art 那一层（再往下）就只跟自己的空底混，白框照旧。 */
+  mix-blend-mode: multiply;
+}
+
+/* 贴左、底部对齐、略出血：说话的人站在左前方 */
+.lead {
+  left: -2%;
+  height: 88%;
+  z-index: 4;
+}
+
+.peer {
+  opacity: var(--gal-op, 0.9);
+}
+
+/* 越往右越矮、越淡、越靠后（z-index 依次让给左边那位） */
+.peer0 { left: 30%; height: 63%; z-index: 3; }
+.peer1 { left: 49%; height: 51%; z-index: 2; }
+.peer2 { left: 64%; height: 41%; z-index: 1; }
+
+/* 不说话的那几位：压到 0.55（写在 .peer 之后，靠次序赢） */
+.dim {
+  opacity: 0.55;
+}
+
+.art {
+  display: block;
+}
+
+/* 人太多时最右那枚「+N」小牌 */
+.more {
+  position: absolute;
+  right: 18px;
+  bottom: 150px;
+  z-index: 5;
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+}
+
+/* 还没人开口时舞台正中的那一块 */
+.empty {
+  position: absolute;
+  inset: auto 24px 42% 24px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ---------- 底下那一格：选项 + 文本框 ---------- */
+
+.dock {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  z-index: 10;
+}
+
+/* 接续选项：竖排、靠右（别压住左边那几位），↑↓ 选、Z 确认 */
+.opts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.opt {
+  max-width: 78%;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: left;
+  color: var(--ink-dim);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  cursor: var(--cursor-point);
+}
+
+.opt:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--line-3);
+  box-shadow: 0 3px 0 var(--line-2);
+  transform: translateY(-2px);
+}
+
+.opt:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 键盘停在这一条上：左边一道竖线 + 字色提亮（不靠颜色单独表意 —— 盲文与键盘都在） */
+.optOn {
+  color: var(--ink);
+  border-color: var(--line-3);
+  border-left: 3px solid var(--violet);
+  background: var(--bg-2);
+}
+
+.box {
+  position: relative;
+  min-height: 104px;
+  padding: 16px 16px 12px;
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+}
+
+/* 名字牌：骑在文本框左上角（与剧情那一套 .dlgName 同一门语言） */
+.plate {
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  z-index: 2;
+  padding: 0 9px;
+  font-size: 12.5px;
+  line-height: 19px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  color: var(--violet-deep);
+  background: var(--bg-1);
+  border: 1px solid color-mix(in srgb, var(--violet) 34%, transparent);
+  border-radius: var(--radius-pill);
+}
+
+.text {
+  min-height: 3.8em;
+  padding-right: 76px;
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: var(--ink);
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+/* 逐字那一半对读屏是隐形的：递出去的是整句（.sr 那份） */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  margin-left: 1px;
+  border-bottom: 2px solid var(--ink-mute);
+  animation: caretBlink 900ms steps(2, jump-none) infinite;
+}
+
+@keyframes caretBlink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0.1; }
+}
+
+/* 「还有下一句」那一枚 */
+.next {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-size: 10px;
+  color: var(--ink-faint);
+  animation: nextNudge 1200ms ease-in-out infinite;
+}
+
+@keyframes nextNudge {
+  0%, 70%, 100% { transform: translateY(0); }
+  80% { transform: translateY(2px); }
+}
+
+.boxActs {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+/* 文本框上那两枚小按钮：极小、浅、压上去才亮 */
+.micro {
+  padding: 4px 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  cursor: var(--cursor-point);
+}
+
+.micro:hover {
+  color: var(--ink);
+  border-color: var(--line-3);
+  background: var(--bg-1);
+}
+
+/* 键位提示：只在大屏露（窄屏把版面留给字） */
+.keys {
+  position: absolute;
+  left: 16px;
+  bottom: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+/* ---------- 回想：一层只读浮层 ---------- */
+
+.recall {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--bg-1) 96%, transparent);
+  border-radius: var(--radius);
+}
+
+.recallHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--bg-2);
+}
+
+.recallHead .micro { margin-left: auto; }
+
+.recallBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+}
+
+.recallRow {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-dim);
+}
+
+.recallRow b {
+  flex: none;
+  width: 4.5em;
+  font-size: 11.5px;
+  line-height: 2.1;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+/* ---------- 编辑框：由 DateLane 渲染好递进来，盖在舞台下半 ---------- */
+
+.editorLayer {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 16px;
+  z-index: 25;
+  max-height: 88%;
+  overflow-y: auto;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg-1) 97%, transparent);
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+}
+
+/* ---------- 窄屏：舞台矮下来、文本框收到 12px、同行者往右再挪一格 ---------- */
+
+@media (max-width: 720px) {
+  .stage {
+    height: 44vh;
+    min-height: 250px;
+  }
+
+  .dock {
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    gap: 8px;
+  }
+
+  .box {
+    /* 窄屏一行可能很长（正文一行就是一段）：框别顺着往外长，
+       长到这儿就让它自己滚 —— 舞台那一格是不动的。 */
+    display: flex;
+    flex-direction: column;
+    max-height: 74%;
+    min-height: 92px;
+    padding: 14px 12px 10px;
+    overflow: hidden;
+  }
+
+  .text {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: 0;
+    padding-top: 6px;
+    font-size: 13.5px;
+    overflow-y: auto;
+  }
+
+  .lead {
+    left: -4%;
+    height: 82%;
+  }
+
+  .peer0 { left: 44%; height: 54%; }
+  .peer1 { left: 66%; height: 44%; }
+  .peer2 { left: 84%; height: 36%; }
+
+  .keys { display: none; }
+
+  .more { right: 10px; bottom: 118px; }
+
+  .editorLayer {
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret,
+  .next,
+  .lead,
+  .peer {
+    animation: none;
+    transition: none;
+  }
+}

@@ -3367,6 +3367,12 @@ try {
   /* V1 点那一条 = 赴这一场：跳到在线推演，约会专线那一枚亮起来，车道本体上屏 */
   await ev(`(()=>{const b=document.querySelector('[data-sms-date]');if(b)b.click();return !!b})()`)
   await poll(`!!document.querySelector('[data-date-lane]')`, 20000, 'V date lane')
+  /* 下面 V1c / V1d 量的是**对话流**那一套（整块 innerText、data-say / data-you /
+     data-narration 的条数）。主人 2026-09 之后约会**默认是剧演**（galgame 舞台），
+     那几样在剧演里一个都没有 —— 所以这一段一开始先切到「对话」再断言。
+     剧演那一套摆在 V9（含 Z 键那两下）。 */
+  await ev(`(()=>{const b=document.querySelector('[data-date-mode-btn="chat"]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-date-thread]')`, 15000, 'V chat thread')
   const vLane = await ev(`(()=>{const t=document.querySelector('[data-plot-lane="date"]');
     return {lane:document.querySelector('[data-date-lane]').getAttribute('data-date-lane'),
       tab:!!t, tabOn:t?t.getAttribute('aria-selected'):null,
@@ -3572,6 +3578,142 @@ try {
   const vShopYes = await v8Probe('V8b')
   ok('V8b 走到那一步之后（beats 落了 outfit-tryon）→ 同一张当场摆上（对照：上一条的 0 不是探针瞎了）',
     vShopYes.shop === 1 && vShopYes.wear === 1, JSON.stringify(vShopYes))
+
+  /* ============ V9：剧演（galgame 那一套）—— 约会默认就是它 ============
+     主人 2026-09 那一句：「新增加约会 galgame，在约会时使用 galgame 样式的界面
+     游玩，左边显示当前约会角色。多人则向右推。」
+     上面 V1–V8 量的全是**对话流**那一套（进这一相先切过去了），这一段量新那一套：
+     默认落在剧演、左边站着的是这一场的主角、同行者按 party 顺序往右排、
+     说话的人亮一档、Z 两下（先全显、再翻下一条），最后切回「对话」照常。
+
+     播的词条与 V1 那一场同形（主角 + 两位同行者），只是文本换成三行、
+     头一行是露娜一长句 —— 长的好，逐字那一半注定还没打完，
+     「第一下全显」才量得准。 */
+  await ev(`(()=>{
+    localStorage.removeItem('zts-galgame:v1');
+    localStorage.setItem('zts-rendezvous:v1', JSON.stringify([
+      {id:'d:smoke-date-gal',charId:'hikari',kind:'date',title:'雨停之后',place:'苍之学园 · 钟楼天台',
+       time:'周六下午四点',from:'them',party:['luna','nyau'],ts:Date.now(),done:false}]));
+    localStorage.setItem('zts-tavern:v1', JSON.stringify({
+      'd:smoke-date-gal':[{id:'sd::gal',from:'them',
+        text:'露娜：小主人……你站在这儿已经很久了，衣领湿了一半也不肯说一句话，风这么大，我先替你挡着；你要是还想再站一会儿，我就陪你站到钟楼那盏灯亮起来，反正今晚我哪儿也不去。\\n'
+          + '她把伞靠在栏杆上，抬眼看了看你，又把目光挪回远处那片积着水的天台。\\n'
+          + '【V9】雨停了，天台上还积着一层水，钟楼的影子被水面上的一点风揉碎。',
+        time:'16:00'}]}));
+    return true})()`)
+  await reloadFresh(); await boot()
+  await goto('剧情推进')
+  await poll(`!!document.querySelector('[data-plot-lane="date"]')`, 20000, 'V9 lane tab')
+  await ev(`(()=>{const b=document.querySelector('[data-plot-lane="date"]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-gal-left]')`, 15000, 'V9 galgame stage')
+
+  /* 一次把剧演舞台的状态全读回来：
+     · line / typed / full —— 停在第几拍、逐字出到哪、整句多长（整句是 .sr 那一份）；
+     · speaker / lit —— 这一刻谁在说话、哪几位亮着；
+     · thread —— 对话流那一份 DOM 是不是**没有**同时在铺。 */
+  const galState = () => ev(`(()=>{const st=document.querySelector('[data-gal-stage]');
+    const box=document.querySelector('[data-gal-box]');
+    const spans=box?[...box.querySelectorAll(':scope > div > span')]:[];
+    const lead=document.querySelector('[data-gal-left]');
+    const lane=document.querySelector('[data-date-lane]');
+    return {mode:lane?lane.getAttribute('data-date-mode'):null,
+      thread:document.querySelectorAll('[data-date-thread]').length,
+      stage:st?st.getAttribute('data-gal-stage'):null,
+      line:st?Number(st.getAttribute('data-gal-line')):null,
+      speaker:st?st.getAttribute('data-gal-speaker'):null,
+      left:lead?lead.getAttribute('data-gal-left'):null,
+      leadLit:lead?lead.getAttribute('data-gal-lit'):null,
+      peers:[...document.querySelectorAll('[data-gal-peer]')].map(x=>x.getAttribute('data-gal-peer')),
+      peerLit:[...document.querySelectorAll('[data-gal-peer]')].map(x=>x.getAttribute('data-gal-lit')),
+      full:spans.length?spans[0].textContent.length:null,
+      typed:spans.length>1?spans[1].textContent.length:null}})()`)
+
+  const vGal = await galState()
+  ok('V9a 约会开场默认就是剧演（data-date-mode=galgame），对话流那一份 DOM 没同时在铺',
+    vGal.mode === 'galgame' && vGal.stage === '1' && vGal.thread === 0,
+    JSON.stringify({mode:vGal.mode,stage:vGal.stage,thread:vGal.thread}))
+  ok('V9b 舞台左边那一张立绘正是当前约会角色，同行者按 party 顺序往右排开',
+    vGal.left === 'hikari' && JSON.stringify(vGal.peers) === JSON.stringify(['luna','nyau']),
+    JSON.stringify({left:vGal.left,peers:vGal.peers}))
+  ok('V9c 谁说话谁亮一档：这一刻是露娜那一句，她亮着、主位压暗（认不出人就整排中性，不猜）',
+    vGal.speaker === 'luna' && vGal.leadLit === '0' && vGal.peerLit[0] === '1' && vGal.peerLit[1] === '0',
+    JSON.stringify({speaker:vGal.speaker,leadLit:vGal.leadLit,peerLit:vGal.peerLit}))
+
+  /* Z 两下：第一下把当前这一句全显，第二下翻到下一条。
+     键要落在 window 上（剧演那一套挂的就是 window 的 keydown）。 */
+  const zKey = () => ev(`(window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',bubbles:true})), true)`)
+  await zKey()
+  await sleep(140)
+  const vGal1 = await galState()
+  ok('V9d Z 第一下：当前这一句立刻全显（逐字没打完也不再等），人还停在这一条上',
+    vGal1.line === vGal.line && vGal1.typed === vGal1.full && vGal.typed < vGal.full,
+    JSON.stringify({before:{line:vGal.line,typed:vGal.typed,full:vGal.full},
+      after:{line:vGal1.line,typed:vGal1.typed,full:vGal1.full}}))
+  await zKey()
+  await sleep(260)
+  const vGal2 = await galState()
+  ok('V9e Z 第二下：翻到下一条（行号往前走一格，字重新从头出）',
+    vGal2.line === vGal1.line + 1 && vGal2.typed < vGal2.full,
+    JSON.stringify({line:vGal2.line,typed:vGal2.typed,full:vGal2.full}))
+
+  /* 切回「对话」：原对话流照常，编辑入口仍在（剧演里也有 —— 文本框右上那枚小按钮，
+     但那是另一条路；这里量的是**切回来之后**那一份） */
+  await ev(`(()=>{const b=document.querySelector('[data-date-mode-btn="chat"]');if(b)b.click();return !!b})()`)
+  await poll(`!!document.querySelector('[data-date-thread]')`, 15000, 'V9 chat back')
+  const vBack = await ev(`(()=>{const t=document.querySelector('[data-date-thread]');
+    return {mode:document.querySelector('[data-date-lane]').getAttribute('data-date-mode'),
+      stage:document.querySelectorAll('[data-gal-stage]').length,
+      say:[...t.querySelectorAll('[data-say]')].map(e=>e.getAttribute('data-say-for')),
+      edit:t.querySelectorAll('[data-date-edit]').length,
+      txt:t.innerText.replace(/\\s+/g,' ')}})()`)
+  ok('V9f 切回「对话」：原对话流照常上屏、台词行照旧切成角色气泡、编辑入口还在（剧演那一套当场让开）',
+    vBack.mode === 'chat' && vBack.stage === 0 && vBack.edit >= 1 && vBack.say.includes('luna')
+    && vBack.txt.includes('你站在这儿已经很久'),
+    JSON.stringify({mode:vBack.mode,stage:vBack.stage,edit:vBack.edit,say:vBack.say}))
+
+  /* 截图：SHOT=<目录> 时把剧演那一屏按三种视口各截一张（默认不跑）。
+     1440×900 是主人点名的那一档（主角 + 2 位同行者），另两档看窄屏推得开不开。 */
+  if (process.env.SHOT) {
+    const gshot = async (name) => {
+      const r = await cdp.send('Page.captureScreenshot', { format: 'png' })
+      writeFileSync(path.join(process.env.SHOT, name + '.png'), Buffer.from(r.data, 'base64'))
+    }
+    /* 回到剧演再截（V9f 把它切走了） */
+    await ev(`(()=>{const b=document.querySelector('[data-date-mode-btn="galgame"]');if(b)b.click();return !!b})()`)
+    await poll(`!!document.querySelector('[data-gal-stage]')`, 12000, 'V9 shot galgame')
+    const vp = [
+      { name: 'v9-galgame-1440x900', width: 1440, height: 900, mobile: false },
+      { name: 'v9-galgame-1024x768', width: 1024, height: 768, mobile: false },
+      { name: 'v9-galgame-390x844', width: 390, height: 844, mobile: true },
+    ]
+    /* 截图前先把引导气泡按掉（这一趟是新 profile，「跳过教程」还在）、再把舞台滚进视口 ——
+       不然截到的是「气泡盖住半截舞台」。换视口之后版面会重排，所以每一档都再做一遍。 */
+    const shotPrep = async () => {
+      await ev(`(()=>{const b=[...document.querySelectorAll('button')]
+        .find(x=>x.textContent&&x.textContent.trim()==='跳过教程');if(b)b.click();return true})()`)
+      await ev(`(()=>{const s=document.querySelector('[data-gal-stage]');
+        if(s)s.scrollIntoView({block:'center'});return !!s})()`)
+      await sleep(600)
+    }
+    await shotPrep()
+    for (const v of vp) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: v.width, height: v.height, deviceScaleFactor: 1, mobile: v.mobile,
+      })
+      await sleep(500)
+      await shotPrep()
+      await gshot(v.name)
+    }
+    await cdp.send('Emulation.clearDeviceMetricsOverride')
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+    /* 截完把这趟借来的东西还回去：模式切回「对话」、这一场收掉 ——
+       后面那一节 SHOT（o8 剧情气泡）进的是主线那一屏，停在剧演舞台上的话
+       它一个 data-say 都数不到。 */
+    await ev(`(()=>{const b=document.querySelector('[data-date-mode-btn="chat"]');if(b)b.click();
+      const a=JSON.parse(localStorage.getItem('zts-rendezvous:v1')||'[]').map(r=>({...r,done:true}));
+      localStorage.setItem('zts-rendezvous:v1', JSON.stringify(a)); return true})()`)
+    await sleep(300)
+  }
 
   /* ============ Phase W：分块拉不下来时的自救 ============
      主人 2026-09-15 在线上撞见「点低语者日志 → 界面中止 · RENDER HALTED

@@ -40,9 +40,11 @@ import { Portrait } from './Portrait'
    同一份** —— 主人定的：两边原模原样，只有右栏与里面的内容不一样。
    排法住在 components/PlotFlow.tsx，样式用的就是 views/Plot.module.css 本身。 */
 import {
-  Composer, EmptyHint, NarrBlock, OptRow, RowActs, ThinkFold, Thinking, YouFrame, opNameOf,
+  Composer, EmptyHint, MsgEditChip, MsgEditor, NarrBlock, OptRow, RowActs, ThinkFold, Thinking, YouFrame,
+  editedOf, opNameOf,
 } from './PlotFlow'
 import { CgSlot } from './CgSlot'
+import { Galgame } from './Galgame'
 import { IntimateHud } from './IntimateHud'
 import { DateSide } from './DateSide'
 import type { ApiSettings, ChatTurn, StreamResult } from '../lib/api'
@@ -68,8 +70,8 @@ import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/p
 import { loreHitsOf } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import {
-  appendSmsMsgs, loadSmsLogs, markRead, newMsgId, smsLogVersion, smsTurns, subscribeSmsLog,
-  writeSmsLogs,
+  appendSmsMsgs, loadSmsLogs, markRead, newMsgId, retextSmsMsg, smsLogVersion, smsTurns,
+  subscribeSmsLog, truncateSmsAfter, writeSmsLogs,
 } from '../lib/sms'
 import { addTask } from '../lib/smstasks'
 
@@ -77,6 +79,27 @@ import plot from '../views/Plot.module.css'
 import css from './DateLane.module.css'
 
 const idFor = newMsgId
+
+/* ---------- 界面两套：剧演 / 对话 ----------
+   主人要的是「约会时用 galgame 那样的界面玩」—— 所以**默认剧演**，
+   对话流（与主线同一份壳子）留在那一枚切换后面，随时切回来。
+   存在 localStorage：'1' = 剧演、'0' = 对话；读不到按剧演算（宁可摆新的那一套）。 */
+const GALGAME_KEY = 'zts-galgame:v1'
+type DateMode = 'galgame' | 'chat'
+
+function readDateMode(): DateMode {
+  try {
+    return localStorage.getItem(GALGAME_KEY) === '0' ? 'chat' : 'galgame'
+  } catch {
+    return 'galgame'
+  }
+}
+
+function writeDateMode(m: DateMode): void {
+  try {
+    localStorage.setItem(GALGAME_KEY, m === 'galgame' ? '1' : '0')
+  } catch { /* 存不下就只当这一屏的选择 */ }
+}
 
 /** 羁绊增量的口语化注记（与短信那条同一句） */
 function bondNote(delta: number): string {
@@ -122,6 +145,17 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   }, [])
   const [pickOpen, setPickOpen] = useState(false)
   const [pick, setPick] = useState<string[]>([])
+  /** 正在原位编辑的那一条（id），与它此刻的草稿 */
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  /**
+   * 这一路用哪一套界面：剧演（galgame）还是对话流（与主线同一份）。
+   * 默认**剧演**，选择存 localStorage 的 `zts-galgame:v1`（'1' / '0'）——
+   * 它记的是「这台设备上偏好哪一种」，不进存档（换档不该把它翻出来）。
+   */
+  const [mode, setMode] = useState<DateMode>(() => readDateMode())
+  /** 「改口重来」的第二段：第一次点只摊开提醒，再点才真截断重推 */
+  const [retryArm, setRetryArm] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -439,6 +473,75 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
     await fireDate(rv.id, trimmed)
   }
 
+  /* ---------- 消息编辑（两类，与主线同一套口令） ---------- */
+
+  /** 进入编辑态：预填该条此刻的文本；`arm` = 直接带着「改口重来」的第二段提醒进来 */
+  const startEdit = (m: ChatMsg, arm = false) => {
+    if (busy) return
+    setEditId(m.id)
+    setEditText(m.text)
+    setRetryArm(arm)
+    setErr(null)
+  }
+
+  const cancelEdit = () => {
+    setEditId(null)
+    setEditText('')
+    setRetryArm(false)
+  }
+
+  /**
+   * 保存：走 `retextSmsMsg`（读盘 → 换这一条的文字 → 写盘 → 回声）——
+   * **只换文字 + 打 `meta.edited`**，不重跑指令、不重新生成，条数与序号一个字不动。
+   * 那一本账与短信页共用，所以回声一到，这一路与电话页同时重读。
+   */
+  const saveEdit = () => {
+    if (!rv || !editId) return
+    const text = editText.replace(/\s+$/, '')
+    if (!text.trim()) {
+      setErr('改完不能是空的 —— 想撤掉这一条，请用「作罢」清掉这一场。')
+      return
+    }
+    if (!retextSmsMsg(rv.id, editId, text, true)) {
+      setErr('这一条已经不在账上了（可能被别处截断）—— 重新打开这一场再看看。')
+      return
+    }
+    setEditId(null)
+    setEditText('')
+    setRetryArm(false)
+    setErr(null)
+    push('info', '消息已手改', '只换了文字，没有重跑指令、也没有重新生成。', false)
+  }
+
+  /**
+   * 改口重来（只给自己的发言）：改写这一条 → 截断它之后的所有内容 → **重新推进一次**。
+   *
+   * 两段式确认：第一次点只把提醒摊开（文案写死「此前已落地的羁绊 / 亲密 / 服饰变化
+   * 不会回滚」），再点才动手。落地口径与主线同一条 —— 先换文字、再截断，
+   * 然后拿截断后那本账当历史再发**一次**请求（`fireDate` 只在这里调一回）。
+   */
+  const retryEdit = async () => {
+    if (!rv || !editId || busy) return
+    if (!retryArm) { setRetryArm(true); return }
+    const text = editText.trim()
+    if (!text) {
+      setErr('改口重来得留下话说 —— 想整条撤掉，请用「作罢」清掉这一场。')
+      return
+    }
+    if (!retextSmsMsg(rv.id, editId, text, true)) {
+      setErr('这一条已经不在账上了（可能被别处截断）—— 重新打开这一场再看看。')
+      return
+    }
+    truncateSmsAfter(rv.id, editId)
+    const nextLog = loadSmsLogs()[rv.id] ?? []
+    setEditId(null)
+    setEditText('')
+    setRetryArm(false)
+    setErr(null)
+    push('info', '改口重来', '这一条已改写、其后内容已截断，正在重新推进。此前已落地的羁绊 / 亲密 / 服饰变化不会回滚。', false)
+    await fireDate(rv.id, nextLog)
+  }
+
   const stop = () => abortRef.current?.abort()
 
   /** 清空这一场 = 这一场作罢：名册上那一条一并撤掉，别留个点不开的空壳 */
@@ -492,6 +595,85 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   const c = charOf(rv.charId)
   const partyNames = (rv.party ?? []).map((id) => charOf(id)?.name ?? id)
 
+  /* ---------- 剧演那一套要喂的东西 ----------
+     舞台只认「此刻在台上的是谁」：主位 + 同场（party 的顺序就是往右推的顺序）。
+     名字 / 色 / 纹章照 castmeta 取，缺了就退回 id 与一支中性色（与 Portrait 同一条兜底）。 */
+  const galCast = {
+    id: rv.charId,
+    name: c?.name ?? rv.charId,
+    hue: c?.hue ?? '#8ad',
+    sigil: c?.sigil ?? rv.charId.slice(0, 1),
+  }
+  const galParty = (rv.party ?? []).map((id) => {
+    const p = charOf(id)
+    return { id, name: p?.name ?? id, hue: p?.hue ?? '#8ad', sigil: p?.sigil ?? id.slice(0, 1) }
+  })
+  /* 与上面那只 3:2 的 CG 位同一张、同一版（变体按「这场被点过几次名」换） */
+  const galCg = activeCg
+    ? { id: cgVariantId(cgIdOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id)), dir: cgDirOf(activeCg) }
+    : null
+  /* 接续选项：只认**最后一条**对面说的那条（选项是那一回合的续法） */
+  const galOptions = (() => {
+    const last = activeLog[activeLog.length - 1]
+    return last && last.from === 'them' ? last.meta?.options : undefined
+  })()
+
+  /* 还没人开口时那一块（两套界面共用；剧演里摆舞台正中） */
+  const emptyNodes = activeLog.length === 0 && !busy ? (
+    <>
+      <EmptyHint
+        title="还没人开口"
+        body={`${c?.name ?? rv.charId} 还没出声 —— 写一句递过去，或者等对方先开口。`}
+      />
+      {settings && !isReady(settings) ? (
+        /* 通道没配好：就地说明，留一枚「去配置」**可选入口** —— 点它才换页 */
+        <div className={plot.warn} data-date-cfg-missing="1">
+          <b>推演通道未配置</b>
+          <span>请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来赴约。</span>
+          <button
+            className="btn btn--amber"
+            style={{ fontSize: 12 }}
+            onClick={() => navigate('settings')}
+            data-date-cfg
+          >
+            去配置
+          </button>
+        </div>
+      ) : (
+        <div className={plot.hintLine} data-date-await="1">
+          <button
+            className="btn btn--ghost"
+            style={{ fontSize: 12 }}
+            onClick={openFirst}
+            disabled={busy || !settings}
+            title="让对面把这一场的第一句说出来（消耗一次推演额度）"
+            data-date-open
+          >
+            让对方先开口
+          </button>
+          <span>空着递过去，先听对面怎么开这个口 —— 也算一次推演。</span>
+        </div>
+      )}
+    </>
+  ) : null
+
+  /* 编辑框：两套界面同一个共享件（只换文字，不重跑指令）。
+     剧演里它盖在舞台下半，对话流里原位顶掉那一条 —— 壳子不一样，件是同一个。 */
+  const editorFor = (m: ChatMsg) => (
+    <MsgEditor
+      key={m.id}
+      isUser={m.from === 'user'}
+      value={editText}
+      onChange={setEditText}
+      onSave={saveEdit}
+      onCancel={cancelEdit}
+      retryArmed={retryArm}
+      onRetry={() => void retryEdit()}
+      retryNote={<>改口重来会截断这一条之后的所有内容并重新推进一次 —— <b>此前已落地的羁绊 / 亲密 / 服饰变化不会回滚</b>。</>}
+    />
+  )
+  const galEditorMsg = editId ? activeLog.find((m) => m.id === editId) ?? null : null
+
   /* 返回的是**两块**（会话板 + 右栏），正好坐在主线那两块坐的两个格子上
      （`Plot.module.css` 的 `.layout`：`minmax(0,1fr) 330px`）—— 所以宽度与主线一模一样。
      从前这一路是**整个塞进一个 panel 里、自己再劈左右**，于是
@@ -501,7 +683,7 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
      现在按主线的排法来：面板随内容长（内容体不再 flex:1），右栏退回格子里那一列。 */
   return (
     <>
-      <section className="panel" data-date-lane-area="1" data-date-lane={rv.id}>
+      <section className="panel" data-date-lane-area="1" data-date-lane={rv.id} data-date-mode={mode}>
         <div className={`panel__head ${css.head}`}>
           {c ? <Portrait avatarId={rv.charId} name={c.name} hue={c.hue} sigil={c.sigil} size={28} round /> : null}
           <span className="panel__title">{c?.name ?? rv.charId} <span className="slash" /></span>
@@ -513,6 +695,27 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
           </span>
           <span className={css.tag}>约会专线</span>
           <div className={css.headActs}>
+            {/* 剧演 / 对话：两套界面，一套在台前、一套在幕后，切换时才换 DOM。
+                默认剧演（galgame 样式的舞台）；对话流与主线原模原样，
+                编辑入口、推演折叠那些都还在那一套里。 */}
+            <div className={css.modeSwitch} role="group" aria-label="约会界面">
+              <button
+                type="button"
+                className={[css.modeBtn, mode === 'galgame' ? css.modeOn : ''].filter(Boolean).join(' ')}
+                aria-pressed={mode === 'galgame'}
+                data-date-mode-btn="galgame"
+                onClick={() => { setMode('galgame'); writeDateMode('galgame') }}
+                title="剧演：galgame 样式的舞台，左边站着这一场的人"
+              >剧演</button>
+              <button
+                type="button"
+                className={[css.modeBtn, mode === 'chat' ? css.modeOn : ''].filter(Boolean).join(' ')}
+                aria-pressed={mode === 'chat'}
+                data-date-mode-btn="chat"
+                onClick={() => { setMode('chat'); writeDateMode('chat') }}
+                title="对话：与主线同一套对话流（编辑 / 推演折叠都在这儿）"
+              >对话</button>
+            </div>
             {/* 换场：手上不止一场时（同一位可以有多场，那是不同的时候） */}
             {liveRvs.length > 1 ? (
               <select
@@ -598,6 +801,25 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
             `.onBody` / `.thread`，外壳那一段的理由见文件头注释）。这一路的不同
             只剩右栏与里面的内容 —— 排法一个字都不另立。 */}
         <div className={plot.onBody}>
+          {mode === 'galgame' ? (
+            <Galgame
+              cast={galCast}
+              party={galParty}
+              log={activeLog}
+              cgId={galCg ? galCg.id : null}
+              cgDir={galCg ? galCg.dir : undefined}
+              options={galOptions}
+              busy={busy}
+              youName={opName}
+              onPickOption={(op) => void pickOptionText(op)}
+              onEditLine={(id) => {
+                const m = activeLog.find((x) => x.id === id)
+                if (m) startEdit(m)
+              }}
+              editor={galEditorMsg ? editorFor(galEditorMsg) : null}
+              empty={emptyNodes}
+            />
+          ) : (
           <div className={plot.thread} data-date-thread>
             {activeCg ? (
               <div className={css.threadCg}>
@@ -613,45 +835,13 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                 />
               </div>
             ) : null}
-            {activeLog.length === 0 && !busy ? (
-              <>
-                <EmptyHint
-                  title="还没人开口"
-                  body={`${c?.name ?? rv.charId} 还没出声 —— 写一句递过去，或者等对方先开口。`}
-                />
-                {settings && !isReady(settings) ? (
-                  /* 通道没配好：就地说明，留一枚「去配置」**可选入口** —— 点它才换页 */
-                  <div className={plot.warn} data-date-cfg-missing="1">
-                    <b>推演通道未配置</b>
-                    <span>请先在「终端设置 · 角色短信」中填入接口地址与模型，再回来赴约。</span>
-                    <button
-                      className="btn btn--amber"
-                      style={{ fontSize: 12 }}
-                      onClick={() => navigate('settings')}
-                      data-date-cfg
-                    >
-                      去配置
-                    </button>
-                  </div>
-                ) : (
-                  <div className={plot.hintLine} data-date-await="1">
-                    <button
-                      className="btn btn--ghost"
-                      style={{ fontSize: 12 }}
-                      onClick={openFirst}
-                      disabled={busy || !settings}
-                      title="让对面把这一场的第一句说出来（消耗一次推演额度）"
-                      data-date-open
-                    >
-                      让对方先开口
-                    </button>
-                    <span>空着递过去，先听对面怎么开这个口 —— 也算一次推演。</span>
-                  </div>
-                )}
-              </>
-            ) : null}
-            {activeLog.map((m, i) =>
-              m.from === 'them' ? (
+            {emptyNodes}
+            {activeLog.map((m, i) => {
+              /* 正在编辑的那一条：原位顶掉气泡，长成编辑框（与主线同一个共享件 ——
+                 `components/PlotFlow.tsx` 的 MsgEditor）。保存只换文字，不重跑指令。
+                 底下的输入带不受影响：焦点落进这一格，不是被它挪走。 */
+              if (editId === m.id) return editorFor(m)
+              return m.from === 'them' ? (
                 <NarrBlock
                   key={m.id}
                   label="导演叙述"
@@ -659,6 +849,8 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                   text={m.text}
                   opName={opName}
                 >
+                  {editedOf(m) ? <MsgEditChip /> : null}
+
                   {m.meta?.thinking ? (
                     <ThinkFold
                       open={foldOpen.has(m.id)}
@@ -673,9 +865,13 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                     onPick={(op) => void pickOptionText(op)}
                   />
 
-                  {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true && !busy ? (
+                  {/* 对面这一段也能手改（只换文字）—— 与主线那一枚同一个位置 */}
+                  {!busy ? (
                     <RowActs>
-                      <button type="button" className="linkGo" onClick={() => void rewriteLast(i)}>重写此回复</button>
+                      <button type="button" className="linkGo" data-date-edit="1" onClick={() => startEdit(m)}>编辑</button>
+                      {i === activeLog.length - 1 && i > 0 && activeLog[i - 1].from === 'user' && m.meta?.hasFx !== true ? (
+                        <button type="button" className="linkGo" onClick={() => void rewriteLast(i)}>重写此回复</button>
+                      ) : null}
                     </RowActs>
                   ) : null}
                 </NarrBlock>
@@ -684,10 +880,22 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                   key={m.id}
                   text={m.text}
                   opName={opName}
-                  foot={<span className={`muted tiny ${plot.youFoot}`}>{m.time}</span>}
+                  foot={
+                    <span className={`muted tiny ${plot.youFoot}`}>
+                      {m.time}
+                      {editedOf(m) ? <MsgEditChip /> : null}
+                      {!busy ? (
+                        <>
+                          <button type="button" className="linkGo" data-you-edit="1" onClick={() => startEdit(m)}>编辑</button>
+                          {/* 改口重来：点这一下只摊开提醒（第二段确认在编辑框里） */}
+                          <button type="button" className="linkGo" data-you-retry="1" onClick={() => startEdit(m, true)}>改口重来</button>
+                        </>
+                      ) : null}
+                    </span>
+                  }
                 />
-              ),
-            )}
+              )
+            })}
             {live && live.charId === rv.id && live.text ? (
               <NarrBlock
                 label="导演叙述"
@@ -703,6 +911,16 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
             ) : null}
             <div ref={endRef} />
           </div>
+          )}
+
+          {mode === 'galgame' ? (
+            <>
+              {err ? <div className={plot.errLine}>{err}</div> : null}
+              {busy && (!live || live.charId !== rv.id || !live.text) ? (
+                <Thinking text="导演正在铺这一场…" />
+              ) : null}
+            </>
+          ) : null}
 
           <Composer
             draft={draft}

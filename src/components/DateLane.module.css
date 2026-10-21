@@ -46,6 +46,40 @@
   color: var(--ink-faint);
 }
 
+/* ---------- 剧演 / 对话：两套界面二选一 ----------
+   一枚两格的小开关（与右栏那对 tab 同一门语言）：按下去的那一格抬字色、垫一道底线。
+   它坐在头部操作带的最前面 —— 先定「用哪套界面」，再谈换场 / 带人 / 作罢。 */
+
+.modeSwitch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--bg-2);
+}
+
+.modeBtn {
+  padding: 4px 11px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: var(--cursor-point);
+}
+
+.modeBtn:hover { color: var(--ink); }
+
+/* 按下去那一格：纸面抬起来（与右栏 .sideTabOn 同一支玫） */
+.modeOn {
+  color: var(--ink);
+  background: var(--bg-1);
+  box-shadow: 0 1px 0 var(--line-2);
+  border-bottom: 2px solid var(--rose);
+}
+
 /* ---------- 带人一起（只在还没开口之前给） ---------- */
 
 .partyPick {
