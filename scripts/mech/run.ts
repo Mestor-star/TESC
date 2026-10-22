@@ -7365,8 +7365,16 @@ export function run(): MechReport {
     const LUNA = 'cg-date-intim-luna-oral'
     const ALL = DATE_CG.length + DATE_CG_INTIMATE.length
 
-    ok('约会 CG · 露娜在场、又到了私密那一档 → 那张进候选',
-      ids(base).includes(LUNA), ids(base).join(' / '))
+    /* 2026-10-21 口径变更：**私密档不再单独成立** —— 到了私密那一档只是第一道，
+       还得「对应那件关键行为」真的记进这一场（`CgRef.needs` → `Rendezvous.beats`）。
+       所以这里拆成一对：没给节拍 → 不进候选；补上节拍 → 进候选。
+       （这条原来断言的是「私密档 + 她在场 → 进」，按新口径那一半必须反过来。） */
+    ok('约会 CG · 露娜在场、到了私密那一档、但**没给对应节拍** → 那张不进候选（2026-10-21 口径变更）',
+      !ids(base).includes(LUNA), ids(base).join(' / '))
+
+    ok('约会 CG（对照）· 同一场补上 beats: [intim-oral] → 那张当场进候选（档位 + 节拍两样齐）',
+      ids({ ...base, beats: ['intim-oral'] }).includes(LUNA),
+      `beats: ['intim-oral'] → ${ids({ ...base, beats: ['intim-oral'] }).join(' / ')}`)
 
     /* 「只少它一张」这句话在数据里已经不成立了：露娜这一档现在**一个戏码一个槽位**
        （正常位 / 侧入式 / 后入式…，见 rendezvous 的 DATE_CG_INTIMATE），
@@ -7392,9 +7400,11 @@ export function run(): MechReport {
       `kind: date → ${ids({ ...base, kind: 'date' }).join(' / ')}`)
 
     /* 同场也算在场：主位是别人、同场带着露娜 —— 她人在，那张就点得到 */
+    /* 同场也算在场：主位是别人、同场带着露娜 —— 她人在，那张就点得到。
+       2026-10-21 之后还得把「那件事真的发生了」补上（needs），所以这里带着 beats。 */
     ok('约会 CG · 主位是别人、同场带着露娜 → 照进候选（在场 = 主位或同场）',
-      ids({ ...other, party: ['luna'] }).includes(LUNA),
-      `主位 ${other.charId} · 同场 luna → ${ids({ ...other, party: ['luna'] }).length} 张`)
+      ids({ ...other, party: ['luna'], beats: ['intim-oral'] }).includes(LUNA),
+      `主位 ${other.charId} · 同场 luna · beats 到了 → ${ids({ ...other, party: ['luna'], beats: ['intim-oral'] }).length} 张`)
 
     /* 同一条的反面：同场那人**不是**她 → 还是不进（别把「带了人」当成放行条） */
     ok('约会 CG（对照）· 同场带的是别人（光）→ 那张仍不进候选',
@@ -7449,6 +7459,17 @@ export function run(): MechReport {
     ok('约会 CG 节拍（对照）· 落了 outfit-tryon → 那张当场进候选',
       ids({ ...base, beats: [TOP] }).includes(SHOP),
       `beats: ['${TOP}'] → ${ids({ ...base, beats: [TOP] }).length} 张`)
+
+    /* 随时可用那一张（主人 2026-10-21）：同一份素材、另一个登记位 —— 不等试穿那一步，
+       她在场就该进候选。与上面那条配成一对：SHOP 被节拍挡着，ANY 照样进。 */
+    const ANY = 'cg-date-shop-luna-any'
+    ok('约会 CG · 随时可用那一张：普通见面、她在场 → 进候选（不必等试穿那一步）',
+      ids(base).includes(ANY) && !ids(base).includes(SHOP),
+      `露娜 · kind: date · beats 空 → ANY=${ids(base).includes(ANY)} / SHOP=${ids(base).includes(SHOP)}`)
+
+    ok('约会 CG（对照）· 随时可用那一张也认人：主位换成 hikari（她不在场）→ 不进候选',
+      !ids({ ...base, charId: 'hikari' }).includes(ANY),
+      `主位 hikari → ANY=${ids({ ...base, charId: 'hikari' }).includes(ANY)}`)
 
     /* —— 三道**叠着**：节拍到了但人不在场 → 照样不进（认人那一道不因为节拍到了就让路） —— */
     ok('约会 CG 节拍（对照）· 节拍到了、但这一场不是她（露娜不在场）→ 那张仍不进候选',
@@ -7594,10 +7615,14 @@ export function run(): MechReport {
       `节在=${todoPrompt.includes(HEAD)}　id=${todoPrompt.includes(firstBeat.id)}　`
       + `when=${todoPrompt.includes(firstBeat.when)}`)
 
+    /* 2026-10-21：节拍不止一条了（私密那几张各有一条），所以「走过一步」不再等于
+       「整节消失」—— 要钉的是**走过的那一步不再列**，还差的那几步照列。 */
     const donePrompt = promptOf({ ...base, beats: [TOP] })
-    ok('约会 CG 节拍（对照）· 这一步已经走过 → 整节不出现（不一催再催）',
-      !donePrompt.includes(HEAD),
-      `beats: ['${TOP}'] → 那一节${donePrompt.includes(HEAD) ? '还在' : '没了'}`)
+    const nextBeat = DATE_BEATS[1]!
+    ok('约会 CG 节拍（对照）· 这一步已经走过 → 那一节不再列它（还差的那几步照列）',
+      donePrompt.includes(HEAD) && !donePrompt.includes('- ' + TOP + ' ——')
+      && donePrompt.includes('- ' + nextBeat.id + ' ——'),
+      `beats: ['${TOP}'] → 列它=${donePrompt.includes('- ' + TOP + ' ——')}；列 ${nextBeat.id}=${donePrompt.includes('- ' + nextBeat.id + ' ——')}`)
 
     const otherPrompt = promptOf({ ...base, charId: 'hikari' })
     ok('约会 CG 节拍（对照）· 这一场不该提（她不在场，`cast` 没对上）→ 整节不出现',

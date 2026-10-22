@@ -50,7 +50,7 @@ import { DateSide } from './DateSide'
 import type { ApiSettings, ChatTurn, StreamResult } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { cgDirOf, cgIdOf, cgNoteOf, cgVariantId, cgVariantsOf } from '../lib/cg'
+import { cgDirOf, cgFileOf, cgIdOf, cgNoteOf, cgVariantId, cgVariantsOf } from '../lib/cg'
 import { clock } from '../lib/format'
 import { inkOf } from '../lib/hue'
 import type { ChatMsg } from '../data/types'
@@ -608,9 +608,15 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
     const p = charOf(id)
     return { id, name: p?.name ?? id, hue: p?.hue ?? '#8ad', sigil: p?.sigil ?? id.slice(0, 1) }
   })
-  /* 与上面那只 3:2 的 CG 位同一张、同一版（变体按「这场被点过几次名」换） */
+  /* 与上面那只 3:2 的 CG 位同一张、同一版（变体按「这场被点过几次名」换）。
+     取的是**文件名**（cgFileOf）：登记位可能用 CgRef.file 把文件名指到另一个 id 上
+     （同一份素材两种前提各登记一次），取图那一侧只认文件名。 */
   const galCg = activeCg
-    ? { id: cgVariantId(cgIdOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id)), dir: cgDirOf(activeCg) }
+    ? {
+        id: cgVariantId(cgFileOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id)),
+        dir: cgDirOf(activeCg),
+        note: cgNoteOf(activeCg),
+      }
     : null
   /* 接续选项：只认**最后一条**对面说的那条（选项是那一回合的续法） */
   const galOptions = (() => {
@@ -808,6 +814,8 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
               log={activeLog}
               cgId={galCg ? galCg.id : null}
               cgDir={galCg ? galCg.dir : undefined}
+              cgNote={galCg ? galCg.note : undefined}
+              intimate={rv.kind === 'intimate'}
               options={galOptions}
               busy={busy}
               youName={opName}
@@ -828,7 +836,7 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                     计的是「这场换过几次图」，不是「屏幕刷了几帧」—— 同一张连点两回不计数
                     （见 `Terminal` 的 `setCg`），所以原地打转那几回合不会把变体白转过去。 */}
                 <CgSlot
-                  cgId={cgVariantId(cgIdOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id))}
+                  cgId={cgVariantId(cgFileOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id))}
                   dir={cgDirOf(activeCg)}
                   caption={cgNoteOf(activeCg)}
                   ratio="3 / 2"

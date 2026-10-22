@@ -3411,6 +3411,7 @@ try {
       hud:document.querySelectorAll('[data-intim-hud]').length,
       ids:wears.map(w=>w.getAttribute('data-date-wear')),
       ph:wears.map(w=>{const f=w.querySelector('figure');return f?f.innerText.replace(/\\s+/g,' '):''}),
+      imgs:wears.map(w=>{const i=w.querySelector('img');return i?{src:i.getAttribute('src'),nw:i.naturalWidth}:null}),
       figs:wears.map(w=>{const f=w.querySelector('figure');
         if(!f) return null; const r=f.getBoundingClientRect();
         return {w:Math.round(r.width),h:Math.round(r.height)}}),
@@ -3425,11 +3426,14 @@ try {
       ['cg-datewear-hikari','cg-datewear-luna','cg-datewear-nyau']), JSON.stringify(vGeo.ids))
   ok('V2c 每人一张同等大（三张图位同宽）',
     vGeo.figs.length === 3 && new Set(vGeo.figs.map(f=>f.w)).size === 1, JSON.stringify(vGeo.figs))
-  ok('V2d 缺图不占版位（塌成一行提示，不留大洞）—— 常服立绘一张都没补时的既定取舍',
-    vGeo.figs.every(f=>f.h < 40), JSON.stringify(vGeo.figs))
-  ok('V2e 提示里写明的正是该补的文件名（id 约定一路对到文件名）',
-    vGeo.ph.every((t,i)=>t.includes('CG 待补') && t.includes(vGeo.ids[i]+'.webp')),
-    JSON.stringify(vGeo.ph))
+  /* 2026-10-21：右栏改成**兜底链**（常服立绘 → 她的 SFW 图 → 她的立绘），
+     不再写一行「CG 待补」。所以这一对从「断言缺图长什么样」改成
+     「断言现在真有图、且版式没塌」—— 图位仍按 2:3 竖构图占着，不许塌成一行小字。 */
+  ok('V2d 三张图位都真的占着版（兜底链把图补上了，没塌成一行小字）',
+    vGeo.figs.length === 3 && vGeo.figs.every(f=>f && f.h >= 40), JSON.stringify(vGeo.figs))
+  ok('V2e 图是真加载出来的（naturalWidth > 0，不是张 404 的空壳）',
+    vGeo.imgs.length === 3 && vGeo.imgs.every(i=>!!i && !!i.src && i.nw > 0),
+    JSON.stringify(vGeo.imgs))
   ok('V2f 卡片全在栏内（栏自己兜着，不往面板外溢）',
     vGeo.bodyH <= vGeo.asideH + 1, JSON.stringify({bodyH:vGeo.bodyH,asideH:vGeo.asideH}))
   /* 这一条钉的是主人立的那条规矩：立绘 ≠ CG。立绘跟着人走、不等点名 ——

@@ -20,13 +20,13 @@
    （`dateWearId`）、跟着人走，**不进导演候选**，也不落 `world.cg`。约会上屏的
    那张情境图是另一回事，由导演点名，走的是会话流顶部那个 3:2 的 CgSlot。
 
-   **一件得先说好的事**：那些槽位一张图都还没补。缺图时 <CgSlot> 只塌成一行
-   「待补」小字、**不占版位**（见 CgSlot.tsx 文件头）—— 所以图补上之前，这一栏
-   是一列文字 + 一行小字，看不到「特大」；`public/cg/cg-datewear-<角色id>.webp`
-   一落进去当场就是特大。
+   **图位不再写「待补」（主人 2026-10-21）**：这一栏走 lib/cg.ts 的**兜底链** ——
+   常服立绘（`cg-datewear-<角色id>`）→ 她的 SFW 图（表里登记过的那几位）→
+   她的立绘（`public/charimg/<id>.jpg`）。三档全空才写一行小字。
+   链子与剧演舞台共用 `probeSceneCg` 一个函数，两处各写一套必然对不上。
    ============================================================ */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { charOf } from '../data/personas'
@@ -35,14 +35,56 @@ import { hasIntimate } from '../data/intimate'
 import { relTier } from '../data/rel'
 import { bondName } from '../lib/format'
 import { dateWearId, rvAllIds } from '../lib/rendezvous'
+import { probeSceneCg } from '../lib/cg'
+import type { SceneCg } from '../lib/cg'
 import { inkOf } from '../lib/hue'
 import type { Rendezvous } from '../lib/rendezvous'
-import { CgSlot } from './CgSlot'
 
 import css from './DateSide.module.css'
 
 /** 关系还没走到需要定名的那一步 —— 由剧情给，不由羁绊读数换算（与档案页同一句） */
 const REL_UNSET = '关系还没走到需要定名的那一步 —— 由剧情给，不由羁绊读数换算'
+
+
+/**
+ * 一人一张图位：走 lib/cg.ts 的**兜底链**。
+ *
+ * 第一档是这一格的常服立绘（`cg-datewear-<角色id>`）；探不到就往她的 SFW 图、
+ * 再往她的立绘退。**私密图不会漏进来**：这里不传 `intimate`，
+ * 兜底链那道闸对 `lunaNSFW/**` 一律不放行（见 `probeSceneCg`）。
+ *
+ * 版式照旧：2 : 3 竖构图、`contain` 摆、最宽 320 —— 整身要看得见。
+ * `data-cg-slot` 留着（说的是「这一格认的是哪个素材」，与有没有图无关）。
+ */
+function PersonArt({ id, wear, name }: { id: string; wear: string; name: string }) {
+  const [scene, setScene] = useState<SceneCg | null>(null)
+  useEffect(() => {
+    let alive = true
+    setScene(null)
+    void probeSceneCg(wear ? [{ id: wear }] : [], [id]).then((s2) => { if (alive) setScene(s2) })
+    return () => { alive = false }
+  }, [id, wear])
+
+  return (
+    <figure
+      data-cg-slot={wear || id}
+      style={{ margin: 0, width: '100%', maxWidth: 320, aspectRatio: '2 / 3', overflow: 'hidden' }}
+    >
+      {scene ? (
+        <img
+          src={scene.url}
+          alt={name}
+          loading="lazy"
+          decoding="async"
+          data-cg-fallback={scene.isFallback ? scene.kind : undefined}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+        />
+      ) : (
+        <span className={css.noArt}>这一位此刻没有图</span>
+      )}
+    </figure>
+  )
+}
 
 export function DateSide({ rv }: { rv: Rendezvous }) {
   const { bondNow, relOf } = useTerminal()
@@ -102,11 +144,7 @@ export function DateSide({ rv }: { rv: Rendezvous }) {
             {/* 特大常服立绘：栏宽减去内边距，2 : 3 竖构图、`contain` 摆 ——
                 整身要看得见，画得方一点也不会被裁，只是两侧留空。 */}
             <div className={css.art} data-date-wear={p.wear || undefined}>
-              {p.wear ? (
-                <CgSlot cgId={p.wear} ratio="2 / 3" fit="contain" maxWidth={320} />
-              ) : (
-                <span className={css.noArt}>这一位没有常服立绘位</span>
-              )}
+              <PersonArt id={p.id} wear={p.wear} name={p.name} />
             </div>
 
             <div className={css.meta}>

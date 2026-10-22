@@ -33,7 +33,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 
 import type { ChatMsg } from '../data/types'
-import { probeCg } from '../lib/cg'
+import { probeSceneCg } from '../lib/cg'
+import type { SceneCg } from '../lib/cg'
 
 import { Portrait } from './Portrait'
 
@@ -65,9 +66,23 @@ export interface GalgameProps {
   party: GalPerson[]
   /** 这一场至今的正文（只读镜像；不用它写任何东西） */
   log: ChatMsg[]
-  /** 这一场此刻的 CG（有就铺成背景） */
+  /**
+   * 这一场此刻的 CG（有就铺成背景）。
+   *
+   * 这里收的是**文件名**（`cgFileOf` 之后的那一个）—— 登记位可能用 `CgRef.file`
+   * 把文件名指到另一个 id 上，取图那一侧只认文件名。
+   */
   cgId?: string | null
   cgDir?: string
+  /** 选中的那条的图注（署名位用；没有就只写角色名） */
+  cgNote?: string
+  /**
+   * 这一场是不是已经走到**私密**那一档（`Rendezvous.kind === 'intimate'`）。
+   *
+   * 只给兜底链放行「私密目录里的素材」用 —— 普通约会里它恒为 false，
+   * 于是 `lunaNSFW/**` 连试都不会试（见 lib/cg.ts 的 `probeSceneCg`）。
+   */
+  intimate?: boolean
   /** 接续选项：只在「已经是最后一行、并且字显示完了」时铺出来 */
   options?: string[]
   /** 生成中：选项按住不让点（别的照旧能翻） */
@@ -114,7 +129,7 @@ function toScript(log: ChatMsg[], people: GalPerson[]): GalLine[] {
 }
 
 export function Galgame({
-  cast, party, log, cgId, cgDir, options, busy, youName = '你',
+  cast, party, log, cgId, cgDir, cgNote, intimate, options, busy, youName = '你',
   onPickOption, onEditLine, editor, empty,
 }: GalgameProps) {
   const people = useMemo(() => [cast, ...party], [cast, party])
@@ -280,15 +295,29 @@ export function Galgame({
     if (fire) advance()
   }
 
-  /* CG 铺背景：**探到了才铺**（缺图时舞台不该顶着一行「CG 待补」） */
-  const [cgUrl, setCgUrl] = useState<string | null>(null)
+  /* CG 铺背景：走 lib/cg.ts 的**兜底链**（选中的 CG → 该角色的 SFW 图 → 该角色的立绘）。
+     先前是「探不到就什么都不铺」，舞台于是空着；现在探不到就往下退一档，
+     三档全空才真的不摆（调用方那一侧也就不会出现一行「CG 待补」）。
+     在场的人按主位在前排（兜底只在这几个人身上找，别人的场面里不会冒出她的画）。 */
+  const [scene, setScene] = useState<SceneCg | null>(null)
+  const hereKey = useMemo(() => [cast.id, ...party.map((p) => p.id)].join(','), [cast.id, party])
   useEffect(() => {
     let alive = true
-    setCgUrl(null)
-    if (!cgId) return
-    void probeCg(cgId, cgDir).then((u) => { if (alive) setCgUrl(u) })
+    setScene(null)
+    const refs = cgId ? [{ id: cgId, dir: cgDir, note: cgNote }] : []
+    void probeSceneCg(refs, hereKey.split(',').filter(Boolean), { intimate })
+      .then((s) => { if (alive) setScene(s) })
     return () => { alive = false }
-  }, [cgId, cgDir])
+  }, [cgId, cgDir, cgNote, intimate, hereKey])
+
+  /* 署名位那一行：CG · 露娜 · 换上新的一身（立绘那一档写「立绘」） */
+  const credit = scene
+    ? [
+        scene.kind === 'portrait' ? '立绘' : 'CG',
+        people.find((p) => p.id === scene.charId)?.name ?? '',
+        scene.note ?? '',
+      ].filter(Boolean).join(' · ')
+    : ''
 
   const visiblePeers = party.slice(0, 3)
   const overflow = party.length - visiblePeers.length
@@ -303,7 +332,20 @@ export function Galgame({
       data-gal-line={idx}
     >
       <div className={css.stage} onClick={() => { if (!editor) advance() }}>
-        {cgUrl ? <img className={css.cg} src={cgUrl} alt="" aria-hidden="true" data-gal-cg={cgId} /> : null}
+        {/* 铺底那张：**cover 裁满 + 焦点偏上（50% 30%）** —— 舞台是横的、画多半是竖的，
+            比例对不上时优先保住人物（脸与上半身），别从头顶往下裁。
+            兜底链退到立绘那一档时也照这一套摆（所以 data-gal-cg 记的是实际摆上的素材 id）。 */}
+        {scene ? (
+          <img
+            className={css.cg}
+            src={scene.url}
+            alt=""
+            aria-hidden="true"
+            data-gal-cg={scene.id}
+            data-cg-fallback={scene.isFallback ? scene.kind : undefined}
+            style={{ objectFit: 'cover', objectPosition: '50% 30%' }}
+          />
+        ) : null}
         <div className={css.scrim} aria-hidden="true" />
 
         <div className={css.figures} aria-hidden="true">
@@ -443,6 +485,22 @@ export function Galgame({
           </div>
         ) : null}
       </div>
+
+      {/* 舞台下头那一行**极小的署名**：这张画是什么、是谁、画的是哪一幕（取 note）。
+          没有 CG（三档全空）时**整行不出** —— 摆一行空的比不摆更难看。 */}
+      {credit ? (
+        <div
+          data-cg-credit={scene?.kind ?? ''}
+          style={{
+            marginTop: 4,
+            textAlign: 'right',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.06em',
+            color: 'var(--ink-faint)',
+          }}
+        >{credit}</div>
+      ) : null}
     </div>
   )
 }

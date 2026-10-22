@@ -292,6 +292,19 @@ export const DATE_BEATS: DateBeat[] = [
     when: '这一场里真的买了新衣服、并且已经试穿上了',
     cast: ['luna'],
   },
+  /* 私密那几张的**前提出场**（主人 2026-10-21 定的口径）：不是「到了私密那一档就能铺」，
+     而是**某一件具体的事真的发生了**才铺那张。一件算一个节拍、一个节拍对一张画 ——
+     不合并成「做过了」那种大节拍，否则点一张就顺带点亮一整排。
+     ⚠ 这几条的 when 会原样进提示词，所以都写成「照着能判真假」的一句话。 */
+  { id: 'intim-handjob', when: '这一场里真的做成了手交（她的手到了那儿，并且做完了）', cast: ['luna'] },
+  { id: 'intim-oral', when: '这一场里她真的含弄过（口交真的发生了）', cast: ['luna'] },
+  { id: 'intim-oral-b', when: '这一场里口交又走了一轮（她再一次伏下去，或换她主导）', cast: ['luna'] },
+  { id: 'intim-paizuri', when: '这一场里真的用胸部做了（乳交真的发生了）', cast: ['luna'] },
+  { id: 'intim-missionary', when: '这一场里真的用了正常位（她躺着、他从正面进去）', cast: ['luna'] },
+  { id: 'intim-spooning', when: '这一场里真的用了侧入式（两个人侧躺着连在一起）', cast: ['luna'] },
+  { id: 'intim-doggystyle', when: '这一场里真的用了后入式（她背对着、跪着或撑着）', cast: ['luna'] },
+  { id: 'intim-cowgirl', when: '这一场里真的用了骑乘位（她在上面自己来）', cast: ['luna'] },
+  { id: 'intim-straddle', when: '这一场里真的用了对面座位（她面对面坐在他身上）', cast: ['luna'] },
 ]
 
 /** 是不是登记过的节拍 id —— `listRendezvous` 读回来时拿它筛（编的 id 一律丢掉） */
@@ -324,33 +337,60 @@ export const DATE_CG: CgRef[] = [
     dir: 'lunaSFW',
     needs: 'outfit-tryon',
   },
+  /* **随时可用**那一条（主人 2026-10-21）：同一张素材、另一个登记位。
+     上面那条守的是「买完衣服、试穿上了才给」；这一条守的是「她就站在你面前」——
+     两件事、两个前提，所以是两条登记，而不是把上面那条的 needs 松掉
+     （松掉就等于试穿那道闸不存在了）。
+     素材只有一份、也**不许复制**（public/cg/** 归主人收着），所以用 CgRef.file
+     把文件名指回 lunaSFW/cg-date-shop-luna.webp —— 登记位各走各的 id，文件同一个。
+     cast 保留：这张画的是**她一个人**，她不在场就不该摆（这条约束不能松）。 */
+  {
+    id: 'cg-date-shop-luna-any',
+    file: 'cg-date-shop-luna',
+    dir: 'lunaSFW',
+    note: '换上新的一身，站在你面前',
+    cast: ['luna'],
+  },
 ]
 
-/** 已到私密那一档才进候选的那几张（挪进清单里，导演才点得到。图待补） */
+/**
+ * 已到私密那一档才进候选的那几张（挪进清单里，导演才点得到）。
+ *
+ * **这一档的门是两道的**（主人 2026-10-21 定的口径）：到了私密那一档（kind）只是**第一道**，
+ * 还得**某一件具体的事真的发生了**（CgRef.needs —— 节拍登记在 DATE_BEATS）——
+ * 「到了私密档就随便铺」不算数。事件走到那一步之前，这些画连候选都进不来，
+ * 导演连它们叫什么都不知道。
+ *
+ * 一个节拍对一张画：手交 / 口交（两张，两轮）/ 乳交 / 正常位 / 侧入式 / 后入式 /
+ * 骑乘位 / 对面座位。**别合并成一个大节拍** —— 那会点一张就顺带点亮一整排。
+ */
 export const DATE_CG_INTIMATE: CgRef[] = [
   { id: 'cg-date-intim-1', note: '私密的场面 · 第一张（到这一步才进候选）' },
   { id: 'cg-date-intim-2', note: '私密的场面 · 第二张' },
-  /* 这一档里**只有它认人**（`cast`）。上面那两张是谁走到私密那一档都能点，
+  /* 这一档里**只有它认人**（cast）。上面那两张是谁走到私密那一档都能点，
      可这张画的是露娜一个人 —— 没她在场时摆出来就成了「凭空多一个人」。
-     所以除了「到私密那一档」，还多一道：**她本人得在场**（主位或同场都算）。 */
+     所以除了「到私密那一档」与「那件事真的发生了」，还多一道：**她本人得在场**
+     （主位或同场都算）。 */
   {
     id: 'cg-date-intim-luna-oral',
     note: '露娜仰躺着含弄你的那一刻 · 一只手攥着底下、一只手在自己腿间',
     cast: ['luna'],
     dir: 'lunaNSFW/满羁绊加满等级CG',
+    needs: 'intim-oral',
   },
-  /* 露娜这一档：**一个戏码一个槽位**，每个都带 `cast` —— 缺了她就不进候选。
-     素材按戏码分在 `public/cg/lunaNSFW/<戏码>/`（`dir`），换图不用改这里。
-     带 `variants` 的是同一张画的多版：每次被触发就轮着换下一版，不是动画帧
-     （见 lib/cg.ts 的 `cgVariantId`）。 */
-  { id: 'cg-date-intim-luna-missionary', note: '私密的场面 · 正常位', cast: ['luna'], dir: 'lunaNSFW/正常位', variants: 3 },
-  { id: 'cg-date-intim-luna-spooning', note: '私密的场面 · 侧入式', cast: ['luna'], dir: 'lunaNSFW/侧入式', variants: 3 },
-  { id: 'cg-date-intim-luna-doggystyle', note: '私密的场面 · 后入式', cast: ['luna'], dir: 'lunaNSFW/后入式', variants: 3 },
-  { id: 'cg-date-intim-luna-cowgirl', note: '私密的场面 · 骑乘位', cast: ['luna'], dir: 'lunaNSFW/骑乘位', variants: 3 },
-  { id: 'cg-date-intim-luna-straddle', note: '私密的场面 · 对面座位', cast: ['luna'], dir: 'lunaNSFW/对面座位式' },
-  { id: 'cg-date-intim-luna-paizuri', note: '私密的场面 · 乳交', cast: ['luna'], dir: 'lunaNSFW/乳交', variants: 2 },
-  { id: 'cg-date-intim-luna-oral-b', note: '私密的场面 · 口交', cast: ['luna'], dir: 'lunaNSFW/口交', variants: 2 },
-  { id: 'cg-date-intim-luna-handjob', note: '私密的场面 · 手交', cast: ['luna'], dir: 'lunaNSFW/手交' },
+  /* 露娜这一档：**一个戏码一个槽位**，每个都带 cast（缺了她就不进候选）
+     与 needs（那件事没发生就不进候选）。
+     素材按戏码分在 public/cg/lunaNSFW/<戏码>/（dir），换图不用改这里。
+     带 variants 的是同一张画的多版：每次被触发就轮着换下一版，不是动画帧
+     （见 lib/cg.ts 的 cgVariantId）。 */
+  { id: 'cg-date-intim-luna-missionary', note: '私密的场面 · 正常位', cast: ['luna'], dir: 'lunaNSFW/正常位', variants: 3, needs: 'intim-missionary' },
+  { id: 'cg-date-intim-luna-spooning', note: '私密的场面 · 侧入式', cast: ['luna'], dir: 'lunaNSFW/侧入式', variants: 3, needs: 'intim-spooning' },
+  { id: 'cg-date-intim-luna-doggystyle', note: '私密的场面 · 后入式', cast: ['luna'], dir: 'lunaNSFW/后入式', variants: 3, needs: 'intim-doggystyle' },
+  { id: 'cg-date-intim-luna-cowgirl', note: '私密的场面 · 骑乘位', cast: ['luna'], dir: 'lunaNSFW/骑乘位', variants: 3, needs: 'intim-cowgirl' },
+  { id: 'cg-date-intim-luna-straddle', note: '私密的场面 · 对面座位', cast: ['luna'], dir: 'lunaNSFW/对面座位式', needs: 'intim-straddle' },
+  { id: 'cg-date-intim-luna-paizuri', note: '私密的场面 · 乳交', cast: ['luna'], dir: 'lunaNSFW/乳交', variants: 2, needs: 'intim-paizuri' },
+  { id: 'cg-date-intim-luna-oral-b', note: '私密的场面 · 口交', cast: ['luna'], dir: 'lunaNSFW/口交', variants: 2, needs: 'intim-oral-b' },
+  { id: 'cg-date-intim-luna-handjob', note: '私密的场面 · 手交', cast: ['luna'], dir: 'lunaNSFW/手交', needs: 'intim-handjob' },
 ]
 
 /**
@@ -396,6 +436,8 @@ export function intimArtDir(charId: string): string | undefined {
  *   · 节拍 —— 带 `needs` 的那几张还要**这一场先走到那一步**（`rv.beats`）。
  *     这一条是替「自带前提出场」的那张把关：还没走到就摆，等于跳过了一整段戏。
  *     「买完衣服试穿那张」两样都带 —— 缺人、或没走到那一步，各自都能把它挡在外面。
+ *     **私密那几张全都带 `needs`**（主人 2026-10-21）：到了私密那一档只是第一道，
+ *     还得那一件事真的发生了 —— 所以这一档的门是「档位 + 认人 + 节拍」三道叠着的。
  *
  * **不给前提的那几张不受影响**（三道都是「没写就不管」）：街景那三张谁都能点。
  *
@@ -495,9 +537,10 @@ export function rendezvousPrompt(
     ? `\n\n【这一场的节拍（走到哪一步了）】
 ${beatsTodo.map((b) => `- ${b.id} —— ${b.when}`).join('\n')}
 
-这几步是这一场往下走会经过的节点。走到哪一步，就在**那一回合**的收尾 JSON 里加上
-"beat": "那一步的 id"（一次只报刚走到的这一个，id 照抄上面）。
-**没走到就别报** —— 提前报等于把还没发生的那一幕先算成发生了。`
+这几步是这一场往下走会经过的节点。**这一件事真的发生了**，才在那一回合的收尾 JSON 里
+加上 "beat": "那一步的 id"（一次只报刚走到的这一个，id 照抄上面）。
+没发生就别报 —— 提前报等于把还没发生的那一幕先算成发生了：那一笔会当场记进这一场，
+对应的那张画会立刻铺出来。宁可少报一步，也别先把画面给了。`
     : ''
   /* 正文那一截紧跟在情境后面 —— 与短信那一条同一个位置、同一个用法：
      都是「一路推下来真发生的事」，只作延续性背景，不许逐条复述。 */
