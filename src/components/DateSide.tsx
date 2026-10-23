@@ -42,6 +42,9 @@ import type { Rendezvous } from '../lib/rendezvous'
 
 import css from './DateSide.module.css'
 
+/** 开发期（署名位那个「（兜底）」只在开发期出，与剧演舞台同一口径） */
+const DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
+
 /** 关系还没走到需要定名的那一步 —— 由剧情给，不由羁绊读数换算（与档案页同一句） */
 const REL_UNSET = '关系还没走到需要定名的那一步 —— 由剧情给，不由羁绊读数换算'
 
@@ -65,24 +68,49 @@ function PersonArt({ id, wear, name }: { id: string; wear: string; name: string 
     return () => { alive = false }
   }, [id, wear])
 
+  /* 署名行与剧演舞台同一套写法（`data-cg-credit`）：摆的是 CG 还是立绘、归谁、
+     画的是哪一幕；兜底命中时末尾补一个「（兜底）」—— **只在开发期出**，
+     理由同 Galgame（那是内部说法，玩家读到只会以为素材缺了）。 */
+  const credit = scene
+    ? [
+        scene.kind === 'portrait' ? '立绘' : 'CG',
+        name,
+        scene.note ?? '',
+      ].filter(Boolean).join(' · ') + (scene.isFallback && DEV ? '（兜底）' : '')
+    : ''
+
   return (
-    <figure
-      data-cg-slot={wear || id}
-      style={{ margin: 0, width: '100%', maxWidth: 320, aspectRatio: '2 / 3', overflow: 'hidden' }}
-    >
-      {scene ? (
-        <img
-          src={scene.url}
-          alt={name}
-          loading="lazy"
-          decoding="async"
-          data-cg-fallback={scene.isFallback ? scene.kind : undefined}
-          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-        />
-      ) : (
-        <span className={css.noArt}>这一位此刻没有图</span>
-      )}
-    </figure>
+    <>
+      <figure
+        data-cg-slot={wear || id}
+        style={{ margin: 0, width: '100%', maxWidth: 320, aspectRatio: '2 / 3', overflow: 'hidden' }}
+      >
+        {scene ? (
+          <img
+            src={scene.url}
+            alt={name}
+            loading="lazy"
+            decoding="async"
+            data-cg-fallback={scene.isFallback ? scene.kind : undefined}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          />
+        ) : (
+          <span className={css.noArt}>这一位此刻没有图</span>
+        )}
+      </figure>
+      {credit ? (
+        <div
+          data-cg-credit={scene?.kind ?? ''}
+          style={{
+            textAlign: 'right',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.06em',
+            color: 'var(--ink-faint)',
+          }}
+        >{credit}</div>
+      ) : null}
+    </>
   )
 }
 

@@ -4,7 +4,7 @@
  * 素材约定（把真图丢进 public/cg/ 即点亮，无需改码）：
  *   <cgId>.webp|.png|.jpg
  * 取图规则：每个 id 按 webp → png → jpg 的顺序试；全部 404 时由 <CgSlot>
- * 回退成一行「待补」提示（**不占版位**，见该组件文件头）。
+ * 走同一条**舞台兜底链**（见下面 `probeSceneCg`），三档全空才整块不出。
  *
  * 换图只要**换个更靠前的扩展名**就能盖掉旧的：想替掉现成的 .jpg，
  * 丢一个同名的 .webp 或 .png 进去即可，不必先删旧文件。
@@ -35,6 +35,9 @@ import type { CgRef } from '../data/types'
 /** 候选扩展名（按序试）。webp 在前：同画质下体积约为 png 的 1/3。 */
 const EXTS = ['webp', 'png', 'jpg'] as const
 
+/** 开发期（断言 / 提示只在开发期出声） */
+const DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
+
 /** 把 `分类/子分类` 逐段编码再拼成前缀 —— 整串 encode 会把 `/` 也吃掉 */
 function dirPrefix(dir?: string): string {
   return dir ? dir.split('/').map(encodeURIComponent).join('/') + '/' : ''
@@ -59,13 +62,22 @@ export function cgUrl(cgId: string, dir?: string): string {
    渲染完才知道有没有图就晚了 —— 这里提前问一句。 */
 const probes = new Map<string, Promise<string | null>>()
 
-/** 探出第一个真能加载的候选 URL；全 404 → null。缓存键带上目录：同 id 换了文件夹要重探 */
-export function probeCg(cgId: string, dir?: string): Promise<string | null> {
-  const key = `${dir ?? ''}/${cgId}`
+/**
+ * 探出第一个真能加载的候选 URL；全 404 → null。缓存键带上目录：同 id 换了文件夹要重探。
+ *
+ * 入参收 `CgRef | string`：**给 CgRef 时自己走 `cgFileOf`**（`file` 别名一并生效，
+ * `dir` 也照它的登记走）。于是「忘了用 cgFileOf」在类型层就不成立 —— 从前只能靠
+ * 调用方记得，谁直接拿 `cgIdOf(ref)` 进来就静默 404，再被兜底链悄悄盖住，错得不出声。
+ * 传字符串照旧（旧调用一律可编译）。
+ */
+export function probeCg(ref: CgRef | string, dir?: string): Promise<string | null> {
+  const file = typeof ref === 'string' ? ref : (ref.file ?? ref.id)
+  const where = dir ?? (typeof ref === 'string' ? undefined : ref.dir)
+  const key = `${where ?? ''}/${file}`
   const hit = probes.get(key)
   if (hit) return hit
   const p = new Promise<string | null>((resolve) => {
-    const list = cgCandidates(cgId, dir)
+    const list = cgCandidates(file, where)
     let i = 0
     const next = (): void => {
       if (i >= list.length) { resolve(null); return }
@@ -79,6 +91,34 @@ export function probeCg(cgId: string, dir?: string): Promise<string | null> {
   })
   probes.set(key, p)
   return p
+}
+
+/* ============================================================
+   开发期断言：CgRef.file 别名不许静默失败
+   ------------------------------------------------------------
+   `file` 别名（`cg-date-shop-luna-any` → 真文件 `cg-date-shop-luna`）是**登记位**与
+   **文件名**两套身份。取图那一侧只认文件名，所以谁把 `cgIdOf(ref)` 直接递进
+   `probeCg` 就是一次静默 404 —— 探针照旧返回 null，兜底链再把它盖住，屏上看着没事，
+   素材却一直没被读到。`probeCg` 那一侧已经靠入参类型收窄堵住了（给 CgRef 就自动走
+   `cgFileOf`）；这里再加一道**人选**：装配候选时跑一遍，把漏网的登记位喊出来。
+   只在 DEV 下生效，同一对（id → file）只喊一次。
+   ============================================================ */
+const warnedAlias = new Set<string>()
+
+/** 逐个检查 CgRef：登记了 file 别名且与 id 不一致的，DEV 下 console.warn 一次（去重） */
+export function assertCgRefs(refs: CgRef[]): void {
+  if (!DEV) return
+  for (const ref of refs) {
+    if (typeof ref === 'string') continue
+    if (!ref.file || ref.file === ref.id) continue
+    const key = `${ref.id}→${ref.file}`
+    if (warnedAlias.has(key)) continue
+    warnedAlias.add(key)
+    console.warn(
+      `[cg] ${ref.id} 的素材文件名是 ${ref.file}（CgRef.file 别名）—— 取图请用 cgFileOf` +
+      `（直接拿 cgIdOf 去 probeCg 会静默 404，还会被兜底链盖住）。`,
+    )
+  }
 }
 
 /** 测试钩子：清掉探针缓存（换素材后重探用） */
@@ -176,8 +216,6 @@ function isNsfwDir(dir?: string): boolean {
   return /nsfw/i.test(dir ?? '')
 }
 
-const DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
-
 /**
  * 舞台 / 右栏那一格到底摆哪张：选中的 CG → 该角色的 SFW 图 → 该角色的立绘。
  *
@@ -199,7 +237,7 @@ export async function probeSceneCg(
   for (const ref of refs) {
     const dir = cgDirOf(ref)
     if (isNsfwDir(dir) && !intimate) continue
-    const url = await probeCg(cgFileOf(ref), dir)
+    const url = await probeCg(ref)
     if (url) return { url, id: cgIdOf(ref), isFallback: false, kind: 'cg', charId: here[0], note: cgNoteOf(ref) }
   }
 

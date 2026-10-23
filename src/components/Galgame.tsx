@@ -40,6 +40,9 @@ import { Portrait } from './Portrait'
 
 import css from './Galgame.module.css'
 
+/** 开发期（署名位那个「（兜底）」只在开发期出） */
+const DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
+
 /** 舞台上的一位（当前约会角色 / 同行者） */
 export interface GalPerson {
   id: string
@@ -310,13 +313,16 @@ export function Galgame({
     return () => { alive = false }
   }, [cgId, cgDir, cgNote, intimate, hereKey])
 
-  /* 署名位那一行：CG · 露娜 · 换上新的一身（立绘那一档写「立绘」） */
+  /* 署名位那一行：CG · 露娜 · 换上新的一身（立绘那一档写「立绘」）。
+     兜底命中时末尾补一个「（兜底）」—— **只在开发期出**：那是内部说法
+     （「这一张不是导演点的那张」），玩家读到只会以为素材缺了；
+     排查的人一眼就知道自己看到的是退下来那一档。 */
   const credit = scene
     ? [
         scene.kind === 'portrait' ? '立绘' : 'CG',
         people.find((p) => p.id === scene.charId)?.name ?? '',
         scene.note ?? '',
-      ].filter(Boolean).join(' · ')
+      ].filter(Boolean).join(' · ') + (scene.isFallback && DEV ? '（兜底）' : '')
     : ''
 
   const visiblePeers = party.slice(0, 3)

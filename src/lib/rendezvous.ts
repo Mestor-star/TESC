@@ -28,6 +28,7 @@ import { ACTIVE_DATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
 import type { CgRef } from '../data/types'
+import { assertCgRefs } from './cg'
 import { PROSE_RULES, HAREM_RULE } from './worldrules'
 import { ANTI_AI_STYLE } from './writing-rules'
 
@@ -447,12 +448,18 @@ export function dateCgPalette(rv: Rendezvous): CgRef[] {
   const here = new Set(rvAllIds(rv))
   const beats = new Set(rv.beats ?? [])
   const base = rv.kind === 'intimate' ? [...DATE_CG, ...DATE_CG_INTIMATE] : [...DATE_CG]
-  return base.filter((r) => {
+  const refs = base.filter((r) => {
     if (typeof r === 'string') return true
     if (r.cast?.length && !r.cast.some((id) => here.has(id))) return false
     if (r.needs && !beats.has(r.needs)) return false
     return true
   })
+  /* 候选装配处跑一次开发期断言：`file` 别名的登记位（`cg-date-shop-luna-any`）在这里
+     被喊一声「取图请用 cgFileOf」。喊在**装配**这一处、而不是每个取图点各喊一次 ——
+     候选就是导演能点到的全集，漏网只可能漏在这儿。断言自己按 id→file 去重，
+     这场约会重渲染多少回也只喊一次。 */
+  assertCgRefs(refs)
+  return refs
 }
 
 /** 把一张表的位渲染成 `- id —— 说明`（就是喂给导演的候选清单那一节） */
