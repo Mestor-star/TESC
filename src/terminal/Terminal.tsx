@@ -6,7 +6,8 @@ import { REGIONS } from '../data/regions'
 import { TIMELINE, unlockEventId, readingIndexOf, firstMainId, isIntroGroup } from '../data/timeline'
 import { ANCHORS } from '../data/anchors'
 import { planRewind } from '../lib/rewind'
-import { writeConcluded, writePendingBattle } from '../lib/plotpending'
+import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
+import { markStale } from '../lib/turns'
 import { CODEX, resolveEntityToCodexId } from '../data/codex'
 import { BOND_FULL, CAST, defaultBondOf, personOf, PERSON_IDS } from '../data/castmeta'
 import type { CastPerson } from '../data/castmeta'
@@ -270,9 +271,10 @@ export interface TerminalState {
    *   · `world.records` 里那一条（低语者日志上不再挂着它）；
    *   · 这一段 `lock` 写下的羁绊下限（按**剩下还收着的段**重算，不是整份清空）；
    *   · `cur` 退回它前面最近一段（前面没有了就退回 null）。
-   * **不动**的三样：会话正文（`zts-plot`，那一段推过的话还在，能重读、
-   * 也能再推一遍把它收回来）、`met` / `ends` 登记（「见过」「登记过」是不可逆的
-   * 事实，与进度无关）、以及别段的任何东西。返回是否真的撤了。
+   * **不删**会话正文（`zts-plot`，那一段推过的话还在，能重读），但撤下的那一屏
+   * 从此**不再喂给导演**：这一段每一条消息打个 `meta.stale` 记号（见 `lib/turns.ts`
+   * 的 `turnsFor`），重推写下的新消息照常进历史。`met` / `ends` 登记（「见过」
+   * 「登记过」是不可逆的事实，与进度无关）以及别段的任何东西同样不动。返回是否真的撤了。
    */
   reopenEvent: (id: string) => boolean
 
@@ -285,13 +287,25 @@ export interface TerminalState {
    *   · `rewindTo(id)` 撤目标段 + 它之后全部（用户在低语者日志里点「回到这一段之前」）。
    * 撤的东西同一口径：`epDone` 若干格、`world.records` 里对应记录、这些段 `lock`
    * 写下的羁绊下限（按**剩下还收着的段**重算）、指针 `cur` 落回目标段之前。
-   * `rewindTo` 另多做两件：`world.anchors` 里这些段的锚点登记一并撤销（锚点跟着段走），
-   * 以及清掉 `zts-plot-pending:v1`（收束栏 / 待战按钮不许残留成幽灵按钮）。
+   * `rewindTo` 另多做三件：`world.anchors` 里这些段的锚点登记一并撤销（锚点跟着段走）、
+   * `zts-plot-pending:v1` **只清指着被撤段的那一半**（段不在了才清，更靠后那一段
+   * 合法的收束栏 / 待战按钮不许误伤），以及给被撤段的正文打上「不再喂给导演」的记号。
    *
-   * **不撤**：会话正文、`world.cast`、`met`、图鉴登记、作战记录、`world.tick`
-   * （tick 只增不减是既有口径 —— 回退不回拨时钟）。返回是否真的撤了。
+   * **不删**：会话正文（照旧留在 `zts-plot` 里能重读，只是不进提示词）、`world.cast`、
+   * `met`、图鉴登记、作战记录、`world.tick`（tick 只增不减是既有口径 —— 回退不回拨时钟）。
+   * 返回是否真的撤了。
    */
   rewindTo: (id: string) => boolean
+
+  /**
+   * 会话账「重读过」的信号：每回退一次（`rewindTo` / `reopenEvent`）落完 `meta.stale`
+   * 记号就 +1。
+   *
+   * 剧情推进页看见它变，就把自己手里那份 `logs` 从账上重读一遍 —— 它那一份没有
+   * 记号，下一次落盘会整本盖回去，把刚打上的记号抹掉（于是在场的人照旧读得到，
+   * 导演那边幽灵又回来了）。没有这一格信号，两个模块各写一半的账就会互相咬。
+   */
+  logEpoch: number
 
   /** 跨视图「打开某角色档案」意图（正文关键词跳转 → 档案页就近展开） */
   profileRequest: { id: string; name: string; ts: number } | null
@@ -763,6 +777,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [epDone, setEpDone] = useState<Record<string, true>>(initial.epDone)
   const [cur, setCur] = useState<string | null>(initial.cur)
   const [world, setWorld] = useState<WorldState>(() => hydrateWorld(initial.epDone, initial.cur, initial.world))
+  /* 回退落完 stale 记号之后 +1 —— 剧情推进页据此重读会话账（见 TerminalState.logEpoch） */
+  const [logEpoch, setLogEpoch] = useState(0)
 
   /* 科研（研究室）的研究点：按来源重算一遍（幂等，见 lib/research 的 syncResearch）。
      挂在这里而不是收束那一刻的某个回调里，是因为「段数」这件事只有一个出处 ——
@@ -1573,18 +1589,19 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    * `TerminalState.rewindTo`。方案由 `lib/rewind.ts` 的 `planRewind` 算出（纯函数，
    * 读序取 `EPISODES` 下标，含卷间自由段）；这里只负责照着落盘。
    *
-   * 一次撤干净（①~⑥）：
+   * 一次撤干净（①~⑦）：
    *   ① `epDone` 删掉 `plan.drop` 全部；
    *   ② `cur` 置为 `plan.cursor`（drop 之前最近的一段，没有就 null）；
    *   ③ 低语者记录按 `plan.drop` 逐条 filter（自由段本无记录，兜住即可）；
    *   ④ 羁绊下限 `world.locked` **只按 `plan.keep` 重算**（不是整份清空）；
    *   ⑤ `world.anchors` 按 `plan.anchors` 逐键 delete（着段走的锚点登记一并撤）；
-   *   ⑥ 清 `zts-plot-pending:v1`（收束栏 / 待战按钮不许残留成幽灵按钮）。
+   *   ⑥ `zts-plot-pending:v1` **只清指着被撤段的那一半**（见下面那一段注释）；
+   *   ⑦ 被撤段的正文打上 `meta.stale`（一个字不删，只是不再喂给导演）。
    *
    * 与 `reopenEvent` 的差异只有「撤多少」：它撤**一格**，这里撤**这一段及其之后全部**。
-   * `reopenEvent` 不碰的这几样，这里同样不碰：会话正文（`zts-plot`，推过的正文
-   * 还留着能重读）、`world.cast`、`met`、图鉴登记（`world.ends`）、作战记录
-   * （battle store）、`world.tick` —— **回退不回拨时钟**（tick 只增不减，既有口径）。
+   * `reopenEvent` 不删的这几样，这里同样不删：会话正文（`zts-plot`，推过的正文
+   * 还留着能重读，只是不进提示词）、`world.cast`、`met`、图鉴登记（`world.ends`）、
+   * 作战记录（battle store）、`world.tick` —— **回退不回拨时钟**（tick 只增不减，既有口径）。
    */
   const rewindTo = useCallback(
     (id: string): boolean => {
@@ -1618,21 +1635,37 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         }
       })
 
-      /* ⑥ 收束栏 / 待战按钮：两半各写各的，两下都清干净（见 lib/plotpending.ts） */
-      writeConcluded(null)
-      writePendingBattle(null)
+      /* ⑥ 收束栏 / 待战按钮（`zts-plot-pending:v1`）—— **只清指着被撤段的那一半**。
+         pending 记的是「**哪一段**的收束栏 / 待战按钮」（见 lib/plotpending.ts 的
+         ConcludedMark.evId / PendingBattleMark.evId）：段不在了（那一格在 plan.drop 里）
+         就该清，段还在就留。从前是两半一起清空 —— 更靠后那一段挂着的合法收束栏 /
+         待战按钮会跟着一起没掉（那一屏从此少一枚「进入下一事件」或「进入战斗」）。 */
+      const markC = readConcluded()
+      if (markC && dropped.has(markC.evId)) writeConcluded(null)
+      const markB = readPendingBattle()
+      if (markB && dropped.has(markB.evId)) writePendingBattle(null)
+
+      /* ⑦ 被撤段的正文：一个字不删（观测者还想重读那一屏），只打上 stale 记号 ——
+         从此不进提示词（见 lib/turns.ts 的 turnsFor）。记号落在 zts-plot:v1 里，
+         跟着会话账一起被重置 / 读档 / 清往期正文带走，不必另开一个键。 */
+      markStale(plan.drop)
+      /* 记号是在账上改的，屏上那份 logs 还是旧的 —— 让剧情推进页重读一次 */
+      setLogEpoch((n) => n + 1)
 
       /* 观测记录（toast）由调用方推：它比这里更清楚「用户点的是哪一段」——
-         Saga 那枚「回到这一段之前」推的就是 plan.drop 那份名单。 */
+         Saga 那枚「回到这一段之前」推的就是 plan.drop 那份名单。这里补的是
+         「正文去了哪儿」那一句：玩家最怕的是回退把正文弄丢了。 */
+      push('info', '回退 · 正文的去向', '这一段此前的正文仍保留在记录里，但不会再喂给导演。', false)
       return true
     },
-    [epDone],
+    [epDone, push],
   )
 
   /**
    * 回退到上一段（用户口径：「退干净：连日志那一条一起撤」）。
    * 撤 `epDone` 那一格、低语者日志里那一条记录、这一段写下的羁绊下限，并把指针
-   * 退回它前面最近一段；会话正文与「见过 / 登记过」的既成事实一律不动。
+   * 退回它前面最近一段；会话正文**不删**、只是打上「不再喂给导演」的记号，
+   * 「见过 / 登记过」的既成事实一律不动。
    * 契约见 `TerminalState.reopenEvent`。
    */
   const reopenEvent = useCallback(
@@ -1679,8 +1712,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         }
       })
 
+      /* 收束栏 / 待战按钮：只清指着**这一段**的那一半（判定与 rewindTo 同一口径） */
+      const markC = readConcluded()
+      if (markC && markC.evId === id) writeConcluded(null)
+      const markB = readPendingBattle()
+      if (markB && markB.evId === id) writePendingBattle(null)
+
+      /* 这一段推过的正文不删，但从此不进提示词（记 stale 记号，见 lib/turns.ts） */
+      markStale([id])
+      setLogEpoch((n) => n + 1)
+
       const ev = TIMELINE.find((e) => e.id === id)
-      push('info', '回退一段 · 已撤回', `《${ev?.title ?? id}》已从低语者日志撤下，推演退回这一段之前。这一段推过的正文仍留在会话里。`, false)
+      push('info', '回退一段 · 已撤回', `《${ev?.title ?? id}》已从低语者日志撤下，推演退回这一段之前。这一段此前的正文仍保留在记录里，但不会再喂给导演。`, false)
       return true
     },
     [epDone, push],
@@ -1745,6 +1788,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     unlockReady,
     epDone,
     cur,
+    logEpoch,
     markRead,
     resetRead,
     bondNow,

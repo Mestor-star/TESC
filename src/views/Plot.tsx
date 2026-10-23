@@ -57,6 +57,7 @@ import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } 
 import { ACT_KINDS, ACT_META, actOf } from '../data/acts'
 import { clearStorageFault, noteStorageFault, setPlotLogsSource, storageFault, subscribeStorageFault } from '../lib/slots'
 import { startTabLock, subscribeTabLock, tabLockState, tabWriteBlocked, takeoverTabLock } from '../lib/tablock'
+import { isStale, turnsFor } from '../lib/turns'
 import { relName } from '../data/rel'
 import { Portrait } from '../components/Portrait'
 /* 会话流那套壳（旁白块 / 台词框 / 推演折叠 / 接续选项 / 输入带）**住在
@@ -384,13 +385,11 @@ let plotMounts = 0
  */
 let turnSeq = 0
 
-/** 剧情会话历史（最近 N 条）→ 模型消息 */
-function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
-  const list = (log ?? []).slice(-max)
-  return list.map((m): ChatTurn =>
-    m.from === 'user' ? { role: 'user', content: m.text } : { role: 'assistant', content: m.text },
-  )
-}
+/* 剧情会话历史（最近 N 条）→ 模型消息：**一律走 `lib/turns.ts` 的 `turnsFor`**
+   —— 它多一道「这一段还在不在时间线上、这一条是不是被撤下的那一版」的判据。
+   回退之后重推同一段时，旧那一屏正文不进提示词（正文仍留在 `zts-plot:v1` 里能读）。
+   判据与成因写在那个文件的头上；这里不再另开一条 `toTurns` 的路子，
+   免得哪一处漏换、幽灵又从那个口子钻回来。 */
 
 /**
  * 日志里最后一条操作员发言（言万心叶的行动）。
@@ -402,7 +401,9 @@ function toTurns(log: ChatMsg[] | undefined, max = 16): ChatTurn[] {
 function lastActOf(log: ChatMsg[] | undefined): string {
   const list = log ?? []
   for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].from === 'user') return (list[i].text ?? '').trim()
+    /* 被撤下的那一版里的发言不算「他这一回合要做什么」—— 那是旧时间线上说过的话 */
+    if (isStale(list[i]!)) continue
+    if (list[i]!.from === 'user') return (list[i]!.text ?? '').trim()
   }
   return ''
 }
@@ -494,7 +495,7 @@ export function Plot() {
     records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast, placeOfEvent, setPlace,
     bumpActs, setRel, relOf, advanceTick,
     freeMode, setFreeMode, closeFreeSlot,
-    dateRequest, clearDateRequest,
+    dateRequest, clearDateRequest, logEpoch,
   } = useTerminal()
 
   /**
@@ -919,6 +920,21 @@ export function Plot() {
     writeLogs(logs)
   }, [logs])
 
+  /* —— 回退之后重读一次账 ——
+     Terminal 回退时直接在 `zts-plot:v1` 上给被撤段的正文打 stale 记号（见
+     lib/turns.ts 的 markStale），而屏上这一份 logs 还是旧的：手里没有记号，
+     下一次落盘就会把记号整本盖回去，导演那边的幽灵又回来了。
+     `logEpoch` 每回退一次 +1，这里据此把账重读一遍（读的是 currentLogs ——
+     配额满时以内存真账为准，与别处同一个读取源）。 */
+  const epochSeen = useRef(logEpoch)
+  useEffect(() => {
+    if (epochSeen.current === logEpoch) return
+    epochSeen.current = logEpoch
+    const next = currentLogs()
+    persistedRef.current = next   // 刚读过盘上的那一份，兜底那一条不必再写
+    setLogs(next)
+  }, [logEpoch])
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [logs, busy, focusEv?.id])
@@ -1285,7 +1301,7 @@ export function Plot() {
          （世界书、预设、在场名册都在它里头读，任何一处抛一次就能把 busy 永久卡成
          true，界面从此停在「推演中」）。收口只有最外层那一个 finally。 */
       try {
-        const scanText = `${toTurns(baseOverride ?? logs[evId], 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
+        const scanText = `${turnsFor(epDone, evId, baseOverride ?? logs[evId], 10).map((t) => t.content).join('\n')}${userMsg ? `\n${userMsg}` : ''}`
         /* 本回合他要做什么 —— 正常回合取刚发出去的那条；重写/续跑时从被保留的历史里捞最后一条。
            这一份会逐字摆进提示词最末（见 lib/plot.ts 的 willSection），所以取错人话就等于替他把话说错。
            空输入那一趟（opts.idle）**不能**退到「上一条」：那会把他上一回合说过的话
@@ -1297,7 +1313,7 @@ export function Plot() {
           operatorAction: myTurn || undefined,
           idle: opts?.idle === true,
         })
-        const base = toTurns(baseOverride ?? logs[evId])
+        const base = turnsFor(epDone, evId, baseOverride ?? logs[evId])
         const messages: ChatTurn[] = [{ role: 'system', content: system }, ...base]
         if (userMsg) messages.push({ role: 'user', content: userMsg })
         // 预填充（酒馆的 assistant_prefill）：先替模型摆个开头，它顺着这句往下写。
@@ -1511,7 +1527,7 @@ export function Plot() {
       })
       const messages: ChatTurn[] = [
         { role: 'system', content: system },
-        ...toTurns(logs[ev.id]),
+        ...turnsFor(epDone, ev.id, logs[ev.id]),
         { role: 'user', content: DRAFT_PROMPT },
       ]
       const res = await chatCompletion(cfgMain!, messages, {
@@ -1810,7 +1826,7 @@ export function Plot() {
       })
       const messages: ChatTurn[] = [
         { role: 'system', content: system },
-        ...toTurns(logs[ev.id]),
+        ...turnsFor(epDone, ev.id, logs[ev.id]),
         { role: 'user', content: DIRECTIVE_REASK },
       ]
       const ctrl = new AbortController()
@@ -3075,9 +3091,9 @@ export function Plot() {
             if (evId && ev) {
               push('info', '成文 · 交战回填正文', '正在把这一仗写成正文，接进本事件的推演里 —— 稍候。', false)
               const brief = battleStoryBrief(rec)
-              const scanText = `${toTurns(logs[evId], 10).map((t) => t.content).join('\n')}\n${brief}`
+              const scanText = `${turnsFor(epDone, evId, logs[evId], 10).map((t) => t.content).join('\n')}\n${brief}`
               const { system } = await directorPromptFor(ev, scanText, { act: '交战成文', needDirective: false })
-              const story = await narrateStorylog(rec, { system, history: toTurns(logs[evId], 8) })
+              const story = await narrateStorylog(rec, { system, history: turnsFor(epDone, evId, logs[evId], 8) })
               /* 成文没走通时端的是**底稿**（一段战报腔的拼装）。它看着像「就写成这样」，
                  其实是一场失败的成文 —— 所以必得当场说一句，别让主人对着底稿以为是正文
                  （2026-09-15 主人打的那一场就是这么被骗过去的：那一处从前把错吞了）。
