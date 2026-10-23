@@ -15,13 +15,31 @@ import type { ChatMsg, ChatMsgMeta } from '../data/types'
 import { clock } from './format'
 import { nameKey } from './namekey'
 import { extractLiveDisplay } from './plot'
+import { clearStorageFault, noteStorageFault } from './slots'
 import { BOTTOM_RULES } from './worldrules'
 import { ANTI_AI_STYLE_SHORT } from './writing-rules'
 
 export const SMS_LOG_KEY = 'zts-tavern:v1'
 
-/** 读取全部线程会话（容错：坏数据/空 → {}） */
-export function loadSmsLogs(): Record<string, ChatMsg[]> {
+/* ---------- 内存真账（写盘失败时的兜底） ----------
+ *
+ * 与 views/Plot.tsx 的 unsavedLogs + writeLogs 同一套：**写失败之后以内存这一份为准**。
+ * 从前 writeSmsLogs 的 catch 是空的，于是最坏的不是「这一条没存下」，而是接下来那次读：
+ * 调用方照旧 loadSmsLogs() 从盘上取旧账 —— 盘上比屏幕上少一句 —— 改完再整本回写，
+ * 手改的那一句被当场盖掉，界面上一个字也不说。
+ *
+ * 所以：写盘抛了就把它挂成 unsavedLogs（这份账即真相），loadSmsLogs 优先返回它；
+ * 下一次写成功把它清掉（那时盘与内存已经一致）—— 自愈，不需要用户做什么。
+ * 写失败同时记一条存储故障（lib/slots.ts 的 noteStorageFault / subscribeStorageFault），
+ * 屏上那条横幅与正文账共用同一条通道（按 key 分开记，互不覆盖）。
+ *
+ * ⚠️ 只在**写失败之后**才存在。没失败过时 loadSmsLogs 逐字节等同于改动前的读法
+ * （Tavern / smsauto / NavRail / DateLane 全走它，这是硬约束）。
+ */
+let unsavedLogs: Record<string, ChatMsg[]> | null = null
+
+/** 直接读盘（写失败过也不看它）—— loadSmsLogs 与写入口共用这一份解析 */
+function readSmsLogsOnDisk(): Record<string, ChatMsg[]> {
   try {
     const raw = localStorage.getItem(SMS_LOG_KEY)
     if (!raw) return {}
@@ -41,6 +59,11 @@ export function loadSmsLogs(): Record<string, ChatMsg[]> {
   } catch {
     return {}
   }
+}
+
+/** 读取全部线程会话（容错：坏数据/空 → {}）；写失败过则返回内存那份真账 */
+export function loadSmsLogs(): Record<string, ChatMsg[]> {
+  return unsavedLogs ?? readSmsLogsOnDisk()
 }
 
 export function newMsgId(threadId: string): string {
@@ -63,19 +86,31 @@ export function smsLogVersion(): number {
   return version
 }
 
-/** 整体覆写会话；不 bump 版本（视图自己写自己读，不需要回声） */
+/**
+ * 整体覆写会话；不 bump 版本（视图自己写自己读，不需要回声）。
+ *
+ * 写不进去**不再静默**，与 views/Plot.tsx 的 writeLogs 同一条口径：
+ *  · 写成 → 内存那份真账立刻作废（盘与内存重新一致）、撤掉这个 key 的故障；
+ *  · 写败（配额满 / 隐私模式）→ 这一份挂成 unsavedLogs 当真相，并记一条存储故障。
+ * 后面所有读（loadSmsLogs）与所有改写（本文件里的 append / edit / drop）都以它为准，
+ * 所以「手改的那一句」不会在下一次读回旧盘时弹回去。
+ */
 export function writeSmsLogs(next: Record<string, ChatMsg[]>): Record<string, ChatMsg[]> {
   try {
     localStorage.setItem(SMS_LOG_KEY, JSON.stringify(next))
-  } catch {
-    /* 隐私模式下降级为仅内存 */
+    unsavedLogs = null
+    clearStorageFault(SMS_LOG_KEY)
+  } catch (e) {
+    unsavedLogs = next
+    noteStorageFault(SMS_LOG_KEY, e)
   }
   return next
 }
 
 /**
  * 追加一条消息并落盘，返回新会话表。
- * 一律先读盘再追加（以存储为准），因此「视图卸载期间由后台写进来的消息」不会被旧 state 抹掉。
+ * 一律先读账再追加（读的是 loadSmsLogs：写失败过就是内存那份真账，否则就是盘），
+ * 因此「视图卸载期间由后台写进来的消息」不会被旧 state 抹掉。
  */
 export function appendSmsMsg(threadId: string, m: ChatMsg): Record<string, ChatMsg[]> {
   const next = { ...loadSmsLogs() }
@@ -115,9 +150,9 @@ export function appendSmsMsgs(
  * 交回新的一份；交回 `null` = **没认领到那一条**（id 不在账上），此时**盘上不动、
  * 也不回声** —— 宁可什么都没发生，也不要凭一个失效的 id 把整本账重写一遍。
  *
- * 落盘失败（隐私模式 / 配额满）由 writeSmsLogs 照旧静默吞掉：与 appendSmsMsgs
- * 完全同一条路，这一层不另立规矩。**回声照发** —— 那一声才是「盘上变了，
- * 挂着的人重读」的信号（约会专线就是这么吃账的，见文件头那一节）。
+ * 落盘失败（隐私模式 / 配额满）由 writeSmsLogs 兜底：这一份挂成内存真账、
+ * 记一条存储故障；**回声照发** —— 那一声才是「账上变了，挂着的人重读」的信号
+ * （约会专线就是这么吃账的，见文件头那一节），写没写进盘都算变了。
  */
 function editSmsThread(
   threadId: string, up: (list: ChatMsg[]) => ChatMsg[] | null,
@@ -130,45 +165,69 @@ function editSmsThread(
   return true
 }
 
-/**
- * 换掉某一线程里**那一条**的文本（可选打 `meta.edited` 记号 → 界面显一枚「手改」）。
- *
- * 规矩（与主线 `Plot.tsx` 的 retextMsg 同一条）：**只换这一条的文字** ——
- * 不增删、不改序号、不重跑指令、不重新生成。要重推请先 truncateSmsAfter 再发一次。
- * 旧档没有 `meta` 时照常工作（现补一格）；找不到那一条 → 返回 false，盘上不动。
- */
-export function retextSmsMsg(
-  threadId: string, msgId: string, text: string, edited?: boolean,
-): boolean {
-  return editSmsThread(threadId, (list) => {
-    let hit = false
-    const next = list.map((m) => {
-      /* 坏行（旧档里混进来的 null / 非对象）原样放过：逐条跳过，不为一条脏数据
-         把整本账弄崩 —— 与 loadSmsLogs 的容错口径一致。 */
-      if (!m || m.id !== msgId) return m
-      hit = true
-      if (!edited) return { ...m, text }
-      const meta = { ...(m.meta ?? {}) } as ChatMsgMeta & { edited?: boolean }
-      meta.edited = true
-      return { ...m, text, meta }
-    })
-    return hit ? next : null
-  })
+export interface SmsEditOpts {
+  /** 连同它**之后**的一并删掉（截断到这一条含它）—— 「改口重来」用 */
+  truncate?: boolean
+  /** 打 `meta.edited` 记号（界面显一枚「手改」） */
+  edited?: boolean
 }
 
 /**
- * 截断到某一条（**含**它），其后全删 —— 给「改口重来」用。
+ * **一笔事务**：改一条的文本（可选顺手截断其后的全部）—— 一次读、一次改、一次写、一次回声。
  *
- * 保留的那一条原样留着（文字自己先用 retextSmsMsg 换好）：两句各管一件事，
- * 谁先谁后都读得懂，合在一起就分不清「截断」到底动不动文字了。
+ * 为什么要有它：从前「改口重来」是先 retextSmsMsg 再 truncateSmsAfter，
+ * 两次读盘两次写盘 **不原子** —— 中途崩了/被配额打中，盘上就留下「文字改好了、
+ * 后面几条还在」的半截状态（下一回推进会把已经说出口的旧话再读一遍当历史）。
+ * 合到一次写里，要么两条一起落地，要么一条都没动。
+ *
+ * 口径与 retextSmsMsg 同一条：只动文字（与可选的截断），不增删别的东西、
+ * 不重跑指令、不重新生成。找得到那一条 → true；找不到 → **盘上不动、不回声**、返回 false。
+ *
+ * `text` 传 `null` = 文字原样，只做截断（truncateSmsAfter 走的就是这条）。
+ */
+function applySmsEditAt(
+  threadId: string, msgId: string, text: string | null, opts: SmsEditOpts,
+): boolean {
+  return editSmsThread(threadId, (list) => {
+    /* 坏行（旧档里混进来的 null / 非对象）原样放过：逐条跳过，不为一条脏数据
+       把整本账弄崩 —— 与 loadSmsLogs 的容错口径一致。 */
+    const at = list.findIndex((m) => !!m && m.id === msgId)
+    if (at < 0) return null
+    const next = list.slice()
+    if (text !== null) {
+      const cur = list[at]
+      if (!opts.edited) next[at] = { ...cur, text }
+      else {
+        const meta = { ...(cur.meta ?? {}) } as ChatMsgMeta & { edited?: boolean }
+        meta.edited = true
+        next[at] = { ...cur, text, meta }
+      }
+    }
+    return opts.truncate ? next.slice(0, at + 1) : next
+  })
+}
+
+/** 换掉某一条的文字（薄封装，内部走 applySmsEditAt 那一笔事务） */
+export function retextSmsMsg(
+  threadId: string, msgId: string, text: string, edited?: boolean,
+): boolean {
+  return applySmsEditAt(threadId, msgId, text, { edited })
+}
+
+/** 改文字 + （可选）截断其后的全部 —— **一次事务**，约会专线的「改口重来」走它 */
+export function applySmsEdit(
+  threadId: string, msgId: string, text: string, opts: SmsEditOpts = {},
+): boolean {
+  return applySmsEditAt(threadId, msgId, text, opts)
+}
+
+/**
+ * 截断到某一条（**含**它），其后全删（薄封装，文字一个字不动）。
+ * 要「同时改文字」请直接用 applySmsEdit(..., { truncate: true }) —— 那才是原子的那一条。
  * 找不到那一条 → 返回 false，一条都不删。
  */
 export function truncateSmsAfter(threadId: string, msgId: string): boolean {
-  return editSmsThread(threadId, (list) => {
-    const at = list.findIndex((m) => !!m && m.id === msgId)
-    if (at < 0) return null
-    return list.slice(0, at + 1)
-  })
+  return applySmsEditAt(threadId, msgId, null, { truncate: true })
 }
 
 /** 删掉整个线程的会话（群聊线程名册的清理在 lib/smsthreads.ts） */

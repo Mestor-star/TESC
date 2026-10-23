@@ -70,8 +70,8 @@ import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/p
 import { loreHitsOf } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import {
-  appendSmsMsgs, loadSmsLogs, markRead, newMsgId, retextSmsMsg, smsLogVersion, smsTurns,
-  subscribeSmsLog, truncateSmsAfter, writeSmsLogs,
+  appendSmsMsgs, applySmsEdit, loadSmsLogs, markRead, newMsgId, retextSmsMsg, smsLogVersion,
+  smsTurns, subscribeSmsLog, writeSmsLogs,
 } from '../lib/sms'
 import { addTask } from '../lib/smstasks'
 
@@ -517,8 +517,8 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
    * 改口重来（只给自己的发言）：改写这一条 → 截断它之后的所有内容 → **重新推进一次**。
    *
    * 两段式确认：第一次点只把提醒摊开（文案写死「此前已落地的羁绊 / 亲密 / 服饰变化
-   * 不会回滚」），再点才动手。落地口径与主线同一条 —— 先换文字、再截断，
-   * 然后拿截断后那本账当历史再发**一次**请求（`fireDate` 只在这里调一回）。
+   * 不会回滚」），再点才动手。落地口径与主线同一条 —— 换文字与截断合成**一笔事务**
+   * （applySmsEdit），然后拿截断后那本账当历史再发**一次**请求（`fireDate` 只在这里调一回）。
    */
   const retryEdit = async () => {
     if (!rv || !editId || busy) return
@@ -528,11 +528,13 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
       setErr('改口重来得留下话说 —— 想整条撤掉，请用「作罢」清掉这一场。')
       return
     }
-    if (!retextSmsMsg(rv.id, editId, text, true)) {
+    /* 改文字 + 截断其后的全部 = **一笔事务**（lib/sms.ts 的 applySmsEdit）：
+       一次读盘、一次就地改、一次写盘、一次回声。从前拆成 retextSmsMsg +
+       truncateSmsAfter 两次写盘，中途崩了会留下「文字改好了、后面几条还在」的半截账。 */
+    if (!applySmsEdit(rv.id, editId, text, { truncate: true, edited: true })) {
       setErr('这一条已经不在账上了（可能被别处截断）—— 重新打开这一场再看看。')
       return
     }
-    truncateSmsAfter(rv.id, editId)
     const nextLog = loadSmsLogs()[rv.id] ?? []
     setEditId(null)
     setEditText('')
@@ -835,10 +837,15 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
                     取模，第 1、2、3 次依次是 -1、-2、-3，越界绕回第一版。
                     计的是「这场换过几次图」，不是「屏幕刷了几帧」—— 同一张连点两回不计数
                     （见 `Terminal` 的 `setCg`），所以原地打转那几回合不会把变体白转过去。 */}
+                {/* 缺图时这一格走 lib/cg.ts 的兜底链，与剧演舞台、右栏同一口径 ——
+                    所以得把「这一场归谁」递进去（主位在前的全员），外加私密那一档的闸。
+                    组件自己不读全局：这些人是由这一场（rv）算出来的。 */}
                 <CgSlot
                   cgId={cgVariantId(cgFileOf(activeCg), cgVariantsOf(activeCg), cgTurnOf(rv.id))}
                   dir={cgDirOf(activeCg)}
                   caption={cgNoteOf(activeCg)}
+                  charIds={rvAllIds(rv)}
+                  intimate={rv.kind === 'intimate'}
                   ratio="3 / 2"
                 />
               </div>
