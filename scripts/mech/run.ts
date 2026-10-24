@@ -26,6 +26,7 @@
       1  破绽       —— 破防只认破绽，破绽按轴算，不是按「谁打得多」
       2  断拍       —— 被打断的那一回合真跳过，且不是被 stall 顶替
       3  护持       —— 轴护盾只吃本轴伤；盾在谁身上有定表（EXPECT_AXIS）
+      3b 空意图出口   —— 「问过了没意见」≠「还没问」：enemysTurn(s, null) 不许停回 think
       4  蓄力       —— 蓄到满才放得出，中途挨打会掉
       5  破绽归属    —— 破绽长在**该长的人**身上（不是随手挂）
       6  旧吉他解封   —— 「规格翻倍」翻到了哪些量，逐项对上
@@ -802,6 +803,104 @@ export function run(): MechReport {
     info.push('护持三发读数：' + JSON.stringify(shots))
   } catch (e) {
     fail.push('护持段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 3b) 空意图出口 ----------
+     病灶：advance 从前判的是 `command === 'ai' && !s.intent` —— enemysTurn(s, null)
+     把 null 原样写回去，于是这一手又被当成「还没问」，phase 停回 'think'，
+     视图再问一次 …… 原地死循环。null 的语义是「这一手**没有模型意见**」，不是「还没问」。
+     这一节钉两件事：① 空意图之后 phase 不许留在 think（连问两次也不）；
+                ② 离线那一手跟「从头就没人问」逐条一模一样（证明改动只碰了出口，没碰打法）。 */
+  try {
+    const s = mk('ai')
+    /** 按住全场，只让一只敌体的条满 —— advance 必然停在 'think' 上等视图。
+        我方压在**差一格**（不是压死）：他这一手打完，下一格就轮到我方，
+        于是 advance 收在 select 上 —— 场面不会被「另一只敌体也轮到了」搅乱，
+        「phase 不许留在 think」量的才是**这一手**有没有被处理掉。 */
+    const toThink = () => {
+      const foe = s.enemies.find((f) => !f.down)
+      if (!foe) return null
+      for (const a of s.allies) a.bar = TUNING.barMax - 1
+      for (const f of s.enemies) f.bar = -1e6
+      foe.bar = TUNING.barMax
+      s.actor = null
+      s.phase = 'select'
+      advance(s)
+      return pendingFoe(s)
+    }
+
+    const foe = toThink()
+    ok('空意图：场地推到了敌方待命（think）', !!foe && s.phase === 'think', `phase=${s.phase}`)
+    const logBefore = s.log.length
+    enemysTurn(s, null)
+    ok('空意图：enemysTurn(s, null) 之后不再停在 think', s.phase !== 'think', `phase=${s.phase}`)
+    ok('空意图：这一手确实打出去了（不是「问了没打」）',
+      s.log.length > logBefore && s.log.slice(logBefore).some((x) => x.actorId === foe?.id),
+      `+${s.log.length - logBefore} 条｜${s.log.slice(logBefore).map((x) => x.skillId).join(',')}`)
+    const afterFirst = s.phase
+    enemysTurn(s, null)
+    ok('空意图：连续两次 enemysTurn(s, null) 也不会留在 think',
+      s.phase !== 'think' && s.phase === afterFirst, `phase=${s.phase}（第一次之后是 ${afterFirst}）`)
+    // 没接通接口时传 undefined 是同一条路（视图那边 intent 可能是 undefined）
+    const foe2 = toThink()
+    if (foe2) enemysTurn(s, undefined)
+    ok('空意图：undefined 走同一条出口（不是另一条岔路）',
+      !!foe2 && s.phase !== 'think', `phase=${s.phase}`)
+
+    /* —— ② 逐记录对照 ——
+       同一条定种流（mulberry32，种子写死）下打两整场：一路「敌方那一手交空意图」，
+       一路「从头就不问（command = offline）」。两边的随机源、挑手顺序、行动条都一致，
+       于是**日志必须逐条相同** —— 差一个字就说明离线那一手被动过了。
+       我方那一手两边也走同一套策略（最重的一手，出不起就防御），不引入第二处差异。 */
+    const seededRandom = (seed: number) => {
+      let a = seed >>> 0
+      return () => {
+        a = (a + 0x6d2b79f5) >>> 0
+        let t = Math.imul(a ^ (a >>> 15), 1 | a)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+      }
+    }
+    const withSeed = <T>(f: () => T): T => {
+      const real = Math.random
+      Math.random = seededRandom(1)
+      try { return f() } finally { Math.random = real }
+    }
+    const drive = (cmd: 'offline' | 'ai') => {
+      const w = mk(cmd)
+      let thinks = 0
+      let guard = 0
+      while ((w.phase === 'select' || w.phase === 'think') && guard++ < 1200) {
+        if (w.phase === 'think') { thinks += 1; enemysTurn(w, null); continue }
+        const who = w.actor ? find(w, w.actor) : null
+        if (!who || who.side !== 'ally') { advance(w); continue }
+        const before = w.hand
+        const k = legalSkills(who, w).filter((x) => !x.ult).sort((a, b) => b.power - a.power)[0]
+        const tgt = w.enemies.filter((e) => !e.down).sort((a, b) => a.hp - b.hp)[0]
+        if (k) act(w, { t: 'skill', skillId: k.id, targetId: tgt?.id })
+        if (w.hand === before) act(w, { t: 'guard' })
+      }
+      return { w, thinks }
+    }
+    const off = withSeed(() => drive('offline'))
+    const ai = withSeed(() => drive('ai'))
+    ok('空意图：整场打得完（两路都收场，不是半路卡死）',
+      off.w.phase !== 'select' && ai.w.phase !== 'select',
+      `offline=${off.w.phase} / ai=${ai.w.phase}`)
+    ok('空意图：这一路确实经过 think 出口（对照才有意义）', ai.thinks > 0, `thinks=${ai.thinks}`)
+    /* 比对时摘掉 `line`（战斗语音）：挑句子那份计数器是**模块级**的
+       （banter.ts 的 `let seed`），同一进程里第二场接着往下数 ——
+       它按先后顺序给不同句子，不是引擎状态，与这一节要证的离线打法无关。
+       其余每一栏（回合 / 双方 / 技能 / 目标 / 伤害 / 血量 / 倒下）逐字比。 */
+    const bare = (w: BattleState) => JSON.stringify(w.log, (k, v) => (k === 'line' ? undefined : v))
+    const sameLog = bare(off.w) === bare(ai.w)
+    ok('空意图：与「从头不问」逐记录相同（离线那一手没被改动）',
+      sameLog && off.w.phase === ai.w.phase,
+      `${off.w.phase}/${off.w.log.length} 条 vs ${ai.w.phase}/${ai.w.log.length} 条`
+        + (sameLog ? '' : '｜日志有差异'))
+    info.push(`空意图：offline ${off.w.phase}｜${off.w.log.length} 条 · ai(空意图) ${ai.w.phase}｜${ai.w.log.length} 条｜thinks=${ai.thinks}`)
+  } catch (e) {
+    fail.push('空意图段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   /* ---------- 4) 蓄力 ---------- */

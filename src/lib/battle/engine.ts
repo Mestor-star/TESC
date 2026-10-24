@@ -1901,7 +1901,17 @@ export function advance(s: BattleState): BattleState {
     if (cur.side === 'enemy') {
       // 接通接口时，这一手不由引擎决定：停在 'think' 让视图去问，
       // 算完 enemysTurn() 把 intent 交回来，这里从同一个 cur 续上。
-      if (s.command === 'ai' && !s.intent) {
+      /* ⚠️ 停不停，判的是 `intent === null` 这一件事，不是「falsy」。
+         `intent === null` 的语义只有一个：**这一手还没问过**。
+         「问过了，但模型没给意见」是另一件事，enemysTurn 会把它换成 NO_INTENT 占位
+         （见那儿），占位非 null，于是这一分支不成立、当场往下走离线的那一手。
+         少了这条区分，死循环就在这儿：enemysTurn(s, null) 把 null 写回来 → 判成「还没问」
+         → 又停回 think → 视图再问一次 → 再来一遍。任何第三个调用方（新视图 / 脚本 /
+         重放）只要走一次 enemysTurn(s, null)，phase 就永远停在 think。
+         第二次进 enemysTurn 时 phase 已经不是 'think'，它自己原样返回 —— 这层防重入
+         就叠在上面这条判据上，两条一起才够。 */
+      // 「这一栏上什么都没有」有两种写法：null（本进程建的状态）、undefined（别处拼出来的旧对象）
+      if (s.command === 'ai' && (s.intent === null || s.intent === undefined)) {
         s.actor = cur.id
         s.phase = 'think'
         return s
@@ -2878,13 +2888,28 @@ export function bossUltOf(c: Combatant): SkillSpec | undefined {
 }
 
 /**
- * 视图把敌方这一手交回来。
- * intent = null 表示退回离线判断（没接通接口、或这一问失败了）。
- * 只在 'think' 阶段有效。
+ * 「问过了，但这一手没有模型意见」的占位意图 —— 与 `null` 是两件不同的事：
+ *   · `s.intent` 是 null / undefined = **还没问**（advance 看见它才停回 'think'）
+ *   · 这个占位            = 问过了、没意见（advance 照常往下走，落到离线的 enemyAct）
+ * `foeId` 故意写一个配不上在场任何一具的串：advance 那条 `it.foeId === cur.id`
+ * 于是不成立，直接就走上离线那一支 —— 与 enemyActWith 的非法回退是同一条路。
+ * 它只在一次同步调用里活着（advance 消费完立刻清成 null），不进存档。
  */
-export function enemysTurn(s: BattleState, intent: EnemyIntent | null): BattleState {
+const NO_INTENT: EnemyIntent = { foeId: '__no-intent__', skillId: '', by: 'offline' }
+
+/**
+ * 视图把敌方这一手交回来。
+ *
+ * `intent === null | undefined` 的语义是「**这一手没有模型意见**」，不是「还没问」：
+ * 没接通接口、或者这一问失败了，引擎都该照自己的离线判断把这一手打完。
+ * ⚠️ 所以这里**不能**把 null 原样写回 `s.intent` —— 那和「还没问」是同一个值，
+ * advance 会把这一手当没问过、又停回 'think'，视图再来问一次，死循环。
+ * 现在换成 NO_INTENT 占位：非 null，advance 不再拦，直接走离线的那一手。
+ * 只在 'think' 阶段有效；其余阶段原样返回，所以重复调用天然安全（防重入见 advance 那条注）。
+ */
+export function enemysTurn(s: BattleState, intent: EnemyIntent | null | undefined): BattleState {
   if (s.phase !== 'think') return s
-  s.intent = intent
+  s.intent = intent ?? NO_INTENT
   s.phase = 'select'
   return advance(s)
 }
