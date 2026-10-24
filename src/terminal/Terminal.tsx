@@ -29,6 +29,7 @@ import { subscribeTabLock, tabLockState, tabWriteBlocked } from '../lib/tablock'
 import { sfx } from '../lib/audio'
 import { resetBattleStore } from '../lib/battle/store'
 import { syncResearch } from '../lib/research'
+import { awardColorDrops } from '../lib/growth'
 import {
   applySnapshot,
   captureSnapshot,
@@ -899,6 +900,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
      那一刻再去拉，那一回合就白等一个来回。拿不到也不拦：`Plot` 那边会 await 一次，
      真拉不回来就退回 summary（那条退路本来就在）。 */
   useEffect(() => { void ensureBriefs().catch(() => {}) }, [])
+
+  /* 成长系统 · 世界的色彩的掉落（主人：「击破任意具名 boss 掉落」）。
+     结算点放在这里而不是作战屏：drop 的凭据是**作战记录**（zts-battle 的
+     records，胜且带 bossId 的那几场），记录由 settle 写好，作战屏一散场就没了；
+     而外壳每一次重挂载都会经过这里 —— 所以「打完首领 → 回来就看见色卡多一级」。
+     awardColorDrops 是**幂等**的（每一场记录只结算一次，掷法由记录 id 定死），
+     重复调用不会多发（见 lib/growth 的头注）。失败静默：读不到记录就当没掉。 */
+  useEffect(() => { void awardColorDrops().catch(() => {}) }, [])
 
   /* 世界书：挂载时幂等播种 canon 库（惰性、失败静默、不阻塞渲染） */
   useEffect(() => {

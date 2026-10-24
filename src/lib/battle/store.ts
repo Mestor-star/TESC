@@ -185,6 +185,25 @@ export async function addGrowth(patch: Record<string, number>): Promise<Record<s
    第一级 3000 = 打两场**。改任何一头之前，先把另一头的数也读一遍。 */
 const LEVEL_KEY = 'level'
 
+/* ------------------------------------------------------------
+   2026-10 · 主人：**「等级按原著的 stage 做」**
+   ------------------------------------------------------------
+   这一格存的还是「买过几次」，但含义换了名字：
+     · 显示 = 该角色的**原著 Stage**（data/growth.ts 的 baseStageOf）
+              ＋ 这一格里记的次数。买一级 = 把那个人的 Stage 推进 1。
+       ——所以人物卡上写的是「Stage 5」，不是「等级 3」。
+     · 数值 = LEVEL_STEP_PCT × 次数（**基线 Stage 本身一分都不加**）。
+       基线是档案上那条终末潜力的读数，是那个人命里带来的东西，不是强化。
+       这条就是「零解锁时战斗数值逐字节等于改动前」的来路（mech §43 钉着）。
+     · 曲线 = 还是下面 levelCostOf 那一条 —— 柜台与角色页卖的是同一件事，
+       两条曲线必然有一天对不上，所以等级价全仓只此一处。
+
+   存档兼容：这一格**没有搬家**（还是 IndexedDB 的 meta.level、还是「次数」），
+   旧档的 0..N 原样读进来 —— 进度一格不丢，只是显示从「等级 N」变成
+   「基线 Stage + N」。老档里不可能有别的形状，但脏数据（负的 / 小数 /
+   字符串 / null）一律在 migrateLevels 里夹回来，绝不让它把界面算崩。
+   ------------------------------------------------------------ */
+
 /** 每一级给本人加的百分比（2026-09-15 主人从 5 抬到 10） */
 export const LEVEL_STEP_PCT = 10
 /** 第 0 级（→ 第 1 级）的价格 —— 整支货币 ×12.5 之后从 80 抬到 1000，2026-09-16 再抬到 3000 */
@@ -235,10 +254,44 @@ export function levelCostOf(n: number): number {
   return Math.round(seam * Math.pow(LEVEL_TAIL_RATE, k - (LEVEL_LINEAR_LEVELS - 1)))
 }
 
+/**
+ * 旧档 / 脏数据的迁移（**纯函数**，mech §43 直接拿它验「老档不崩、进度不丢」）。
+ * ------------------------------------------------------------
+ * 这一格从 2026-09 起就是「id → 买过几次」，这一次换的只是**说法**，
+ * 所以旧档不需要换算：读进来是 3，推进次数就是 3，进度一格不丢。
+ * 能收的形状：
+ *   · 正常档：`{ hikari: 3, luna: 1 }`
+ *   · 字符串数字（某次手改过的档）：`'2'` → 2
+ *   · 包了一层的（更早的试验形状）：`{ lv: 2 }` / `{ n: 2 }` / `{ level: 2 }` → 2
+ * 收不下的（负数、NaN、null、对象里没有数）→ **丢掉的那一格按 0 算**，
+ * 不抛、不写回、不许把整张表带崩。
+ */
+export function migrateLevels(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  // 数组不是一张「id → 次数」的表（`[1,2]` 会读成 {0:1, 1:2}）——整格丢掉
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    let n = NaN
+    if (typeof v === 'number') n = v
+    else if (typeof v === 'string') n = Number(v)
+    else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>
+      for (const k of ['lv', 'level', 'n', 'value']) {
+        const c = o[k]
+        if (typeof c === 'number') { n = c; break }
+        if (typeof c === 'string' && Number.isFinite(Number(c))) { n = Number(c); break }
+      }
+    }
+    if (!Number.isFinite(n) || n <= 0) continue
+    out[id] = Math.floor(n)
+  }
+  return out
+}
+
 export async function readLevels(): Promise<Record<string, number>> {
   return safe(async () => {
     const row = await db().meta.get(LEVEL_KEY)
-    return (row?.value as Record<string, number> | undefined) ?? {}
+    return migrateLevels(row?.value)
   }, {})
 }
 

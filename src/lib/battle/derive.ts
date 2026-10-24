@@ -21,6 +21,8 @@ import { TIMELINE } from '../../data/timeline'
 import { furthestDone } from '../operator'
 import { researchBonus } from '../research'
 import type { ResearchBonus } from '../research'
+import { growthBonusOf } from '../growth'
+import type { GrowthBonus } from '../growth'
 import { ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
@@ -268,6 +270,55 @@ function researchHp(base: number, rb: ResearchBonus): number {
   return rb.hp ? base * (1 + rb.hp) : base
 }
 
+/* ---------- 成长系统（等级之外的技能 / 天赋 / 世界的色彩） ----------
+   等级那一份不在这里：它走的是 growthPct（任务成长 + 买来的推进次数，
+   在 store 的 effectiveGrowth 里已经合流，由调用方传进来）。
+   这里接的是另外两样：
+     · 本人技能线 / 天赋线解锁到的那几级（data/growth.ts）
+     · 全队共享的「世界的色彩」那 1~7 级
+   两者的加成都汇总在 lib/growth 的 growthBonusOf(id) 里，四个函数只是**落点**。
+
+   ⚠️ 三条硬规矩，与上面 researchAxes / researchHp 逐字同源：
+     ① **全零时原样返回手里那个对象 / 那个数** —— 不复制、不乘 1、不重新取整。
+        零解锁时逐字节等于改动前，靠的就是这一条（mech §43 钉着）。
+     ② 只给我方 —— 敌阵走 buildFoe，那里一处都不读成长。
+     ③ 轴这一份乘的是**面板尺**上的数（与 gearAxes / researchAxes 同一层），
+        所以比例直接乘 1+，没有第二把尺。 */
+function growthAxes(axes: AxisSheet, gb: GrowthBonus): AxisSheet {
+  if (!gb.atk && !gb.res && !gb.aff && !gb.will) return axes
+  const out = { ...axes }
+  if (gb.atk) out.破坏力 = out.破坏力 * (1 + gb.atk)
+  if (gb.res) out.物理抗性 = out.物理抗性 * (1 + gb.res)
+  if (gb.aff) out.反现实亲和 = out.反现实亲和 * (1 + gb.aff)
+  if (gb.will) out.意志力 = out.意志力 * (1 + gb.will)
+  return out
+}
+
+/** 生命上限那一笔（0 时原样返回，与 researchHp 同一条口径） */
+function growthHp(base: number, gb: GrowthBonus): number {
+  return gb.hp ? base * (1 + gb.hp) : base
+}
+
+/**
+ * 技能表那一笔：倍率按 power 乘算，附带效果里的回复 / 屏障也按同一把尺抬
+ * （那两样本来就是「按技能倍率算出来的分量」，只抬伤害会让治愈手原地不动）。
+ * power 为 0 时返回**同一个数组** —— 一格都不改。
+ */
+function growthSkills(list: SkillSpec[], gb: GrowthBonus): SkillSpec[] {
+  if (!gb.power) return list
+  const k = 1 + gb.power
+  return list.map((s) => {
+    const effect = s.effect
+      ? {
+        ...s.effect,
+        ...(s.effect.heal ? { heal: s.effect.heal * k } : {}),
+        ...(s.effect.shield ? { shield: s.effect.shield * k } : {}),
+      }
+      : s.effect
+    return { ...s, power: s.power * k, effect }
+  })
+}
+
 /* ---------- 武装 → 技能 ---------- */
 
 const FX_OF_KIND: Record<string, FxKind> = {
@@ -417,13 +468,15 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     const gid = gearId ?? opBuiltinOf(per, progress)
     // 科研：全队加成先生成一份，轴 / 生命 / 攻击三处共用（见文件头的 researchAxes）
     const rb = researchBonus()
-    const axes = researchAxes(gearAxes(gid, axisSheetOf(id, progress, growthPct)), rb)
+    // 成长：技能线 / 天赋线 / 世界的色彩（全零时下面三处原样返回，一格不动）
+    const gb = growthBonusOf(id)
+    const axes = growthAxes(researchAxes(gearAxes(gid, axisSheetOf(id, progress, growthPct)), rb), gb)
     const gear = gid ? GEAR_OF[gid] : undefined
-    const hpMax = Math.round(researchHp(
+    const hpMax = Math.round(growthHp(researchHp(
       (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
       * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
       rb,
-    ))
+    ), gb))
     const skills = opSkillsOf(per, progress)
     const gs = gid ? gearSkillOf(gid, id) : null
     // 装具技的 id 不掺角色：与名册那边同一件装通用一枚图标、一份冷却
@@ -442,12 +495,12 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       hp: hpMax,
       hpMax,
       axes,
-      skills,
+      skills: growthSkills(skills, gb),
       fx: per.abilities[0]?.fx ?? 'slash',
       rated: true,
       bar: 0,
       spd: speedOf(axes),
-      evade: TUNING.evadeBase + (gear?.mods.evade ?? 0),
+      evade: TUNING.evadeBase + (gear?.mods.evade ?? 0) + gb.evade,
       // 暴击的面板：造人时算一次（常数项 + 职能那一份），临场再叠 `crit` 增益
       crit: critOf(per.duty),
       critMul: critMulOf(per.duty),
@@ -470,8 +523,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       ward: 0,
       charge: 0,
       morph: null,
-      tempo: chTempoMax(axes.意志力) + (per.passive?.tempoMaxUp ?? 0),
-      tempoMax: chTempoMax(axes.意志力) + (per.passive?.tempoMaxUp ?? 0),
+      tempo: chTempoMax(axes.意志力) + (per.passive?.tempoMaxUp ?? 0) + gb.tempo,
+      tempoMax: chTempoMax(axes.意志力) + (per.passive?.tempoMaxUp ?? 0) + gb.tempo,
       startUsed: 0,
       unsealedAt: 0,
       startNeed: START_GATE[id] ?? 0,
@@ -491,13 +544,15 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
   }
   // 科研：同主角那一支（全为 0 时这三处一个字节都不动）
   const rb = researchBonus()
-  const axes = researchAxes(gearAxes(gearId, axisSheetOf(id, progress, growthPct)), rb)
+  // 成长：同主角那一支（技能 / 天赋 / 色彩；全零时下面三处原样返回）
+  const gb = growthBonusOf(id)
+  const axes = growthAxes(researchAxes(gearAxes(gearId, axisSheetOf(id, progress, growthPct)), rb), gb)
   const gear = gearId ? GEAR_OF[gearId] : undefined
-  const hpMax = Math.round(researchHp(
+  const hpMax = Math.round(growthHp(researchHp(
     (TUNING.hpBase + axes.物理抗性 * TUNING.hpPerResist + axes.意志力 * TUNING.hpPerWill)
     * (1 + (TUNING.growthHpWeight * (growthPct || 0)) / 100),
     rb,
-  ))
+  ), gb))
   const name = p?.name ?? id
   const role = ROSTER[id]
   const arm = armOf(id)
@@ -515,12 +570,12 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     hp: hpMax,
     hpMax,
     axes,
-    skills: skillsOf(id, gearId),
+    skills: growthSkills(skillsOf(id, gearId), gb),
     fx: role?.skills[0]?.fx ?? ((arm && FX_OF_KIND[arm.kind]) || 'slash'),
     rated: !!CORE[id],
     bar: 0,
     spd: speedOf(axes),
-    evade: TUNING.evadeBase + (gear?.mods.evade ?? 0),
+    evade: TUNING.evadeBase + (gear?.mods.evade ?? 0) + gb.evade,
     // 暴击的面板：造人时算一次（常数项 + 职能那一份），临场再叠 `crit` 增益
     crit: critOf(role?.duty),
     critMul: critMulOf(role?.duty),
@@ -543,8 +598,8 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     ward: 0,
     charge: 0,
     morph: null,
-    tempo: chTempoMax(axes.意志力) + (role?.passive?.tempoMaxUp ?? 0),
-    tempoMax: chTempoMax(axes.意志力) + (role?.passive?.tempoMaxUp ?? 0),
+    tempo: chTempoMax(axes.意志力) + (role?.passive?.tempoMaxUp ?? 0) + gb.tempo,
+    tempoMax: chTempoMax(axes.意志力) + (role?.passive?.tempoMaxUp ?? 0) + gb.tempo,
     startUsed: 0,
     unsealedAt: 0,
     startNeed: START_GATE[id] ?? 0,

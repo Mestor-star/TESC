@@ -395,6 +395,10 @@ export function writeAutosave(snapshot: RunSnapshot): SaveSlot {
  *                         被推演出来的账，不是设备偏好也不是档本身：不清就会拿上一档的
  *                         节拍接着滚（来电时间点错乱，还不显形，最难查）。
  *                         清了最坏结果是开档立刻滚一格，那是对的：新的一档就是新的一轮。
+ *   · zts-growth:v1       成长系统（lib/growth.ts 的 GROWTH_STORAGE_KEY）：技能 / 天赋
+ *                         解锁到第几级、世界的色彩几级、哪些具名首领的掉落已经结算过。
+ *                         与科研同一档 —— 全是**这一档**挣来的东西（等级那一份不在
+ *                         这儿，它在 IndexedDB 的 meta.level，走 resetBattleToInitial）。
  *   这几支没去 import 各自的常量：smsthreads / sms 会经 plot → crosslink 反手 import
  *   本模块的 PLOT_KEY，import 进来就在 slots 这一层绕成一个环，还会把 plot 那一大坨
  *   拖进只读存档的 chunk（Title / SaveDialog 都引本模块）；smsauto 更重，它 import 了
@@ -436,6 +440,10 @@ const SMS_AUTO_KEY = 'zts-sms-auto:v1'
 /** 科研树已完成节点（lib/research.ts 的 KEY）—— 研究点本身按来源现算，但「已研成」
  *  是这一档的成果，读档/重置必须一起清；否则下一档会带着上一档的科研加成开局。 */
 const RESEARCH_KEY = 'zts-research:v1'
+/** 成长系统（lib/growth.ts 的 GROWTH_STORAGE_KEY）：技能 / 天赋解锁到第几级、
+ *  世界的色彩几级、哪些具名首领的掉落已经结算过 —— 全是**这一档**的成果，
+ *  读档 / 重置必须一起清（不清就会拿上一档的解锁接着打）。 */
+const GROWTH_KEY = 'zts-growth:v1'
 
 /** 「这一档的运行态」键清单 —— 读档与重置共用（见上）。
  *  ⚠️ 只覆盖 localStorage。IndexedDB 'zts-battle' 走 resetBattleToInitial()，
@@ -449,6 +457,7 @@ export const RUN_STATE_KEYS: readonly string[] = [
   SMS_TASKS_KEY,
   SMS_AUTO_KEY,
   RESEARCH_KEY,
+  GROWTH_KEY,
 ]
 
 /** 逐键清；键不在、localStorage 抛（隐私模式 / 配额）都不炸 —— 幂等且容错 */
