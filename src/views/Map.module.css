@@ -84,7 +84,276 @@
     linear-gradient(180deg, color-mix(in srgb, var(--steel) 4%, transparent), transparent 38%),
     var(--bg-1);
 }
-.canvas { position: relative; min-width: 440px; aspect-ratio: 1 / 1; margin: 0 auto; }
+.canvas {
+  position: relative;
+  outline: none;
+  min-width: 440px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  /* 球面几何：与 Map.tsx 顶部 GLOBE_W / GLOBE_X / GLOBE_Y 是同一份数。
+     节点位置一律写成 calc(球左上 + 球面坐标 × 1%球宽)，手机档只改这三个就不会错位。 */
+  --globe-w: 98%;
+  --globe-x: 1%;
+  --globe-y: 1%;
+}
+
+/* ---------- 球：一层一颗，点进去换球 ---------- */
+.level { position: absolute; inset: 0; }
+.slideIn { animation: globeIn 260ms var(--ease-out) both; transform-origin: 50% 55%; }
+.slideOut { animation: globeOut 240ms var(--ease-out) both; transform-origin: 50% 55%; }
+@keyframes globeIn {
+  from { transform: scale(1.14); opacity: 0.2; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes globeOut {
+  from { transform: scale(0.88); opacity: 0.2; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.globe {
+  position: absolute;
+  left: var(--globe-x);
+  top: var(--globe-y);
+  width: var(--globe-w);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: radial-gradient(circle at 33% 26%,
+    color-mix(in srgb, var(--bg-1) 96%, var(--steel) 4%),
+    var(--bg-2) 62%,
+    color-mix(in srgb, var(--bg-3) 80%, var(--steel) 20%));
+  /* 方贴纸那一套：层次靠边与实心位移垫片，不写柔影 */
+  box-shadow: 0 6px 0 color-mix(in srgb, var(--steel) 16%, transparent);
+}
+.globe[data-map-globe-kind='flat'] { display: none; }
+
+.base {
+  position: absolute;
+  left: 0;
+  top: 25%;
+  width: 100%;
+  height: 50%;
+  /* 世界底图那一条带子：2:1 正好是等距圆柱那一张，**整张都看得见**
+     （球壳只是包装，绝不裁地图）。经纬到落点是线性换算，与这张图严丝合缝。 */
+  object-fit: fill;
+  opacity: 0.95;
+  filter: saturate(0.55) contrast(1.02);
+  pointer-events: none;
+  user-select: none;
+}
+
+.grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.gridRim { fill: none; stroke: var(--line-3); stroke-width: 0.5; opacity: 0.55; vector-effect: non-scaling-stroke; }
+.gridLine { fill: none; stroke: var(--line-3); stroke-width: 0.35; opacity: 0.22; vector-effect: non-scaling-stroke; }
+
+.shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* 球面感只靠这两笔：左上高光 + 边缘暗角。地图那一带压在下面，不许糊掉 */
+  background:
+    radial-gradient(circle at 31% 20%, color-mix(in srgb, var(--bg-1) 62%, transparent), transparent 34%),
+    radial-gradient(circle at 50% 50%, transparent 64%, color-mix(in srgb, var(--steel) 20%, transparent) 100%);
+}
+
+/* ---------- 地表标签靠右放（欧洲那一片点挨得近，靠上会压在一起） ---------- */
+.levelWorld .node:not(.bandNode) .label {
+  left: calc(100% + 4px); right: auto;
+  top: 50%; bottom: auto;
+  transform: translateY(-50%);
+}
+.levelWorld .node.labelLeft .label {
+  left: auto; right: calc(100% + 4px);
+}
+.levelWorld .node:not(.bandNode) .hereTag { left: calc(100% + 4px); transform: none; }
+
+/* ---------- 下钻之后：这一处的平面示意图 ---------- */
+.globe.globePlan {
+  border-radius: 0;
+  background: var(--bg-1);
+  box-shadow: 0 6px 0 color-mix(in srgb, var(--steel) 12%, transparent);
+}
+.globePlan .shade { display: none; }
+.planGrid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--line-2) 65%, transparent) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line-2) 65%, transparent) 0 1px, transparent 1px 26px);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.planLayer { position: absolute; inset: 0; }
+.planNode {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 96px; max-width: 176px;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--lc) 45%, var(--line-2));
+  background: color-mix(in srgb, var(--lc) 7%, var(--bg-1));
+  text-align: left;
+  cursor: var(--cursor-point);
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+}
+.planNode:hover {
+  transform: translate(-50%, calc(-50% - 2px));
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--lc) 38%, transparent);
+}
+.planNode.isOn { border-width: 2px; border-color: var(--lc); }
+.planNode.isCursor { outline: 2px dashed color-mix(in srgb, var(--violet) 45%, transparent); outline-offset: 2px; }
+.planNode.isHere { border-color: var(--violet); box-shadow: 0 0 0 2px color-mix(in srgb, var(--violet) 20%, transparent); }
+.planDown { border-style: dashed; }
+.planHead { display: flex; align-items: center; gap: 5px; }
+.planName { font-size: 11.5px; font-weight: 800; color: var(--ink); line-height: 1.35; }
+.planMeta { font-size: 9px; color: var(--ink-faint); }
+.planNode .hereTag { position: static; transform: none; }
+.planCap {
+  position: absolute; left: 3%; top: 2.6%;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.planSub {
+  position: absolute; left: 3%; top: 5.6%;
+  font-size: 9px; color: var(--ink-faint);
+}
+.planLegend {
+  position: absolute; left: 3%; bottom: 2.6%;
+  font-size: 9.5px; color: var(--ink-faint);
+}
+.edgePlan { stroke: color-mix(in srgb, var(--line-3) 85%, transparent); stroke-width: 1.4; }
+.edgePlanHit { stroke: color-mix(in srgb, var(--line-3) 55%, transparent); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.planHub {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-2);
+  color: var(--ink-mute);
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---------- 天空带：球顶上那一条 ---------- */
+.band {
+  position: absolute;
+  left: 0; right: 0;
+  top: 0.6%;
+  height: 11.2%;
+  background: color-mix(in srgb, var(--steel) 7%, transparent);
+  border-top: 1px dashed var(--line-2);
+  border-bottom: 1px dashed var(--line-2);
+  pointer-events: none;
+}
+.bandCap {
+  position: absolute;
+  left: 1.2%; top: 0.4%;
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.2em;
+  color: var(--ink-faint);
+}
+/* 天空带那一条只有 12% 高：名字压小、限宽，两枚挨得近也不会糊在一起 */
+.bandNode .label {
+  max-width: 78px;
+  padding: 1px 4px;
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 天空带那根竖线：挂到它正下方的地表 */
+.beam {
+  stroke: var(--line-3);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 浮空学园正下方那枚「▼ 地下 267 层」 */
+.stubTag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 1px 6px;
+  border: 1px dashed color-mix(in srgb, var(--amber) 60%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--amber) 14%, var(--bg-1));
+  color: var(--amber-deep);
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: var(--cursor-point);
+}
+.stubTag:hover { background: color-mix(in srgb, var(--amber) 24%, var(--bg-1)); }
+
+/* ---------- 两个插窗（只在第一颗球上） ---------- */
+.inset {
+  position: absolute;
+  bottom: 1.2%;
+  width: 30%;
+  max-height: 30%;
+  overflow: auto;
+  padding: 6px 7px 7px;
+  border: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--bg-1) 96%, transparent);
+}
+.insetLeft { left: 1.2%; }
+.insetRight { right: 1.2%; }
+.insetCap {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 5px;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.16em;
+  color: var(--ink-faint);
+}
+.insetRow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  border: 0; border-left: 2px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: var(--cursor-point);
+}
+.insetRow:hover { background: var(--bg-2); }
+.insetRowOn { background: var(--bg-2); border-left-color: var(--violet); }
+.insetName {
+  flex: 1; min-width: 0;
+  font-size: 10px; font-weight: 700; color: var(--ink-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.insetNote { font-size: 8.5px; color: var(--ink-faint); white-space: nowrap; }
+.insetVia { flex-basis: 100%; padding-left: 15px; font-size: 9px; line-height: 1.5; color: var(--ink-mute); }
+.inset .dot { flex: none; }
+
+/* ---------- 面包屑 ---------- */
+.crumbs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+.crumb {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-pill);
+  background: var(--bg-1); color: var(--ink-dim);
+  font-size: 11px; font-weight: 700;
+  cursor: var(--cursor-point);
+  transition: border-color var(--t-fast), color var(--t-fast);
+}
+.crumb:hover { border-color: var(--steel); color: var(--ink); }
+.crumbOn { background: var(--bg-3); color: var(--violet-deep); border-color: var(--line-3); }
+.crumbSep { color: var(--ink-faint); flex: none; }
+.crumbBack {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: auto;
+  padding: 4px 9px;
+  border: 1px dashed var(--line-2); border-radius: var(--radius-pill);
+  background: none; color: var(--ink-mute);
+  font-size: 11px;
+  cursor: var(--cursor-point);
+}
+.crumbBack:hover { border-color: var(--violet); color: var(--violet-deep); }
 
 .edges { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .edge {
@@ -253,6 +522,40 @@
   .side { position: static; }
   .canvasWrap { padding: 18px 18px 22px; }
   .canvas { min-width: 420px; }
+}
+
+/* 手机档：球缩到画布宽度的 92%，画布自己不再横滚（页面因此一点都撑不宽） */
+@media (max-width: 640px) {
+  /* 球面几何在手机档**一点不动** —— Map.tsx 的落点是按 98% / 1% 那组常量算的，
+     这里改宽球就会和底图错开。手机档只改正文边距与插窗宽度。 */
+  .canvas { min-width: 0; }
+  .inset { width: 44%; max-height: 34%; }
+  .insetName { font-size: 9.5px; }
+  .bandNode .label { max-width: 96px; }
+  .node { min-width: 24px; min-height: 24px; }
+
+  /* 平面示意图在手机档改**底部抽屉**：方块按行往下排，不挤成一团。
+     画布在这一档不再是正方（平面图没有经纬要贴），抽屉才够高。 */
+  .canvasPlan { aspect-ratio: auto; min-height: 620px; }
+  .planHub { display: none; }
+  .levelWorld .node .label { max-width: 76px; font-size: 8.5px; }
+  .planLayer {
+    inset: auto 2% 2% 2%;
+    height: auto;
+    max-height: 66%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 10px 12px;
+    overflow: auto;
+    border: 1px solid var(--line-2);
+    background: color-mix(in srgb, var(--bg-1) 97%, transparent);
+  }
+  .planNode { position: static; transform: none; min-width: 0; width: 100%; }
+  .planNode:hover { transform: none; }
+  .planCap { left: 3%; top: 1.6%; }
+  .planLegend { display: none; }
+  .globe.globePlan { border-radius: 0; }
 }
 
 /* ---------- 粗指针：点得着的尺寸（主控件 44 / 次级 34~40） ---------- */

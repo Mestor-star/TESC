@@ -23,6 +23,39 @@ import type { MapKind, MapLayer, MapNode } from './types'
    图上就照实不连，只留「所在」那一枚能跳到它的大地理单元。
    ============================================================ */
 
+/* ============================================================
+   地理那一栏（2026-10-23 起 · 世界图有了底图）
+   ------------------------------------------------------------
+   世界层里**真在地表上**的那几处带 `geo`（经度 / 纬度，等距圆柱投影直接换成百分比）。
+   浮空 / 地下 / 异次元**一律不塞 geo** —— 硬塞就会落到海里或陆地上一个错的位置：
+
+     · `anchor`  浮空节点的**经度锚点**：只用来画一条竖直虚线，挂到它正下方那片地表，
+                  不是它自己的位置（浮空都市本来就没有经纬度）；
+     · 地下 / 异次元  世界图右下 / 左下两个插窗里列名，不占地图坐标；
+     · `frame`  那一条是**整张图的归属**（樱次元 = 我们所在的这一个次元），不上图，
+                只当标题旁那一行小字 —— 它既不是「另一个次元」，也不该和死灵次元并列。
+
+   **依主人 2026-10-23 口径：三大学院都在天上**（苍之学园 / 卡乌斯学院 / 九灯学院）——
+   苍之学园是白墙蓝顶的浮空校舍，卡乌斯学院与九灯学院同样，三个都进「浮空」那一层。
+   而 `苍之学园地下 B-267 · 泰尔的研究所` 是**那座浮空学园自己的地下层**：它挂在
+   苍之学园这一柱的正下方，不给 geo，也不进「地表以下」那一档的说法里（插窗里另注）。
+   ============================================================ */
+
+/** 经纬度：[经度, 纬度]。经度 -180~180、纬度 -90~90 */
+export type GeoPoint = [number, number]
+
+/** 节点 + 地理那两栏（types.ts 这一轮不动，所以在数据表这一侧扩） */
+export interface MapNodeGeo extends MapNode {
+  /** 经纬度 —— **只有真在地表上的节点才有** */
+  geo?: GeoPoint
+  /** 浮空节点的经度锚点：竖直虚线挂到它正下方的地表（不是它的位置） */
+  anchor?: number
+  /** 整张世界图的归属那一条（樱次元）—— 不上图，只当标题旁的小字 */
+  frame?: boolean
+  /** 异次元插窗里那句「经何处前往」 */
+  via?: string
+}
+
 /** 分层的界面名 · 一句话讲清这一层在地图的哪一侧 */
 export const MAP_LAYER_LABEL: Record<MapLayer, string> = {
   surface: '地表',
@@ -47,13 +80,14 @@ export const MAP_KIND_LABEL: Record<MapKind, string> = {
 /** 越细的层级越往上（同一次点名时，房间比大区更「就是这儿」） */
 export const MAP_KIND_RANK: Record<MapKind, number> = { room: 3, site: 2, district: 1 }
 
-export const MAP_NODES: MapNode[] = [
+export const MAP_NODES: MapNodeGeo[] = [
   /* ==================== 世界层 ==================== */
   {
     id: 'w-falktus',
     name: '天空都市・弗尔克图斯',
     scale: 'world', kind: 'district', layer: 'sky', parent: null,
     xy: [62, 44],
+    anchor: 45,
     note: '浮在天空里的都市，第 3 / 6 / 9 / 12 / 13 区都铺在它的地面上。委员会与苍之学园都在这里。',
     refs: { events: ['v1-9'], offtext: 'v1-4' },
     links: ['w-laputa'],
@@ -63,6 +97,7 @@ export const MAP_NODES: MapNode[] = [
     name: '天空要塞・拉普达',
     scale: 'world', kind: 'site', layer: 'sky', parent: 'w-falktus',
     xy: [76, 58],
+    anchor: 68,
     note: '第 6 区远郊那片低 R 地带的上空。要塞周遭数千米纳克萨指数极低，观测要先拿到 12 羽以上的许可。',
     refs: { events: ['v2-8'], codex: ['laputa'], offtext: 'v2-8' },
     links: ['w-falktus'],
@@ -72,6 +107,7 @@ export const MAP_NODES: MapNode[] = [
     name: '日本 · 东京都 / 真鹤町',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [14, 58],
+    geo: [139.7, 35.7],
     note: '心叶的出身地。东京防卫战与之后那一整段日常都落在这条线上（永田町 · 有乐町 · 上野 · 真鹤）。',
     refs: { events: ['v3-4', 'v5-1'], offtext: 'v3-4' },
     links: ['w-pacific'],
@@ -81,6 +117,7 @@ export const MAP_NODES: MapNode[] = [
     name: '太平洋 · 公海',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [10, 26],
+    geo: [-150, 20],
     note: '被弃货船漂着的那片海。心叶落海自救是这一整条故事的开头，也是黑之魔王立约的地方。',
     refs: { events: ['v1-1'], offtext: 'v1-1' },
     links: ['w-japan'],
@@ -90,6 +127,7 @@ export const MAP_NODES: MapNode[] = [
     name: '巴塞罗那',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [46, 66],
+    geo: [2.2, 41.4],
     note: '脏器公寓所在的城市。卡乌斯学院放逐部队在这一带合流。',
     refs: { events: ['v1-5'], offtext: 'v1-5' },
     links: ['w-london'],
@@ -99,6 +137,7 @@ export const MAP_NODES: MapNode[] = [
     name: '伦敦',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [44, 28],
+    geo: [-0.1, 51.5],
     note: '去卡乌斯学院的换乘点（希思罗机场）。从苍之学园没有直达的路，得经新加坡再飞这里。',
     refs: { events: ['v4-3'], offtext: 'v4-3' },
     links: ['w-barcelona', 'w-newyork'],
@@ -108,6 +147,7 @@ export const MAP_NODES: MapNode[] = [
     name: '纽约',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [30, 46],
+    geo: [-74.0, 40.7],
     note: '第六卷的主战场。时代广场、餐厅与酒店、哥伦比亚大学都在这一片。',
     refs: { events: ['v6-4', 'v6-5'], offtext: 'v6-5' },
     links: ['w-london', 'w-gulf', 'w-zero'],
@@ -117,6 +157,7 @@ export const MAP_NODES: MapNode[] = [
     name: '墨西哥湾',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [22, 70],
+    geo: [-90, 25],
     note: '美国海军第四舰队展开战斗的那片海。圣帕特里克教堂那一路从这里接过去。',
     refs: { events: ['v6-6'], offtext: 'v6-6' },
     links: ['w-newyork'],
@@ -126,6 +167,7 @@ export const MAP_NODES: MapNode[] = [
     name: '北极 · 精灵之国',
     scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [58, 10],
+    geo: [0, 80],
     note: '那位老夫说要带心叶回去的地方 —— 原文只提到名字与方位，没有更多描写。',
     refs: { events: ['v6-4'], offtext: 'v6-5' },
     links: ['w-falktus'],
@@ -144,6 +186,7 @@ export const MAP_NODES: MapNode[] = [
     name: '篝火之国',
     scale: 'world', kind: 'district', layer: 'otherworld', parent: null,
     xy: [84, 26],
+    via: '借画家阿斯兰・霍尔巴特的那幅画进去',
     note: '画里的异界 —— 要进去得借画家阿斯兰・霍尔巴特的那幅画。王宫、蘑菇森林、巴别塔都在里面。',
     refs: { events: ['v4-5'], offtext: 'v4-5' },
     links: ['w-necro'],
@@ -153,6 +196,7 @@ export const MAP_NODES: MapNode[] = [
     name: '死灵次元',
     scale: 'world', kind: 'district', layer: 'otherworld', parent: null,
     xy: [90, 58],
+    via: '它在樱次元的远端 —— 得先走到这个次元的边界上',
     note: '侦探协会的叫法：这个次元叫「樱次元」，而死灵次元位于它的远端。',
     refs: { events: ['v3-3'], offtext: 'v3-3' },
     links: ['w-bonfire', 'w-sakura'],
@@ -160,9 +204,13 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'w-sakura',
     name: '樱次元',
-    scale: 'world', kind: 'district', layer: 'otherworld', parent: null,
+    scale: 'world', kind: 'district', layer: 'surface', parent: null,
     xy: [58, 78],
-    note: '「我们现在所处的这个次元，被称为『樱次元』。」—— 主任务所在的那一层。',
+    /* 依主人 2026-10-23 口径：樱次元**就是我们所处的这一个世界**，不是与死灵次元并列的
+       另一个次元 —— 巴塞罗那、伦敦、纽约、日本、太平洋与浮空的天都市、三大学院全在它里面。
+       所以它不上图、也不进「异次元」插窗：只当整张世界图的那一行归属标注（frame）。 */
+    frame: true,
+    note: '「我们现在所处的这个次元，被称为『樱次元』。」—— 它不是别处，就是我们所处的这一个世界：地表那几处与浮空的天都市、三大学院全在它里面。',
     refs: { events: ['v3-3'], offtext: 'v3-3' },
     links: ['w-necro', 'w-falktus'],
   },
@@ -171,6 +219,7 @@ export const MAP_NODES: MapNode[] = [
     name: '书架曼荼罗',
     scale: 'world', kind: 'site', layer: 'otherworld', parent: null,
     xy: [76, 80],
+    via: '第 22 区霍尔山脉的竖井一路下到地底人「蟹人」的国度，再穿过绯红森林',
     note: '无限图书馆的发源地。反现实组织都想啃下它，可连它自己也几乎一无所知。',
     refs: { events: ['v5-4'], offtext: 'v5-4' },
     links: ['w-sakura'],
@@ -189,8 +238,12 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 's-school',
     name: '苍之学园 · 本校舍',
-    scale: 'region', kind: 'site', layer: 'surface', parent: 'd12',
+    scale: 'region', kind: 'site', layer: 'sky', parent: 'd12',
     xy: [26, 12],
+    /* 依主人 2026-10-23 口径：**三大学院都在天上** —— 苍之学园是白墙蓝顶的浮空校舍。
+       它没有经纬度（geo），只有一个经度锚点：世界图上那条竖直虚线挂在日本那一柱底下
+       （原文里心叶是骑自行车上学的，学园就在他头顶那片天上）。 */
+    anchor: 140,
     r: 1.008, threat: 0,
     note: '白墙蓝顶的浮空校舍。骑士团的木制面具与日常安静地共存，是这一带最稳的一处。',
     refs: { events: ['v1-3'], offtext: 'v1-3' },
@@ -199,7 +252,7 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'r-inquis',
     name: '异端审问室',
-    scale: 'region', kind: 'room', layer: 'surface', parent: 's-school',
+    scale: 'region', kind: 'room', layer: 'sky', parent: 's-school',
     xy: [16, 4],
     note: '纯白走廊尽头那扇门，黄铜铭牌上刻着天秤与四足怪物。露娜在这里受审，判决是即刻销毁。',
     refs: { events: ['v1-3', 'v3-3'], offtext: 'v1-3' },
@@ -208,7 +261,7 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'r-council',
     name: '学生会室',
-    scale: 'region', kind: 'room', layer: 'surface', parent: 's-school',
+    scale: 'region', kind: 'room', layer: 'sky', parent: 's-school',
     xy: [36, 4],
     note: '艾莉芙会长那张大椅子所在的一间。世界观与「欢迎会」都是围着这张桌子讲开的。',
     refs: { events: ['v1-4'], offtext: 'v1-4' },
@@ -217,7 +270,7 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'r-court',
     name: '恋兔宿舍',
-    scale: 'region', kind: 'room', layer: 'surface', parent: 's-school',
+    scale: 'region', kind: 'room', layer: 'sky', parent: 's-school',
     xy: [38, 18],
     note: '恋兔队的宿舍。客厅、厨房、恋兔光的房间都在这一栋里 —— 日常多半发生在这儿。',
     refs: { events: ['s1-1', 'v4-2'], offtext: 's1-1' },
@@ -265,7 +318,10 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 's-lab',
     name: '苍之学园地下 B-267 · 泰尔的研究所',
-    scale: 'region', kind: 'site', layer: 'underground', parent: 'd12',
+    /* 依主人 2026-10-23 口径：**苍之学园的研究所不还是在天上吗** —— 它是那座浮空学园
+       自己的地下层，挂在苍之学园这一柱的正下方（父链 s-school → s-lab → r-labroom），
+       不给 geo；世界图的地下图例里照旧列它，但注明「浮空学园地下」。 */
+    scale: 'region', kind: 'site', layer: 'underground', parent: 's-school',
     xy: [52, 14],
     note: '电梯显示器上写着 B-267 —— 地下 267 层。成堆的泥塑面具在这里以坐标心声呼救。',
     refs: { events: ['v1-6'], offtext: 'v1-6' },
@@ -381,11 +437,29 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 's-kawasu',
     name: '卡乌斯学院 · 礼拜堂与琉米爱尔公馆',
-    scale: 'region', kind: 'site', layer: 'surface', parent: 'd9',
+    scale: 'region', kind: 'site', layer: 'sky', parent: 'd9',
     xy: [92, 12],
+    /* 三大学院之二：也在天上。锚点挂在欧洲那一柱（去卡乌斯要先飞希思罗换乘）。 */
+    anchor: 2,
     note: '卡乌斯学院的礼拜堂，与艾梅・库尔・杜・琉米爱尔的那座公馆。第 9 区的大圣堂也在这一片。',
     refs: { events: ['v4-4'], offtext: 'v4-4' },
     links: ['d9'],
+  },
+
+  /* ==================== 区域层 · 第 21 区 ==================== */
+  {
+    id: 's-kyuhto',
+    name: '九灯学院 · 第 21 区',
+    /* 三大学院之三，依主人 2026-10-23 口径同样在天上。
+       原文里它立在沙漠的正中央（「沙漠的正中央，居然有这么气派的城市啊」），
+       从苍之学园过去是一趟长途；艾美莉亚与凯特琳在这里办学，也是去书架曼荼罗的出发点。
+       表里原先没有它 —— 这一枚是世界地图这一轮补的（口径：三大学院都在天上）。 */
+    scale: 'region', kind: 'site', layer: 'sky', parent: null,
+    xy: [86, 92],
+    anchor: 90,
+    note: '第 21 区新设的学园，招牌上写着「连结宇宙的学园」。沙漠正中央的一座新城 —— 艾美莉亚与凯特琳联手建起，是去书架曼荼罗的出发点。',
+    refs: { events: ['v5-1'], offtext: 'v5-1' },
+    links: [],
   },
 
   /* ==================== 区域层 · 地下与异界 ==================== */
@@ -446,17 +520,17 @@ export const MAP_NODES: MapNode[] = [
 ]
 
 /** 按 id 取节点（没有则 null） */
-export function mapNodeById(id: string): MapNode | null {
+export function mapNodeById(id: string): MapNodeGeo | null {
   return MAP_NODES.find((n) => n.id === id) ?? null
 }
 
 /** 某一档上的全部节点（世界 / 区域） */
-export function mapNodesOf(scale: MapNode['scale']): MapNode[] {
+export function mapNodesOf(scale: MapNode['scale']): MapNodeGeo[] {
   return MAP_NODES.filter((n) => n.scale === scale)
 }
 
 /** 某个节点的下级（parent 指过来的那些） */
-export function mapChildrenOf(id: string): MapNode[] {
+export function mapChildrenOf(id: string): MapNodeGeo[] {
   return MAP_NODES.filter((n) => n.parent === id)
 }
 
@@ -464,7 +538,7 @@ export function mapChildrenOf(id: string): MapNode[] {
  * 往上追到世界层那一个（区域节点 → 它所在的大地理单元）。
  * 世界层节点自己就是答案；追不到返回 null（不硬塞一个「未知地带」）。
  */
-export function worldNodeOf(node: MapNode | null): MapNode | null {
+export function worldNodeOf(node: MapNode | null): MapNodeGeo | null {
   let cur = node
   for (let i = 0; cur && i < 8; i++) {
     if (cur.scale === 'world') return cur
@@ -488,7 +562,7 @@ function nameParts(name: string): string[] {
  *   ③ 地点串里含节点名的某一段（「第12区集市」认得出「旧集市」那条：按最长的片段算）。
  * 认不出就返回 null —— 界面照实读「不在图上」，不硬指一个地方。
  */
-export function mapNodeOfPlace(place: string, eventId?: string): MapNode | null {
+export function mapNodeOfPlace(place: string, eventId?: string): MapNodeGeo | null {
   const s = (place || '').trim()
   if (s) {
     const exact = MAP_NODES.find((n) => n.name === s)
