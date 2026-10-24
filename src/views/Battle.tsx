@@ -306,9 +306,31 @@ function BattleField({
   const settled = useRef(false)
   /** 敌方指挥：接口接通了才由模型点这一手，否则引擎自己判断 */
   const [cfg, setCfg] = useState<ApiSettings | null>(null)
-  const thinking = useRef(false)
   /** 提前问回来的敌方那一手（敌体 id → 正在路上的回包），见下面两段 effect */
   const prefetch = useRef(new Map<string, { p: Promise<RawIntent | null>; ctl: AbortController }>())
+  /** 在途的那一问 —— 单飞：思考相位同一时刻只许一条，而且**掐得动**（见下面那段 effect） */
+  const askCtl = useRef<AbortController | null>(null)
+  /** 已经问过的那一手（`敌体 id#回合`）：同一回合同一只不重复问 */
+  const askedFor = useRef('')
+  /** 最新盘面给 run() 现读 —— 它**不进依赖**，否则思考相位里动一次就重问一次 */
+  const stLive = useRef(st)
+  stLive.current = st
+  /** 演出还没放完（账还没读到头）先不问 */
+  const logPending = shown < st.log.length
+  /** 轮到谁 · 第几回合 —— 这两样合起来才是「这一手」，也是下面那段 effect 的依赖 */
+  const foeKey = st.phase === 'think' ? `${pendingFoe(st)?.id ?? ''}#${st.hand}` : ''
+  /** 页面看不看得见：藏起来就停火（切标签 / 锁屏 / 最小化） */
+  const [hidden, setHidden] = useState(
+    () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+  )
+  /** 自动那一趟（含一次重试）没成：这一手停在这儿等玩家点（值 = 敌体#回合） */
+  const [stuck, setStuck] = useState<string | null>(null)
+  /** 手点的那一次也没成：按钮留在原地，但**不再发**（值 = 敌体#回合） */
+  const [manualDead, setManualDead] = useState<string | null>(null)
+  /** 正在等玩家点 —— 按钮只有此刻可点 */
+  const [waitingManual, setWaitingManual] = useState(false)
+  /** 那一下点击的兑现口：点一次只兑现一次，连点不会多发 */
+  const manualWait = useRef<(() => void) | null>(null)
   /** 场上有没有 boss 级敌体 —— 有的话底也要跟着换 */
   const bossUp = st.enemies.some((c) => bossUltOf(c))
 
@@ -321,6 +343,30 @@ function BattleField({
       if (isReady(c)) setSt((s) => (s.command === 'ai' ? s : { ...s, command: 'ai' }))
     })
     return () => { live = false }
+  }, [])
+
+  /* ---- 页面一藏就停火：在途的全掐，回来再问 ----
+     线上事故那一回，玩家就是「轮到敌方行动时离开了一会儿」——
+     人不在屏前，发生什么他看不见，钱却照花。所以藏起来这一下要同时做两件事：
+     ①把在途的掐掉（abort 是真掐：prompt 也许已经发出去了，但至少不再有新的）；
+     ②把状态记下来，下面那段 effect 据此**拒绝发起**新的。 */
+  useEffect(() => {
+    const killAsks = () => {
+      askCtl.current?.abort()
+      for (const v of prefetch.current.values()) v.ctl.abort()
+      prefetch.current.clear()
+    }
+    const onVis = () => {
+      const hid = document.visibilityState === 'hidden'
+      setHidden(hid)
+      if (hid) killAsks()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      // 离开这一屏也算「没人接了」：把提前问出去的都掐掉
+      killAsks()
+    }
   }, [])
 
   /* ---- 敌方的这一手，什么时候去问模型 ----
@@ -355,45 +401,120 @@ function BattleField({
     }
   }, [st, cfg])
 
-  /* ---- 轮到敌体：先吃提前问好的那一手，吃不到就现问，但有个硬截止 ---- */
+  /* ---- 轮到敌体：先吃提前问好的那一手，吃不到就现问，但有个硬截止 ----
+
+     一次敌方行动**只发一条请求**（外加失败时那一次重试，见 ai.ts）。四道锁：
+       · 单飞：askCtl 非空就不发第二条；
+       · 去重：askedFor 记着「敌体#回合」，同一手问过就不再问；
+       · 清理：effect 重跑 / 卸载 / 页面藏起来 → abort，并把「问过」退回；
+       · 依赖收窄：只认「轮到谁 · 第几回合 · 演出放完没有 · 页面看不看得见」，
+         **不写整份 st**（写进去就是 2026-09-18 那一小时两千多条请求）。
+
+     自动那一趟没成时**不自动再发**：停在这儿，长出那枚「敌方 AI 重试」按钮，
+     点一次只发一条；不点就按离线打（等 TUNING.enemyManualHoldMs 之后由引擎接手）。 */
   useEffect(() => {
-    if (st.phase !== 'think' || shown < st.log.length) return
-    if (thinking.current) return
-    thinking.current = true
-    let live = true
+    if (st.phase !== 'think') return
     const foe = pendingFoe(st)
-    const cached = foe ? prefetch.current.get(foe.id) : undefined
+    if (!foe) return
+    if (hidden || logPending) return
+    if (askCtl.current) return
+    if (askedFor.current === foeKey) return
+    askedFor.current = foeKey
+    const ctl = new AbortController()
+    askCtl.current = ctl
+    let done = false
+    const cached = prefetch.current.get(foe.id)
     // 用掉就作废：下一回我方决定时会重新问一份，免得一直拿开局那一手打到底
-    if (foe) prefetch.current.delete(foe.id)
+    if (cached) prefetch.current.delete(foe.id)
     const started = Date.now()
+
+    /** 等玩家点一下「重试」（或等这一小段窗口过去）。点了 = true，没点 = false。 */
+    const waitManual = (ms: number) => new Promise<boolean>((resolve) => {
+      let closed = false
+      const fin = (v: boolean) => {
+        if (closed) return
+        closed = true
+        manualWait.current = null
+        setWaitingManual(false)
+        window.clearTimeout(timer)
+        resolve(v)
+      }
+      const timer = window.setTimeout(() => fin(false), ms)
+      setWaitingManual(true)
+      manualWait.current = () => fin(true)
+    })
+
+    /** 落这一手。intent 为 null = 模型没给，交**空白意图**让引擎自己打（见下面 settle 的注）。 */
+    const settle = (intent: EnemyIntent | null, keepStuck = false) => {
+      done = true
+      if (askCtl.current === ctl) askCtl.current = null
+      if (!keepStuck) setStuck(null)
+      setSt((s) => (s.phase !== 'think' ? s : {
+        ...enemysTurn(s, intent ?? { foeId: foe.id, skillId: '', by: 'ai' }),
+      }))
+    }
+
     const run = async () => {
       let intent: EnemyIntent | null = null
-      if (foe && cfg && isReady(cfg)) {
+      if (cfg && isReady(cfg)) {
         if (cached) {
           // 提前问好的那一份：多半已经到了，直接读完就出手。
           // 仍在路上的话也只等到截止 —— 玩家出手快的时候，这一份可能还没回来。
           const raw = await withDeadline(cached.p, TUNING.enemyWaitMs, () => cached.ctl.abort())
-          intent = intentOf(st, foe, raw)
+          intent = intentOf(stLive.current, foe, raw)
         } else {
-          // 没赶上 —— 现问，但只给这么久；超时就用引擎自己的判断（intent=null）
-          const ctl = new AbortController()
-          const raw = await withDeadline(
-            requestEnemyIntent(st, foe, cfg, { signal: ctl.signal }), TUNING.enemyAskMs, () => ctl.abort(),
-          )
-          intent = intentOf(st, foe, raw)
+          // 现问 —— 失败时那**一次**重试在 ai.ts 里（预算翻倍）
+          const raw = await requestEnemyIntent(stLive.current, foe, cfg, { signal: ctl.signal })
+          intent = intentOf(stLive.current, foe, raw)
         }
       }
       // 提前问好的那一份是现成的，会**立刻**出手 —— 快得像瞬移，读不出「它决定了」。
       // 补一个最短喘息：这一小段是演出，不是真在算，所以跟模型快慢无关。
       const rest = TUNING.enemyThinkMs - (Date.now() - started)
       if (rest > 0) await new Promise((r) => window.setTimeout(r, rest))
-      if (!live) return
-      thinking.current = false
-      setSt((s) => (s.phase !== 'think' ? s : { ...enemysTurn(s, intent) }))
+      // 这一趟被掐了（离开这一屏 / 页面藏起来）—— 什么都不做，清理那一头会把「问过」退回
+      if (ctl.signal.aborted) return
+      if (intent) { settle(intent); return }
+      // 通道没接通 / 没填 —— 本来就没有 AI 可等：直接按离线打，别摆那枚按钮
+      if (!(cfg && isReady(cfg))) { settle(null); return }
+
+      /* ---- 自动那一趟（含它自己那一次重试）没成：停在这儿，等玩家点 ----
+         这一停**不发任何请求** —— 人不在屏前就是一个字节也不花；
+         等过 TUNING.enemyManualHoldMs 还没人点，就由引擎离线接手，仗不会卡住。 */
+      setStuck(foeKey)
+      const took = await waitManual(TUNING.enemyManualHoldMs)
+      if (ctl.signal.aborted) return
+      if (!took) { settle(null); return }
+      // 点了 = **只发一次**（attempts: 1，不带自动重试）
+      const raw = await requestEnemyIntent(stLive.current, foe, cfg!, { signal: ctl.signal, attempts: 1 })
+      if (ctl.signal.aborted) return
+      const again = intentOf(stLive.current, foe, raw)
+      if (again) { settle(again); return }
+      // 重试也没成：按钮留在原地（改成「重试未成」），这一手按离线打，绝不再自动发
+      setManualDead(foeKey)
+      settle(null, true)
     }
     void run()
-    return () => { live = false; thinking.current = false }
-  }, [st, shown, cfg])
+    return () => {
+      ctl.abort()
+      if (askCtl.current === ctl) askCtl.current = null
+      manualWait.current = null
+      setWaitingManual(false)
+      // 没落子就撤：说明这一趟作废了，下一次挂载要能重新问
+      if (!done) askedFor.current = ''
+    }
+    /* ⚠️ 依赖**不许**写整份 st（也别写 shown）。写进去就等于「思考相位里每变一次
+       就重跑一次」—— 清理函数会 abort 并把单飞位放开，下一跑又发一条。
+       这里只认四样：轮到谁、第几回合、演出放完没有、页面看不看得见。
+       盘面本身由 stLive 现读（见上面那段 run）。 */
+  }, [foeKey, logPending, hidden, cfg])
+
+  /** 玩家点了那枚「重试」：一次点击最多兑现一次请求（manualWait 只兑现一次） */
+  const onAiRetry = useCallback(() => {
+    const fire = manualWait.current
+    manualWait.current = null
+    fire?.()
+  }, [])
 
   /* 战场所在的 R 值（与任务简报同一口径）：出招前知道这地方把敌人抬了多少 */
   const siteR = useMemo(() => rBadgeOf(st.place, st.stage), [st.place, st.stage])
@@ -1281,6 +1402,23 @@ function BattleField({
               ? (st.phase === 'think' ? '敌方指挥中…' : '敌方 · AI 指挥')
               : '敌方 · 离线判断'}
           </span>
+          {/* 敌方 AI 自动那一趟（含它自己那一次重试）没成时，这里长出一枚**手动**重试：
+              点一下 = 只发一条请求；不点就不发（一个字节也不花）。
+              同一回合同一只敌体只允许点一次 —— 兑现口只开一次，连点不会连发。 */}
+          {stuck ? (
+            <button
+              type="button"
+              className={`btn btn--ghost ${css.cmdChip}`}
+              data-ai-retry={manualDead === stuck ? 'dead' : 'live'}
+              disabled={manualDead === stuck || !waitingManual}
+              title={manualDead === stuck
+                ? '手点的那一次也没成 —— 这一手按离线打完了，不再自动发'
+                : '敌方 AI 没回话（自动那一趟含一次重试）。点一下**只发一次**；不点就按离线打法继续'}
+              onClick={onAiRetry}
+            >
+              {manualDead === stuck ? '重试未成 · 离线接手' : '敌方 AI 重试（只发一次）'}
+            </button>
+          ) : null}
           {/* 伏击那一场：不能挑对手。字段写在任务上（mission.forced），这里只念出来 */}
           {mission.forced ? (
             <span className={css.cmdChip} data-forced-chip title="被袭击 / 伏击 —— 对手由现场决定，这一场挑不了">

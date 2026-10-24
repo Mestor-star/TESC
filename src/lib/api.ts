@@ -158,6 +158,11 @@ export async function saveApi(cfg: ApiSettings): Promise<void> {
 
 export interface ChatOpts {
   signal?: AbortSignal
+  /**
+   * 额外的请求体字段（原样并进 JSON，例如交战的 `reasoning_effort: 'low'`）。
+   * 可选、不改任何现有调用方 —— 通道认不认由调用方自己兜。
+   */
+  body?: Record<string, unknown>
   /** 覆盖 max_tokens（默认 640；主线剧情叙述可调大） */
   maxTokens?: number
   /** 覆盖温度（默认取 cfg.temperature） */
@@ -253,13 +258,14 @@ function readableBody(body: string): string {
 /** 非 2xx 的一句话说明：状态码先说清是哪一类，再附上游自己的那句话 */
 function httpReason(status: number, body: string): string {
   const hint =
-    status === 401 ? '密钥被拒（未授权）'
-      : status === 403 ? '密钥没有这个模型的权限'
-        : status === 404 ? '接口地址不对（找不到 /chat/completions）'
-          : status === 429 ? '请求太密被限流，稍等再试'
-            : status >= 500 ? '通道自己出错了'
-              : status >= 400 ? '请求被通道拒绝'
-                : '通道返回了异常状态'
+    status === 401 ? '密钥被拒（未授权）—— 多半是密钥填错或已失效'
+      : status === 402 ? '账户余额不足 / 额度用尽（上游要求付款）—— 充值后再试'
+        : status === 403 ? '密钥没有这个模型的权限'
+          : status === 404 ? '接口地址不对（找不到 /chat/completions）'
+            : status === 429 ? '请求太密被限流（也可能是这一档额度用完了），稍等再试'
+              : status >= 500 ? '通道自己出错了'
+                : status >= 400 ? '请求被通道拒绝'
+                  : '通道返回了异常状态'
   const detail = readableBody(body)
   return `HTTP ${status} · ${hint}${detail ? `：${detail}` : ''}`
 }
@@ -423,6 +429,7 @@ export async function chatCompletion(
         temperature,
         max_tokens: maxTokens,
         stream: false,
+        ...(opts?.body ?? {}),
       }),
     }).catch((e: unknown) => netErr(e, '连不上推演通道'))
     wd.beat() // 响应头到了 = 通道开口；往后的等待转由空闲闸计时
@@ -559,6 +566,7 @@ async function streamBody(
       temperature,
       max_tokens: maxTokens,
       stream: true,
+      ...(opts?.body ?? {}),
     }),
   }).catch((e: unknown) => netErr(e, '连不上推演通道'))
   if (!res.ok) throw new Error(httpReason(res.status, await res.text().catch(() => '')))

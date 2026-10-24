@@ -5,7 +5,7 @@
      · **离线**：引擎自带的判断（pickTarget + 技能权重），永远可用，
        没填接口 / 调用失败 / 回包读不出来 —— 一律走它，战斗不会卡住。
      · **AI**：接通接口时，把场上局面压成一小段 JSON 交给模型，
-       只要它回一个 `{"skill":"…","target":"…"}`，这一手就按它打。
+       只要它回一个 {"skill":…,"target":…}，这一手就按它打。
 
    分两步，是为了**不让玩家等**（见 Battle.tsx 的两段 effect）：
      requestEnemyIntent —— 问。轮到我方决定时就把敌体这一手都要回来存着。
@@ -18,34 +18,111 @@
    另外：原文里属于 boss 定位的敌体（危险度 ≥ ultStage），
    在作战系统里同样是 boss —— 它的终结技能不吃这套指挥，
    咏唱照旧自己走（见 engine 的 ultStep），AI 只能在常规手里挑。
+
+   ============================================================
+   2026-09-18 那一场事故之后补的三件事（这一节是账，别再拆掉）
+   ------------------------------------------------------------
+   ① **一次敌方行动只发一条请求**：单飞与去重在 Battle.tsx 那一侧（同回合、
+      同一只、只问一次；effect 重跑先 abort 旧的）。这边只保证「问一次就一次」。
+   ② **失败自动重试恰好一次**，重试时把输出预算翻倍：现场证据是回包只有 88 个
+      completion、而这一路的 maxTokens 从前写死 200 —— 长一点的技能名 / 战意那句
+      就会把那一行 JSON 掐断；掐断的 JSON 解析不出来，于是每一次都「失败」。
+      而 finish_reason 从前没人接（没传 onFinish），所以「为什么失败」从来没被看见。
+      现在：截断 / 空正文（预算被内部思考吃光）/ 解析不出来 / 超时 / 通道报错 ——
+      一律算失败，带**真实原因**在 dev 下 warn 一行，然后**只**再试一次。
+   ③ **容错解析**：先剥 ```json 围栏（大小写都认），再取第一个配平的 {…}，
+      再退回「从第一个 { 到最后一个 }」那一截。三档都失败才算失败。
    ============================================================ */
 
 import { chatCompletion, isReady } from '../api'
 import type { ApiSettings, ChatTurn } from '../api'
 import { affordable, bossUltOf, evadeOf, find, legalSkills, shieldOf } from './engine'
 import { axisNameOf } from './derive'
+import { TUNING } from './tuning'
 import type { BattleState, Combatant, EnemyIntent, SkillSpec } from './types'
 
-/** 模型若要回话，只回这一种形状 */
-const SYSTEM = `你在为一场回合制战斗指挥**敌方**。
+/**
+ * 提示词侧：**别要它想，要它照着挑**。
+ *
+ * 从前这里四句「打得像那个敌体本身」（机械盯输出最高、魔王补血最少、残渣乱打）——
+ * 那是在要它**推理**该怎么像。推理型通道于是真的开一段思考：预算、延迟、
+ * 以及 2026-09-18 那场账单，都花在这段思考上。
+ * 现在给一张**优先级清单**：命中就停。做匹配，不做权衡。
+ * 「像那个敌体」的味道留成清单后面的一句补充，不再展开。
+ */
+const SYSTEM = `你在替敌方做一道「这一手出哪一门」的选择题，不是写分析。
+
 只能从给你的 skills 列表里挑一门，target 只能从 targets 列表里挑一个。
-打得像那个敌体本身：机械就盯着输出最高的打，魔王就先补掉血最少的，
-残渣就乱打。不要去猜规则、不要解说、不要道歉。
 
-**不要推演、不要权衡、不要展开思考** —— 看一眼局面，几秒内定下一手。
-你只需要给结论：谁打谁、用哪一门。想得越多打得越慢，这一手并不值得想那么久。
+按下面顺序挑一手，命中就停，不要权衡、不要解释：
+1. 我方有人的生命低于 30% 且你有一手能秒掉他 → 打他；
+2. 你的终结技蓄满了 → 放它；
+3. 有治疗/护盾且自己生命低于 40% → 用它；
+4. 否则打输出最高的那个，用你最强且放得起的一手。
 
-**这一手有个硬截止，等不起**：请把下面那一行 JSON 作为你的**第一段输出**直接写出来，
-不要先分析、不要写思考、不要解释你为什么这么挑 —— 想说的话一律省掉，只在 note 里留一句战意。
-（哪怕你有内部思考通道，也请跳过它直接作答；这一手是几秒内的事，不值得想。）
+打得像那个敌体本身：机械就盯着输出最高的打，魔王先补掉血最少的，残渣乱打。
 
-只回一行 JSON，不要代码块，不要多余文字：
-{"skill":"技能id","target":"目标id","note":"一句话战意（12 字以内）"}`
+只输出一行 JSON：{"skill":"<skills 里的 id>","target":"<targets 里的 id>"}，不要 markdown、不要注释。`
 
-const clampJson = (t: string): string => {
+/* ============================================================
+   回包的取法 —— 三档逐级降级（模型不听话时全靠这三档）
+   ============================================================ */
+
+/** 剥掉 ```json … ``` 围栏（json / JSON / 不带语言名都认） */
+function stripFence(t: string): string {
+  const s = t.trim()
+  const m = /^```[A-Za-z]*\s*([\s\S]*?)\s*```$/.exec(s)
+  return m ? m[1].trim() : s
+}
+
+/**
+ * 取第一个**配平**的 {…}（字符串里的括号不算数）。
+ * 截断的回包在这里拿不到东西 —— 那正是「被长度掐断」的形状，交给调用方当失败处理。
+ */
+function firstBalanced(t: string): string | null {
   const i = t.indexOf('{')
-  const j = t.lastIndexOf('}')
-  return i >= 0 && j > i ? t.slice(i, j + 1) : t
+  if (i < 0) return null
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let k = i; k < t.length; k++) {
+    const ch = t[k]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '\"') inStr = false
+      continue
+    }
+    if (ch === '\"') inStr = true
+    else if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return t.slice(i, k + 1)
+    }
+  }
+  return null
+}
+
+/** 三档降级地读一行意图；全都不成返回 null */
+function parseIntent(text: string): { skill: string; target: string; note: string } | null {
+  const bare = stripFence(text)
+  const cands: string[] = [bare]
+  const bal = firstBalanced(bare)
+  if (bal) cands.push(bal)
+  const last = bare.lastIndexOf('}')
+  if (last > 0) cands.push(bare.slice(0, last + 1))
+  for (const c of cands) {
+    try {
+      const j = JSON.parse(c) as { skill?: unknown; target?: unknown; note?: unknown }
+      if (!j || typeof j !== 'object') continue
+      return {
+        skill: typeof j.skill === 'string' ? j.skill : '',
+        target: typeof j.target === 'string' ? j.target : '',
+        note: typeof j.note === 'string' ? j.note.trim().slice(0, 40) : '',
+      }
+    } catch { /* 这一档不成，下一档 */ }
+  }
+  return null
 }
 
 /** 一门手在提示词里的样子：够模型判断，又不至于把上下文撑爆 */
@@ -58,7 +135,7 @@ function skillLine(k: SkillSpec, cd: number): Record<string, unknown> {
     轴: axisNameOf(k.axis),
     打谁: k.target,
     体力: k.cost,
-    ...(cd > 0 ? { 冷却中: `还需 ${cd} 拍` } : {}),
+    ...(cd > 0 ? { 冷却中: '还需 ' + cd + ' 拍' } : {}),
     ...(k.effect ? { 效果: Object.keys(k.effect) } : {}),
   }
 }
@@ -72,21 +149,21 @@ function debuffCount(c: Combatant): number {
 function briefOf(s: BattleState, foe: Combatant) {
   const u = bossUltOf(foe)
   return {
-    场次: `${s.no}「${s.title}」· ${s.place}`,
+    场次: s.no + '「' + s.title + '」· ' + s.place,
     危险度: s.stage,
     敌方: {
       id: foe.id,
       名: foe.name,
       类型: foe.cls,
       性质: foe.trait,
-      生命: `${foe.hp}/${foe.hpMax}`,
-      体力: `${foe.tempo}/${foe.tempoMax}`,
+      生命: foe.hp + '/' + foe.hpMax,
+      体力: foe.tempo + '/' + foe.tempoMax,
       减伤: Number(shieldOf(foe).toFixed(2)),
       身上的减益层数: debuffCount(foe),
       ...(u
         ? {
-          终结技能: `「${u.name}」已蓄 ${foe.chant[u.id] ?? 0}/${u.ult ?? 1} 拍`
-            + `——蓄满这一手必放，被一次打掉最大生命 ${Math.round((u.ultBreak ?? 0.14) * 100)}% 即打断。`,
+          终结技能: '「' + u.name + '」已蓄 ' + (foe.chant[u.id] ?? 0) + '/' + (u.ult ?? 1) + ' 拍'
+            + '——蓄满这一手必放，被一次打掉最大生命 ' + Math.round((u.ultBreak ?? 0.14) * 100) + '% 即打断。',
         }
         : {}),
     },
@@ -96,8 +173,8 @@ function briefOf(s: BattleState, foe: Combatant) {
         id: a.id,
         名: a.name,
         定位: a.cls,
-        生命: `${a.hp}/${a.hpMax}`,
-        体力: `${a.tempo}/${a.tempoMax}`,
+        生命: a.hp + '/' + a.hpMax,
+        体力: a.tempo + '/' + a.tempoMax,
         闪避: Number(evadeOf(a).toFixed(2)),
         引仇中: a.taunt > 0,
       })),
@@ -115,6 +192,121 @@ export interface RawIntent {
   note: string
 }
 
+/** 一次尝试的结局：要嘛拿到意图，要嘛给出**真实原因** */
+interface Attempt {
+  raw: RawIntent | null
+  /** 被外部掐掉（离开这一屏 / 页面藏起来）—— 这种**不重试** */
+  cancelled: boolean
+  /** 网关不认 reasoning_effort（400 + unsupported 之类）—— 摘掉它重发，不算失败重试 */
+  effortRejected?: boolean
+  /** 给人看的失败原因（dev 下直接打进控制台） */
+  why: string
+}
+
+/**
+ * 哪些通道不吃 reasoning_effort（baseUrl|model）。**本页会话内**记住。
+ *
+ * 这条必须是自适应的：无条件带上会 400（把整条路打死），
+ * 无条件不带又白白多花一段思考。第一次带、被 400 顶回来就摘掉、记住了不再带。
+ */
+const effortBanned = new Set<string>()
+const chanKeyOf = (cfg: ApiSettings) => cfg.baseUrl.trim() + '|' + cfg.model.trim()
+/** 首次请求带的低思考参数（o 系与部分中转认它；不认的走上面那条自适应） */
+const LOW_EFFORT = { reasoning_effort: 'low' }
+
+/** 这次 400 是不是「不认识这个字段」 */
+function effortUnsupported(msg: string): boolean {
+  if (!/^HTTP 4(00|22)/.test(msg)) return false
+  return /reasoning_effort|reasoning|unsupported|unknown|unrecognized|not support|invalid/i.test(msg)
+}
+
+/** 把 AbortSignal 串起来（老浏览器没有 AbortSignal.any 就手工接） */
+function linked(ctl: AbortController, outer?: AbortSignal): AbortSignal {
+  if (!outer) return ctl.signal
+  const anyOf = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any
+  if (typeof anyOf === 'function') return anyOf([outer, ctl.signal])
+  if (outer.aborted) ctl.abort()
+  else outer.addEventListener('abort', () => ctl.abort(), { once: true })
+  return ctl.signal
+}
+
+/** 从异常里读一句人话（HTTP 码 / 思考吃光预算 / 网络） */
+function reasonOf(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e)
+  if (/^HTTP 40[12]/.test(m)) return '密钥 / 额度：' + m
+  if (/^HTTP 429/.test(m)) return '被限流：' + m
+  if (m.includes('内部思考')) return '预算被内部思考吃光、正文为空：' + m
+  return m
+}
+
+/**
+ * 问一次。**一次尝试**只发一条请求：
+ *   · 自己带一道硬截止（TUNING.enemyAskMs）—— 到点 abort，算失败；
+ *   · 外部 signal 照样掐得动（那算「取消」，不重试）；
+ *   · finish_reason 接在手里：'length' 就是**被长度截断**，与解析失败分开报。
+ */
+async function askOnce(
+  cfg: ApiSettings,
+  messages: ChatTurn[],
+  tokens: number,
+  outer: AbortSignal | undefined,
+  foeName: string,
+  useEffort: boolean,
+): Promise<Attempt> {
+  const ctl = new AbortController()
+  const signal = linked(ctl, outer)
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; ctl.abort() }, TUNING.enemyAskMs)
+  let text = ''
+  let finish: string | undefined
+  let err: unknown = null
+  try {
+    text = await chatCompletion(cfg, messages, {
+      signal,
+      maxTokens: tokens,
+      // 分类题，不跟着通道那条 0.8 走（见 TUNING.enemyAskTemp）
+      temperature: TUNING.enemyAskTemp,
+      // 机会式低思考：认它的通道能省掉一整段内部推理，不认的下一次就不带了
+      ...(useEffort ? { body: LOW_EFFORT } : {}),
+      onFinish: (r) => { finish = r.finishReason; text = r.text },
+      meta: { channel: '交战推演', act: foeName + ' 的下一步' },
+    })
+  } catch (e) {
+    err = e
+  } finally {
+    clearTimeout(timer)
+  }
+  if (outer?.aborted) return { raw: null, cancelled: true, why: '被调用方取消' }
+  if (timedOut) return { raw: null, cancelled: false, why: '超时（' + TUNING.enemyAskMs + 'ms 没回话）' }
+  if (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // 网关不认这个字段：摘掉重发一次（不算失败重试，见 requestEnemyIntent）
+    if (useEffort && effortUnsupported(msg)) {
+      return { raw: null, cancelled: false, effortRejected: true, why: '通道不认 reasoning_effort：' + msg }
+    }
+    return { raw: null, cancelled: false, why: reasonOf(err) }
+  }
+  const body = (text ?? '').trim()
+  if (!body) {
+    return {
+      raw: null, cancelled: false,
+      why: finish === 'length'
+        ? '被长度截断（finish_reason=length，max_tokens=' + tokens + '）—— 正文一个字节也没剩'
+        : '通道回了空正文（max_tokens=' + tokens + '）',
+    }
+  }
+  const parsed = parseIntent(body)
+  if (!parsed) {
+    return {
+      raw: null, cancelled: false,
+      why: (finish === 'length' ? '被长度截断' : '回包不是可解析的 JSON')
+        + '（finish_reason=' + (finish ?? '未给') + '，max_tokens=' + tokens
+        + '，首 60 字：' + body.slice(0, 60) + '）',
+    }
+  }
+  return { raw: parsed, cancelled: false, why: '' }
+}
+
 /**
  * 问模型：这一手怎么打（只负责**问**，不校验）。
  *
@@ -124,41 +316,55 @@ export interface RawIntent {
  * 提前问回来的那一手，落地前照样要过 `intentOf` 的规则校验
  * （存的是局面，局面会变：技能可能冷却、目标可能已经倒了）。
  *
- * @returns 回包；接口没接通 / 调用失败 / 读不出 JSON —— 一律 null（调用方退回离线）
+ * 失败**自动重试恰好一次**，并把输出预算翻倍（600 → 1200）——
+ * 「被长度掐断」这一类失败，翻倍往往就过了。第二次还失败就返回 null，
+ * 由调用方退回离线打法；要不要再试一次由**玩家**点（见 Battle.tsx 那枚按钮）。
+ *
+ * @param opts.attempts 自动尝试次数：缺省 2（一次 + 一次重试）；手动重试传 1。
+ * @returns 回包；接口没接通 / 两次都没成 / 被取消 —— 一律 null
  */
 export async function requestEnemyIntent(
   s: BattleState,
   foe: Combatant,
   cfg: ApiSettings,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; attempts?: 1 | 2 },
 ): Promise<RawIntent | null> {
   if (!isReady(cfg)) return null
   const messages: ChatTurn[] = [
     { role: 'system', content: SYSTEM },
     { role: 'user', content: JSON.stringify(briefOf(s, foe)) },
   ]
-  let raw = ''
-  try {
-    raw = await chatCompletion(cfg, messages, {
-      signal: opts?.signal,
-      maxTokens: 200,
-      temperature: Math.min(1, Math.max(0.2, cfg.temperature)),
-      meta: { channel: '交战推演', act: `${foe.name} 的下一步` },
-    })
-  } catch {
-    return null
+  const tries = opts?.attempts ?? 2
+  let tokens: number = TUNING.enemyAskTokens
+  let used = 0
+  let last = ''
+  while (used < tries) {
+    if (opts?.signal?.aborted) return null
+    const chan = chanKeyOf(cfg)
+    const useEffort = !effortBanned.has(chan)
+    const got = await askOnce(cfg, messages, tokens, opts?.signal, foe.name, useEffort)
+    if (got.raw) return got.raw
+    if (got.cancelled) return null
+    /* 通道不认 reasoning_effort：摘掉它、记下来、**不占**这次的尝试次数 */
+    if (got.effortRejected) {
+      effortBanned.add(chan)
+      if (import.meta.env?.DEV) {
+        console.info('[battle/ai] ' + chan + ' 不认 reasoning_effort —— 摘掉重发，本次会话不再带')
+      }
+      continue
+    }
+    last = got.why
+    used += 1
+    /* 失败要能查：把**真实原因**和这次用的预算打出来（别只留一句「失败了」） */
+    if (import.meta.env?.DEV) {
+      console.warn('[battle/ai] ' + foe.name + ' 这一手没成（第 ' + used + '/' + tries + ' 次）：' + got.why)
+    }
+    tokens = Math.min(tokens * 2, TUNING.enemyAskTokens * 4)
   }
-  let parsed: { skill?: unknown; target?: unknown; note?: unknown }
-  try {
-    parsed = JSON.parse(clampJson(raw)) as typeof parsed
-  } catch {
-    return null
+  if (import.meta.env?.DEV && last) {
+    console.warn('[battle/ai] ' + foe.name + ' 这一手放弃 AI，退回离线打法：' + last)
   }
-  return {
-    skill: typeof parsed.skill === 'string' ? parsed.skill : '',
-    target: typeof parsed.target === 'string' ? parsed.target : '',
-    note: typeof parsed.note === 'string' ? parsed.note.trim().slice(0, 40) : '',
-  }
+  return null
 }
 
 /**
@@ -183,7 +389,6 @@ export function intentOf(s: BattleState, foe: Combatant, raw: RawIntent | null |
     skillId,
     targetId: t?.id,
     by: 'ai',
-    note: raw.note ? `${foe.name} 的指挥：${raw.note}` : undefined,
+    note: raw.note ? foe.name + ' 的指挥：' + raw.note : undefined,
   }
 }
-
