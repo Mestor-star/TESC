@@ -42,6 +42,7 @@ import { narrateBattle, recordOf } from '../lib/battle/narrate'
 import { putRecord } from '../lib/battle/store'
 import { releaseLandscape } from '../lib/landscape'
 import { canEquip, GEAR_OF, ITEMS, ITEM_OF, rollLoot } from '../lib/battle/gear'
+import { ITEM_COUNT_ATTR, ITEM_COUNT_LABEL } from '../lib/battle/swap'
 import type { GearDef } from '../lib/battle/types'
 import { passiveText } from '../lib/battle/roster'
 import {
@@ -244,6 +245,8 @@ function BattleField({
     createBattle({
       mission, squad, progress, growth, gear: equip,
       sp: stamina.cur, spMax: stamina.max, bag, morphPool, bond, target,
+      // 军需库存：换武装只认背包里有的（引擎侧的依据，见 swap.ts 的 canSwapTo）
+      owned,
     }),
   )
   const [shown, setShown] = useState(0)
@@ -888,7 +891,8 @@ function BattleField({
     if (gearId) next[actor.id] = gearId
     else delete next[actor.id]
     setEquipMap(next)
-    setSt((s) => ({ ...act(s, { t: 'equip', gearId }) }))
+    // 换武装：走 swap（与 equip 同一个落地，2026-09-21 另立的那个名字）
+    setSt((s) => ({ ...act(s, { t: 'swap', gearId }) }))
   }
 
   // 观测频道挂在右栏，一栏高：多留几手，翻得到上一拍
@@ -1238,10 +1242,10 @@ function BattleField({
         return
       }
       if (panel === 'item') {
+        /* 不限次数：这一格按下去就该有反应 ——
+           存量与「每回合一次」的闸都撤了（见 lib/battle/swap.ts），别再在这儿拦一道。 */
         const it = ITEMS[cur]
-        if (!it) return
-        const free = TUNING.freePerBeat.item - (st.freeUsed.item ?? 0)
-        if ((st.bag[it.id] ?? 0) > 0 && free > 0) issue({ t: 'item', itemId: it.id })
+        if (it) issue({ t: 'item', itemId: it.id })
         return
       }
       if (panel === 'gear') {
@@ -1805,6 +1809,7 @@ ${siteR.f.word}`}>
                       key={b.id}
                       type="button"
                       data-cmd={b.id}
+                      data-battle-swap={b.id === 'gear' ? '1' : undefined}
                       data-locked={locked ? '1' : undefined}
                       data-focus={panel === 'root' && cur === index ? '1' : undefined}
                       disabled={locked}
@@ -1904,31 +1909,28 @@ ${siteR.f.word}`}>
               ) : null}
 
               {panel === 'item' ? (
-                <SubPanel title="道具" onBack={() => setPanel('root')}>
+                <SubPanel title="道具 · 不限次数" onBack={() => setPanel('root')}>
                   <div className={css.list} data-item-list>
                     {ITEMS.map((it, i) => {
-                      const n = st.bag[it.id] ?? 0
-                      /* 两道限：存量是背包里还剩几剂，额度是本回合还能丢几次
-                         （TUNING.freePerBeat —— 道具不消耗回合，所以每回合各限一次）。
-                         少了后一道，按钮按下去是**静默无反应**，玩家只会以为卡了。 */
-                      const free = TUNING.freePerBeat.item - (st.freeUsed.item ?? 0)
-                      const out = n <= 0 || free <= 0
+                      /* 2026-09-21 依主人要求：道具在战斗里**不限次数、不消耗回合**。
+                         两道闸（背包存量 · 每回合一次）都撤了，所以这一栏不再有灰格 ——
+                         一剂都不该按不动。读数那一格从「×N」改成常量「不限」；
+                         `data-bag-count` 是外部脚本读的把手，留着，但值改成常量
+                         （别再往里写「还剩几剂」—— 没有那个数了）。 */
                       return (
                         <button
                           key={it.id}
                           type="button"
                           data-item={it.id}
+                          data-bag-count={ITEM_COUNT_ATTR}
                           data-focus={panel === 'item' && cur === i ? '1' : undefined}
-                          className={`${css.row} ${out ? css.rowPoor : ''}`}
-                          disabled={out}
-                          title={free <= 0
-                            ? `${it.name}：本回合那一剂的额度已经用掉了 —— 等这一回合收掉再来。`
-                            : it.desc}
+                          className={css.row}
+                          title={it.desc}
                           onClick={() => issue({ t: 'item', itemId: it.id })}
                         >
                           <SkillIcon id={`item-${it.id}`} />
                           <span className={css.rowName}>{it.name}</span>
-                          <span className={css.rowCost}>×{n}</span>
+                          <span className={css.rowCost}>{ITEM_COUNT_LABEL}</span>
                           <span className={css.rowDesc} data-item-desc>{it.desc}</span>
                         </button>
                       )
@@ -1939,7 +1941,7 @@ ${siteR.f.word}`}>
 
               {panel === 'gear' ? (
                 <SubPanel title="更换装备 · 不消耗回合" onBack={() => setPanel('root')}>
-                  <div className={css.list} data-gear-list data-actor={actor.id}>
+                  <div className={css.list} data-gear-list data-battle-swap="1" data-actor={actor.id}>
                     <button
                       type="button"
                       data-gear="__none"
@@ -2678,7 +2680,11 @@ function Unit({
               {c.startUsed}/{c.startNeed}
             </span>
           ) : null}
-          {c.gear ? <span className={css.gearTag}>{GEAR_OF[c.gear]?.name}</span> : null}
+          {/* 装具名：换武装之后这一枚要**立刻**换字（它读的是 st 里的这个人，不是编成快照）。
+                data-unit-gear 是给外部脚本读的把手。 */}
+            {c.gear ? (
+              <span className={css.gearTag} data-unit-gear={c.gear}>{GEAR_OF[c.gear]?.name}</span>
+            ) : null}
           <span className={css.unitHpNum} data-low={low ? '1' : undefined}>
             {c.hp}<i>/{c.hpMax}</i>
           </span>

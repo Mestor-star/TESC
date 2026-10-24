@@ -972,8 +972,20 @@ export interface BattleState {
    */
   sp: number
   spMax: number
-  /** 本场携带的道具余量（id → 个数） */
+  /**
+   * 本场携带的道具余量（id → 个数）。
+   *
+   * ⚠️ 2026-09-21 起**引擎不再读它的余量**：道具在战斗里不限次数
+   * （主人要求，见 swap.ts），背包既不扣数也不当闸。这一格留着是因为
+   * 存档读写与战果回写还要它（`onSettled(…, st.bag)`），别当它是活的账。
+   */
   bag: Record<string, number>
+  /**
+   * 军需库存（装具 id → 件数）—— **换武装只用来说「背包里有没有这一件」**。
+   * 旧入口 / 复核脚本不传就当「不限库存」，只走「认不认这个人」那一道
+   * （见 swap.ts 的 canSwapTo）。
+   */
+  owned?: Record<string, number>
   /** 军需点（结算后写回；商店消费） */
   coin: number
   /** 本场入手的装具（胜利掉落） */
@@ -989,8 +1001,13 @@ export interface BattleState {
    */
   critOn: boolean
   /**
-   * 本回合两条「不消耗回合」的指令各用掉几次（endBeat 清零，上限 TUNING.freePerBeat）。
-   * 道具与换装**不走 beginAction**：不扣条、不减冷却、不扣增益时限、不记手数、不蓄追击槽。
+   * 本回合两条「不消耗回合」的指令各用掉几次（endBeat 清零）。
+   *
+   * 2026-09-21 起两条的**额度不再是同一件事**：
+   *   · `gear` 仍然是闸，上限 `TUNING.freePerBeat.gear`（= 1，见 swap.ts 的 SWAP_PER_BEAT）；
+   *   · `item` 只剩**读数**：道具不限次数（主人要求），引擎不再拿它拦，
+   *     这一格记的是「这一回合丢了几剂」，endBeat 照旧清零。
+   * 两条都不走 beginAction：不扣条、不减冷却、不扣增益时限、不记手数、不蓄追击槽。
    * 少了最后那一条，全队轮流甩道具就能把追击刷出来。
    */
   freeUsed: Record<'item' | 'gear', number>

@@ -138,6 +138,19 @@ export const GEARS: GearDef[] = [
     rank: 3,
     noDrop: true,
     onlyFor: [OPERATOR_ID],
+    /* 依主人要求新增（2026-09-21，「武装特殊技能」）：这件装具原本文里只写数值，
+       没有自己的招。招式照它自己的记录来 —— 「它自己会收紧、会把人往回拽」，
+       所以是「拽回来」：把全队的行动条一起往前推，系着丝线的人出手也更重。
+       数值按既有的三件装具技那一档取（cost 3、无冷却、靠行动条节流）。 */
+    /* 2026-09-21：**这一件故意不给招**。
+       它是言万心叶的常驻内置件（operator-arc 的 `opBuiltinOf`，读到第一卷末就系上），
+       不是玩家在战斗里换得来的那一类；而「武装特殊技能」这一轮要的正是
+       「换一件装具 = 换一门能放的招」那件事。试过给它写一门（回拽：推条 + 抬攻），
+       代价是行动条口径里那 3 点节拍抢不过他自己的招 ——
+       balance（RUNS=200）三期胜率 92/92/84 → 85/89/83，
+       开局 1~4 档从 100/100/100/98 掉到 97/95/96/95，**掉出带外**。
+       所以这里留空：其余六件各配一门（见下面 scope / brace / booster / accumulator /
+       skates / fragment）。 */
   },
   {
     id: 'scope',
@@ -147,6 +160,14 @@ export const GEARS: GearDef[] = [
     mods: { 破坏力: 6 },
     price: 1250,
     rank: 1,
+    /* 依主人要求新增（2026-09-21）：记录里那句「看得清，就打得准」落成一记 ——
+       量好的那一点打进去，不吃减伤也不吃闪避，并且更容得下暴击。 */
+    skill: {
+      name: '测距 · 定点',
+      desc: '按目镜量好的那一点打进去：无视减伤与闪避，且更容易打实。',
+      cost: 3, power: 1.5, axis: '破坏力', fx: 'blast', line: '「三千二，量好了。」',
+      effect: { pierce: true, crit: 0.15 },
+    },
   },
   {
     id: 'brace',
@@ -156,6 +177,14 @@ export const GEARS: GearDef[] = [
     mods: { 物理抗性: 12, shield: 0.06 },
     price: 1875,
     rank: 1,
+    /* 依主人要求新增（2026-09-21）：一块「沉，但顶用」的板 —— 顶上去替全队挡一段。
+       与「便携塑形器」的墙分工：那面墙更高（0.4）但要四拍起手，这块板拍子是够的。 */
+    skill: {
+      name: '顶上去',
+      desc: '把板面横在前头：全队减伤，一段之内压得住。',
+      cost: 3, power: 0, axis: '物理抗性', fx: 'guard', line: '「到我后面去。」',
+      effect: { shield: 0.3 },
+    },
   },
   {
     id: 'booster',
@@ -165,6 +194,14 @@ export const GEARS: GearDef[] = [
     mods: { spd: 0.18, 敏捷度: 4 },
     price: 3125,
     rank: 2,
+    /* 依主人要求新增（2026-09-21）：「只负责让你更快到」—— 那就把全队的充能一起抬起来。
+       给的是**充能**（行动条涨得快），不是「推一下条」：推条是狙击，抬充能是节奏。 */
+    skill: {
+      name: '抢拍',
+      desc: '义肢把这一段的节奏整体提前：全队充能加快。',
+      cost: 3, power: 0, axis: '敏捷度', fx: 'drone', line: '「先到的是我。」',
+      effect: { spdUp: 0.35 },
+    },
   },
   {
     id: 'filter',
@@ -189,6 +226,14 @@ export const GEARS: GearDef[] = [
     mods: { 意志力: 10, atk: 0.1 },
     price: 4375,
     rank: 2,
+    /* 依主人要求新增（2026-09-21）：残件里还存着从别人那儿收来的魂 ——
+       放出来就是一段「全队出手更重」。不给伤害：它是蓄积器，不是武器。 */
+    skill: {
+      name: '残响',
+      desc: '把残件里存着的那些声音放出来：全队攻击上升。',
+      cost: 3, power: 0, axis: '意志力', fx: 'noise', line: '「这东西还记得怎么用。」',
+      effect: { atkUp: 0.3 },
+    },
   },
   {
     id: 'visor',
@@ -213,6 +258,14 @@ export const GEARS: GearDef[] = [
     mods: { evade: 0.15, 敏捷度: 6 },
     price: 6375,
     rank: 3,
+    /* 依主人要求新增（2026-09-21）：「踩下去时，地面会先让开」—— 全队脚下一起让开。
+       闪避是绝对值（与 evadeOf 同一把尺），配一点点充能：它终究是双靴子。 */
+    skill: {
+      name: '让开',
+      desc: '薄膜让地面先让开：全队闪避上升，脚下的节奏也快一点。',
+      cost: 3, power: 0, axis: '敏捷度', fx: 'drone', line: '「踩不到我。」',
+      effect: { evade: 0.2, spdUp: 0.1 },
+    },
     // 脏器公寓那一案的现场缴获被复刻成了制式件：正史走到那里才配发
     unlockMain: 'v1-5',
     maxOwn: 1,   // 研究所产出的配给：一人一件，兑完为止
@@ -243,6 +296,14 @@ export const GEARS: GearDef[] = [
     mods: { 破坏力: 12, atk: 0.22, 反现实亲和: 6 },
     price: 9375,
     rank: 3,
+    /* 依主人要求新增（2026-09-21）：全表最贵的一件，配一记能把它那 12 点破坏力打出去的招 ——
+       片羽本来就是「划出去」的东西，所以写得轻、穿得深（不吃减伤与闪避）。 */
+    skill: {
+      name: '碎羽 · 一记',
+      desc: '把那片翼羽划出去：一记轻而穿的斩击，无视减伤与闪避。',
+      cost: 4, power: 1.8, axis: '破坏力', fx: 'slash', line: '「——还给你。」',
+      effect: { pierce: true },
+    },
     // 斩击的天使落下的那一片：直到戴上 a Session. 才有人看懂它是什么
     unlockMain: 'v4-5',
     maxOwn: 1,   // 研究所产出的配给：一人一件，兑完为止
@@ -285,7 +346,17 @@ export function gearSkillOf(gearId: string, _charId?: string): {
   const g = GEAR_OF[gearId]
   if (!g?.skill) return null
   const s = g.skill
-  const ally = !!s.effect?.cleanse || (s.effect?.shield ?? 0) > 0
+  /* 目标的判据只看**这一手写了什么**，不看名字：写了「友方那几支效果」、
+     又没写伤害（power 0）的，就是一手给全队的辅助 —— 后面新加一件装具的招
+     不必回来改这里。原先只有 cleanse / shield 两支，2026-09-21 补齐其余几支
+     （推条 / 抬充能 / 抬攻 / 抬闪避 / 抬命中 / 护持），否则新写的辅助招
+     会被当单体、还得去敌方阵列里挑人。 */
+  const friendly = !!s.effect && (
+    s.effect.cleanse || (s.effect.shield ?? 0) > 0 || !!s.effect.pushBar
+    || !!s.effect.spdUp || !!s.effect.atkUp || !!s.effect.evade
+    || !!s.effect.accUp || !!s.effect.ward
+  )
+  const ally = friendly && s.power === 0
   // id 只挂在装备上、不掺角色：同一件装的技能图标与冷却口径前后一致
   return {
     id: `gear-${gearId}`,

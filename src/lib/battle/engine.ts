@@ -24,6 +24,7 @@ import { namedBossOf } from './bosses'
 import { targetBossOf } from './foegen'
 import { dutyOf } from './duty'
 import { GEAR_OF, ITEM_OF } from './gear'
+import { ITEM_UNLIMITED, canSwapTo } from './swap'
 import { isDebuff, isSpec, toneOf } from './types'
 import type {
   AxisKey, AxisSheet, BattleState, BuffKey, Combatant, LogEntry, PassiveSpec, SkillSpec,
@@ -40,6 +41,11 @@ export type Command =
   | { t: 'item'; itemId: string; targetId?: string }
   | { t: 'guard' }
   | { t: 'equip'; gearId: string | null }
+  /* 换武装 = 换装具（同一个落地，2026-09-21 依主人要求另立一个名字）。
+     与 equip 逐条同义：不走 beginAction、每回合 1 次、只重建面板。
+     两个名字都收着，是因为老的调用方（复核脚本 / 编成面板）还在用 equip ——
+     换掉它们只是把同一件事改个写法，没有收益。 */
+  | { t: 'swap'; gearId: string | null }
   | { t: 'flee' }
 
 /* ---------- 基础查询 ---------- */
@@ -264,8 +270,10 @@ export interface CreateOpts {
   gear?: Record<string, string>
   sp: number
   spMax: number
-  /** 本场携带的道具（id → 个数）；缺省用补给池默认 */
+  /** 本场携带的道具（id → 个数）；缺省用补给池默认。⚠️ 道具不限次数之后它只是存档读数 */
   bag?: Record<string, number>
+  /** 军需库存（装具 id → 件数）—— 换武装只认背包里有的（见 swap.ts 的 canSwapTo） */
+  owned?: Record<string, number>
   /* 这里从前还有一个 `coin?: number`，注释写着「军需点（胜利结算时追加）」。
      2026-09-16 拆了 —— 见下面 `coin: 0` 那一处的说明：那个字段谁也没追加过，
      唯一的实际用法是把玩家**打之前的钱包余额**塞进战果，于是每打一场钱包翻一倍。 */
@@ -330,6 +338,8 @@ export function createBattle(opts: CreateOpts): BattleState {
     sp: Math.max(0, sp - TUNING.spPerSortie),
     spMax,
     bag: { ...(opts.bag ?? TUNING.bagDefault) },
+    // 军需库存：不传 = 不判「背包里有没有」（旧入口与复核脚本走这一路）
+    owned: opts.owned ? { ...opts.owned } : undefined,
     /* **本场战果**，从零起算 —— 绝不是玩家钱包。
        ------------------------------------------------------------
        2026-09-16 修的旧账：这一格从前写的是 `opts.coin ?? 0`，而 Battle.tsx
@@ -1945,7 +1955,7 @@ function cmdLog(s: BattleState, c: Combatant, skill: string, note: string, fx: L
   })
 }
 
-/** 我方出手。equip 不消耗回合，其余五道各消耗一条行动条。 */
+/** 我方出手。换武装（equip / swap）与道具不消耗回合，其余四道各消耗一条行动条。 */
 export function act(s: BattleState, cmd: Command): BattleState {
   if (s.phase !== 'select') return s
   const me = s.actor ? find(s, s.actor) : undefined
@@ -1954,12 +1964,17 @@ export function act(s: BattleState, cmd: Command): BattleState {
      不清的话「上一手打穿过」会一直挂着，后来每一手都白接一记追击。 */
   s.lastBreak = []
 
-  /* —— 两条不消耗回合的指令：换装 / 道具 ——
+  /* —— 两条不消耗回合的指令：换武装 / 道具 ——
      BS2 的第四条。它们**不走 beginAction**：不扣行动条、不减冷却、不扣增益时限、
      不 hand++、不登记本回合已出手、不蓄追击槽 —— 换句话说，它们不算「出手」，
      这一拍仍然属于同一个人（他还能接着出真正的一手）。
-     代价是**每回合各限几次**（TUNING.freePerBeat，endBeat 清零）：
-     少了这道限，全队轮流甩道具就能在别人的回合里把仗打完。 */
+
+     2026-09-21 依主人要求，两条的**额度不再是同一件事**：
+       · 换武装仍是**每回合 1 次**（`TUNING.freePerBeat.gear` = swap.ts 的 SWAP_PER_BEAT）——
+         换装是整块重算面板，给了「随便换」就等于把编成时的取舍换成出招前的临时 buff；
+       · 道具**不限次数**（`ITEM_UNLIMITED`）—— 背包不扣数，也不拿次数拦。
+     少了「每回合一次」这道限，全队轮流甩道具就能在别人的回合里把仗打完；
+     主人这一轮要的正是这个降难度，代价写在回报与 balance 读数里。 */
   const spendFree = (slot: 'item' | 'gear'): boolean => {
     const cap = TUNING.freePerBeat[slot]
     if ((s.freeUsed[slot] ?? 0) >= cap) return false
@@ -1967,9 +1982,25 @@ export function act(s: BattleState, cmd: Command): BattleState {
     return true
   }
 
-  if (cmd.t === 'equip') {
-    if (!spendFree('gear')) return s
+  /* —— 换武装（equip / swap 同一个落地）—— */
+  if (cmd.t === 'equip' || cmd.t === 'swap') {
     const next = cmd.gearId ?? undefined
+    /* 两道闸，顺序不能反：
+       ① 这一件**换不换得上**（军需库存 + 认不认人，见 swap.ts 的 canSwapTo）。
+          换不上的那一下**不花额度**，但要在日志里说清为什么 ——
+          按下去毫无反应，玩家只会以为卡了。
+       ② 这一回合的换装额度（TUNING.freePerBeat.gear，缺省 1）。超了同样要说话。 */
+    const verdict = canSwapTo(me.id, next ?? null, s.owned)
+    if (!verdict.ok) {
+      cmdLog(s, me, '更换装备 · 换不上',
+        `${verdict.why ?? '这一件换不上。'}　—— 这一手没有换出去，额度也没动。`, 'gear')
+      return s
+    }
+    if (!spendFree('gear')) {
+      cmdLog(s, me, '更换装备 · 额度已尽',
+        `这一回合已经换过一次了 —— 收拍之后才能再换（每回合 ${TUNING.freePerBeat.gear} 次）。`, 'gear')
+      return s
+    }
     const g = next ? GEAR_OF[next] : undefined
     // 整块重算面板（轴值 / 充能 / 闪避 / 减伤 / 附带技能），只保留场上的临时状态
     const fresh = combatantOf(me.id, s.progress, s.growth[me.id] ?? 0, next)
@@ -1988,18 +2019,24 @@ export function act(s: BattleState, cmd: Command): BattleState {
     return s
   }
 
-  /* —— 道具：同样不消耗回合 ——
-     存量（背包格数）是第一道限，额度是第二道。这一条是**强度上调**：
-     从前丢一剂镇静剂要占掉一整拍，现在它可以和别人的出手叠在同一拍里。 */
+  /* —— 道具：不消耗回合，而且**不限次数**（2026-09-21 依主人要求） ——
+     从前它有两道闸：背包余量 + 每回合一次。现在两道都撤了 ——
+     背包不扣数、也不拿次数拦，丢完这一剂立刻还能出真正的一招。
+     `freeUsed.item` 仍逐次记一笔（屏上与复核要看「这一回合丢了几剂」），
+     但它只是一格读数，不再是闸。
+
+     ⚠️ 顺手撤掉的那一条：从前每丢一剂都回 `TUNING.itemTempo` 点节拍。
+     限次时那是一笔小补贴；不限次之后它就是**无限节拍泵** ——
+     对着空气丢药也能把节拍刷满，所有技能都成了免费。
+     所以道具不再回节拍：药是用来救人的，不是用来攒钱的。 */
   if (cmd.t === 'item') {
     const it = ITEM_OF[cmd.itemId]
-    if (!it || (s.bag[cmd.itemId] ?? 0) <= 0) return s
-    if (!spendFree('item')) return s
-    s.bag[cmd.itemId] = (s.bag[cmd.itemId] ?? 0) - 1
-    /* 恢复途径③：道具回节拍。丢药那一拍**不花节拍**（没走 beginAction），
-       所以这里回的是「白赚」的 —— 于是药不该是攒节拍的路子，只回一点点，
-       真指着它回节拍的人（主音）会发现自己一直在丢药、一直没出手。 */
-    gainTempo(me, TUNING.itemTempo)
+    if (!it) return s
+    /* 无限次数（swap.ts 的 `ITEM_UNLIMITED`）。这一格留着开关的形状：
+       把常量改回 false，下面那两行就是从前的老口径（存量走、额度拦）。 */
+    if (!ITEM_UNLIMITED && (s.bag[cmd.itemId] ?? 0) <= 0) return s
+    s.freeUsed.item = (s.freeUsed.item ?? 0) + 1
+    if (!ITEM_UNLIMITED) s.bag[cmd.itemId] = (s.bag[cmd.itemId] ?? 0) - 1
     const targets = it.target === 'allyAll' ? aliveOf(s.allies)
       : it.target === 'enemyOne' ? (() => { const t = cmd.targetId ? find(s, cmd.targetId) : undefined; return t && !t.down && t.gone <= 0 ? [t] : [] })()
       : (() => {
@@ -2019,7 +2056,7 @@ export function act(s: BattleState, cmd: Command): BattleState {
       round: s.hand, actorId: me.id, actor: me.name, side: me.side,
       skillId: it.id, skill: `道具 · ${it.name}`, kind: '指令', fx: 'item',
       target: targets.map((t) => t.name).join('、') || undefined,
-      note: `${it.desc} · 不消耗回合（本回合还剩 ${TUNING.freePerBeat.item - s.freeUsed.item} 次）`,
+      note: `${it.desc} · 不消耗回合 · 不限次数`,   // 2026-09-21：不再报「还剩几次」—— 没有那个数了
     })
     /* 敌向的道具（target: 'enemyOne'，现在只有镇静剂）要走 **hostileTargets** 那一栏：
        `clearBar` 的清咏唱、`mark` 这类压制，全都在 applyEffect 的敌向那一圈里。
