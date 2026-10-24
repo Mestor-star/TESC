@@ -4890,7 +4890,7 @@ export function run(): MechReport {
     const navStep = bootTour?.steps.find((s) => s.at === '[data-guide="nav"]')
     const named = lineText(navStep?.lines[0] ?? '').replace(/。$/, '').split('、')
     const NUM: Record<string, number> = {
-      一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12,
+      一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 十三: 13,
     }
     const claim = /^这一排是终端的(.+)个模块。$/.exec(navStep?.title ?? '')?.[1] ?? ''
 
@@ -4908,7 +4908,7 @@ export function run(): MechReport {
     info.push(`侧栏 ${rail.length} 格 ↔ 模块讲解 ${TOURS.filter((t) => t.view).length} 段，逐格对得上`)
 
     /* ---- 军需处那一段（主人 2026-09-15：「商店介绍（梅芙引导）」）----
-       与约会专线同一个道理：柜台是 Missions 里点开才展开的一层，绑 view: 'missions'
+       与约会专线同一个道理：柜台是「研究」页里点开才展开的一层，绑 view: 'research'
        的话玩家还没见过柜台就先听了一遍。所以它也得是 field: 'shop'。 */
     const shopTour = TOURS.find((t) => t.id === 'shop-intro')
     ok('梅芙引导：军需处单有一段，且绑在柜台上而非模块上（挂在任务简报上等于没展开就先讲）',
@@ -4940,13 +4940,14 @@ export function run(): MechReport {
       && lvText.includes(`${LEVEL_STEP_PCT}%`),
       `第一级 ${LEVEL_BASE_COST} · 前 ${LEVEL_LINEAR_LEVELS} 级每级加一点 · 之后 ×${LEVEL_TAIL_RATE} · 每级 +${LEVEL_STEP_PCT}% 都在文案里`)
 
-    /* 锚点核账：军需处那一段的每一步，属性都得在 Missions.tsx 里真的挂着 */
-    const missionSrc = readFileSync('src/views/Missions.tsx', 'utf8')
+    /* 锚点核账：军需处那一段的每一步，属性都得在 Research.tsx 里真的挂着
+       （柜台 2026-10 从任务简报搬到了「研究」那一页 —— 锚点跟着源码走） */
+    const shopSrc = readFileSync('src/views/Research.tsx', 'utf8')
     const shopMissing: string[] = []
     for (const st of shopTour?.steps ?? []) {
-      for (const a of attrsOf(st.at)) if (!missionSrc.includes(a)) shopMissing.push(`shop-intro → ${a}`)
+      for (const a of attrsOf(st.at)) if (!shopSrc.includes(a)) shopMissing.push(`shop-intro → ${a}`)
     }
-    ok('梅芙引导：军需处那一段每一步的锚点，在 Missions.tsx 里都真的挂着',
+    ok('梅芙引导：军需处那一段每一步的锚点，在 Research.tsx 里都真的挂着',
       shopMissing.length === 0,
       shopMissing.length ? [...new Set(shopMissing)].join('、') : `${shopTour?.steps.length ?? 0} 步逐条查过`)
 
@@ -4999,11 +5000,12 @@ export function run(): MechReport {
       'luna + termi 两位 → 数 2')
 
     /* ---- 商店的描述与天赋的描述：数要落在屏上（主人 2026-09-15 的两条）----
-       界面那两处（Missions 的卡片、Battle 的天赋格）在源码上对账：
-       两处都得读 skilltext 那一份，不许自己再写一套翻法。 */
-    ok('商店的描述：卡片上的数与效果读的是 skilltext 那一份（源码账：Missions 调了 modsTextsOf）',
-      /modsTextsOf\(/.test(missionSrc) && /effectTextsOf\(/.test(missionSrc),
-      'Missions 的卡片挂上了 modsTextsOf / effectTextsOf')
+       界面那两处（Research 的柜台卡片、Battle 的天赋格）在源码上对账：
+       两处都得读 skilltext 那一份，不许自己再写一套翻法。
+       （柜台 2026-10 从任务简报搬到「研究」—— 对账的源码跟着搬。） */
+    ok('商店的描述：卡片上的数与效果读的是 skilltext 那一份（源码账：Research 调了 modsTextsOf）',
+      /modsTextsOf\(/.test(shopSrc) && /effectTextsOf\(/.test(shopSrc),
+      'Research 的柜台卡片挂上了 modsTextsOf / effectTextsOf')
     const battleSrc2 = readFileSync('src/views/Battle.tsx', 'utf8')
     ok('天赋的描述：作战屏那一格写出效果（源码账：Battle 调了 talentEffectTexts，且挂 data-talent-effect）',
       /talentEffectTexts\(/.test(battleSrc2) && battleSrc2.includes('data-talent-effect'),

@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Lock } from '@phosphor-icons/react'
 import { ARMS, ARM_TRADITIONS } from '../data/arms'
-import { RESEARCH, RESEARCH_LINES } from '../data/research'
-import type { ResearchEffect, ResearchNode } from '../data/research'
-import { investResearch, researchStatusOf, syncResearch, useResearch } from '../lib/research'
 import type { ArmEntry, ArmKind } from '../data/types'
 import { useTerminal } from '../terminal/Terminal'
 import { inkOf } from '../lib/hue'
@@ -33,136 +30,6 @@ function visibleOf(a: ArmEntry, isMet: (id: string) => boolean, epDone: Record<s
     if (a.gate === 'event') return eOk
   }
   return hOk && eOk
-}
-
-/* ============================================================
-   研究室（书架曼荼罗那一侧的门路）
-   ------------------------------------------------------------
-   挂在武装图鉴底下，**不新开导航项**：图鉴读的是「队里拿什么打」，研究室读的是
-   「为什么这样打更痛」—— 本来就是同一页的两件事。
-
-   三条线、每个节点一张卡（见 data/research.ts）。三种状态：
-     done   已研成（绿，按钮收起）
-     ready  可研（点数够、前置已研，按钮可点）
-     locked 锁定（写明差在哪：前置是谁 / 还差几点）
-   点下去：扣点 → 置 done → push 一条观测记录 → 战斗与档案两侧的读数立刻跟着变
-   （derive 与 Archive 读的都是 lib/research.ts 那一份 researchBonus()）。
-   ============================================================ */
-
-/** 一份 effect 念成人话：按四条比例偏序，写的顺序照「攻击 / 生命 / 物理抗性 / 反现实亲和」 */
-function effectTextOf(e: ResearchEffect): string {
-  const parts: string[] = []
-  if (e.atk) parts.push(`攻击 +${(e.atk * 100).toFixed(1)}%`)
-  if (e.hp) parts.push(`生命 +${(e.hp * 100).toFixed(1)}%`)
-  if (e.resPhysical) parts.push(`物理抗性 +${(e.resPhysical * 100).toFixed(1)}%`)
-  if (e.aff) parts.push(`反现实亲和 +${(e.aff * 100).toFixed(1)}%`)
-  return parts.join(' · ')
-}
-
-function ResearchNodeCard({ node }: { node: ResearchNode }) {
-  const { push } = useTerminal()
-  const status = researchStatusOf(node)
-  const prev = node.require ? RESEARCH.find((n) => n.id === node.require) : null
-  const tint = status === 'done' ? 'var(--jade)' : status === 'ready' ? 'var(--amber)' : 'var(--line-2)'
-  return (
-    <article
-      className={css.item}
-      style={{ '--c': tint, minWidth: 0 } as CSSProperties}
-      data-research-node={node.id}
-      data-research-state={status}
-      data-research-cost={node.cost}
-    >
-      <div className={css.expBody} style={{ minWidth: 0 }}>
-        <div className={css.expLabel}>
-          第 {node.tier} 层 · {node.name}
-        </div>
-        <p className={css.expText} style={{ overflowWrap: 'anywhere' }}>{node.desc}</p>
-        <div className={css.expFoot} style={{ flexWrap: 'wrap' }}>
-          <span className={css.schoolChip}>{effectTextOf(node.effect)}</span>
-          <span className={css.schoolChip}>成本 · {node.cost} 点</span>
-          {prev && status !== 'done' ? (
-            <span className={css.refChip}>前置 · {prev.name}</span>
-          ) : null}
-        </div>
-        {status === 'done' ? (
-          <span className="chip chip--on" data-research-done>已研成</span>
-        ) : (
-          <button
-            className="btn btn--ghost"
-            style={{ fontSize: 12, marginTop: 8 }}
-            disabled={status === 'locked'}
-            onClick={() => {
-              const res = investResearch(node.id)
-              if (!res.ok) {
-                push('warn', `研究室 · 投不进去`, res.reason ?? '这一项此刻研不了。', false)
-                return
-              }
-              push(
-                'success',
-                `研究室 · 「${node.name}」研成`,
-                `投入 ${node.cost} 研究点 —— ${effectTextOf(node.effect)}（全队 · 我方战斗面板）。`,
-                false,
-              )
-            }}
-          >
-            {status === 'ready' ? '投入研究点' : '研究点不足'}
-          </button>
-        )}
-      </div>
-    </article>
-  )
-}
-
-function ResearchLab() {
-  const { epDone, push } = useTerminal()
-  const save = useResearch()
-
-  /* 研究点按来源重算（幂等）：段数来自剧情进度，作战记录在 lib/research 里边动态读。
-     只挂 [epDone] —— 同步本身会改存档，挂上存档就会自己咬自己。 */
-  useEffect(() => {
-    let alive = true
-    void syncResearch(Object.keys(epDone).length).then((delta) => {
-      if (!alive || delta <= 0) return
-      push('info', '研究室 · 观测清算', `新入账 ${delta} 研究点。`, false)
-    })
-    return () => { alive = false }
-  }, [epDone, push])
-
-  const done = RESEARCH.filter((n) => save.done[n.id]).length
-
-  return (
-    <section data-research-lab style={{ marginTop: 28 }}>
-      <div className={css.groupHead}>
-        <span className={css.groupMark} style={{ background: 'var(--amber)' }} />
-        <span className={css.groupTitle}>研究室 · 书架曼荼罗</span>
-        <span className={css.groupCount}>
-          研究点 {save.points} · 已研 {done}/{RESEARCH.length}
-        </span>
-      </div>
-      <div className="tiny muted" style={{ margin: '0 0 12px', lineHeight: 1.7 }}>
-        委员会与书架曼荼罗换知识的门路一直是通的。观测攒下来的东西拿去换目录，
-        换回来的不是新武器，是全队都受用的一层读数 —— 它直接乘在我方的战斗面板上，
-        敌方不吃这一份。点数来自：主线收束、任务完成、击破具名首领。
-      </div>
-
-      {RESEARCH_LINES.map((line) => {
-        const nodes = RESEARCH.filter((n) => n.line === line.id)
-        return (
-          <div key={line.id} style={{ marginBottom: 18 }}>
-            <div className={css.groupHead}>
-              <span className={css.groupMark} style={{ background: 'var(--steel)' }} />
-              <span className={css.groupTitle}>{line.id}</span>
-              <span className={css.groupCount}>{line.sub}</span>
-            </div>
-            <div className="tiny muted" style={{ margin: '0 0 8px' }}>{line.note}</div>
-            <div className={css.list} style={{ minWidth: 0 }}>
-              {nodes.map((n) => <ResearchNodeCard key={n.id} node={n} />)}
-            </div>
-          </div>
-        )
-      })}
-    </section>
-  )
 }
 
 export function Arms() {
@@ -377,8 +244,6 @@ export function Arms() {
           </div>
         </section>
       ))}
-
-      <ResearchLab />
     </div>
   )
 }

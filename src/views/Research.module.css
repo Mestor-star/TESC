@@ -1,0 +1,343 @@
+/* ============================================================
+   研究 —— 科研树 + 军需处
+   ------------------------------------------------------------
+   上半是树：三根主干并排，每根自己一张 SVG（直角折线）与一层绝对定位的按钮。
+   节点的 px 尺寸与 Research.tsx 顶上的 NODE_W / NODE_H / LANE / GAP_Y 一一对应
+   —— 那边改了这边必须跟着改，否则线与格子会错开。
+   下半是军需处：.shopBar 那一族与 .modal 那一套从 Missions.module.css 原样搬来
+   （只属于军需处的那几条搬完已从原处删掉；.modal 系列因为 Missions 自己的作战档案
+   与编队面板还在用，留着那一份，这里是同值的一份副本）。
+   ============================================================ */
+
+/* ---------- 抬头那一段说明 ---------- */
+.intro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  font-size: 11.5px;
+  line-height: 1.75;
+  color: var(--ink-mute);
+}
+.keys { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.keys kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+
+/* ---------- 树的容器：宽屏树在左、详情在右；不够宽就折成一列 ---------- */
+.shell { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.tree { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; min-width: 0; }
+.line { display: flex; flex-direction: column; gap: 8px; }
+/* 三根主干的抬头高度钉成两行：副标长短不一，抬头高一点低一点，下面那棵树就错行了 */
+.lineHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 7px; min-height: 32px; align-content: flex-start; }
+.lineHead b { flex-shrink: 0; white-space: nowrap; }
+.lineHead b { font-size: 12.5px; letter-spacing: 0.06em; color: var(--ink); }
+.lineMark {
+  flex-shrink: 0;
+  width: 8px; height: 8px;
+  transform: rotate(45deg);
+  align-self: center;
+}
+
+/* 画布：格子与线共用同一套 px 坐标（宽高由 tsx 内联给） */
+.canvas { position: relative; flex: 0 0 auto; }
+.wires { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.wire {
+  fill: none;
+  /* 锁定（或还没轮到）的线是灰的：连到哪一格是哪一格的颜色 */
+  stroke: var(--line-2);
+  stroke-width: 1.5;
+  stroke-linecap: square;
+}
+.wire[data-edge-state='ready'] { stroke: var(--amber); }
+.wire[data-edge-state='done'] { stroke: var(--jade); }
+
+/* ---------- 树上一格 ---------- */
+.node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 122px;
+  height: 52px;
+  padding: 0 9px;
+  text-align: left;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  cursor: var(--cursor-point);
+  transition: transform var(--t-fast), box-shadow var(--t-fast), border-color var(--t-fast);
+}
+.node:hover { transform: translateY(-2px); box-shadow: 0 3px 0 var(--line-2); }
+.node:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+.node[data-research-on='1'] { border-color: var(--steel); background: var(--bg-2); }
+.node[data-research-on='1']:hover { box-shadow: 0 3px 0 var(--steel); }
+
+.node[data-research-state='ready'] {
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-1));
+}
+.node[data-research-state='ready']:hover { box-shadow: 0 3px 0 var(--amber); }
+.node[data-research-state='done'] {
+  border-color: var(--jade);
+  background: color-mix(in srgb, var(--jade) 12%, var(--bg-1));
+}
+.node[data-research-state='done']:hover { box-shadow: 0 3px 0 var(--jade); }
+.node[data-research-state='locked'] { background: var(--bg-0); }
+.node[data-research-state='locked'] .nodeName { color: var(--ink-mute); }
+.node[data-research-state='locked'] .nodeCost { color: var(--ink-faint); }
+
+.dot {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 15px; height: 15px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--ink-faint);
+}
+.node[data-research-state='ready'] .dot {
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 22%, transparent);
+  color: var(--amber-deep);
+}
+.node[data-research-state='done'] .dot {
+  border-color: var(--jade);
+  background: var(--jade);
+  color: var(--on-accent);
+}
+
+.nodeBody { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.nodeName { font-size: 11px; line-height: 1.3; letter-spacing: 0.01em; color: var(--ink); }
+.nodeCost {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
+.node[data-research-state='ready'] .nodeCost { color: var(--amber-deep); }
+.node[data-research-state='done'] .nodeCost { color: var(--jade-deep); }
+
+/* ---------- 详情 ---------- */
+.detail {
+  flex: 1 1 268px;
+  min-width: 0;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+}
+.detailHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.detailHead b { font-size: 14px; letter-spacing: 0.04em; color: var(--ink); }
+.stateTag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  color: var(--ink-mute);
+}
+.stateTag[data-research-detail-state='ready'] {
+  color: var(--amber-deep);
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+}
+.stateTag[data-research-detail-state='done'] {
+  color: var(--jade-deep);
+  border-color: color-mix(in srgb, var(--jade) 55%, transparent);
+}
+.detailDesc { margin: 0; font-size: 11.5px; line-height: 1.75; color: var(--ink-mute); }
+.facts {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 3px 10px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  font-size: 11px;
+}
+.facts dt { color: var(--ink-faint); letter-spacing: 0.1em; }
+.facts dd { margin: 0; color: var(--ink-dim); font-family: var(--font-mono); }
+
+/* 详情栏那一枚「已研成」/ 按钮别被 column 拉伸成整条 */
+.detail > :global(.chip), .detail > button { align-self: flex-start; }
+.detailHint { display: flex; flex-direction: column; gap: 8px; }
+.detailHint > b { font-size: 12.5px; color: var(--ink); }
+.noteRow { display: flex; align-items: flex-start; gap: 7px; }
+.noteRow .lineMark { margin-top: 6px; }
+
+/* ============================================================
+   军需处（从 Missions.module.css 搬来，行为与外观不变）
+   ============================================================ */
+.shopBar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 22px;
+  padding: 10px 13px; border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+}
+.shopSigil {
+  flex-shrink: 0; display: grid; place-items: center;
+  width: 30px; height: 30px; font-size: 13px; font-weight: 700;
+  color: var(--amber-deep); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.shopWho { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
+.shopWho b { font-size: 13px; letter-spacing: 0.05em; }
+.coin { font-size: 11.5px; color: var(--ink-mute); }
+.coin b { color: var(--amber-deep); font-family: var(--font-mono); font-size: 13px; }
+
+/* 柜台：与 Missions 那一份同值（那边自己的作战档案/编队面板还在用同一套） */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+.modalBox {
+  width: min(760px, 100%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+  box-shadow: var(--shadow-3);
+}
+.modalBoxWide { width: min(980px, 100%); }
+.modalHead { display: flex; align-items: center; gap: 9px; color: var(--amber-deep); }
+.modalHead b { color: var(--ink); font-size: 14px; }
+.modalFoot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.modalFoot > span { flex: 1; min-width: 180px; }
+
+.shopSeller {
+  padding: 9px 11px; border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-2) 78%, transparent);
+  font-size: 11.5px; line-height: 1.7; color: var(--ink-mute);
+}
+/* 终末等级那一栏的开场白：先把名字说清楚 */
+.levelNote {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--steel) 35%, transparent);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-2) 82%, transparent);
+  font-size: 11.5px; line-height: 1.75; color: var(--ink-mute);
+}
+.levelNote b { color: var(--amber-deep); font-size: 12px; letter-spacing: 0.04em; }
+.levelNote span { color: var(--ink-mute); }
+.limitTag {
+  font-style: normal; padding: 0 6px; border: 1px solid var(--line-2); border-radius: var(--radius-pill);
+  font-family: var(--font-mono); font-size: 9px; line-height: 15px; color: var(--amber-deep);
+}
+.shopTabs { display: flex; gap: 4px; }
+.shopTab {
+  padding: 4px 11px;
+  font-size: 11.5px;
+  color: var(--ink-mute);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: var(--cursor-point);
+}
+.shopTab.isOn { color: var(--amber-deep); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.shopGrid {
+  overflow-y: auto; min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.shopItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.shopItem[data-rank='2'] { border-left-color: var(--violet); }
+.shopItem[data-rank='3'] { border-left-color: var(--amber); }
+.shopName { display: flex; align-items: baseline; gap: 7px; }
+.shopName b { font-size: 13px; }
+.shopName i { font-style: normal; font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
+.shopDesc { margin: 0; font-size: 11.5px; line-height: 1.65; color: var(--ink-mute); }
+.shopMods {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: var(--amber-deep);
+}
+.shopEff { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }
+.shopEff b { color: var(--violet-deep); font-weight: 600; }
+.shopFoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+
+/* ============ 手机档（≤720px）============
+   三根主干改成**纵向堆叠**：每条线一段，连线照旧（每根自己那张 SVG 不跨线走）。
+   一段 260px 宽，390 屏上放得下，不会横向溢出。 */
+@media (max-width: 720px) {
+  .shell { gap: 12px; }
+  .tree { flex-direction: column; align-items: flex-start; gap: 14px; width: 100%; }
+  .detail { max-width: none; flex: 1 1 100%; }
+  .modal { padding: 10px; }
+  .modalBox, .modalBoxWide {
+    width: 100%;
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 12px 12px 10px;
+    gap: 9px;
+  }
+  .modalHead { align-items: flex-start; }
+  .modalFoot {
+    position: sticky;
+    bottom: 0;
+    margin-top: auto;
+    padding: 9px 0 2px;
+    background: linear-gradient(180deg, transparent, var(--bg-2) 30%);
+  }
+  .shopGrid { grid-template-columns: 1fr; }
+  .intro { flex-direction: column; align-items: flex-start; }
+}
+
+/* 粗指针：树上一格与柜台上那几枚标签都抬到 44 那一档 */
+@media (pointer: coarse) {
+  .node { min-height: 52px; }
+  .shopTab { min-height: 40px; }
+}
+
+/* 横屏矮屏：柜台那一屏别被 82vh 掐掉 */
+@media (orientation: landscape) and (max-height: 560px) {
+  .modal { padding: 8px; }
+  .modalBox, .modalBoxWide {
+    max-height: calc(100dvh - 16px);
+    gap: 8px;
+    padding: 10px 12px;
+  }
+}

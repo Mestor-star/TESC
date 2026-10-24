@@ -1812,14 +1812,18 @@ try {
   await goto('任务简报')
   await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N patrol-lock mounted')
   // 军需处现在是一个按钮：点开才展开柜台（贡献点兑换研究所产出的装备）
-  await ev(`(()=>{const b=document.querySelector('[data-shop-open]');if(b)b.click();return true})()`)
-  await poll(`!!document.querySelector('[data-shop-grid]')`, 8000, 'N shop modal')
-  const nLock = await ev(`(()=>{const b=document.querySelector('[data-board-refresh]');
+  const nLockBoard = await ev(`(()=>{const b=document.querySelector('[data-board-refresh]');
     return {lock:!!document.querySelector('[data-patrol-locked]'),
       gen:document.querySelectorAll('[data-mission]').length,
-      disabled:!!(b&&b.disabled),
-      special:document.querySelectorAll('[data-gear-locked]').length,
-      coin:(document.querySelector('[data-coin]')||{}).innerText||''}})()`)
+      disabled:!!(b&&b.disabled)}})()`)
+  /* 军需处搬去了「研究」那一页：柜台在那边点开（贡献点兑换研究所产出的装备） */
+  await goto('研究')
+  await poll(`!!document.querySelector('[data-gear-shop]')`, 15000, 'N research shop bar')
+  await ev(`(()=>{const b=document.querySelector('[data-shop-open]');if(b)b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-shop-grid]')`, 8000, 'N shop modal')
+  const nLockShop = await ev(`(()=>({special:document.querySelectorAll('[data-gear-locked]').length,
+      coin:(document.querySelector('[data-coin]')||{}).innerText||''}))()`)
+  const nLock = { ...nLockBoard, ...nLockShop }
   ok('N0 脏器公寓未结清：巡逻看板只挂牌不派单 · 刷新禁用 · 特殊装备未上架 · 货币为终末点数',
     nLock.lock === true && nLock.gen === 0 && nLock.disabled === true && nLock.special >= 1 && nLock.coin.includes('终末点数'),
     JSON.stringify(nLock))
@@ -1843,9 +1847,6 @@ try {
   await boot()
   await goto('任务简报')
   await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N missions mounted')
-  // 军需处柜台：同一处按钮
-  await ev(`(()=>{const b=document.querySelector('[data-shop-open]');if(b)b.click();return true})()`)
-  await poll(`!!document.querySelector('[data-shop-grid]')`, 8000, 'N shop modal (board)')
   const nBoard = await ev(`(()=>{const b=document.querySelector('[data-battle-records]');const s=document.querySelector('[data-squad-stamina]');
     const cards=[...document.querySelectorAll('[data-mission]')];
     // 「出击」是接取之后才挂上去的：待接取卡只有接取那一条，别把两者混为一谈
@@ -1853,10 +1854,19 @@ try {
     const raw=cards.filter(c=>c.querySelector('[data-act="接取"]'));
     const leaked=raw.filter(c=>c.querySelector('[data-sortie]'));
     return {rec:!!b,stam:!!s,cards:cards.length,open:open.length,raw:raw.length,leaked:leaked.length,
-      refresh:!!document.querySelector('[data-board-refresh]'),
-      shop:!!document.querySelector('[data-gear-shop]'),coin:!!document.querySelector('[data-coin]'),txt:s?s.innerText:''}})()`)
+      refresh:!!document.querySelector('[data-board-refresh]'),txt:s?s.innerText:''}})()`)
+  /* 军需处那一条挂牌在「研究」页：同一处按钮、同一套把手。
+     先过去读挂牌（N1 要它），再走回板子读剧情作战（N1f 要板子在场）。 */
+  await goto('研究')
+  await poll(`!!document.querySelector('[data-gear-shop]')`, 15000, 'N research shop bar (board)')
+  const nShopBar = await ev(`(()=>({shop:!!document.querySelector('[data-gear-shop]'),
+    coin:!!document.querySelector('[data-coin]')}))()`)
+  nBoard.shop = nShopBar.shop
+  nBoard.coin = nShopBar.coin
   ok('N1 任务板：随机看板 + 手动刷新 + 体力条 + 军需处 + 作战记录区', nBoard.rec === true && nBoard.stam === true && nBoard.refresh === true && nBoard.shop === true && nBoard.cards >= 1, JSON.stringify(nBoard))
   ok('N1a 待接取的任务没有「出击」：先签字，才有出战这一说', nBoard.raw >= 1 && nBoard.leaked === 0 && nBoard.open === 0, JSON.stringify(nBoard))
+  await goto('任务简报')
+  await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N missions back for mainline')
   // 剧情作战：不是派单，是正史里那一场 —— 一场一场来，从灵魂蓄积器TM 起
   const nMain = await ev(`(()=>{const cards=[...document.querySelectorAll('[data-mainline-mission]')];
     const c=cards[0];if(!c)return {n:0};
@@ -1871,6 +1881,12 @@ try {
     nMain.n === 1 && nMain.id === 'main-v1-2' && nMain.accept === false && nMain.fight === true
       && nMain.claimDisabled === true && nMain.act === '待战',
     JSON.stringify(nMain))
+
+  // 柜台在「研究」页：走回去、点开，再读里面的三件事
+  await goto('研究')
+  await poll(`!!document.querySelector('[data-gear-shop]')`, 15000, 'N research shop bar (modal)')
+  await ev(`(()=>{const b=document.querySelector('[data-shop-open]');if(b)b.click();return true})()`)
+  await poll(`!!document.querySelector('[data-shop-grid]')`, 8000, 'N shop modal (research)')
 
   // 柜台里的三件事：售货员是梅芙的哥哥、货币口径是贡献点、特殊装备限购一件
   const nShop = await ev(`(()=>{const m=document.querySelector('[data-shop-modal]');
@@ -1897,6 +1913,9 @@ try {
   }
   await ev(`(()=>{const b=document.querySelector('[data-shop-close]');if(b)b.click();return true})()`)
   await sleep(200)
+  // 柜台在「研究」页，任务卡在任务简报 —— 收摊之后走回去
+  await goto('任务简报')
+  await poll(`!!document.querySelector('[data-squad-stamina]')`, 15000, 'N missions back from research')
   // 地点 R 值 → 敌方成色：出击前就摆在卡上
   const nR = await ev(`(()=>{const c=document.querySelectorAll('[data-mission-r]');
     return {n:c.length, known:[...c].filter(x=>x.hasAttribute('data-r-known')).length,
@@ -3900,7 +3919,7 @@ try {
   /* M2 十一个视图：一屏一屏走，每屏都不许有元素探出视口。
      这条路是**全部**手机档改动的总账 —— 任何一处漏了 `min-width: 0`、
      少了一条窄屏规则、或者把那几处内联 px 忘在了原地，都会在这一条上现形。 */
-  const Z_NAVS = ['终端总览', '剧情推进', '地图', '低语者日志', '情景记忆库', '智库', '武装图鉴', '角色档案', '任务简报', '终末图鉴', '短信', '终端设置']
+  const Z_NAVS = ['终端总览', '剧情推进', '地图', '低语者日志', '情景记忆库', '智库', '武装图鉴', '研究', '角色档案', '任务简报', '终末图鉴', '短信', '终端设置']
   const zBad = []
   for (const v of Z_NAVS) {
     await goto(v)
@@ -3908,7 +3927,7 @@ try {
     const o = JSON.parse(await ev(zOverSrc))
     if (o.n !== 0) zBad.push(v + ' → ' + JSON.stringify(o.top))
   }
-  ok('Z2 十二个视图逐个走一遍：每一屏都没有元素探出视口（横滑条里的不算）',
+  ok('Z2 十三个视图逐个走一遍：每一屏都没有元素探出视口（横滑条里的不算）',
     zBad.length === 0, zBad.join(' | '))
 
   /* M3 顶栏折两行：读数那一簇落到标题那一簇的**下面**，并且它自己横滑得起来

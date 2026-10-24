@@ -15,17 +15,15 @@ import { combatantOf, periodProgress, personIdOf, squadIdsFrom } from '../lib/ba
 import { dutyOf } from '../lib/battle/duty'
 import { TUNING } from '../lib/battle/tuning'
 import {
-  buyGear, buyItem, buyLevel, deleteRecord, effectiveGrowth, levelCostOf, listRecords,
-  readBag, readCoin, readEquip, readGearBag, readLevels,
+  deleteRecord, effectiveGrowth, listRecords,
+  readBag, readEquip, readGearBag, readLevels,
   addGear, readGrowth, readStamina, writeEquip, readMainClaimed, writeMainClaimed,
-  LEVEL_STEP_PCT,
 } from '../lib/battle/store'
 import { settleExit, settleWin } from '../lib/battle/settle'
 import { PAIRS, TRAITS, bondCut, bondNext, bondsOf, pairsOf, traitsOf } from '../lib/battle/synergy'
 import { genBoard, signOffCap } from '../lib/battle/missiongen'
 import { mainlineMissions } from '../lib/battle/mainline'
-import { GEAR_SHOP, ITEMS, GEAR_OF, canEquip } from '../lib/battle/gear'
-import { ITEM_TARGET_LABEL, effectTextsOf, modsTextsOf } from '../lib/battle/skilltext'
+import { GEAR_OF, canEquip } from '../lib/battle/gear'
 import type { BattleRecord, StaminaState } from '../lib/battle/types'
 
 import css from './Missions.module.css'
@@ -135,14 +133,11 @@ export function Missions() {
   /** 正在打的那一场 */
   const [live, setLive] = useState<{ mission: Mission; squad: string[] } | null>(null)
 
-  /* —— 军需 —— */
-  const [coin, setCoin] = useState(0)
+  /* —— 军需在册的几份账 ——
+     柜台本体已搬到「研究」那一页；这里只留编队要读的那三份（装具 / 身上那件 / 补给袋）。 */
   const [gearBag, setGearBag] = useState<Record<string, number>>({})
   const [equip, setEquip] = useState<Record<string, string>>({})
   const [bag, setBag] = useState<Record<string, number>>({ ...TUNING.bagDefault })
-  const [shopTab, setShopTab] = useState<'装具' | '补给' | '终末等级'>('装具')
-  /** 军需处的柜台：平时只是一个按钮，点开才展开 */
-  const [shopOpen, setShopOpen] = useState(false)
 
   /* —— 看板：放行之后随观测进度自动重掷，也可手动刷新 —— */
   const [reroll, setReroll] = useState(0)
@@ -163,15 +158,14 @@ export function Missions() {
   )
 
   const reload = useCallback(async () => {
-    const [sp, g, rs, c, gb, eq, bg, mc, lv] = await Promise.all([
+    const [sp, g, rs, gb, eq, bg, mc, lv] = await Promise.all([
       readStamina(eventsDone), readGrowth(), listRecords(),
-      readCoin(), readGearBag(), readEquip(), readBag(), readMainClaimed(), readLevels(),
+      readGearBag(), readEquip(), readBag(), readMainClaimed(), readLevels(),
     ])
     setStamina(sp)
     setGrowth(g)
     setLevels(lv)
     setRecords(rs)
-    setCoin(c)
     setGearBag(gb)
     setEquip(eq)
     setBag(bg)
@@ -185,13 +179,6 @@ export function Missions() {
   /* 出击真正吃的那份成长：任务成长 + 买来的终末等级。
      合流只发生在这里，别处不许自己加（见 store 的 effectiveGrowth）。 */
   const growthForBattle = useMemo(() => effectiveGrowth(growth, levels), [growth, levels])
-
-  /* 能升的人：已经结识的那些（外加主角本人）。没见过的名字不该出现在这份名册上。 */
-  const levelRows = useMemo(() => {
-    const rows = PERSON_IDS.filter((id) => isMet(id)).map((id) => ({ id, name: personOf(id)?.name ?? id }))
-    if (operatorName) rows.unshift({ id: OPERATOR_ID, name: operatorName })
-    return rows
-  }, [operatorName, isMet])
 
   /** 有胜仗记录的任务 id —— 归档只看它，不看点了多少次 */
   const wonIds = useMemo(
@@ -465,10 +452,6 @@ export function Missions() {
     await reload()
   }
 
-  /* —— 军需处：特殊装备须先完成对应主线才上架（未完成只挂牌） —— */
-  const mainTitle = (id?: string) => (id ? TIMELINE.find((e) => e.id === id)?.title ?? id : '')
-  const gearOpen = (g: { unlockMain?: string }) => !g.unlockMain || !!epDone[g.unlockMain]
-
   return (
     <div className="vpage">
       <div className="vhead">
@@ -509,228 +492,23 @@ export function Missions() {
         <span className="tiny muted">出击扣除，观测推进时回补</span>
       </div>
 
-      {/* 军需处：平时只是一条挂牌 —— 点开才是柜台。
-          研究所产出的装备不走市价，按贡献点兑换；作战结算累积的终末点数就是贡献点。 */}
-      <section className={css.shopBar} data-gear-shop data-guide="shop">
-        <span className={css.shopSigil} aria-hidden>泰</span>
-        <div className={css.shopWho}>
-          <b>军需处 · 泰尔米别克 · 简别科娃</b>
-          <span className="tiny muted">
-            梅芙的哥哥，苍之学园的前辈研究员，研究所深处的那位。研究所产出的装备不走市价，
-            按贡献点兑换——作战结算累积的终末点数，在这儿就是贡献点。
-          </span>
-        </div>
-        <span className={css.coin} data-coin title="作战结算累积 · 在军需处即贡献点">终末点数 <b>{coin}</b></span>
+      {/* 军需处整块搬去了「研究」那一页：这里只留一枚门，不在两处各摆一套柜台。
+          挂牌（谁在看店 / 有多少贡献点 / 怎么兑）在那边的 `data-gear-shop` 上。 */}
+      <section className={css.shopJump} data-guide="shop">
+        <Storefront size={14} weight="bold" />
+        <span className={css.shopJumpText}>
+          <b>军需处已迁至「研究」</b>
+          <i>研究所产出的装备、道具补给、终末等级，都在那一页的柜台里。</i>
+        </span>
         <button
-          className="btn btn--primary"
+          className="btn btn--ghost"
           style={{ fontSize: 12 }}
-          data-shop-open
-          onClick={() => setShopOpen(true)}
+          data-go-research
+          onClick={() => navigate('research')}
         >
-          <Storefront size={13} weight="bold" style={{ marginRight: 5 }} />
-          打开军需处
+          去研究 · 军需处 <ArrowRight size={12} weight="bold" />
         </button>
       </section>
-
-      {shopOpen ? (
-        <div className={css.modal} data-shop-modal>
-          <div className={`${css.modalBox} ${css.modalBoxWide}`}>
-            <div className={css.modalHead}>
-              <Storefront size={15} weight="bold" />
-              <b>军需处 · 研究所配给</b>
-              <span className="tiny muted">贡献点 {coin} · 装具每人至多装配一件</span>
-              <button className="btn btn--ghost" style={{ fontSize: 11, marginLeft: 'auto' }} onClick={() => setShopOpen(false)} data-shop-close>
-                <X size={12} weight="bold" />
-              </button>
-            </div>
-
-            <div className={css.shopSeller} data-shop-seller>
-              研究所仓库的账本摊在桌上。泰尔米别克 · 简别科娃——梅芙的哥哥——没有抬头：
-              「终末点数你攒得不少了。这些不是买来的，是我们做出来、记在贡献上的东西。
-              挑一件吧，一个人一件。」
-            </div>
-
-            <div className={css.shopTabs}>
-              <button className={`${css.shopTab} ${shopTab === '装具' ? css.isOn : ''}`} data-shop-tab="装具" onClick={() => setShopTab('装具')}>
-                研究所产出的装备
-              </button>
-              <button className={`${css.shopTab} ${shopTab === '补给' ? css.isOn : ''}`} data-shop-tab="补给" onClick={() => setShopTab('补给')}>
-                道具补给
-              </button>
-              <button className={`${css.shopTab} ${shopTab === '终末等级' ? css.isOn : ''}`} data-shop-tab="终末等级" onClick={() => setShopTab('终末等级')}>
-                终末等级
-              </button>
-            </div>
-
-            {shopTab === '终末等级' ? (
-              <div className={css.levelNote} data-level-note>
-                <b>这里的「终末等级」与剧情里的终末无关。</b>
-                <span>
-                  剧情里的终末 Stage（Stage4『活性化』、Stage6『动摇』那一路）是那个人命里带来的东西，
-                  按原文读数记在档案上，谁也不能改。
-                  这一栏记的是另一回事：终端替在册者记下的常驻强化评级 ——
-                  花终末点数买来的训练与校准，每级让本人的五轴与生命整体上抬 {LEVEL_STEP_PCT}%，
-                  且不封顶，可以一路推上去。两者只是碰巧都叫「终末」，不是同一样东西。
-                </span>
-              </div>
-            ) : null}
-
-            <div className={css.shopGrid} data-shop-grid>
-              {shopTab === '终末等级' ? levelRows.map((r) => {
-                const lv = levels[r.id] ?? 0
-                const cost = levelCostOf(lv)
-                const afford = coin >= cost
-                return (
-                  <div key={r.id} className={css.shopItem} data-level={r.id} data-lv={lv}>
-                    <div className={css.shopName}>
-                      <b>{r.name}</b>
-                      <i className="mono">终末等级 {lv}</i>
-                    </div>
-                    <p className={css.shopDesc}>
-                      当前加成 +{(effectiveGrowth(growth, levels)[r.id] ?? 0).toFixed(0)}%（含任务成长）
-                      {' · '}再升一级 → +{(effectiveGrowth(growth, levels)[r.id] ?? 0) + LEVEL_STEP_PCT}%
-                    </p>
-                    <div className={css.shopFoot}>
-                      <span className="tiny muted">五轴与生命整体上抬 · 无等级上限</span>
-                      <button
-                        className="btn btn--ghost"
-                        style={{ fontSize: 11 }}
-                        data-level-up={r.id}
-                        disabled={!afford}
-                        onClick={async () => {
-                          const res = await buyLevel(r.id, cost)
-                          setCoin(res.coin)
-                          setLevels(res.levels)
-                          push(
-                            res.ok ? 'success' : 'warn',
-                            '军需处',
-                            res.ok
-                              ? `${r.name} 的终末等级 → ${(res.levels[r.id] ?? 0)}（余 ${res.coin} 贡献点）`
-                              : '贡献点不够 —— 先打几场再回来。',
-                            false,
-                          )
-                        }}
-                      >
-                        升一级 · {cost} 贡献点
-                      </button>
-                    </div>
-                  </div>
-                )
-              }) : shopTab === '装具'
-                ? GEAR_SHOP.map((g) => {
-                  const owned = gearBag[g.id] ?? 0
-                  const full = g.maxOwn != null && owned >= g.maxOwn
-                  return (
-                    <div key={g.id} className={css.shopItem} data-shop={g.id} data-rank={g.rank}>
-                      <div className={css.shopName}>
-                        <b>{g.name}</b>
-                        <i className="mono">{g.sub}</i>
-                        {g.maxOwn ? <span className={css.limitTag}>限兑 {g.maxOwn}</span> : null}
-                      </div>
-                      <p className={css.shopDesc}>{g.desc}</p>
-                      {/* 装备改了哪几个数 —— 与编成、档案读同一份翻法（skilltext.modsTextsOf）。
-                          从前卡片上只有一句散文，买的人对着「沉，但顶用」猜不到它加什么。 */}
-                      <p className={css.shopMods} data-shop-mod={g.id}>
-                        {modsTextsOf(g.mods).join(' · ') || '无修正'}
-                      </p>
-                      {g.skill ? (
-                        <p className={css.shopEff} data-shop-skill={g.id}>
-                          <b>附带一手「{g.skill.name}」</b>
-                          {effectTextsOf(g.skill.effect).length
-                            ? ` · ${effectTextsOf(g.skill.effect).join(' · ')}` : ''}
-                        </p>
-                      ) : null}
-                      <div className={css.shopFoot}>
-                        <span className="tiny muted">
-                          持有 {owned}{g.maxOwn ? `/${g.maxOwn}` : ''}
-                          {g.onlyFor ? ` · 仅限 ${g.onlyFor.map((id) => personOf(id)?.name ?? id).join('、')}` : ''}
-                        </span>
-                        {!gearOpen(g) ? (
-                          <button
-                            className="btn btn--ghost"
-                            style={{ fontSize: 11, opacity: 0.72 }}
-                            data-gear-locked={g.id}
-                            disabled
-                            title={`完成主线「${mainTitle(g.unlockMain)}」后上架`}
-                          >
-                            需完成主线 · {mainTitle(g.unlockMain)}
-                          </button>
-                        ) : full ? (
-                          <button
-                            className="btn btn--ghost"
-                            style={{ fontSize: 11, opacity: 0.72 }}
-                            data-buy={g.id}
-                            data-buy-full={g.id}
-                            disabled
-                            title="研究所的配给一人一件，兑完为止"
-                          >
-                            已兑完
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn--ghost"
-                            style={{ fontSize: 11 }}
-                            data-buy={g.id}
-                            disabled={coin < g.price}
-                            onClick={async () => {
-                              const r = await buyGear(g.id, g.price, g.maxOwn)
-                              setCoin(r.coin)
-                              setGearBag(r.bag)
-                              if (r.full) {
-                                push('warn', '军需处', `${g.name} 是研究所的配给，一人只兑一件。`, false)
-                                return
-                              }
-                              push('success', '军需处', `${g.name} 已入库（余 ${r.coin} 贡献点）`, false)
-                            }}
-                          >
-                            {g.price} 贡献点
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })
-                : ITEMS.map((it) => (
-                  <div key={it.id} className={css.shopItem} data-shop={it.id} data-rank={1}>
-                    <div className={css.shopName}>
-                      <b>{it.name}</b>
-                      <i className="mono">补给</i>
-                    </div>
-                    <p className={css.shopDesc}>{it.desc}</p>
-                    {/* 补给的效果逐条写出来（同上：一处口径）——买的是「+35% 回复」，不是那句散文 */}
-                    <p className={css.shopMods} data-shop-effect={it.id}>
-                      {ITEM_TARGET_LABEL[it.target] ?? it.target}
-                      {effectTextsOf(it.effect).length
-                        ? ` · ${effectTextsOf(it.effect).join(' · ')}` : ''}
-                    </p>
-                    <div className={css.shopFoot}>
-                      <span className="tiny muted">携带 {bag[it.id] ?? 0}</span>
-                      <button
-                        className="btn btn--ghost"
-                        style={{ fontSize: 11 }}
-                        data-buy={it.id}
-                        disabled={coin < it.price}
-                        onClick={async () => {
-                          const r = await buyItem(it.id, it.price)
-                          setCoin(r.coin)
-                          setBag(r.bag)
-                          push('success', '军需处', `${it.name} 已入库（余 ${r.coin} 贡献点）`, false)
-                        }}
-                      >
-                        {it.price} 贡献点
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-
-            <div className={css.modalFoot}>
-              <span className="tiny muted">装具每人至多装配一件 · 战斗中更换不消耗回合</span>
-              <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setShopOpen(false)}>关闭</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* 巡逻任务未放行：先走正史，脏器公寓一案结清后才派单 */}
       {!patrolOpen ? (

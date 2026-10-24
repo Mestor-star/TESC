@@ -42,13 +42,13 @@ import {
   writeSlot,
 } from '../lib/slots'
 
-export type ViewId = 'dashboard' | 'plot' | 'map' | 'saga' | 'memory' | 'lore' | 'arms' | 'archive' | 'missions' | 'codex' | 'tavern' | 'settings'
+export type ViewId = 'dashboard' | 'plot' | 'map' | 'saga' | 'memory' | 'lore' | 'arms' | 'research' | 'archive' | 'missions' | 'codex' | 'tavern' | 'settings'
 
 /**
  * 需完成「欢迎来到，终末停滞委员会」事件才能解锁的视图。
  * 角色档案亦在其列：名册与羁绊是入学之后的凭据，先读剧情才准调阅。
  */
-export const LOCKED_VIEWS: ViewId[] = ['arms', 'archive', 'missions', 'codex', 'tavern']
+export const LOCKED_VIEWS: ViewId[] = ['arms', 'research', 'archive', 'missions', 'codex', 'tavern']
 const LOCKED_SET = new Set<ViewId>(LOCKED_VIEWS)
 
 interface Saved {

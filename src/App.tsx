@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { ArrowLeft, ArrowCounterClockwise, Brain, Gauge, Users, MapPin, MapTrifold, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowCounterClockwise, Brain, Gauge, Users, MapPin, MapTrifold, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash, Flask } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -100,6 +100,7 @@ const Saga = view('Saga', () => import('./views/Saga'))
 const Memory = view('Memory', () => import('./views/Memory'))
 const Lore = view('Lore', () => import('./views/Lore'))
 const Arms = view('Arms', () => import('./views/Arms'))
+const Research = view('Research', () => import('./views/Research'))
 const Archive = view('Archive', () => import('./views/Archive'))
 const Missions = view('Missions', () => import('./views/Missions'))
 const Codex = view('Codex', () => import('./views/Codex'))
@@ -120,6 +121,7 @@ const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
   { id: 'memory', en: 'MEMORY / SITUATIONAL', cn: '情景记忆库', icon: <Brain size={21} weight="bold" /> },
   { id: 'lore', en: 'THINK TANK', cn: '智库', icon: <Vault size={21} weight="bold" /> },
   { id: 'arms', en: 'ARMORY', cn: '武装图鉴', icon: <Sword size={21} weight="bold" /> },
+  { id: 'research', en: 'RESEARCH', cn: '研究', icon: <Flask size={21} weight="bold" /> },
   { id: 'archive', en: 'ARCHIVE', cn: '角色档案', icon: <Users size={21} weight="bold" /> },
   { id: 'missions', en: 'MISSIONS', cn: '任务简报', icon: <MapPin size={21} weight="bold" /> },
   { id: 'codex', en: 'CODEX', cn: '终末图鉴', icon: <BookOpen size={21} weight="bold" /> },
@@ -135,6 +137,7 @@ const TITLE: Record<ViewId, { en: string; cn: string }> = {
   memory: { en: 'MEMORY / SITUATIONAL', cn: '情景记忆库' },
   lore: { en: 'DATA / THINK TANK', cn: '智库' },
   arms: { en: 'DATA / ARMORY', cn: '武装图鉴' },
+  research: { en: 'RESEARCH / LAB', cn: '研究' },
   archive: { en: 'DATA / ARCHIVE', cn: '角色档案' },
   missions: { en: 'FIELD / MISSIONS', cn: '任务简报' },
   codex: { en: 'CODEX / ENDINGS', cn: '终末图鉴' },
@@ -443,6 +446,7 @@ function Stage() {
       case 'memory': return <Memory />
       case 'lore': return <Lore />
       case 'arms': return <Arms />
+      case 'research': return <Research />
       case 'archive': return <Archive />
       case 'missions': return <Missions />
       case 'codex': return <Codex />
