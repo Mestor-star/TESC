@@ -1,0 +1,231 @@
+/* ===== 「邀请约会」浮层（components/InviteDate.tsx） =====
+   方贴纸稿：圆角一律走 token（--radius / --radius-sm / --radius-pill = 2px），
+   层次靠边、不靠影 —— 只有浮层本体拿 --shadow-3。
+   当字一律深色档（--ink / --ink-mute / --ink-faint），不挂主题色原色。 */
+
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.panel {
+  outline: none;
+  width: min(760px, 96vw);
+  max-height: 88vh;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+.title { font-size: 17px; color: var(--ink); }
+.headActs { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.iconBtn {
+  width: 32px; height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.groupHint { font-size: 11px; color: var(--ink-mute); }
+.opt { color: var(--ink-faint); font-weight: 400; }
+.note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-mute);
+  border-left: 2px solid var(--line-3);
+  padding-left: 8px;
+}
+.empty { margin: 0; font-size: 11.5px; color: var(--ink-faint); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+
+/* 可点的小方块：静态无影，悬停才抬起（方贴纸稿那一条） */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.chip:hover:not(:disabled) {
+  border-color: var(--steel);
+  background: var(--bg-2);
+  transform: translateY(-2px);
+  box-shadow: var(--offset-sm);
+}
+.chip:disabled { color: var(--ink-faint); cursor: not-allowed; }
+.chip.isOn {
+  border-color: var(--steel);
+  background: color-mix(in srgb, var(--steel) 16%, var(--bg-1));
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* 地点：搜一格 + 一列可滚的场所 */
+.search { width: 100%; font-size: 12px; }
+.placeList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 6px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+}
+.place {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 9px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.place:hover { border-color: var(--steel); transform: translateY(-2px); box-shadow: var(--offset-sm); }
+.placeOn {
+  border-color: var(--steel);
+  background: color-mix(in srgb, var(--steel) 16%, var(--bg-1));
+}
+.placeName {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.placeMeta {
+  font-size: 10px;
+  color: var(--ink-faint);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* 哪一天：一排互斥小页签 */
+.seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-1);
+}
+.segBtn {
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink-mute);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+.segBtn:last-child { border-right: 0; }
+.segBtn:hover { background: var(--bg-2); color: var(--ink); }
+.segBtn.isOn {
+  background: color-mix(in srgb, var(--steel) 18%, var(--bg-1));
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.dateField { width: auto; max-width: 220px; font-size: 12px; }
+
+.err {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--red-deep);
+  background: var(--red-soft);
+  border: 1px solid color-mix(in srgb, var(--red) 34%, transparent);
+  border-radius: var(--radius-sm);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.summary {
+  font-size: 11px;
+  color: var(--ink-mute);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.grow { flex: 1 1 auto; }
+
+/* 手机档：浮层贴边、按钮撑满一行，避免 390 宽下挤成两截 */
+@media (max-width: 640px) {
+  .mask { padding: 10px; align-items: flex-end; }
+  .panel { width: 100%; max-height: 92vh; }
+  .placeList { grid-template-columns: 1fr; max-height: 140px; }
+  .foot .summary { flex-basis: 100%; }
+}

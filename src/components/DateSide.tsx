@@ -26,7 +26,7 @@
    链子与剧演舞台共用 `probeSceneCg` 一个函数，两处各写一套必然对不上。
    ============================================================ */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { charOf } from '../data/personas'
@@ -39,7 +39,9 @@ import { probeSceneCg } from '../lib/cg'
 import type { SceneCg } from '../lib/cg'
 import { inkOf } from '../lib/hue'
 import type { Rendezvous } from '../lib/rendezvous'
+import { lookOf, looksVersion, subscribeLooks } from '../lib/look'
 
+import { StatusCard } from './StatusCard'
 import css from './DateSide.module.css'
 
 /** 开发期（署名位那个「（兜底）」只在开发期出，与剧演舞台同一口径） */
@@ -115,7 +117,9 @@ function PersonArt({ id, wear, name }: { id: string; wear: string; name: string 
 }
 
 export function DateSide({ rv }: { rv: Rendezvous }) {
-  const { bondNow, relOf } = useTerminal()
+  const { bondNow, relOf, intimOf } = useTerminal()
+  /* 状态卡那一句话（AI 生成、只进卡）：写一次就要重画一次 —— 订阅那本账的版本号 */
+  const lookVer = useSyncExternalStore(subscribeLooks, looksVersion)
 
   /** 这一场在场的人：主位在前，同场的跟上（`rvAllIds` 已去重） */
   const people = useMemo(
@@ -135,9 +139,17 @@ export function DateSide({ rv }: { rv: Rendezvous }) {
            真混进一位没有底档的，这里就**不摆图位**，免得写出一个永远补不上的文件名。 */
         wear: hasIntimate(id) ? dateWearId(id) : '',
         main: id === rv.charId,
+        /* 背面那根条读的是私密档案的色情度（没有档案 → 不给读数，卡上照实写「——」） */
+        lewd: intimOf(id)?.lewd,
+        /* 私密档：这一场已经走到私密那一档，或者她本人本来就有私密档案 ——
+           两种都算「背面有意义」（见 components/StatusCard.tsx 的头注） */
+        intimate: rv.kind === 'intimate' || hasIntimate(id),
+        /* 这一位此刻那几句话（缺的那几项沿用上一次；一句都没有 → 卡上占位） */
+        look: lookOf(id),
       }
     }),
-    [rv, bondNow, relOf],
+    /* lookVer：状态卡那本账写一次就重算一次（读数在 lookOf 里现读） */
+    [rv, bondNow, relOf, intimOf, lookVer],
   )
 
   const partyNames = (rv.party ?? []).map((id) => charOf(id)?.name ?? id)
@@ -182,12 +194,18 @@ export function DateSide({ rv }: { rv: Rendezvous }) {
               </b>
               {p.role ? <span className={css.role}>{p.role}</span> : null}
 
-              <div className="meter">
-                <div
-                  className="meter__fill"
-                  style={{ width: `${p.bond}%`, background: `linear-gradient(90deg, ${p.hue}66, ${p.hue})` }}
-                />
-              </div>
+              {/* 状态卡（正面好感度 / 背面情欲值，两面各四项）——
+                  顶上那根条与那四句话都归它，所以这里**不再另摆一条 meter**：
+                  同一个读数摆两遍，翻面之后就分不清哪一根是「此刻」了。 */}
+              <StatusCard
+                charId={p.id}
+                name={p.name}
+                hue={p.hue}
+                bond={p.bond}
+                lewd={p.lewd}
+                intimate={p.intimate}
+                look={p.look}
+              />
 
               <div className={css.tags}>
                 <span

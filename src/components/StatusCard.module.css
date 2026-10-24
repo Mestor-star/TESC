@@ -1,0 +1,153 @@
+/* 人物状态卡（StatusCard）—— 正面好感度 / 背面情欲值，两面各四项。
+   底色与边线走 tokens；正面的数字与她那一支主题色同一色相，背面固定玫瑰
+   （那是情欲那一支，与色情状态栏、私密档案同一间房）。
+
+   两面用**同一个网格格**叠着摆（`.face { grid-area: 1 / 1 }`）：
+   高度取两面里高的那一面，翻过去时卡不会跳一下 —— 这比给一个写死的 min-height 稳。 */
+
+.card {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: var(--cursor-point);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--steel-deep);
+  outline-offset: 2px;
+}
+
+.inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 0.45s ease;
+}
+
+.card[data-face='back'] .inner {
+  transform: rotateY(180deg);
+}
+
+.face {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* 背面那一面**一直**是转过去的那一半（不是「翻到背面时才转」）——
+   两面同时挂在 DOM 上叠在同一格里，靠 backface-visibility 决定看得见哪一面。
+   这一条漏掉的话，正面状态下背面那层的字会原样盖在正面上（截图里一眼就看得见）。 */
+.face[data-status-face='back'] {
+  transform: rotateY(180deg);
+}
+
+/* 悬停只抬一档（方贴纸那一套：静态无影、hover 走实心垫片） */
+.card:hover .face {
+  border-color: color-mix(in srgb, var(--steel) 45%, var(--line-2));
+}
+.card:hover .inner {
+  transform: translateY(-1px);
+}
+.card[data-face='back']:hover .inner {
+  transform: rotateY(180deg) translateY(-1px);
+}
+
+/* —— 顶上那一根条 —— */
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.barHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.barHead b {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.word {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--violet-deep);
+}
+
+/* —— 四项 —— */
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.k {
+  flex: none;
+  min-width: 4.6em;
+  color: var(--ink-faint);
+}
+
+.one {
+  color: var(--ink-dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 没有 AI 文案的那一项：占位照实读，不假装有过一句 */
+.one[data-status-given='0'] {
+  color: var(--ink-faint);
+}
+
+.locked {
+  padding: 10px 2px 4px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-faint);
+}
+
+/* 减动效：不做翻转动画，当场切换（面还是那两面，只是不再转） */
+@media (prefers-reduced-motion: reduce) {
+  .inner,
+  .card[data-face='back'] .inner,
+  .card:hover .inner,
+  .card[data-face='back']:hover .inner {
+    transition: none;
+  }
+}
+
+/* 手机档：卡面收一档内边距，别把右栏顶长 —— 卡自己不长滚动层 */
+@media (max-width: 720px) {
+  .face {
+    padding: 7px 8px;
+  }
+  .k {
+    min-width: 4.1em;
+  }
+}

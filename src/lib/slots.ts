@@ -10,6 +10,7 @@
  */
 import type { ChatMsg, WorldState } from '../data/types'
 import { RENDEZVOUS_KEY } from './rendezvous'
+import { LOOK_KEY } from './look'
 import { PLOT_PENDING_KEY } from './plotpending'
 import { readGuide, resetGuide, writeGuide } from './guide'
 import type { GuideState } from './guide'
@@ -386,6 +387,9 @@ export function writeAutosave(snapshot: RunSnapshot): SaveSlot {
  *   · zts-sms-threads:v1  自建群（lib/smsthreads.ts 的 THREADS_KEY）
  *   · zts-sms-unread:v1   未读角标（lib/sms.ts 的 SMS_UNREAD_KEY）
  *   · zts-sms-tasks:v1    电话里「别人托付的事」（lib/smstasks.ts 的 TASKS_KEY）
+ *   · zts-look:v1         右栏状态卡的那一句话（lib/look.ts 的 LOOK_KEY）：按人挂、
+ *                         由回执的 look 落下来。它记的是「此刻她这个样子」—— 换一档
+ *                         就该换一个样子，所以读档与重置一并清（与 rendezvous 同一档）。
  *   · zts-sms-auto:v1     主动来信的节拍账（lib/smsauto.ts 的 AUTO_KEY：上次滚格 /
  *                         每人上次命中）。它与 zts-sms-unread 同类 —— 是**这一轮里**
  *                         被推演出来的账，不是设备偏好也不是档本身：不清就会拿上一档的
@@ -438,6 +442,7 @@ const RESEARCH_KEY = 'zts-research:v1'
  *  不在本清单里 —— 但它同样属于「这一轮」，两条路径都得调（见上面那一段注）。 */
 export const RUN_STATE_KEYS: readonly string[] = [
   RENDEZVOUS_KEY,
+  LOOK_KEY,
   PLOT_PENDING_KEY,
   SMS_THREADS_KEY,
   SMS_UNREAD_KEY,

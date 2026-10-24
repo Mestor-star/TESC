@@ -38,6 +38,8 @@ import { StreamTagParser } from './tavernlike/stream-parser'
 import { aggregateEvents } from './tavernlike/variables'
 import { canonFlagKey, snapFlagKey } from './flagname'
 import { anchorStatus, anchorsPrompt } from './anchors'
+import { LOOK_FIELDS } from './look'
+import type { LookDirective } from './look'
 
 /* ============================================================
    叙事时钟（WorldState.tick）
@@ -244,6 +246,24 @@ export interface PlotDirective {
    * 不在场的人一条都不收：心声是「此刻谁在心里响」，不是「谁可能在想什么」。
    */
   voices?: VoiceDirective[]
+  /**
+   * **右栏状态卡上那一句话**（AI 生成，只进卡、绝不进正文）。
+   *
+   * 正面四项 `head` / `upper` / `lower` / `mood`（头部 · 上半身 · 下半身 · 约会氛围），
+   * 背面四项 `chest` / `vagina` / `anus` / `mind`（胸部 · 小穴 · 屁穴 · 心理状态）。
+   * 每项**一句**、≤30 字 —— 写的是「此刻她这个样子」，不是旁白、不是对白。
+   *
+   * 三条收法（都在下面净化那一段里落地）：
+   *   ① `char` 只认名录，且与**在场名册**（`present`，就是 `castOfEvent` 那一份）
+   *      交叉校验 —— 不在场的人一条都不收（那不是此刻镜头里看得见的样子）；
+   *   ② 一回合至多 3 人；
+   *   ③ **同一人不必每回合都给**：给哪几项就换哪几项，缺的沿用上一次
+   *      （账面在 lib/look.ts 的 `applyLooks`，那一层只管并存）。
+   *
+   * ⚠️ 正文里**不要复述这些句子**：这一段是给右栏那张卡读的，写进正文就成了
+   * 「她的胸部……」这种描写塞进推演，正是主人点名不许的那一种。
+   */
+  look?: LookDirective[]
 }
 
 /** 心声的层数（闭集）—— 表层 / 伪装 / 深声，分寸见提示词那一节 */
@@ -362,6 +382,9 @@ const KNOWN_FIELDS = new Set([
   'advanceDays',
   // 心声（读心者听到的那几句）：漏在名单外就整条安静地丢 —— 心声区永远空着，也不报错
   'voices',
+  // 状态卡那一句话（AI 生成、只进右栏的卡）：漏在名单外就整条安静地丢 ——
+  // 卡面永远只有「—— 还没细看」，而且不报错（这个坑本仓踩过好几回）
+  'look',
 ])
 
 /** 一次私密推进的开发度增量上限（一次一小步：一回合跳满等于没有过程） */
@@ -386,6 +409,11 @@ const VOICE_LINE_MAX = 60
 const VOICE_SPEAKER_MAX = 20
 /** 心声的三层（闭集）—— 与类型 VoiceKind 是同一份，别处要遍历就引这一份 */
 export const VOICE_KINDS = ['表层', '伪装', '深声'] as const
+
+/** 一回合最多给几个人写状态卡那一句（再多就成了点名册，卡面也摆不下） */
+const LOOK_CHARS_MAX = 3
+/** 每项一句话的字数上限：**一句**。超了截断（宁短勿长 —— 一句变两句就不是「概括」了） */
+const LOOK_LINE_MAX = 30
 
 /**
  * 湿润读数一次能挪多少（绝对值）。
@@ -713,6 +741,45 @@ export function sanitizeDirective(v: unknown, present?: readonly string[] | null
       if (voices.length >= VOICE_MAX) break
     }
     if (voices.length) out.voices = voices
+  }
+
+  /* 状态卡那一句话（look）：AI 生成、只进右栏那张卡，**不进正文**。
+     收法与心声那一段同一副骨架，三道闸：
+       ① char 在名录里；present 给了就只收**此刻真在场上**的人 ——
+          不在场的人「此刻是什么样子」是凭空写出来的，那不是镜头里看得见的东西；
+       ② 一回合至多 LOOK_CHARS_MAX 人（多出来的整条丢，卡面也摆不下）；
+       ③ 每项**一句**、超了截到 LOOK_LINE_MAX 字；一条里一项都没有的就是空话，丢掉。
+     缺项**不补** —— 没给的沿用上一次那一句（lib/look.ts 的 applyLooks 只并给到的那几项）。
+     同一人在一条数组里出现两次的，并成一条（后写的盖前面的）。 */
+  if (Array.isArray(src.look)) {
+    const onScene = present ? new Set(present) : null
+    const byChar = new Map<string, LookDirective>()
+    for (const item of src.look) {
+      if (!item || typeof item !== 'object') continue
+      const o = item as Record<string, unknown>
+      const char = typeof o.char === 'string' ? o.char.trim() : ''
+      if (!CHAR_IDS.has(char)) {
+        console.warn('[look] 状态卡的 char 不在名录里，整条丢弃：', char)
+        continue
+      }
+      if (onScene && !onScene.has(char)) {
+        console.warn('[look] 状态卡的人此刻不在场，整条丢弃：', char)
+        continue
+      }
+      const one: LookDirective = byChar.get(char) ?? { char }
+      let given = 0
+      for (const f of LOOK_FIELDS) {
+        const raw = o[f]
+        if (typeof raw !== 'string') continue
+        const line = raw.replace(/\s+/g, ' ').trim().slice(0, LOOK_LINE_MAX)
+        if (!line) continue
+        one[f] = line
+        given += 1
+      }
+      if (given) byChar.set(char, one)
+    }
+    const look = [...byChar.values()].slice(0, LOOK_CHARS_MAX)
+    if (look.length) out.look = look
   }
 
   /* 此刻这一场在哪儿：短串，与约会那一支的 `date.place` 同一条上限。
@@ -1256,6 +1323,12 @@ export interface DirectiveEffects {
   acts: { char: string; add: ActCount }[]
   /** 本次实际落下的关系档位（逐人一条；绝对档位） */
   rel: { char: string; tier: RelId }[]
+  /**
+   * 本次落到右栏状态卡上的那几句（逐人一条；只并给到的那几项）。
+   * **不落这一层** —— 与 cg / cast / place 同一分工：盘由调用方落
+   * （`lib/look.ts` 的 `applyLooks`），这一层手里没有那本账。
+   */
+  look?: LookDirective[]
 }
 
 export interface ApplyOpts {
@@ -1385,6 +1458,9 @@ export function applyDirective(
     api.setRel(char, tier)
     fx.rel.push({ char, tier })
   }
+  /* 状态卡那一句话：与 cg / cast / place 同一分工 —— 这一层不落盘（手里没有那本账），
+     调用方读 fx.look，交给 lib/look.ts 的 `applyLooks` 并进 `zts-look:v1`。 */
+  if (d.look?.length) fx.look = d.look
   if (d.date) fx.date = d.date
   /* 时钟不在这儿落盘：applyDirective 手里没有世界写的入口（与 cg / cast 同一分工），
      调用方读 fx.advanceDays 自己调 advanceTick。 */
@@ -1420,6 +1496,9 @@ export function directiveHasFx(d: PlotDirective | null): boolean {
          不该还挂着「重写此回复」（重写会把同样那几条再记一遍，去重挡得住重复，
          但一个「这一回合什么都没落地」的提示就是在骗人）。 */
       Boolean(d.voices?.length),
+      /* ⚠️ **状态卡那一句（look）刻意不在这张名单里。** 它只改右栏一张卡的读法，
+         不是剧情推进 —— 只给了 look 的一回合若算「有落地」，「重写此回复」就会
+         挂在一个其实什么都没变的回合上（重写还会把同一批变量再写一遍）。 */
   )
 }
 
@@ -1520,6 +1599,13 @@ export function dateDirective(d: PlotDirective | null, charId: string, party: st
       if (allowed.has(char)) rel[char] = tier
     }
     if (Object.keys(rel).length) out.rel = rel
+  }
+  /* 状态卡那一句话：照放 —— 这一场在座的每一位都该有一张卡可读。
+     不过这道门只放这一场的人（主角约的那一位 + 同场的几位），
+     与 intim / acts / rel 同一把尺：不在这一场里的人「此刻是什么样子」写不出来。 */
+  if (d.look && d.look.length) {
+    const look = d.look.filter((x) => allowed.has(x.char))
+    if (look.length) out.look = look
   }
   return out
 }
@@ -1769,6 +1855,34 @@ export function voicesContract(): string {
 · 每条**一句**、≤60 字：只写她心里那一句话，不写旁白、不写动作、不加引号。
 · 只给**本段确实在场**的人：char 写角色 id；名录之外的人写 "other" 并另给 "speaker" 记名。
   不在场的人一条都不给 —— 引擎会按在场名册交叉校验，不在场的当场丢掉（那不是他耳朵够得着的地方）。`
+}
+
+/**
+ * 状态卡那一节（引擎机制，不是正文写法）。
+ *
+ * 主人要的是「每一项给一句话概括」，而且那句话**由 AI 生成**（不是规则文案池）——
+ * 于是它必须有一节把三件事说明白，否则模型只会二选一地坏：
+ *   ① 把「她的胸部……」这种描写写进**正文**（正是主人点名不许的那一种）；
+ *   ② 干脆不给 —— 右栏那张卡永远停在「—— 还没细看」，而没有任何地方报错。
+ *
+ * 与 voicesContract 同一位置、同一分量：都是「你写的东西末端有一栏是给界面读的」。
+ * 分寸只有三句：写此刻的样子（不是旁白）、每项一句 ≤30 字、缺的沿用上一次
+ * （不必为了凑齐八项把没变的也重写一遍）。背面的四项只在私密那一档才给。
+ */
+export function lookContract(who = '本段确实在场的人'): string {
+  return `【状态卡 · 那一句话写给右栏的卡看，不写进正文】
+右栏有一张可翻面的状态卡。正面四项 —— 头部 / 上半身 / 下半身 / 约会氛围；
+背面四项 —— 胸部 / 小穴 / 屁穴 / 心理状态。每一项要的是一句**概括**：
+此刻她这个样子（神态、身体的反应、这一场的气氛），一人一句、一句一事。
+这些句子走下面事件指令里的 look，**绝不要写进正文** ——
+正文里不要复述它们，也不要换个说法再说一遍：正文写发生了什么，卡上才写她此刻是什么样。
+· 一人一条，char 写角色 id，只给 ${who}；不在场的人一条都不给（引擎按在场名册交叉校验，不在场的当场丢掉）。
+· 一回合至多三个人。同一个人**不必每回合都给**：只在真的变了的时候给，缺的那几项沿用上一次那一句。
+· 每项**一句、≤30 字**：只写状态与样子，不写对白、不加引号、不加编号、不写成两三句。
+· 正面：head（头部）/ upper（上半身）/ lower（下半身）/ mood（约会氛围）。
+  背面：chest（胸部）/ vagina（小穴）/ anus（屁穴）/ mind（心理状态）——
+  背面那几项只在**已经走到私密那一档**时才给；还没到就别写。
+· 拿不准就不给：空着的那一项读作「—— 还没细看」，比编一句像样的空话好。`
 }
 
 /**
@@ -2199,6 +2313,8 @@ ${speechContract()}
 
 ${voicesContract()}
 
+${lookContract(present.length ? '本段确实在场的这几位' : '本段确实在场的人')}
+
 ${ANTI_AI_STYLE}
 
 【事件指令 · 每回合末尾必须输出】
@@ -2253,7 +2369,13 @@ ${free ? '' : `  "eventDone": true,                          // 这一段该了�
                                                 // 多女同场时逐人各给一条 —— 谁做了什么记在谁名下，不要合成一条` : ''}${present.length ? `,
   "rel": {                                    // 关系档位（仅本段确实在场的人）：给的是**此刻的档位**，绝对值不是增量
     "角色id": "${REL_IDS.join('|')}"
-  }                                             // 只在剧情真的挪了一步时给；往上、往下都给同一个字段；拿不准就整条省略` : ''}
+  },                                            // 只在剧情真的挪了一步时给；往上、往下都给同一个字段；拿不准就整条省略
+  "look": [                                   // 右栏状态卡的那一句（**不进正文**）：此刻她这个样子
+    { "char": "角色id",
+      "head": "头部一句", "upper": "上半身一句", "lower": "下半身一句", "mood": "气氛一句",
+      "chest": "胸部一句", "vagina": "小穴一句", "anus": "屁穴一句", "mind": "心理一句" }
+  ]                                             // 一人一条、一回合至多三人；不必每回合都给（缺的沿用上一次）
+                                                // 每项一句 ≤30 字；背面那四项只在私密那一档才给` : ''}
 }
 无任何变化时输出 { }。不要把本说明当作文本念出来。
 

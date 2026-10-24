@@ -24,6 +24,7 @@
    ============================================================ */
 
 import { charOf, profileLinesOf } from '../data/personas'
+import { MAP_LAYER_LABEL, MAP_NODES } from '../data/map'
 import { ACTIVE_DATE_BOND, INTIMATE_SLOTS, SLOT_META } from '../data/intimate'
 import { ACT_KINDS, ACT_META } from '../data/acts'
 import { REL_IDS } from '../data/rel'
@@ -96,6 +97,17 @@ export interface Rendezvous {
    * 旧档没有这一栏 → 空数组，行为与从前一致。
    */
   beats?: string[]
+  /**
+   * **这一场约的时候说好想走的流程**（`DATE_BEATS` 里登记的 id）。
+   *
+   * 与 `beats` 是一对、但不是一回事：`beats` 是**已经走到过**的那几拍（导演在回执里
+   * 报上来的事实，点亮对应的画），`plan` 是**打算走**的那几拍（操作员在「邀请约会」里
+   * 勾的那几项，一句打算、不是既成事实）。所以 `plan` **不参与** `dateCgPalette` 的
+   * 节拍闸门 —— 只是「这一场本来想做什么」的落点，给界面与往后提示词用。
+   *
+   * 旧档没有这一栏 → 空数组（等于「自由约会，没安排」），行为与从前一致。
+   */
+  plan?: string[]
   ts: number
   /** 走完了（会话里点「结束这一场」） */
   done: boolean
@@ -146,6 +158,11 @@ export function listRendezvous(): Rendezvous[] {
       const beats = Array.isArray(o.beats)
         ? [...new Set(o.beats.filter((x): x is string => typeof x === 'string' && isDateBeat(x)))]
         : []
+      /* 说好想走的流程：口径与 beats 逐条一样 —— 只认登记过的、去重、空则不写这个键。
+         旧档没有 → 空数组（自由约会） */
+      const plan = Array.isArray(o.plan)
+        ? [...new Set(o.plan.filter((x): x is string => typeof x === 'string' && isDateBeat(x)))]
+        : []
       out.push({
         id: o.id,
         charId: o.charId,
@@ -163,6 +180,7 @@ export function listRendezvous(): Rendezvous[] {
            全程无声（不报错、只是那张画永远差一步），所以 mech §36b 手写一条带
            `beats` 的原始账读一遍，看它回家之后还在不在。 */
         ...(beats.length ? { beats } : {}),
+        ...(plan.length ? { plan } : {}),
         ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : 0,
         done: o.done === true,
       })
@@ -191,6 +209,8 @@ export function openRendezvous(
     kind?: 'date' | 'intimate'; title?: string; place?: string; time?: string; from?: 'you' | 'them'
     /** 一并带着去的几位（1 男多女的那一场；主位之外的） */
     party?: string[]
+    /** 约的时候说好想走的流程（`DATE_BEATS` 的 id，「邀请约会」里勾的那几拍） */
+    plan?: string[]
   } = {},
 ): Rendezvous {
   /* 同场的几位在这儿也过一道：只认档案角色、去掉主位本人、去重、封顶 ——
@@ -199,6 +219,10 @@ export function openRendezvous(
     .filter((x) => !!charOf(x) && x !== charId)
     .filter((x, i, a) => a.indexOf(x) === i)
     .slice(0, PARTY_MAX)
+  /* 打算走的流程：与读回来时同一道筛（只认登记过的 id、去重） */
+  const plan = (opts.plan ?? [])
+    .filter((x) => isDateBeat(x))
+    .filter((x, i, a) => a.indexOf(x) === i)
   const rv: Rendezvous = {
     id: `${DATE_PREFIX}${crypto.randomUUID()}`,
     charId,
@@ -208,6 +232,7 @@ export function openRendezvous(
     ...(opts.time?.trim() ? { time: opts.time.trim().slice(0, 40) } : {}),
     from: opts.from === 'them' ? 'them' : 'you',
     ...(party.length ? { party } : {}),
+    ...(plan.length ? { plan } : {}),
     ts: Date.now(),
     done: false,
   }
@@ -217,7 +242,7 @@ export function openRendezvous(
 
 export function patchRendezvous(
   id: string,
-  patch: Partial<Pick<Rendezvous, 'kind' | 'title' | 'place' | 'time' | 'done' | 'party' | 'beats'>>,
+  patch: Partial<Pick<Rendezvous, 'kind' | 'title' | 'place' | 'time' | 'done' | 'party' | 'beats' | 'plan'>>,
 ): void {
   store(listRendezvous().map((r) => (r.id === id ? { ...r, ...patch } : r)))
 }
@@ -237,6 +262,88 @@ export function isDateThread(id: string): boolean {
 /** 该角色还有没有未走完的那一场（同一时间只留一场：一天里约两回是另一回事） */
 export function openDateOf(charId: string): Rendezvous | undefined {
   return listRendezvous().find((r) => r.charId === charId && !r.done)
+}
+
+/* ============================================================
+   自己开一场（界面上那枚「邀请约会」）
+   ------------------------------------------------------------
+   从前只有两条来路（短信里「约 TA」、对方先开口）。这一节补第三条：
+   **操作员自己把一场定下来** —— 选地点、说定时间、勾上想走的流程与同行的几位。
+   落到盘上仍是 `openRendezvous`，不另立一种记录。
+
+   地点不让人手打：选项**只从地图表的场所节点（`kind === 'site'`）里出** ——
+   手打的地名落不进地图，往后「这一场在哪儿」就与地图对不上账。校验同理：
+   `place` 必须是某个场所节点的名字，否则这一场开不出来（见 `validateInvite`）。
+   ============================================================ */
+
+/** 一个可选的地点（地图表里的**场所**节点，房间那一档太细、大区那一档太粗） */
+export interface DatePlace {
+  /** 地图节点 id */
+  id: string
+  /** 落进 `Rendezvous.place` 的就是这个名字 */
+  name: string
+  /** 所在大区的名字（列表里当副标，也可用来搜）；顶层节点没有父级 → 空串 */
+  district: string
+  /** 分层（地表 / 地下 / 浮空 / 异次元），列表里当第二行小字 */
+  layer: string
+}
+
+const DATE_PLACE_NODES = MAP_NODES.filter((n) => n.kind === 'site')
+
+/** 可选地点：地图表里的场所节点，按表里的次序（大区 → 场所，读起来是一路走下去） */
+export function datePlaces(): DatePlace[] {
+  return DATE_PLACE_NODES.map((n) => {
+    const parent = n.parent ? MAP_NODES.find((p) => p.id === n.parent) : undefined
+    return {
+      id: n.id,
+      name: n.name,
+      district: parent?.name ?? '',
+      layer: MAP_LAYER_LABEL[n.layer],
+    }
+  })
+}
+
+/** 这个名字认不认得出是地图上的一个场所（校验用；手打的、编的、旧档里换过名的都不认） */
+export function isDatePlace(place: string): boolean {
+  const p = place.trim()
+  return !!p && DATE_PLACE_NODES.some((n) => n.name === p)
+}
+
+/** 「邀请约会」提交时的那几格 */
+export interface InviteInput {
+  /** 主位（这一场跟谁） */
+  to: string
+  place: string
+  time?: string
+  /** 同行的几位（不含主位本人） */
+  party?: string[]
+}
+
+/**
+ * 开一场之前的校验：**不静默**，不通过就给一句人话（返回那句提示，通过返回 null）。
+ *
+ * 四条规矩，与界面那一侧的禁用状态是同一份口径（界面挡不住的，这里再挡一道 ——
+ * 补丁、脚本、别的入口都能直接调 `openRendezvous`）：
+ *   ① 主位得是名册上的人；
+ *   ② 地点必须在地图的场所节点里；
+ *   ③ 时间得说定（`Rendezvous.time` 与 `place` 成对，见 lib/plot.ts 的 `dateReady`）；
+ *   ④ 同一个人同一时间只留一场（`openDateOf`）；同行者不能是本人、不能重复、最多 `PARTY_MAX` 位。
+ */
+export function validateInvite(o: InviteInput): string | null {
+  const her = o.to ? charOf(o.to) : undefined
+  if (!her) return '先选一位要邀请的人。'
+  if (!o.place.trim()) return '还没选地点 —— 约在哪儿是这一场唯一的落点。'
+  if (!isDatePlace(o.place)) return `「${o.place}」不在地点上，换一个吧。`
+  if (!o.time?.trim()) return '还没说定时间 —— 今天、明天、周末，或者自己点一天。'
+  const live = openDateOf(o.to)
+  if (live) return `${her.name}身上还有一场没散（${live.title}）—— 先把它走完，再约新的。`
+  const party = o.party ?? []
+  if (party.includes(o.to)) return '同行的名单里不能有主位本人。'
+  if (new Set(party).size !== party.length) return '同行者重复了，去掉一个吧。'
+  if (party.length > PARTY_MAX) return `一起最多再带 ${PARTY_MAX} 位。`
+  const ghost = party.find((id) => !charOf(id))
+  if (ghost) return `同行名单里的「${ghost}」认不出来 —— 去掉它再提交。`
+  return null
 }
 
 /* ============================================================

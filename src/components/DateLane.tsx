@@ -55,9 +55,10 @@ import { clock } from '../lib/format'
 import { inkOf } from '../lib/hue'
 import type { ChatMsg } from '../data/types'
 import {
-  applyDirective, dateDirective, extractLiveDisplay, parseDirectorReply, replyDisplayText,
+  applyDirective, dateDirective, extractLiveDisplay, lookContract, parseDirectorReply, replyDisplayText,
   speechContract,
 } from '../lib/plot'
+import { applyLooks } from '../lib/look'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
   PARTY_MAX, cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous,
@@ -294,6 +295,9 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
            「没有和正文推演一样美化」就是这一条漏了（主人 2026-09-15 报的那一条）。
            摆法照主线：契约在预设之后、收尾的指令块之前。 */
         + `\n\n${speechContract('「在场角色」那一节')}`
+        /* 状态卡那一节：右栏那张卡上的一句话由模型写，而且**不许写进正文** ——
+           与主线同一个口子（plot.ts 的 lookContract），两边的分寸一个字都不差。 */
+        + `\n\n${lookContract('这一场在场的这几位')}`
         + dateBondRule(charId, party.map((p) => p.id))
       const turns = smsTurns(log, 12)
       /* 空线程 = 这一场刚开场：不给它留白，直接让对面把第一句说出来 */
@@ -338,6 +342,9 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
         const fx = applyDirective(dateDirective(parsed.directive, charId, cur.party ?? []), {
           meetChar, bumpBond, registerEnd, setFlag, flagKeys, bumpIntim, bumpAttire, bumpActs, setRel,
         })
+        /* 状态卡那一句话：按人并进 zts-look:v1（缺的那几项沿用上一次）。
+           与 cg / beat 同一分工 —— 落地那一层只把它递出来，写盘由这一层做。 */
+        if (fx.look?.length) applyLooks(fx.look)
         /* 这一回合什么都没往上走 → 湿润自己退一档（与主线那一路同一条规矩） */
         if (!fx.intim.length && !fx.attire.length) dryAttireAll()
         if (fx.cg) setCg(rvId, fx.cg)

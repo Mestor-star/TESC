@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, Key } from 'react'
 import { ArrowRight, ArrowUUpLeft, CaretRight, Check, Eraser, FloppyDisk, MagicWand, SlidersHorizontal, Sword, UploadSimple } from '@phosphor-icons/react'
 
@@ -47,10 +47,13 @@ import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, 
 import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
 import { smsContextFor } from '../lib/crosslink'
-import { intimAdvanceLabel } from '../data/intimate'
+import { hasIntimate, intimAdvanceLabel } from '../data/intimate'
 import { attireAdvanceLabel } from '../data/attire'
+import { StatusCard } from '../components/StatusCard'
+import { applyLooks, readLooks, looksVersion, subscribeLooks } from '../lib/look'
 import { DateLane } from '../components/DateLane'
 import { DateArchive } from '../components/DateArchive'
+import { InviteDate } from '../components/InviteDate'
 import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
 import type { ConcludedMark, PendingBattleMark } from '../lib/plotpending'
 import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
@@ -493,7 +496,7 @@ export function Plot() {
     epDone, bondNow, gateMissing, gateText, world, isMet,
     bumpBond, registerEnd, meetChar, setFlag, flagKeys, completeEvent, reopenEvent,
     records, requestProfile, bumpIntim, bumpAttire, dryAttireAll, castOfEvent, setCast, placeOfEvent, setPlace,
-    bumpActs, setRel, relOf, advanceTick,
+    bumpActs, setRel, relOf, advanceTick, intimOf,
     freeMode, setFreeMode, closeFreeSlot,
     dateRequest, clearDateRequest, logEpoch,
   } = useTerminal()
@@ -510,10 +513,22 @@ export function Plot() {
   const [lane, setLane] = useState<'main' | 'date' | 'past'>(boot.lane)
   /** 这一路开着的是哪一场（DateLane 换场时报上来） */
   const [datePick, setDatePick] = useState<string | null>(boot.pick)
+  /** 「邀请约会」那张浮层开着没有（`components/InviteDate.tsx`）—— 只在这里管开关 */
+  const [inviteOpen, setInviteOpen] = useState(false)
   /* 选中就记下（见上面 laneMemo 那一节）：卸载再回来还在这条车道、还是这一场 */
   useEffect(() => { laneMemo = lane }, [lane])
   useEffect(() => { datePickMemo = datePick }, [datePick])
   const rvVer = useSyncExternalStore(subscribeRendezvous, rendezvousVersion)
+  /* 状态卡那一句话（AI 生成、只进卡）：写一次重画一次 —— 右栏那张展开的卡读它 */
+  const lookVer = useSyncExternalStore(subscribeLooks, looksVersion)
+  /**
+   * 右栏此刻**展开的是哪一位**（不点不展开，见下方名册那一块）。
+   *
+   * 主人要的是「主线推演也要有右侧状态栏，但必须点击对应人物才能查看」——
+   * 所以它不是一块常驻的面板，而是名册上某一行被点开之后才长出来的那一张卡。
+   * 点第二次收起，按 Esc 也收起（手机档展开之后跟着名册往下走，不挤压正文、自己不长滚动层）。
+   */
+  const [castOpen, setCastOpen] = useState<string | null>(null)
   const liveRvs = useMemo(() => listRendezvous().filter((r) => !r.done), [rvVer])
   /**
    * 已经散场的那几场。
@@ -809,6 +824,15 @@ export function Plot() {
     () => (focusEv ? rosterRowsFor(castOfEvent(focusEv)) : []),
     [focusEv, castOfEvent],
   )
+  /* 状态卡那几句话：整本读一次（lookVer 一变就重读）—— 名册上点开的那一位读的是这里 */
+  const looksById = useMemo(() => readLooks(), [lookVer])
+  /* 展开态的两条收法：Esc 收起；换了段也收起（上一段的那个人不该跟着摆到下一段） */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCastOpen(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  useEffect(() => { setCastOpen(null) }, [focusEv?.id])
   /* 导演那层实时名册（world.cast）与**本段原文名册**（castOf）的差 —— 只在真有差的时候
      摆一行小字与一枚手动退路。**绝不**自动合并：导演把人移出场面是剧情（人真的走了），
      自动按回去等于替剧情翻案。谁不在了就由这一行数出来，不再给幽灵行。 */
@@ -972,6 +996,9 @@ export function Plot() {
          退不必谁下命令，所以它落在这儿（指令落地这一层），不进提示词 ——
          那句提醒摆进提示词，等于每回合都替她点一次火。 */
       if (!fx.intim.length && !fx.attire.length) dryAttireAll()
+      /* 状态卡那一句话（AI 生成、只进右栏的卡，**不进正文**）：按人并进 zts-look:v1，
+         缺的那几项沿用上一次。与 cg / cast 同一分工 —— applyDirective 只递出来，写盘在这层。 */
+      if (fx.look?.length) applyLooks(fx.look)
       const ev = EPISODES.find((e) => e.id === evId)
       if (fx.met.length) {
         const names = fx.met.map((id) => personOf(id)?.name ?? id).join(' · ')
@@ -2087,29 +2114,63 @@ export function Plot() {
             {castRows.map((r) => {
               const bond = bondNow(r.id)
               const met = isMet(r.id)
+              const open = castOpen === r.id
               return (
-                <button
-                  key={r.id}
-                  type="button"
-                  data-plot-cast={r.id}
-                  className={css.castRow}
-                  style={{ '--c': r.hue } as CSSProperties}
-                  onClick={() => openProfile(r.id)}
-                  title={met ? `调阅 ${r.name} 的档案` : `${r.name} 的档案尚未显影`}
-                >
-                  {met ? (
-                    <Portrait avatarId={r.id} name={r.name} hue={r.hue} sigil={r.sigil} size={26} round />
-                  ) : (
-                    /* 未遇见的不露脸，与档案页「？？？」同口径 */
-                    <span className="glyph" style={{ '--g': r.hue, width: 26, height: 26 }}>
-                      <span style={{ fontSize: 12 }}>{r.sigil}</span>
+                <Fragment key={r.id}>
+                  {/* 点这一行 = 展开/收起她的状态卡（**不点不展开**，见上面 castOpen 那一段）。
+                      档案页那条路没有堵：展开之后卡下面那一枚「调阅档案」」照旧通。
+                      收起时再点一次，或者按 Esc。 */}
+                  <button
+                    type="button"
+                    data-plot-cast={r.id}
+                    data-cast-open={r.id}
+                    aria-expanded={open}
+                    className={css.castRow}
+                    style={{ '--c': r.hue } as CSSProperties}
+                    onClick={() => setCastOpen((cur) => (cur === r.id ? null : r.id))}
+                    title={open ? `收起 ${r.name} 的状态卡` : `展开 ${r.name} 的状态卡（再点一次或 Esc 收起）`}
+                  >
+                    {met ? (
+                      <Portrait avatarId={r.id} name={r.name} hue={r.hue} sigil={r.sigil} size={26} round />
+                    ) : (
+                      /* 未遇见的不露脸，与档案页「？？？」同口径 */
+                      <span className="glyph" style={{ '--g': r.hue, width: 26, height: 26 }}>
+                        <span style={{ fontSize: 12 }}>{r.sigil}</span>
+                      </span>
+                    )}
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <b style={{ fontSize: 12.5 }}>{r.name}</b>
                     </span>
-                  )}
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <b style={{ fontSize: 12.5 }}>{r.name}</b>
-                  </span>
-                  <span className="tiny mono" style={{ color: 'var(--ink-mute)' }}>{met ? bond : '?'}</span>
-                </button>
+                    <span className="tiny mono" style={{ color: 'var(--ink-mute)' }}>{met ? bond : '?'}</span>
+                  </button>
+                  {open ? (
+                    /* 展开的那张卡就长在这一行下面（右栏内展开，不是浮层）：
+                       手机档里右栏本来就在正文下面单列，所以它只把这一栏顶长一点，
+                       既不挤压正文、也不另起一层滚动（卡自己不长 overflow）。 */
+                    <div
+                      data-cast-status={r.id}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 34, paddingTop: 2 }}
+                    >
+                      <StatusCard
+                        charId={r.id}
+                        name={r.name}
+                        hue={r.hue}
+                        bond={bond}
+                        lewd={intimOf(r.id)?.lewd}
+                        intimate={hasIntimate(r.id)}
+                        look={looksById[r.id] ?? null}
+                      />
+                      <button
+                        type="button"
+                        className={css.castReset}
+                        onClick={() => openProfile(r.id)}
+                        title={met ? `调阅 ${r.name} 的档案` : `${r.name} 的档案尚未显影`}
+                      >
+                        调阅档案
+                      </button>
+                    </div>
+                  ) : null}
+                </Fragment>
               )
             })}
             {/* 导演改过名册、又与原文不一样时的那一枚手动退路：把「原文几人 / 此刻几人」
@@ -2315,6 +2376,21 @@ export function Plot() {
         <div className={css.barRight}>
           <span className="chip">{doneCount}/{total} 事件</span>
           <span className="chip" data-records={records.length}>{records.length} 记录</span>
+          {/* 自己开一场：不必等短信里对方先开口。
+              **只在「约会记录」那一路上收起来** —— 那一屏是只读旧账，从那儿再约一场会让人
+              以为是在往旧账里添东西；主线与约会专线都留着。成事之后与短信「约 TA」同一口径
+              （InviteDate 里调 requestDate），这一路当场跳过去并选中新开的那一场。 */}
+          {lane !== 'past' ? (
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+              data-date-invite="1"
+              onClick={() => setInviteOpen(true)}
+              title="自己定一场约会：选地点、说定时间，想走的流程与同行的几位都可以勾。"
+            >
+              邀请约会
+            </button>
+          ) : null}
           {/* 「等一等」：玩家显式让时间往前走，**不经过模型** —— 三条推进路径里最短的一条。
               一格 = 半天，所以两档各推 1 / 2 格；按一下同时写一条观测记录。 */}
           <button
@@ -2486,6 +2562,9 @@ export function Plot() {
           ) : null}
         </div>
       </div>
+
+      {/* 邀请约会那张浮层（portal 挂在 body 上，位置由 InviteDate 自己定） */}
+      {inviteOpen ? <InviteDate onClose={() => setInviteOpen(false)} /> : null}
 
       {/* 内嵌预设条：套用/另存/导入方案（不含密钥；随时可在「设置」里做更细的方案管理） */}
       <div className={css.presetBar}>
