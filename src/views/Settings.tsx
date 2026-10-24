@@ -22,6 +22,7 @@ import { PanelHead, useFolds } from '../components/Fold'
 import { auditBackupText, buildBackup, downloadBackup, fmtBytes, pickBackupFile, restoreBackup } from '../lib/backup'
 import type { BackupFile, BackupPreview } from '../lib/backup'
 import { requestRemount } from '../lib/remount'
+import { setAutoOn, useAutoOn } from '../lib/smsauto'
 
 import css from './Settings.module.css'
 import bcss from './Backup.module.css'
@@ -570,6 +571,46 @@ function BackupPanel() {
   )
 }
 
+/**
+ * 主动来信（她会自己找你）。
+ * 默认关：关了就只有「你发出去之后她回」，不再有按节拍自己滚进来的信。
+ * 开关与节拍账同住 `zts-sms-auto:v1`（lib/smsauto.ts 的 AUTO_KEY），不新开键。
+ */
+function SmsAutoPanel() {
+  const on = useAutoOn()
+  return (
+    <section className="panel" style={{ marginBottom: 16 }} data-sms-auto-panel>
+      <div className="panel__head">
+        <span className="panel__title"><ChatsCircle size={15} weight="bold" /> 角色短信</span>
+        <span className="muted tiny" style={{ marginLeft: 'auto' }}>PROACTIVE / LOCAL</span>
+      </div>
+      <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className={css.note}>
+          <b>默认关：她不主动，只回你。</b><br />
+          关着时只有你发出去的那一条才会招来回复；她不会按节拍自己找你（约你出来那一路也跟着停）。
+          打开之后恢复「隔一阵子自己发一条」的老行为。开关存在本终端（键名 zts-sms-auto:v1），
+          关掉只是不再<b>产生</b>新的来信 —— 已经收到的线程、未读角标一条都不动。
+        </div>
+        <label className={css.bedSw} data-sms-auto>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            className={`btn ${on ? '' : 'btn--ghost'}`}
+            style={{ fontSize: 12 }}
+            onClick={() => setAutoOn(!on)}
+          >
+            {on ? '主动来信：开' : '主动来信：关'}
+          </button>
+          <span className="tiny muted">
+            主动来信（她会主动找你）。默认关 —— 想让她自己有动静时才打开。
+          </span>
+        </label>
+      </div>
+    </section>
+  )
+}
+
 export function Settings() {
   const { push, navigate, setupMode } = useTerminal()
   const [cfgs, setCfgs] = useState<Record<Channel, ApiSettings> | null>(null)
@@ -1091,6 +1132,8 @@ export function Settings() {
       </div>
 
       <AudioPanel />
+
+      <SmsAutoPanel />
 
       <BackupPanel />
 

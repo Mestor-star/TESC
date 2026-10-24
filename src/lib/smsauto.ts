@@ -11,9 +11,14 @@
    频率是刻意的克制：**每 20 分钟滚一格，格子上再过一道 45% 的骰**
    （滚过就算用掉，不中的格子不补掷 —— 所以是「每格 45%」不是「每格至少一条」），
    同一个人至少隔 45 分钟 —— 免得一打开终端就涌进来一堆寒暄。
+
+   ⚠️ **总闸默认是关的**（主人的口径「让私信不再自动发送，只在我们发送后回复」）：
+   `on` 为假时这一整套**一格都不滚** —— 不挂定时器、不对钟、不掷骰、不写盘。
+   开关与节拍账同住 `zts-sms-auto:v1`（就是 `on` 这一项），键里没有 `on` 一律按关算；
+   设置页那一枚「主动来信（她会主动找你）」是它唯一的把手。
    ============================================================ */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { EPISODES } from './freetime'
@@ -39,6 +44,11 @@ export const SAME_CHAR_MS = 45 * 60 * 1000
 const TICK_MS = 45 * 1000
 
 export interface AutoState {
+  /**
+   * 主动来信的总闸 —— **默认关**（键里没有这一项就算关）。
+   * 关着时调度器一步都不走：不挂钟、不对钟、不掷骰、不写盘（见文件头）。
+   */
+  on: boolean
   /**
    * 上一次**滚格**的时刻（epoch ms）—— 注意不是「上一次来信」：
    * 那一格掷偏了也照样记，否则下一 tick 会拿同一次 45% 反复掷，
@@ -69,9 +79,9 @@ const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v)
 function loadState(): AutoState {
   try {
     const raw = localStorage.getItem(AUTO_KEY)
-    if (!raw) return { roll: 0, per: {} }
+    if (!raw) return { on: false, roll: 0, per: {} }
     const p = JSON.parse(raw) as unknown
-    if (!p || typeof p !== 'object') return { roll: 0, per: {} }
+    if (!p || typeof p !== 'object') return { on: false, roll: 0, per: {} }
     const o = p as Record<string, unknown>
     const per: Record<string, number> = {}
     if (o.per && typeof o.per === 'object' && !Array.isArray(o.per)) {
@@ -83,9 +93,11 @@ function loadState(): AutoState {
        不同但**同样是「上一轮是什么时候」** —— 直接续上，等于把改版前的等待接过来，
        不必让升级的人白等一格，也不必清档。 */
     const roll = num(o.roll) || num(o.last)
-    return { roll, per }
+    /* 键里没有 `on`（旧档 / 从没开过）= 关。**默认关**是这一版的口径，
+       别写成 `!== false` —— 那正好把升级上来的人全放行了。 */
+    return { on: o.on === true, roll, per }
   } catch {
-    return { roll: 0, per: {} }
+    return { on: false, roll: 0, per: {} }
   }
 }
 
@@ -95,6 +107,36 @@ function saveState(s: AutoState): void {
   } catch {
     /* 隐私模式下降级：退化为「本次会话内不重复」 */
   }
+}
+/**
+ * 总闸的订阅簿。
+ * 设置在「终端设置」那一页翻，调度器在常驻的 Shell 上 —— 两处隔着一整棵视图树，
+ * 所以开关走一个模块级的小仓（与 lib/audio 同一套写法），不靠 props 往下穿。
+ */
+const autoListeners = new Set<() => void>()
+/** 读不到 localStorage（隐私模式）时，至少让这一次会话里的开关翻得动 */
+let memOn: boolean | null = null
+
+/** 开关现在是不是开着（默认关） */
+export function readAutoOn(): boolean {
+  return memOn ?? loadState().on
+}
+
+/** 翻开关：**只改 `on` 这一项**，节拍账（roll / per）原样留着 —— 关掉不等于清账 */
+export function setAutoOn(on: boolean): void {
+  memOn = on
+  saveState({ ...loadState(), on })
+  for (const fn of autoListeners) fn()
+}
+
+export function subscribeAutoOn(fn: () => void): () => void {
+  autoListeners.add(fn)
+  return () => { autoListeners.delete(fn) }
+}
+
+/** 设置页与调度器共用的一份读数 */
+export function useAutoOn(): boolean {
+  return useSyncExternalStore(subscribeAutoOn, readAutoOn, () => false)
 }
 
 /**
@@ -142,7 +184,15 @@ export function canSendNow(g: SendGate): boolean {
 /**
  * 主动来信的调度钩子。挂在常驻的 Shell 上，全局只有一份。
  */
+/**
+ * 主动来信的调度钩子。挂在常驻的 Shell 上，全局只有一份。
+ *
+ * ⚠️ 总闸关着时**一支钟都不挂**（不是「挂着、到点再返回」）：后者照样会在
+ * `rollStep` 的 'seed' 那一步对钟、把 `zts-sms-auto:v1` 写下去，页面切回时
+ * 也照样补一次 —— 那就不叫关掉了。
+ */
 export function useProactiveSms(): void {
+  const autoOn = useAutoOn()
   const { operatorName, isMet, bondNow, epDone, push, world, unlocked } = useTerminal()
   /* 上下文放进 ref：调度是「到点才看」的，闭包不该因为依赖变化而重启计时 */
   const ctx = useRef({ operatorName, isMet, bondNow, epDone, push, world, unlocked })
@@ -151,6 +201,7 @@ export function useProactiveSms(): void {
   const inFlight = useRef(false)
 
   useEffect(() => {
+    if (!autoOn) return
     let alive = true
 
     const tick = async () => {
@@ -162,7 +213,7 @@ export function useProactiveSms(): void {
       const step = rollStep(state, now)
       /* 钟还没对上：只记下此刻，**当场不掷** —— 否则刚进游戏那一下就等于白捡一次 45% */
       if (step === 'seed') {
-        saveState({ roll: now, per: state.per })
+        saveState({ on: state.on, roll: now, per: state.per })
         return
       }
       if (step === 'wait') return
@@ -171,7 +222,7 @@ export function useProactiveSms(): void {
          （没人在名单上、通道没配好、生成失败），这一格都不再重掷 ——
          「每 20 分钟 45%」与「每 20 分钟至少一条」的分界就在这一笔。 */
       const hit = Math.random() < HIT_CHANCE
-      saveState({ roll: now, per: state.per })
+      saveState({ on: state.on, roll: now, per: state.per })
       if (!hit) return
 
       // 在「短信已解锁、遇见过、且不在眼前这段事件里」的人中挑一个（规矩见 `canSendNow`）
@@ -197,7 +248,7 @@ export function useProactiveSms(): void {
 
       inFlight.current = true
       /* 记她这一笔：同一个人 45 分钟内不接第二条（这一格本身早已用掉，见上）。 */
-      saveState({ roll: now, per: { ...state.per, [charId]: now } })
+      saveState({ on: state.on, roll: now, per: { ...state.per, [charId]: now } })
       try {
         const logs = loadSmsLogs()
         const meta = TAVERN_PERSONAS.find((p) => p.charId === charId)
@@ -273,7 +324,7 @@ export function useProactiveSms(): void {
       window.clearInterval(id)
       window.clearTimeout(first)
     }
-  }, [])
+  }, [autoOn])
 }
 
 /** 去掉开头可能被模型带上的「【名】」，单聊不需要它 */

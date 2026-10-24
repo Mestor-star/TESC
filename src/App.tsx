@@ -459,7 +459,8 @@ function Shell() {
   const { view, push, varsOpen, slotsOpen } = useTerminal()
   const booted = useRef(false)
 
-  /* 主动来信：挂在常驻的 Shell 上 —— 观测者不在电话页也照常收到 */
+  /* 主动来信：挂在常驻的 Shell 上 —— 观测者不在电话页也照常收到。
+     总闸默认关（设置 → 角色短信那条开关）：关着时这个钩子一支钟都不挂。 */
   useProactiveSms()
 
   useEffect(() => {
