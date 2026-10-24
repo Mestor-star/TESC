@@ -7,6 +7,7 @@ import { isCharId } from '../data/chars'
 import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
 import { plotContextFor } from '../lib/crosslink'
 import { nameKey } from '../lib/namekey'
+import { InviteDate } from '../components/InviteDate'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
 
@@ -63,6 +64,9 @@ export function Tavern() {
   /* 群聊名册与电话页的两个页签（会话 / 任务） */
   const [groups, setGroups] = useState<GroupThread[]>(listGroups)
   const [tab, setTab] = useState<'chat' | 'tasks'>('chat')
+  /* 「邀请约会」那张浮层：约人这件事本来就发生在**短信这一页**（写信、说定时间地点），
+     所以入口就摆在这页的右上角；成事之后 InviteDate 自己开一场并跳去约会专线。 */
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [groupPick, setGroupPick] = useState<string[] | null>(null)
   const [groupName, setGroupName] = useState('')
   const [taskDraft, setTaskDraft] = useState('')
@@ -648,11 +652,22 @@ ${preset.post}` : '')
         </div>
         <div className="vhead__right">
           <span className="chip chip--on"><span className="chip__dot" /> {linkState}</span>
+          <button
+            className="btn btn--ghost"
+            style={{ fontSize: 12 }}
+            data-date-invite="1"
+            onClick={() => setInviteOpen(true)}
+            title="自己定一场约会：选对象、地点，说定时间，想走的流程与同行的几位都可以勾"
+          >
+            邀请约会
+          </button>
           <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('settings')}>
             前往设置
           </button>
         </div>
       </div>
+
+      {inviteOpen ? <InviteDate onClose={() => setInviteOpen(false)} /> : null}
 
       {/* 左栏 300 是这一页自己的口径（底座 `.wrap` 是 318）—— 从前这一句是**内联**写的，
           内联样式媒体查询够不着，于是 `Comms.module.css` 里那条「≤960 摞成一栏」

@@ -53,7 +53,6 @@ import { StatusCard } from '../components/StatusCard'
 import { applyLooks, readLooks, looksVersion, subscribeLooks } from '../lib/look'
 import { DateLane } from '../components/DateLane'
 import { DateArchive } from '../components/DateArchive'
-import { InviteDate } from '../components/InviteDate'
 import { listRendezvous, rendezvousVersion, subscribeRendezvous } from '../lib/rendezvous'
 import type { ConcludedMark, PendingBattleMark } from '../lib/plotpending'
 import { readConcluded, readPendingBattle, writeConcluded, writePendingBattle } from '../lib/plotpending'
@@ -513,8 +512,6 @@ export function Plot() {
   const [lane, setLane] = useState<'main' | 'date' | 'past'>(boot.lane)
   /** 这一路开着的是哪一场（DateLane 换场时报上来） */
   const [datePick, setDatePick] = useState<string | null>(boot.pick)
-  /** 「邀请约会」那张浮层开着没有（`components/InviteDate.tsx`）—— 只在这里管开关 */
-  const [inviteOpen, setInviteOpen] = useState(false)
   /* 选中就记下（见上面 laneMemo 那一节）：卸载再回来还在这条车道、还是这一场 */
   useEffect(() => { laneMemo = lane }, [lane])
   useEffect(() => { datePickMemo = datePick }, [datePick])
@@ -2376,21 +2373,6 @@ export function Plot() {
         <div className={css.barRight}>
           <span className="chip">{doneCount}/{total} 事件</span>
           <span className="chip" data-records={records.length}>{records.length} 记录</span>
-          {/* 自己开一场：不必等短信里对方先开口。
-              **只在「约会记录」那一路上收起来** —— 那一屏是只读旧账，从那儿再约一场会让人
-              以为是在往旧账里添东西；主线与约会专线都留着。成事之后与短信「约 TA」同一口径
-              （InviteDate 里调 requestDate），这一路当场跳过去并选中新开的那一场。 */}
-          {lane !== 'past' ? (
-            <button
-              className="btn btn--ghost"
-              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
-              data-date-invite="1"
-              onClick={() => setInviteOpen(true)}
-              title="自己定一场约会：选地点、说定时间，想走的流程与同行的几位都可以勾。"
-            >
-              邀请约会
-            </button>
-          ) : null}
           {/* 「等一等」：玩家显式让时间往前走，**不经过模型** —— 三条推进路径里最短的一条。
               一格 = 半天，所以两档各推 1 / 2 格；按一下同时写一条观测记录。 */}
           <button
@@ -2562,9 +2544,6 @@ export function Plot() {
           ) : null}
         </div>
       </div>
-
-      {/* 邀请约会那张浮层（portal 挂在 body 上，位置由 InviteDate 自己定） */}
-      {inviteOpen ? <InviteDate onClose={() => setInviteOpen(false)} /> : null}
 
       {/* 内嵌预设条：套用/另存/导入方案（不含密钥；随时可在「设置」里做更细的方案管理） */}
       <div className={css.presetBar}>
