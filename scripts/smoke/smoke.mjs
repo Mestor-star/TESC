@@ -239,6 +239,16 @@ async function goto(viewTxt) {
      快的时候（那一块早就拉过、浏览器有缓存）它压根没上过屏，这一句照样立刻返回。 */
   await poll(`!document.querySelector('[data-view-loading]')`, 20000, 'view chunk: ' + viewTxt)
 }
+/* 「角色」那一格默认摆的是**新版**（星铁风四栏）；旧版档案（原 P2 那一屏）
+   收在左栏底那枚「旧版显示」后面。下面 E/F…O 几段量的是旧版档案本身 ——
+   先按过去再量，断言一条没删。按钮不在（新版没上屏）就返回 false，调用方照常往下走，
+   于是「按钮没了」会在紧随其后的 poll 上当场红出来，而不是被这里悄悄吃掉。 */
+async function oldDossier() {
+  const hit = await ev(`(()=>{const b=document.querySelector('[data-char-old]');if(!b)return false;b.click();return true})()`)
+  if (!hit) return false
+  await poll(`!!document.querySelector('[data-archive-card]') || !!document.querySelector('.vpage')`, 20000, 'old dossier mounted')
+  return true
+}
 const wState = `(()=>{try{const s=JSON.parse(localStorage.getItem('zts-terminal:v3'));if(!s)return {empty:true};const w=s.world||{};return {ep:Object.keys(s.epDone||{}).length,cur:s.cur,unlocked:s.unlocked,rec:(w.records||[]).map(r=>({id:r.eventId,mode:r.mode,ts:r.ts})),off:w.offset||{},fl:w.flags||{},name:s.operatorName}}catch(e){return {err:String(e)}}})()`
 async function state() { return ev(wState) }
 
@@ -521,8 +531,8 @@ try {
     aq.floor === true && aq.main.has === true,
     JSON.stringify({ floor: aq.floor, from: aq.floorFrom }))
 
-  // A0：P9 角色档案受门禁保护——此时仍是全新世界、unlocked=false，档案不可调阅
-  await goto('角色档案')
+  // A0：P9 「角色」受门禁保护——此时仍是全新世界、unlocked=false，那一格不可调阅
+  await goto('角色')
   await sleep(700)
   /* ---------- A·G：梅芙的引导（方形头像 + 对话气泡 · 可跳过） ---------- */
   await poll(`!!document.querySelector('[data-guide-layer="boot"]')`, 15000, 'A guide boot')
@@ -613,9 +623,9 @@ try {
   const gAfter = await ev(`!!document.querySelector('[data-guide-layer]')`)
   ok('AG3 跳过之后换模块不再出现引导', gAfter === false, 'layer=' + gAfter)
   await goto('终端总览')
-  const a0 = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色档案'));const v=document.querySelector('.vpage');return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length,toast:document.body.innerText.includes('权限未解锁'),sub:v?v.innerText.slice(0,300):''}})()`)
+  const a0 = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色'));const v=document.querySelector('.vpage');return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length,toast:document.body.innerText.includes('权限未解锁'),sub:v?v.innerText.slice(0,300):''}})()`)
   const preUnlock = await ev(`(${wState}).unlocked`)
-  ok('A0 未解锁时角色档案被拦下（导航 LOCKED · 无档案卡 · 提示权限未解锁）',
+  ok('A0 未解锁时「角色」被拦下（导航 LOCKED · 无档案卡 · 提示权限未解锁）',
     preUnlock === false && a0.navLock === true && a0.cards === 0 && a0.toast === true, 'unlocked=' + preUnlock + ' ' + JSON.stringify(a0))
   await goto('剧情推进')
   await poll(`document.body.innerText.includes('剧情推进')`, 20000, 'A plot h1')
@@ -637,11 +647,13 @@ try {
   st = await state()
   ok('A4 归档三段 → 记录3', st.rec.length === 3 && st.rec.every((r) => r.mode === 'offline'), JSON.stringify(st.rec))
   ok('A5 v1-3 完成 → 已解锁', st.unlocked === true, 'unlocked=' + st.unlocked)
-  // A5b：门禁既开，角色档案随之可调阅
-  await goto('角色档案')
+  // A5b：门禁既开，「角色」随之可调阅（新版进门 → 旧版档案在那一枚按钮后面）
+  await goto('角色')
+  await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'A5b character page')
+  await oldDossier()
   await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'A5b archive after unlock')
-  const a5b = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色档案'));return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length}})()`)
-  ok('A5b 解锁后角色档案开放（导航脱锁 · 25 卡）', a5b.navLock === false && a5b.cards === 25, JSON.stringify(a5b))
+  const a5b = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色'));return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length}})()`)
+  ok('A5b 解锁后「角色」开放（导航脱锁 · 旧版档案 25 卡）', a5b.navLock === false && a5b.cards === 25, JSON.stringify(a5b))
   // 低语者日志
   await goto('低语者日志')
   await poll(`document.body.innerText.includes('记录流')`, 20000, 'A saga')
@@ -1165,7 +1177,7 @@ try {
   /* 走一圈模块：换页即换床 —— 终端 / 剧情 / 短信 / 菜单（标题屏那一段走不到，
      它只在那一下）都在这一圈里排过；作战与首领两段由前面 Phase N 的战报覆盖。 */
   const pRoam0 = await ev(`window.__au.src`)
-  for (const v of ['终端总览', '剧情推进', '短信', '角色档案', '武装图鉴', '终端设置']) {
+  for (const v of ['终端总览', '剧情推进', '短信', '角色', '武装图鉴', '终端设置']) {
     await goto(v)
     await sleep(1100)
   }
@@ -1233,16 +1245,105 @@ try {
   // Q 跑完停在开场标题屏 —— 重新进游戏并回到运行（后面的相接在这里继续）
   await boot()
 
-  /* ============ Phase G：P2 角色档案 —— 全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看 ============ */
-  console.log('\n[Phase G] P2 Archive：25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
+  /* ============ Phase G：角色页 —— 新版四栏（G0*）· 旧版档案 P2（全员卡 / ∞ 无法测量 / 全员羁绊 / 就近弹窗 / 立绘查看） ============ */
+  console.log('\n[Phase G] 角色：新版四栏 G0a~G0i · 旧版档案 25卡 · ∞无法测量 · 全员羁绊 · 就近弹窗 · 立绘查看')
   // 档案页已在门禁之后（Phase E 清过 localStorage，此处重新置位），本相聚焦档案本体
   await ev(`(()=>{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');s.unlocked=true;localStorage.setItem(k,JSON.stringify(s));return true})()`)
   await reloadFresh()
   await boot()
   await poll(`document.body.innerText.includes('终端总览')`, 20000, 'G dash after unlock')
-  await goto('角色档案')
+  await goto('角色')
+  await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'G character page')
+
+  /* ---- G0：新版「角色」页自己那几条（星铁风四栏）----
+     ① 顶上那条横栏只摆头像与分类，点一下就换人（左中右一起变）；
+     ② 六个页签都打得开、各有内容；
+     ③ 战术执行里每张卡右上角有「能耗 / 冷却」，卡底有一条分割线 + 加粗的附加效果；
+     ④ 世界的色彩六支、最高 7 级、买一级之后等级与合计一起动；
+     ⑤ 名下有私密立绘的人才点得动立绘（只认 data-char-art-ready）；
+     ⑥ 旧版 → 新版那一枚按钮能来回切。 */
+  const g0a = await ev(`(()=>{const bar=document.querySelector('[data-char-bar]');
+    const slots=[...document.querySelectorAll('[data-char-switch]')];
+    return {bar:!!bar,slots:slots.length,txt:slots.slice(0,3).map(s=>s.innerText.replace(/\\s+/g,' ').trim())}})()`)
+  ok('G0a 新版「角色」页：顶上横栏 + 全员切换位（只摆头像与分类）',
+    g0a.bar === true && g0a.slots === 26, JSON.stringify(g0a))
+  // 先认主角：他是**恒定可读**的那一位（别人要 world.met 里有名才显形，见 G1b）
+  const g0b = await ev(`(()=>{const b=document.querySelector('[data-char-switch="operator"]');if(!b)return false;b.click();return true})()`)
+  await sleep(400)
+  const g0b2 = await ev(`(()=>{const d=document.querySelector('[data-char-detail]');const a=document.querySelector('[data-char-art]');
+    return {id:d?d.getAttribute('data-char-detail'):null,art:a?a.getAttribute('data-char-art'):null,
+      txt:d?d.innerText.replace(/\\s+/g,' ').slice(0,120):''}})()`)
+  ok('G0b 详情面板认的是切换栏选中的那一位（左中右同一人）',
+    g0b === true && g0b2.id === 'operator' && g0b2.art === 'operator' && g0b2.txt.includes('言万心叶'), JSON.stringify(g0b2))
+  const g0tabs = ['detail', 'system', 'tactics', 'colors', 'arm', 'extra']
+  const g0c = []
+  for (const t of g0tabs) {
+    await ev(`(()=>{const b=document.querySelector('[data-char-tab="` + t + `"]');if(!b)return false;b.click();return true})()`)
+    await sleep(220)
+    const len = await ev(`(()=>{const p=document.querySelector('[data-char-panel]');return p?p.innerText.replace(/\\s+/g,' ').length:0})()`)
+    g0c.push(t + ':' + len)
+  }
+  ok('G0c 六个页签都打得开、各有内容（详情 / 能力体系 / 战术执行 / 世界的色彩 / 反现实武装 / 附属档案）',
+    g0c.every((x) => Number(x.split(':')[1]) > 40), g0c.join(' · '))
+  // 上一圈停在「附属档案」，下面两张卡各自要在自己的页签上量
+  await ev(`(()=>{document.querySelector('[data-char-tab="tactics"]').click();return true})()`)
+  await sleep(250)
+  const g0d = await ev(`(()=>{const c=document.querySelector('[data-char-up]');if(!c)return null;
+    const rate=c.querySelector('[data-char-rate]');const ex=c.querySelector('[data-char-extra]');
+    const top=c.querySelector('[data-char-rate]');
+    return {rate:rate?rate.innerText.trim():null,extra:ex?ex.innerText.trim().slice(0,40):null,
+      bold:ex?getComputedStyle(ex.querySelector('b')).fontWeight:null,border:ex?getComputedStyle(ex).borderTopWidth:null,
+      right:top?Math.round(top.getBoundingClientRect().right):null,cardRight:Math.round(c.getBoundingClientRect().right)}})()`)
+  ok('G0d 战术执行：卡右上角「能耗 / 冷却」+ 卡底分割线后的加粗附加效果',
+    !!g0d && !!g0d.rate && /能耗:\s*\d+ \/ 冷却:\s*\d+/.test(g0d.rate) && !!g0d.extra
+    && Number(g0d.bold) >= 700 && parseFloat(g0d.border) >= 1, JSON.stringify(g0d))
+  await ev(`(()=>{document.querySelector('[data-char-tab="colors"]').click();return true})()`)
+  await sleep(250)
+  const g0e = await ev(`(()=>{const rows=[...document.querySelectorAll('[data-char-color]')];
+    return {n:rows.length,lv:rows.map(r=>r.getAttribute('data-char-color-lv')),
+      maxed:rows.filter(r=>/Lv\.\\d+\\/7/.test(r.innerText)).length,
+      t:rows[0]?rows[0].innerText.replace(/\\s+/g,' ').slice(0,90):''}})()`)
+  ok('G0e 世界的色彩：六支原文奇迹、每支 7 级', g0e.n === 6 && g0e.maxed === 6, JSON.stringify(g0e))
+  // 买一级：先把终末点数塞够（价 100，见 data/growth 的 COLOR_BASE_COST）
+  await ev(`(async()=>{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-battle');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+    await new Promise((res,rej)=>{const tx=db.transaction('meta','readwrite');
+      tx.objectStore('meta').put({key:'coin',value:5000});tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true})()`)
+  await reloadFresh()
+  await boot()
+  await goto('角色')
+  await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'G colors reload')
+  await ev(`(()=>{document.querySelector('[data-char-tab="colors"]').click();return true})()`)
+  await sleep(250)
+  const g0f0 = await ev(`(()=>{const r=document.querySelector('[data-char-color="miracle-sakura"]');return r?{lv:r.getAttribute('data-char-color-lv'),txt:r.innerText.replace(/\\s+/g,' ')}:null})()`)
+  await ev(`(()=>{const b=document.querySelector('[data-char-color-buy="miracle-sakura"]');if(!b||b.disabled)return false;b.click();return true})()`)
+  await sleep(500)
+  const g0f1 = await ev(`(()=>{const r=document.querySelector('[data-char-color="miracle-sakura"]');return r?{lv:r.getAttribute('data-char-color-lv'),txt:r.innerText.replace(/\\s+/g,' ')}:null})()`)
+  ok('G0f 世界的色彩：买一级之后等级与效果一起动',
+    !!g0f0 && g0f0.lv === '0' && !!g0f1 && g0f1.lv === '1' && g0f1.txt !== g0f0.txt,
+    JSON.stringify({ before: g0f0 && g0f0.lv, after: g0f1 && g0f1.lv }))
+  // 买完把成长档清回去：色彩是全队加成，留着它会把后面几段的战斗读数整体抬一格
+  await ev(`(()=>{localStorage.removeItem('zts-growth:v1');return true})()`)
+  /* 立绘那一枚：**名下有私密立绘才点得动**（data-char-art-ready 决定 disabled）。
+     这里量的是反例 —— 主角名下没有那张图，按钮必须点不动；正例（露娜）在 G0i，
+     那要等 world.met 播种之后她才读得出。 */
+  const g0g = await ev(`(()=>{const a=document.querySelector('[data-char-art]');
+    return {id:a?a.getAttribute('data-char-art'):null,ready:a?a.getAttribute('data-char-art-ready'):null,
+      off:!!(a&&a.disabled),nsfw:a?a.getAttribute('data-char-nsfw'):null}})()`)
+  const offClick = await ev(`(()=>{const a=document.querySelector('[data-char-art]');if(a&&!a.disabled)a.click();return true})()`)
+  await sleep(300)
+  const g0g2 = await ev(`(()=>{const a=document.querySelector('[data-char-art]');return a?a.getAttribute('data-char-nsfw'):null})()`)
+  ok('G0g 没有私密立绘的人那枚立绘按钮点不动（不装假图、不摆一个按了没反应的键）',
+    g0g.ready === null && g0g.off === true && g0g2 === '0', JSON.stringify({ ...g0g, offClick, after: g0g2 }))
+  // 旧版 → 新版 来回切
+  await oldDossier()
+  await poll(`!!document.querySelector('[data-old-dossier-toggle]')`, 15000, 'G old dossier toggle')
+  await ev(`(()=>{document.querySelector('[data-old-dossier-toggle]').click();return true})()`)
+  await poll(`!!document.querySelector('[data-character-page]')`, 15000, 'G back to new')
+  ok('G0h 一枚按钮在「旧版档案」与新版「角色」之间来回切', true)
+
+  await oldDossier()
   await poll(`!!document.querySelector('.vpage') && document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'G archive 25 cards')
-  ok('G1 全员 25 张档案卡（解锁后开放）', true)
+  ok('G1 全员 25 张档案卡（解锁后开放 · 旧版那一面）', true)
   // P3b：未遇见 → 锁定保密。封存卡不得泄露姓名 / 武装 / 五轴 / 羁绊
   const lockProbe = await ev(`(()=>{const all=[...document.querySelectorAll('[data-archive-card]')];const lock=all.filter(c=>c.hasAttribute('data-locked-id'));return {all:all.length,lock:lock.length,named:lock.filter(c=>!c.innerText.includes('？？？')).length,axis:lock.filter(c=>c.querySelector('[data-axis-num],[data-axis-normal],[data-axis-limit]')).length,bond:lock.filter(c=>c.innerText.includes('当前羁绊')).length}})()`)
   ok('G1b 未遇见者一律封存（且封存卡不显姓名/五轴/羁绊）',
@@ -1253,7 +1354,27 @@ try {
   ok('G1c 播种「已遇见」名录（供全卡断言）', seedMet === 25, 'seed=' + seedMet)
   await reloadFresh()
   await boot()
-  await goto('角色档案')
+  await goto('角色')
+  await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'G character after met seed')
+  /* G0i：这时候露娜已经「照过面」了 —— 顶上点她，左中右一起换；
+     她名下有一张私密立绘（public/cg/lunaNSFW/NSFW立绘/cg-intim-luna.webp），
+     所以那枚立绘按钮**点得动**：按一下 data-char-nsfw 0 → 1。 */
+  await ev(`(()=>{document.querySelector('[data-char-switch="luna"]').click();return true})()`)
+  await sleep(500)
+  const g0i0 = await ev(`(()=>{const d=document.querySelector('[data-char-detail]');const a=document.querySelector('[data-char-art]');
+    return {id:d?d.getAttribute('data-char-detail'):null,art:a?a.getAttribute('data-char-art'):null,
+      ready:a?a.getAttribute('data-char-art-ready'):null,nsfw:a?a.getAttribute('data-char-nsfw'):null,
+      txt:d?d.innerText.replace(/\\s+/g,' ').slice(0,80):''}})()`)
+  await ev(`(()=>{const a=document.querySelector('[data-char-art]');if(a&&!a.disabled)a.click();return true})()`)
+  await sleep(500)
+  const g0i1 = await ev(`(()=>{const a=document.querySelector('[data-char-art]');if(!a)return null;
+    const img=a.querySelector('img');
+    return {nsfw:a.getAttribute('data-char-nsfw'),src:img?img.getAttribute('src'):null}})()`)
+  ok('G0i 顶上换人：左中右一起换成露娜；她那枚立绘点得动（私密立绘 0→1）',
+    g0i0.id === 'luna' && g0i0.art === 'luna' && g0i0.ready === '1' && g0i0.txt.includes('露娜')
+    && g0i1 && g0i1.nsfw === '1' && String(g0i1.src).includes('cg-intim-luna'),
+    JSON.stringify({ ...g0i0, after: g0i1 }))
+  await oldDossier()
   await poll(`document.querySelectorAll('[data-archive-card]:not([data-locked-id])').length===25`, 20000, 'G archive unlocked')
   ok('G1d 全员已遇见后封存解除（25/25 可读）', true)
   // P2 起读数改为「常态/极限」双值，故不再数 ∞ 字符数，改按 data 属性判定语义。
@@ -2672,8 +2793,9 @@ try {
     JSON.stringify(nLegacy))
 
   /* ============ Phase O：主角专档（角色档案 + 世界书） ============ */
-  console.log('\n[Phase O] 主角专档：角色档案分期面板 + 「主角专档 · 言万心叶」世界书')
-  await goto('角色档案')
+  console.log('\n[Phase O] 主角专档：旧版档案的分期面板 + 「主角专档 · 言万心叶」世界书')
+  await goto('角色')
+  await oldDossier()
   await poll(`!!document.querySelector('[data-op-arc-toggle]')`, 15000, 'O archive mounted')
   const o1 = await ev(`(()=>{const b=document.querySelector('[data-archive-card]');
     const t=document.querySelector('[data-op-arc-toggle]');if(t)t.click();
@@ -2803,7 +2925,8 @@ try {
     pSeed === true, 'seed=' + pSeed)
   await reloadFresh()
   await boot()
-  await goto('角色档案')
+  await goto('角色')
+  await oldDossier()
   await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'P archive 25 cards')
 
   /* 开一个人的卡 → 量正面那一节 → 翻过去 → 量背面。三个人走的是同一段，
@@ -3919,7 +4042,7 @@ try {
   /* M2 十一个视图：一屏一屏走，每屏都不许有元素探出视口。
      这条路是**全部**手机档改动的总账 —— 任何一处漏了 `min-width: 0`、
      少了一条窄屏规则、或者把那几处内联 px 忘在了原地，都会在这一条上现形。 */
-  const Z_NAVS = ['终端总览', '剧情推进', '地图', '低语者日志', '情景记忆库', '智库', '武装图鉴', '研究', '角色档案', '任务简报', '终末图鉴', '短信', '终端设置']
+  const Z_NAVS = ['终端总览', '剧情推进', '地图', '低语者日志', '情景记忆库', '智库', '武装图鉴', '研究', '角色', '任务简报', '终末图鉴', '短信', '终端设置']
   const zBad = []
   for (const v of Z_NAVS) {
     await goto(v)
@@ -4016,7 +4139,8 @@ try {
   const zCoarse = await ev(`matchMedia('(pointer: coarse)').matches`)
   ok('Z6 仿真报的是**粗指针**（`pointer: coarse` 那一整段的前提，不成立的话下面两条是空账）',
     zCoarse === true, `matches=${zCoarse}`)
-  await goto('角色档案')
+  await goto('角色')
+  await oldDossier()
   await sleep(900)
   const zTap = await ev(`(()=>{
     const h=(el)=>el?Math.round(el.getBoundingClientRect().height):null
@@ -4101,7 +4225,7 @@ try {
     await sleep(600); await shot('o4-manual-folded')
     await ev(`(()=>{const b=document.querySelector('[data-fold-expand-all]');if(b)b.click();return true})()`)
     await sleep(600); await shot('o5-manual-open')
-    await goto('角色档案'); await sleep(1200)
+    await goto('角色'); await oldDossier(); await sleep(1200)
     await shot('o6-archive-banner')
     await ev(`(()=>{const t=document.querySelector('[data-op-arc-toggle]');if(t)t.click();return true})()`)
     await sleep(900); await shot('o7-archive-operator')

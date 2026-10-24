@@ -101,7 +101,11 @@ const Memory = view('Memory', () => import('./views/Memory'))
 const Lore = view('Lore', () => import('./views/Lore'))
 const Arms = view('Arms', () => import('./views/Arms'))
 const Research = view('Research', () => import('./views/Research'))
-const Archive = view('Archive', () => import('./views/Archive'))
+/* 「角色」这一格的两个面都要收一枚切换回调（旧版显示 / 新版显示）。
+   `view()` 的出口类型不带 props（十一个视图本来也不用），所以在**这两行**补一层：
+   组件自己接的是可选回调，不传也照常成立（见 views/Archive 与 views/Character 的签名）。 */
+const Archive = view('Archive', () => import('./views/Archive')) as unknown as ComponentType<{ onShowNew?: () => void }>
+const Character = view('Character', () => import('./views/Character')) as unknown as ComponentType<{ onShowOld?: () => void }>
 const Missions = view('Missions', () => import('./views/Missions'))
 const Codex = view('Codex', () => import('./views/Codex'))
 const Tavern = view('Tavern', () => import('./views/Tavern'))
@@ -122,7 +126,7 @@ const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
   { id: 'lore', en: 'THINK TANK', cn: '智库', icon: <Vault size={21} weight="bold" /> },
   { id: 'arms', en: 'ARMORY', cn: '武装图鉴', icon: <Sword size={21} weight="bold" /> },
   { id: 'research', en: 'RESEARCH', cn: '研究', icon: <Flask size={21} weight="bold" /> },
-  { id: 'archive', en: 'ARCHIVE', cn: '角色档案', icon: <Users size={21} weight="bold" /> },
+  { id: 'archive', en: 'CHARACTER', cn: '角色', icon: <Users size={21} weight="bold" /> },
   { id: 'missions', en: 'MISSIONS', cn: '任务简报', icon: <MapPin size={21} weight="bold" /> },
   { id: 'codex', en: 'CODEX', cn: '终末图鉴', icon: <BookOpen size={21} weight="bold" /> },
   { id: 'tavern', en: 'SMS / CHARACTER CHAT', cn: '短信', icon: <ChatDots size={21} weight="bold" /> },
@@ -138,7 +142,7 @@ const TITLE: Record<ViewId, { en: string; cn: string }> = {
   lore: { en: 'DATA / THINK TANK', cn: '智库' },
   arms: { en: 'DATA / ARMORY', cn: '武装图鉴' },
   research: { en: 'RESEARCH / LAB', cn: '研究' },
-  archive: { en: 'DATA / ARCHIVE', cn: '角色档案' },
+  archive: { en: 'DATA / CHARACTER', cn: '角色' },
   missions: { en: 'FIELD / MISSIONS', cn: '任务简报' },
   codex: { en: 'CODEX / ENDINGS', cn: '终末图鉴' },
   tavern: { en: 'SMS / CHARACTER CHAT', cn: '短信' },
@@ -435,6 +439,27 @@ function AudioPill() {
   )
 }
 
+/* ============================================================
+   「角色」这一格：新版为主，旧版档案收在一枚开关后面
+   ------------------------------------------------------------
+   新版 `views/Character.tsx` 是默认那一面（星铁风四栏：顶上换人 / 左侧页签 /
+   中间立绘 / 右侧主内容区）。旧版「角色档案」（views/Archive.tsx）的内容一个字没动，
+   只是从**默认入口**退到「旧版显示」那一枚按钮后面 —— 它那套五轴双值、
+   私密档案、战斗档案的断言仍在冒烟里一条条跑，按回来就能看。
+
+   开关状态记在**模块变量**里：它是一次会话内的显示偏好，不进存档
+   （新持久化键要登记进 slots.ts 的清理表，为一个开关不值当）。离开这一格再回来，
+   停在上次按的那一面。
+   ============================================================ */
+let oldDossier = false
+function CharacterPage() {
+  const [old, setOld] = useState(oldDossier)
+  const show = (v: boolean) => { oldDossier = v; setOld(v) }
+  return old
+    ? <Archive onShowNew={() => show(false)} />
+    : <Character onShowOld={() => show(true)} />
+}
+
 function Stage() {
   const { view } = useTerminal()
   const page = (() => {
@@ -447,7 +472,7 @@ function Stage() {
       case 'lore': return <Lore />
       case 'arms': return <Arms />
       case 'research': return <Research />
-      case 'archive': return <Archive />
+      case 'archive': return <CharacterPage />
       case 'missions': return <Missions />
       case 'codex': return <Codex />
       case 'tavern': return <Tavern />

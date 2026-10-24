@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    定点复核 —— 让源码自己证明这些规矩真的生效
    ------------------------------------------------------------
    这一支叫 mech 出身，从「战斗机制」起家；如今它量的是**整个终端凡是
@@ -128,8 +128,17 @@ import {
 } from '../../src/lib/battle/derive'
 import { AXIS_RESCALE, BATTLE_AXIS } from '../../src/lib/battle/battle-axis'
 import {
-  effectiveGrowth, LEVEL_BASE_COST, LEVEL_RATE, LEVEL_TAIL_RATE, LEVEL_LINEAR_LEVELS, LEVEL_STEP_PCT, levelCostOf,
+  effectiveGrowth, migrateLevels, LEVEL_BASE_COST, LEVEL_RATE, LEVEL_TAIL_RATE, LEVEL_LINEAR_LEVELS,
+  LEVEL_STEP_PCT, levelCostOf,
 } from '../../src/lib/battle/store'
+import {
+  baseStageOf, colorLevelOf, colorCostOf, colorsOf, growthBonusOf, isNoBonus,
+  skillUpsOf, talentUpsOf, unlockStateOf, _useGrowthSave,
+} from '../../src/lib/growth'
+import {
+  COLOR_BASE_COST, COLOR_COST_TABLE, COLOR_MAX_LEVEL, COLOR_STEP, COLORS, GROWTH_CHARS,
+  SKILL_COST_LV2, SKILL_LINES,
+} from '../../src/data/growth'
 import { AXIS_REF } from '../../src/data/types'
 import { MISSIONS } from '../../src/data/missions'
 import { TIMELINE } from '../../src/data/timeline'
@@ -151,7 +160,7 @@ import { DEBUFF_KEYS } from '../../src/lib/battle/types'
 import type { NumericEffectKey, SkillEffect } from '../../src/lib/battle/types'
 import { ARCH, place } from '../../src/lib/battle/atlas'
 import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
-import { GEARS, ITEMS } from '../../src/lib/battle/gear'
+import { GEARS, ITEMS, canEquip } from '../../src/lib/battle/gear'
 import { LION_PAIR_ID, bondsOf } from '../../src/lib/battle/synergy'
 import { CHAR_LINES, FOLLOW_LINES, LINE_POOL, PINNED_LINES, familiar, lineFor, poolFor } from '../../src/lib/battle/banter'
 import { NAMED_BOSSES, namedBossOf } from '../../src/lib/battle/bosses'
@@ -1734,20 +1743,27 @@ export function run(): MechReport {
     ok('不耗回合 · 道具：条不动、手数不涨、不登记本回合已出手',
       user.bar === barBefore && sF.hand === handBefore && !sF.acted.includes(user.id),
       `条 ${barBefore}→${user.bar}　手数 ${handBefore}→${sF.hand}　acted=${sF.acted.length}`)
-    ok('不耗回合 · 道具照旧落地，且顺路回节拍',
-      healTarget.hp > hurt && sF.bag.ration === bagBefore - 1
-      && user.tempo === 10 + TUNING.itemTempo,
+    /* 2026-09-21 主人改口径：「道具在战斗中可以无限使用，不消耗回合」。
+       **期望值跟着改，断言一条不删**：这一剂该落地、背包该**不减**、节拍该**不动**。
+       一并撤掉的还有「每次丢药回 itemTempo」—— 限次时那是小补贴，
+       不限次之后就是无限节拍泵（空丢药也能把节拍刷满），所以这一条现在必须是 0 回。 */
+    ok('不耗回合 · 道具照旧落地，但存量不扣、也不再回节拍（不限次数）',
+      healTarget.hp > hurt && sF.bag.ration === bagBefore && user.tempo === 10,
       `回血 ${hurt}→${healTarget.hp}　余量 ${bagBefore}→${sF.bag.ration}　节拍 10→${user.tempo}`)
-    /* 用完额度再丢一剂 —— 这一下要被吞掉（存量也不能白扣） */
-    const bagAfter1 = sF.bag.ration ?? 0
+    /* 同一回合里再丢一剂 —— 不限次数，这一下**必须照样落地**（从前是被额度吞掉的） */
+    healTarget.hp = Math.round(healTarget.hpMax * 0.2)
+    const hurt2 = healTarget.hp
     act(sF, { t: 'item', itemId: 'ration', targetId: healTarget.id })
-    ok('不耗回合 · 额度用尽就吞掉（本回合那一剂是白废的，存量不扣）',
-      sF.freeUsed.item >= TUNING.freePerBeat.item && sF.bag.ration === bagAfter1
-      && user.bar === barBefore,
-      `额度 ${sF.freeUsed.item}/${TUNING.freePerBeat.item}　余量 ${bagAfter1}→${sF.bag.ration}`)
+    ok('不耗回合 · 不限次数：同一回合里第二剂照样落地（存量仍不动 · 条仍不动）',
+      healTarget.hp > hurt2 && sF.bag.ration === bagBefore
+      && user.bar === barBefore && sF.hand === handBefore,
+      `回血 ${hurt2}→${healTarget.hp}　余量 ${sF.bag.ration}（本回合记 ${sF.freeUsed.item} 剂）`)
 
-    /* 换装：同样不耗回合，且**绝不碰冷却**（A→B→A 就能刷掉装具技冷却） */
-    const gearSlot = GEARS.find((g) => !!g.skill)!.id
+    /* 换装：同样不耗回合，且**绝不碰冷却**（A→B→A 就能刷掉装具技冷却）。
+       ⚠️ 挑这一件时**必须挑这个人装得上的**（is/canEquip）：2026-09-21 起
+       「露娜的丝线」也有了自己的招，而它是 onlyFor 的 —— 按「表上第一件带招的」
+       取会取到它，于是这一手被 canSwapTo 的认人那一关拦下，断言跟着全塌。 */
+    const gearSlot = GEARS.find((g) => !!g.skill && canEquip('isis', g.id))!.id
     user.cds = { 'gear-probe': 2 }
     act(sF, { t: 'equip', gearId: gearSlot })
     ok('不耗回合 · 换装：条不动、手数不涨、**冷却原样**（换装只重建面板）',
@@ -1758,6 +1774,27 @@ export function run(): MechReport {
     ok('不耗回合 · 换装的额度也是每回合一次',
       sF.freeUsed.gear >= TUNING.freePerBeat.gear && sF.hand === handBefore,
       `额度 ${sF.freeUsed.gear}/${TUNING.freePerBeat.gear}`)
+
+    /* 换武装（`{ t: 'swap' }`）：与 equip 同一个落地，2026-09-21 另立的那个名字。
+       判两道门：① 背包里有没有这一件（`BattleState.owned`）；② 认不认这个人（onlyFor）。
+       换不上的那一下**不花额度**，也不许把手数推走 —— 屏上会写一行「换不上」的理由。 */
+    sF.owned = { [gearSlot]: 1 }
+    sF.freeUsed.gear = 0
+    const onlyG = GEARS.find((g) => !!g.onlyFor?.length)!.id
+    act(sF, { t: 'swap', gearId: onlyG })
+    ok('换武装 · 认人的那一件换不上（canEquip 那一关 · 额度不花）',
+      user.gear === gearSlot && sF.freeUsed.gear === 0 && sF.hand === handBefore,
+      `装具 ${user.gear ?? '无'}　额度 ${sF.freeUsed.gear}`)
+    const notOwned = GEARS.find((g) => g.id !== gearSlot && g.id !== onlyG && !g.onlyFor)!.id
+    act(sF, { t: 'swap', gearId: notOwned })
+    ok('换武装 · 背包里没有的那一件换不上（owned 那一关）',
+      user.gear === gearSlot && sF.freeUsed.gear === 0, `装具 ${user.gear ?? '无'}`)
+    sF.owned = { ...sF.owned, [notOwned]: 1 }
+    act(sF, { t: 'swap', gearId: notOwned })
+    ok('换武装 · 背包里有的那一件换得上，且条/手数不动（「不耗回合换武装」的实体）',
+      user.gear === notOwned && user.bar === barBefore && sF.hand === handBefore
+      && sF.freeUsed.gear === 1,
+      `装具 ${gearSlot}→${user.gear}`)
 
     /* 额度按**回合**清：把这一回合打完（我方全员各出一手），额度回满 */
     const tickBefore = sF.tick
@@ -8639,6 +8676,124 @@ export function run(): MechReport {
       + '见 `PvScreen.tsx` 顶上 ⑥ 与紧挨着的常量，不在这儿复述')
   } catch (e) {
     fail.push('开场影像取片段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+
+  /* ---------- 43) 成长系统（等级 / 技能与天赋 / 世界的色彩） ----------
+     主人 2026-10 的三条：等级按原著的 Stage 做、技能与天赋靠剧情或点数、
+     世界的色彩 1→7 级。这一节钉四样东西，缺一条这套东西就会悄悄走样：
+
+       (a) **旧档不崩、进度不丢** —— 那一格换的是「说法」（次数 → Stage 推进），
+           不是存法，所以 0..N 必须原样读进来；脏值只丢那一格，不许把整张表带崩。
+       (b) **技能第 1 级由剧情白送、第 2 级只能花点数** —— 两条路各钉一条，
+           再加一条对照（点数不够就不解锁），免得「免费」那一条其实也收钱。
+       (c) **色彩成本表 n=1..7 与「上次 × (4 × n)」逐格一致** —— 主人的公式。
+       (d) **零解锁时 combatantOf 逐字节等于改动前** —— 这一条是整套接线的地基：
+           没有成长 = derive 那几个落点一个字节都不许动。所以这里不只查「加成是 0」，
+           还做一次**买了再退**的对照：摆一份存档 → 输出变 → 抽掉存档 → 输出回到原样。 */
+  try {
+    /* (a) 旧档迁移 */
+    const legacy = migrateLevels({
+      hikari: 3, luna: '2', mefisa: { lv: 1 }, nyau: -4, maria: null, phidra: 'nope',
+    })
+    ok('成长 · 旧档 levels 迁移：0..N 原样读进来（负数 / null / 脏字符串只丢那一格）',
+      legacy.hikari === 3 && legacy.luna === 2 && legacy.mefisa === 1
+      && !('nyau' in legacy) && !('maria' in legacy) && !('phidra' in legacy),
+      `hikari 3 · luna '2'→2 · mefisa {lv:1}→1；丢掉的：nyau(-4) maria(null) phidra('nope')；`
+      + `结果 ${JSON.stringify(legacy)}`)
+    const junk = [migrateLevels('not-an-object'), migrateLevels(null), migrateLevels([1, 2])]
+    ok('成长 · 迁移（对照）：整格是脏的也不炸 —— 一律返回空表，不抛',
+      junk.every((j) => Object.keys(j).length === 0),
+      `三份脏输入 → ${junk.map((j) => JSON.stringify(j)).join(' / ')}`)
+    ok('成长 · 等级显示 = 原著 Stage：基线从档案的终末潜力来（不是从 0 起）',
+      baseStageOf('luna') === 3 && baseStageOf(OPERATOR_ID) === 4 && baseStageOf('hikari') === 1,
+      `露娜 Stage${baseStageOf('luna')}（档案 Stage3「成长」）· 心叶 Stage${baseStageOf(OPERATOR_ID)}`
+      + `（Stage4「活性化」）· 恋兔无终末 → 起点 Stage${baseStageOf('hikari')}`)
+
+    /* (b) 剧情白送 / 点数购买
+       口径：第 1 级挂在剧情节点上 —— **节点到了它自己就在**（不用点、不用钱）；
+       节点没到，钱包再鼓也解不开（这就是「第 1 级只认剧情」那条硬规矩）。
+       第 2 级起没有 story 那一格，只有价 —— 只能花点数。 */
+    const line = SKILL_LINES.hikari![0]!
+    const storyId = line.levels[0]!.story!
+    const lvWithStory = skillUpsOf('hikari', { [storyId]: true }).find((u) => u.key === line.key)!
+    ok('成长 · 技能第 1 级：剧情节点到了就自动免费解锁（不用点、一分钱不花）',
+      lvWithStory.lv === 1 && !line.levels[0]!.cost,
+      `「${line.name}」第 1 级 · 剧情 ${storyId} 已读 · 钱包 0 → 解锁到 ${lvWithStory.lv} 级`)
+    const lvNoStory = skillUpsOf('hikari', {}).find((u) => u.key === line.key)!
+    const richNoStory = unlockStateOf('hikari', 'skill', line.key, {}, 99_999_999)
+    ok('成长 · 技能（对照）：剧情没到，钱再多也解不开第 1 级 —— 那一级只认剧情',
+      lvNoStory.lv === 0 && !richNoStory.ok && richNoStory.free && richNoStory.reason.includes(storyId),
+      `剧情未读 · 钱包 99999999 → 解锁到 ${lvNoStory.lv} 级 · ${richNoStory.reason}`)
+    const paid = unlockStateOf('hikari', 'skill', line.key, { [storyId]: true }, SKILL_COST_LV2)
+    ok('成长 · 技能第 2 级：只能花终末点数买（剧情读完了也不白送）',
+      paid.ok && !paid.free && paid.cost === SKILL_COST_LV2,
+      `第 1 级已在（剧情）· 第 2 级 → 要 ${paid.cost} 点（story 那一格只在第 1 级）`)
+    const poor = unlockStateOf('hikari', 'skill', line.key, { [storyId]: true }, 0)
+    ok('成长 · 技能（对照）：点数不够就不解锁 —— 「能点」不是因为漏了钱的检查',
+      !poor.ok && poor.reason === '终末点数不够',
+      `第 2 级 · 点数 0 → ok=${poor.ok} · ${poor.reason}`)
+    const noLine = GROWTH_CHARS.filter((id) => !skillUpsOf(id, {}).length || !talentUpsOf(id, {}).length)
+    ok('成长 · 每个人（名册 25 位 + 操作员）都至少有一条技能线与一条天赋线',
+      noLine.length === 0,
+      noLine.length ? `缺的：${noLine.join('、')}` : `${GROWTH_CHARS.length} 位逐人查过`)
+
+    /* (c) 色彩成本表 */
+    const want: number[] = []
+    let c = COLOR_BASE_COST
+    for (let n = 1; n <= COLOR_MAX_LEVEL; n++) {
+      if (n > 1) c = Math.round(c * COLOR_STEP * n)
+      want.push(c)
+    }
+    ok('成长 · 世界的色彩：成本表 n=1..7 逐格等于「上次 × (4 × n)」',
+      want.join(',') === COLOR_COST_TABLE.join(',') && COLOR_COST_TABLE.length === COLOR_MAX_LEVEL,
+      `n=1..7 → ${COLOR_COST_TABLE.join(' / ')}`)
+    ok('成长 · 世界的色彩：就是原文那六种奇迹（樱 / 黄金 / 苍蓝 / 蓝 / 灰 / 黑）',
+      COLORS.length === 6 && colorsOf().length === 6
+      && COLORS.map((x) => x.name).join('') === '樱色奇迹黄金奇迹苍蓝奇迹蓝色奇迹灰色奇迹黑色奇迹',
+      COLORS.map((x) => `${x.name}→${x.field}`).join(' · '))
+    ok('成长 · 色彩（对照）：价格表只有 7 格（买不到第 8 级），第 1 级的价是表头那一格',
+      COLOR_COST_TABLE.length === 7 && COLORS.every((x) => colorCostOf(x.id) === COLOR_COST_TABLE[colorLevelOf(x.id)]),
+      `表长 ${COLOR_COST_TABLE.length} · 第 1 级 ${COLOR_COST_TABLE[0]} 点`)
+
+    /* (d) 零解锁 = 原样；买了再退 = 回到原样 */
+    _useGrowthSave(null)
+    const dirty = GROWTH_CHARS.filter((id) => !isNoBonus(growthBonusOf(id, {})))
+    ok('成长 · 零解锁：所有人的加成都是 0（derive 那几处一律原样返回）',
+      dirty.length === 0,
+      dirty.length ? `有加成的：${dirty.join('、')}` : `${GROWTH_CHARS.length} 位逐人查过`)
+    const before = JSON.stringify(combatantOf('hikari', 0.5, 0))
+    const baseC = combatantOf('hikari', 0.5, 0)
+    const baseSkill = baseC.skills.find((k) => k.power > 0)!
+    /* 摆一份「真买过」的存档：技能第 1 级 + 苍蓝奇迹 1 级 + 樱色奇迹 2 级 */
+    _useGrowthSave({
+      ver: 1, talent: {}, drops: {}, skill: { [line.key]: 1 },
+      color: { 'miracle-azure': 1, 'miracle-sakura': 2 },
+    })
+    const after = combatantOf('hikari', 0.5, 0)
+    const afterSkill = after.skills.find((k) => k.power > 0)!
+    ok('成长 · 买过之后我方数值按预期上升（破坏力 ×1.03 · 生命 ×1.08 · 技能倍率 ×1.06）',
+      Math.abs(after.axes.破坏力 - baseC.axes.破坏力 * 1.03) < 1e-9
+      && after.hp === Math.round(baseC.hp * 1.08)
+      && Math.abs(afterSkill.power - baseSkill.power * 1.06) < 1e-9,
+      `破坏力 ${baseC.axes.破坏力} → ${after.axes.破坏力.toFixed(2)}（+3%）· `
+      + `生命 ${baseC.hp} → ${after.hp}（+8%）· 「${baseSkill.name}」倍率 `
+      + `${baseSkill.power} → ${afterSkill.power.toFixed(2)}（+6%）`)
+    ok('成长 · 色彩（对照）：没买的那几支一支都不动（买的是「这一支」，不是全队一刀切）',
+      after.axes.反现实亲和 === baseC.axes.反现实亲和
+      && after.axes.物理抗性 === baseC.axes.物理抗性,
+      `亲和 ${baseC.axes.反现实亲和} → ${after.axes.反现实亲和} · 抗性 `
+      + `${baseC.axes.物理抗性} → ${after.axes.物理抗性}`)
+    _useGrowthSave(null)
+    ok('成长 · 抽掉存档之后 combatantOf 逐字节回到零解锁那一份（这就是「零解锁 = 改动前」）',
+      JSON.stringify(combatantOf('hikari', 0.5, 0)) === before,
+      `${before.length} 字节两份一致`)
+
+    info.push('成长系统：等级 = 原著 Stage + 已买次数（等级价走 store 的 levelCostOf，'
+      + '全仓只有一条曲线）· 技能第 1 级剧情白送、第 2~3 级花点数 · '
+      + `世界的色彩 = 原文六种奇迹，1→7 级，cost(n) = cost(n-1) × (4 × n)（首级 ${COLOR_BASE_COST}）`)
+  } catch (e) {
+    fail.push('成长系统段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

@@ -922,7 +922,12 @@ function GearSwap({ id, gearId, owned, onPick }: {
 /** 翻面那两拍的时长（与 Archive.module.css 的 cardTurn* 对齐：每拍各一半） */
 const FLIP_MS = 240
 
-export function Archive() {
+/**
+ * `onShowNew` —— 「角色」那一格现在默认摆的是新版页面（views/Character.tsx）。
+ * 这一枚按钮把显示切回新版；旧版档案本身一个字节都没动。
+ * 不传时（Archive 被单独挂出来）按钮不摆，旧版照旧独立成立。
+ */
+export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
   const {
     operatorName, epDone, cur, bondNow, push, profileRequest, clearProfileRequest, isMet,
     intimOf, relOf,
@@ -1138,6 +1143,11 @@ export function Archive() {
             </div>
           </div>
           <div className="vhead__right">
+            {onShowNew ? (
+              <button type="button" className="btn btn--ghost" data-old-dossier-toggle onClick={onShowNew}>
+                新版显示
+              </button>
+            ) : null}
             <span className="chip chip--warn">五轴以 RANK 与正文为参照</span>
             {/* 研究室：全队加成合计（四条比例相加 —— 它是个「一共加了多少」的读数，
                 不是可以互相折算的同一把尺；分项在每人的档案里） */}
