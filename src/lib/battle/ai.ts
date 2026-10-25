@@ -37,6 +37,7 @@
 import { chatCompletion, isReady } from '../api'
 import type { ApiSettings, ChatTurn } from '../api'
 import { affordable, bossUltOf, evadeOf, find, legalSkills, shieldOf } from './engine'
+import { foeTargetOf, threatOf } from './types'
 import { axisNameOf } from './derive'
 import { TUNING } from './tuning'
 import type { BattleState, Combatant, EnemyIntent, SkillSpec } from './types'
@@ -49,20 +50,33 @@ import type { BattleState, Combatant, EnemyIntent, SkillSpec } from './types'
  * 以及 2026-09-18 那场账单，都花在这段思考上。
  * 现在给一张**优先级清单**：命中就停。做匹配，不做权衡。
  * 「像那个敌体」的味道留成清单后面的一句补充，不再展开。
+ *
+ * 2026-09-2x（这一轮）：清单从四条扩成**七条怪物的战术**，覆盖主人要的那几件事 ——
+ * 嘲讽是硬规则 / 没有嘲讽就按威胁挑（治疗 > 输出 > 坦克）/ 能补刀就补刀 /
+ * 人多就放群攻 / 打不动的换人 / 残血先自保 / 终结技它自己会放。
+ * 与简报那一侧对得上：简报给我方的表按**威胁降序**摆，第 1 条与第 2 条才有把手。
+ * ⚠️ 别把 mech 钉着的那三个「锁结局」的词写进来（见那份脚本 §43 的对照那一条）——
+ * 那是别的提示词那一侧的口径，这一路不要跟着学。
  */
-const SYSTEM = `你在替敌方做一道「这一手出哪一门」的选择题，不是写分析。
+export const SYSTEM = `你在替敌方做一道「这一手出哪一门、打谁」的选择题，不是写分析。
 
-只能从给你的 skills 列表里挑一门，target 只能从 targets 列表里挑一个。
+只能从 skills 里挑一门；target 只能从「我方」里挑一个 id ——
+那张表已经按威胁（threat）从高到低排好，排第一的就是眼下最该处理的人。
 
-按下面顺序挑一手，命中就停，不要权衡、不要解释：
-1. 我方有人的生命低于 30% 且你有一手能秒掉他 → 打他；
-2. 你的终结技蓄满了 → 放它；
-3. 有治疗/护盾且自己生命低于 40% → 用它；
-4. 否则打输出最高的那个，用你最强且放得起的一手。
+照下面七条挑，命中就停，不要权衡、不要解释：
+1. 「我方」里有人「嘲讽剩余」> 0（还在引仇）→ 这一手只能打他，除非你这一手打不到他
+   （打全体、或只能落在自己人身上的增益 / 回复）。几个引仇者挑威胁最高的那个。
+2. 没人引仇 → 打「威胁」最高的那个。威胁的次序通常是 治疗 > 输出 > 坦克：
+   先掐奶，再掐刀，坦克放最后。
+3. 能补刀就补刀：有人生命低于 30%、而你有一门打得死他的 → 打他，后排与治疗优先。
+4. 「我方」还站着三个人以上、而你手里有打全体的一手（打谁 = all）→ 放群攻，比单点划算。
+5. 目标减伤超过 0.6、而场上还有别的靶子 → 换一个打；除非这一门写着穿甲。
+6. 自己的生命低于 40%、手里又有回复 / 护盾 / 护持 → 先用它，别硬顶。
+7. 终结技能蓄满的时候它自己会放（不用你挑 ult）：这一手照常挑最重、放得起的一门常规手跟上。
 
-打得像那个敌体本身：机械就盯着输出最高的打，魔王先补掉血最少的，残渣乱打。
+打得像那个敌体本身：机械盯着输出最高的打，魔王先补血最少的，残渣乱打。
 
-只输出一行 JSON：{"skill":"<skills 里的 id>","target":"<targets 里的 id>"}，不要 markdown、不要注释。`
+只输出一行 JSON：{"skill":"<skills 里的 id>","target":"<我方里的 id>"}，不要 markdown、不要注释。`
 
 /* ============================================================
    回包的取法 —— 三档逐级降级（模型不听话时全靠这三档）
@@ -145,9 +159,36 @@ function debuffCount(c: Combatant): number {
   return c.buffs.filter((b) => b.v < 0 || b.k === 'slow' || b.k === 'mark').length
 }
 
-/** 场上的局面，压成一份可读的简报 */
-function briefOf(s: BattleState, foe: Combatant) {
+/**
+ * 场上的局面，压成一份可读的简报 —— 给模型的那一份。
+ *
+ * 三件事在这一份里要说死：
+ *   · **敌体自己**：全部放得出来的技能（能耗 / 冷却 / 倍率 / 轴 / 打谁 / 效果都在
+ *     `skillLine` 里）＋ 终结技蓄了几拍 ＋ 自己的减伤 / 减益 / 形态；
+ *   · **我方每人**：生命、体力、闪避、减伤、减益层数、**威胁值**、**嘲讽剩余**、
+ *     以及最近一次出手（从作战记录里捞，捞不到就写「还没出手过」）；
+ *   · **排序**：我方那张表按**威胁降序**摆 —— 模型最容易照着顺序挑第一个。
+ */
+export function briefOf(s: BattleState, foe: Combatant) {
   const u = bossUltOf(foe)
+  /** 这个人最近一次出手（技能名 + 落在谁身上）；只认出手，指令条目不算 */
+  const recentOf = (id: string): string => {
+    for (let i = s.log.length - 1; i >= 0; i--) {
+      const e = s.log[i]!
+      if (e.actorId !== id || e.kind === '指令') continue
+      if (e.miss) continue
+      return '「' + e.skill + '」'
+        + (e.dmg ? ' 伤 ' + e.dmg : e.heal ? ' 回复 ' + e.heal : '')
+        + (e.target ? ' → ' + e.target : '')
+    }
+    return '（还没出手过）'
+  }
+  const pct = (c: Combatant) => Math.round((c.hpMax > 0 ? c.hp / c.hpMax : 0) * 100)
+  /* 按威胁降序；并列按 id —— 与 types.foeTargetOf 同一把尺，模型读到的顺序
+     就是离线那一路会挑的顺序。 */
+  const mine = s.allies
+    .filter((a) => !a.down && a.gone <= 0)
+    .sort((a, b) => threatOf(b) - threatOf(a) || a.id.localeCompare(b.id))
   return {
     场次: s.no + '「' + s.title + '」· ' + s.place,
     危险度: s.stage,
@@ -156,10 +197,11 @@ function briefOf(s: BattleState, foe: Combatant) {
       名: foe.name,
       类型: foe.cls,
       性质: foe.trait,
-      生命: foe.hp + '/' + foe.hpMax,
+      生命: foe.hp + '/' + foe.hpMax + '（' + pct(foe) + '%）',
       体力: foe.tempo + '/' + foe.tempoMax,
       减伤: Number(shieldOf(foe).toFixed(2)),
       身上的减益层数: debuffCount(foe),
+      ...(foe.morph ? { 形态: foe.morph.name + '（还剩 ' + foe.morph.ticks + ' 拍）' } : {}),
       ...(u
         ? {
           终结技能: '「' + u.name + '」已蓄 ' + (foe.chant[u.id] ?? 0) + '/' + (u.ult ?? 1) + ' 拍'
@@ -167,17 +209,19 @@ function briefOf(s: BattleState, foe: Combatant) {
         }
         : {}),
     },
-    我方: s.allies
-      .filter((a) => !a.down)
-      .map((a) => ({
-        id: a.id,
-        名: a.name,
-        定位: a.cls,
-        生命: a.hp + '/' + a.hpMax,
-        体力: a.tempo + '/' + a.tempoMax,
-        闪避: Number(evadeOf(a).toFixed(2)),
-        引仇中: a.taunt > 0,
-      })),
+    我方: mine.map((a) => ({
+      id: a.id,
+      名: a.name,
+      定位: a.cls,
+      生命: a.hp + '/' + a.hpMax + '（' + pct(a) + '%）',
+      体力: a.tempo + '/' + a.tempoMax,
+      闪避: Number(evadeOf(a).toFixed(2)),
+      减伤: Number(shieldOf(a).toFixed(2)),
+      减益层数: debuffCount(a),
+      威胁: Math.round(threatOf(a)),
+      嘲讽剩余: a.taunt,
+      最近一手: recentOf(a.id),
+    })),
     // 大招不在这张表里：它不占常规出手，也不由指挥决定（见 engine 的 ultStep）
     skills: legalSkills(foe, s)
       .filter((k) => !k.ult && affordable(k, foe.tempo))
@@ -380,14 +424,22 @@ export function intentOf(s: BattleState, foe: Combatant, raw: RawIntent | null |
   if (!raw) return null
   const skillId = raw.skill
   const targetId = raw.target
-  const legal = legalSkills(foe, s).some((k) => k.id === skillId && !k.ult && affordable(k, foe.tempo))
-  if (!legal) return null
+  const k = legalSkills(foe, s).find((x) => x.id === skillId && !x.ult && affordable(x, foe.tempo))
+  if (!k) return null
   const t = targetId ? find(s, targetId) : undefined
   if (targetId && (!t || t.down || t.side !== 'ally')) return null
+  /* 嘲讽是硬规则：有人还在引仇时，这一手只能落在引仇者身上（几个引仇者里挑威胁最高的）——
+     模型挑的那个人不算数。判据与引擎的 pickTarget / foeplan 是同一个函数
+     （见 types 的 foeTargetOf），模型失手时行为才不会退化。
+     只管**打别人**的那几手：治疗 / 增益落在自己人身上，把它们改成引仇者等于把一记治疗空放。 */
+  const taunting = k.target === 'one'
+    ? s.allies.filter((a) => !a.down && a.gone <= 0 && a.taunt > 0)
+    : []
+  const forced = taunting.length ? foeTargetOf(taunting) : undefined
   return {
     foeId: foe.id,
     skillId,
-    targetId: t?.id,
+    targetId: forced ? forced.id : t?.id,
     by: 'ai',
     note: raw.note ? foe.name + ' 的指挥：' + raw.note : undefined,
   }

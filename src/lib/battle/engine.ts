@@ -25,7 +25,7 @@ import { targetBossOf } from './foegen'
 import { dutyOf } from './duty'
 import { GEAR_OF, ITEM_OF } from './gear'
 import { ITEM_UNLIMITED, canSwapTo } from './swap'
-import { isDebuff, isSpec, toneOf } from './types'
+import { foeTargetOf, isDebuff, isSpec, threatOf, toneOf } from './types'
 import type {
   AxisKey, AxisSheet, BattleState, BuffKey, Combatant, LogEntry, PassiveSpec, SkillSpec,
   TalentSpec, TalentTrigger, EnemyIntent, FoeTarget,
@@ -197,6 +197,37 @@ export function skipOf(c: Combatant): number {
 /** 这个人身上还有没有削得动的破绽层 */
 export function guardLeft(c: Combatant): number {
   return c.guardAxis ? Math.max(0, c.guardPts) : 0
+}
+
+/* ============================================================
+   仇恨账（威胁值）
+   ------------------------------------------------------------
+   敌方选敌的第一把手 —— 「该先处理谁」的那本账。两条 AI 路线
+   （离线的 pickTarget / foeplan，接通的 ai.ts）读的是同一份：
+   嘲讽是硬规则，没有嘲讽才按这本账挑最高的那个（见 types 的 foeTargetOf）。
+
+   入账只认**进账的那三样**与**谁记的**：伤害 / 回复 / 护盾（权重在 TUNING），
+   终结技与坦克定位是乘在后面的两个系数。每回合衰减一次（endBeat）。
+   ============================================================ */
+
+/** 这个人自己那一档的仇恨系数 —— 坦克 / 护卫类天生招打（他往那一站就是一面墙） */
+export function threatTankOf(c: Combatant): boolean {
+  return c.duty === '护卫' || /坦克|护卫|盾|壁垒/.test(c.cls)
+}
+
+/**
+ * 记一笔仇恨。
+ * @param amount 已经折算成「生命值」的份量（伤害就是伤害、治疗就是治了多少血、
+ *   护盾按「替目标挡下多少血」折）。**权重不在这儿乘** —— 见下面三个调用点。
+ */
+function addThreat(c: Combatant, amount: number) {
+  if (!(amount > 0)) return
+  c.threat = threatOf(c) + amount * (threatTankOf(c) ? TUNING.threatTank : 1)
+}
+
+/** 一笔入账的权重（伤害 / 治疗 / 护盾）—— 只此一处，引擎与复核脚本都取它 */
+export function threatWeightOf(kind: 'dmg' | 'heal' | 'shield'): number {
+  return kind === 'dmg' ? TUNING.threatDmg : kind === 'heal' ? TUNING.threatHeal : TUNING.threatShield
 }
 
 /* ---------- 技能表 ---------- */
@@ -923,6 +954,10 @@ function applyEffect(
   // 技能效果倍率（旧吉他解封）：伤害之外的每一种「量」都跟着翻。
   // 道具走的是默认值 1 —— 解封放大的是使用者的技术，不是手里那件东西。
   scale = 1,
+  /* 仇恨账的额外系数：这一手是终结技时 = TUNING.threatUlt（见 resolve）。
+     权重（伤害 / 治疗 / 护盾各算几成）在 threatWeightOf 里，两处分开是有意的：
+     权重说的是「这一种行为值多少」，这一格说的是「这一手的分量」。 */
+  threatMul = 1,
 ) {
   if (!eff) return
   // 整数类的量（生命回复）取整；小数类的量（护盾系数、行动条推移、命中/闪避）留两位
@@ -948,6 +983,8 @@ function applyEffect(
         })
       } else {
         const n = iv(healAmount(src, t, eff.heal))
+        /* 仇恨账：回复量 ×0.5，记在**治人的那一位**头上（把人从死线上拉回来是威胁）。 */
+        addThreat(src, n * threatWeightOf('heal') * threatMul)
         const hpBefore = t.hp
         t.hp = Math.min(t.hpMax, t.hp + n)
         pushLog(s, {
@@ -962,7 +999,13 @@ function applyEffect(
     if (eff.clearBar) t.bar = 0
     if (eff.evade) addBuff(t, 'evade', fv(eff.evade), turns, rt)
     if (eff.accUp) addBuff(t, 'acc', fv(eff.accUp), turns, rt)
-    if (eff.shield) addBuff(t, 'shield', fv(eff.shield), turns, rt)
+    if (eff.shield) {
+      /* 仇恨账：护盾 / 减伤按「替目标挡下多少血」折算（减伤比例 × 目标满血），
+         再乘护盾权重 ×0.5。记在**给盾的人**头上 —— 挡子弹的是他这一手。 */
+      const sv = fv(eff.shield)
+      addThreat(src, sv * t.hpMax * threatWeightOf('shield') * threatMul)
+      addBuff(t, 'shield', sv, turns, rt)
+    }
     if (eff.atkUp) addBuff(t, 'atk', fv(eff.atkUp), turns, rt)
     // skillMul 给的是「× N」：内部存 +（N−1），读数处 1 + v 即得乘数。
     // 这条**不**跟着 scale 走 —— 否则解封叠解封会自己乘自己。
@@ -1191,6 +1234,9 @@ function hit(s: BattleState, atk: Combatant, def: Combatant, k: SkillSpec): LogE
   const dmg = critMul > 0 ? Math.max(TUNING.floor, Math.round(raw * critMul)) : raw
   // 打之前的血量：回放靠它把血条停在「还没挨这一下」的位置（见 LogEntry.hpBefore）。
   // 必须在**写血之前**取 —— 溢出斩杀 / 不倒 / 续行三条都会让 `dmg` 与真实落差对不上
+  /* 仇恨账：造成伤害 ×1.0（终结技那一手再 ×1.5）—— 只记**真打实了**的这一下，
+     被闪开的那一支早在上面的 return 里走掉了。 */
+  addThreat(atk, dmg * threatWeightOf('dmg') * (k.ult ? TUNING.threatUlt : 1))
   const hpBefore = def.hp
   def.hp = Math.max(0, def.hp - dmg)
   breakChant(s, def, dmg)
@@ -1414,6 +1460,9 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
   //   · 单体 / 全体 攻击手：增益留给自己，压制落在选中的那个（或全体）敌人身上
   //   · 辅助手：效果按 target 落在我方
   const e = k.effect
+  /* 终结技那一手的分量重一档（仇恨账）。只在这一处算 ×1.5 —— 伤害走 hit 里的那一笔，
+     效果走下面三次 applyEffect 的 threatMul，两处乘的是同一个系数。 */
+  const tmul = k.ult ? TUNING.threatUlt : 1
   if (e) {
     // 出手时点上的技能效果倍率（旧吉他解封）。在这里取一次定值：
     // 若这手本身就把 skillMul 加上去了，那也**从下一手**才生效，不自乘。
@@ -1423,12 +1472,12 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
     const { friendly, hostile, hasFriendly, hasHostile } = splitEffect(e)
 
     if (k.target === 'all' || k.target === 'one') {
-      if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, k.rounds, smul)
+      if (hasFriendly) applyEffect(s, atk, friendly, [atk], [], k.turns, k.rounds, smul, tmul)
       if (hasHostile) {
         const ht = k.target === 'one'
           ? (() => { const t = targetId ? find(s, targetId) : undefined; return t && !t.down && t.gone <= 0 ? [t] : aliveOf(foes).slice(0, 1) })()
           : aliveOf(foes)
-        applyEffect(s, atk, hostile, [], ht, k.turns, k.rounds, smul)
+        applyEffect(s, atk, hostile, [], ht, k.turns, k.rounds, smul, tmul)
       }
     } else {
       const beneficiaries = k.target === 'self'
@@ -1437,7 +1486,7 @@ function resolve(s: BattleState, atk: Combatant, k: SkillSpec, targetId?: string
           ? aliveOf(friends)
           : (() => { const x = targetId ? find(s, targetId) : undefined; return x && x.side === atk.side && !x.down && x.gone <= 0 ? [x] : [atk] })()
       if (e.selfToo && !beneficiaries.includes(atk)) beneficiaries.push(atk)
-      applyEffect(s, atk, e, beneficiaries, [], k.turns, k.rounds, smul)
+      applyEffect(s, atk, e, beneficiaries, [], k.turns, k.rounds, smul, tmul)
     }
   }
 
@@ -1614,6 +1663,11 @@ function endBeat(s: BattleState) {
   /* 两条不耗回合的额度是**全队按回合**清的（不是按拍、也不是按人）：
      一回合里全队合起来各 1 次换装 / 1 次道具，谁先用谁占。 */
   s.freeUsed = { item: 0, gear: 0 }
+  /* 仇恨账的衰减：每回合 ×TUNING.threatDecay。
+     不衰减的话，开局那一发大招的仇恨会挂到最后 —— 那个人的账永远最高，
+     其余四个人从此不参与选敌。衰减之后这本账记的是「最近这一阵谁最扎眼」。
+     倒下的、蛰伏的也照常走：他们回来时账已经淡了，那正是应该的。 */
+  for (const c of allOf(s)) c.threat = threatOf(c) * TUNING.threatDecay
   for (const c of allOf(s)) {
     // 合体蛰伏者：不充能、不回血，只数着拍子等归位
     if (c.gone > 0) {
@@ -2478,12 +2532,24 @@ function fireLionFollow(s: BattleState, actorId: string) {
 
 /* ---------- 敌方 AI ---------- */
 
+/**
+ * 这一个敌体这一手打谁。
+ *
+ * 判据与另外两条路**同一套**（`types.foeTargetOf`；接通接口那一侧的 ai.ts 走同一个函数，
+ * 「模型挑错了人」由那边的 intentOf 兜回引仇者）：
+ *   ① **嘲讽是硬规则** —— 有人 taunt > 0 就只能在引仇者里挑（挑其中威胁最高的）；
+ *   ② 没有嘲讽 → 挑威胁最高的（这本账见 addThreat）。
+ * 底下那三条「脾气」只在**全场还没人攒出威胁**时生效（开局那几拍，账全是 0）——
+ * 一旦有人造出了分量，威胁就压过脾气；否则一队人打得好好的，机械还去戳那个
+ * 站着不动的坦克，这本账就白记了。
+ */
 function pickTarget(s: BattleState, foe: Combatant): Combatant | undefined {
   const live = aliveOf(s.allies)
   if (live.length === 0) return undefined
-  // 引仇：有人架着盾就优先打他
+  // 引仇：嘲讽是硬规则，不看威胁顺序之外的任何东西
   const taunting = live.filter((a) => a.taunt > 0)
-  if (taunting.length) return taunting[Math.floor(Math.random() * taunting.length)]
+  if (taunting.length) return foeTargetOf(taunting)
+  if (live.some((a) => threatOf(a) > 0)) return foeTargetOf(live, { finishBelow: TUNING.threatFinishAt })
   const tags = foe.tags.join('')
   if (tags.includes('机械')) return [...live].sort((a, b) => b.axes.破坏力 - a.axes.破坏力)[0]
   if (tags.includes('魔王')) return [...live].sort((a, b) => a.hp - b.hp)[0]

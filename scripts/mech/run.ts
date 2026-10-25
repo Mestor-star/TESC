@@ -150,13 +150,15 @@ import { genBoard, signOffCap } from '../../src/lib/battle/missiongen'
 import { battleMissionOf, plotSquadOf } from '../../src/lib/battle/from-directive'
 import { mapRegionOf, rOfPlace } from '../../src/lib/battle/rvalue'
 import { assertDutySlots, passiveText, ROSTER } from '../../src/lib/battle/roster'
+import { planFoeAct } from '../../src/lib/battle/foeplan'
+import { SYSTEM as ENEMY_SYSTEM, briefOf as enemyBriefOf, intentOf as enemyIntentOf } from '../../src/lib/battle/ai'
 import {
   BUFF_LABEL, ITEM_TARGET_LABEL, effectLineOf, effectTextsOf, modsTextsOf, mulTextOf,
   talentEffectTexts,
 } from '../../src/lib/battle/skilltext'
 import { battleStoryBrief, templateStorylog } from '../../src/lib/battle/storylog'
 import type { BattleRecord } from '../../src/lib/battle/types'
-import { DEBUFF_KEYS } from '../../src/lib/battle/types'
+import { DEBUFF_KEYS, threatOf } from '../../src/lib/battle/types'
 import type { NumericEffectKey, SkillEffect } from '../../src/lib/battle/types'
 import { ARCH, place } from '../../src/lib/battle/atlas'
 import { DUTY, UNIVERSAL_ARCH, UNIVERSAL_MAX, critMulOf, critOf, dutyOf } from '../../src/lib/battle/duty'
@@ -8798,6 +8800,293 @@ export function run(): MechReport {
       + `世界的色彩 = 原文六种奇迹，1→7 级，cost(n) = cost(n-1) × (4 × n)（首级 ${COLOR_BASE_COST}）`)
   } catch (e) {
     fail.push('成长系统段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
+  }
+
+  /* ---------- 43) 仇恨账 · 敌方选敌（RPG 式） ----------
+     主人早先要的是「敌人按 RPG 怪物的思维打：看技能、看我们的人、按嘲讽与火力挑人」。
+     这一节量的是那本**账**本身，以及它有没有真的接到选敌上：
+
+       ① 入账：伤害 ×1.0 · 治疗 ×0.5 · 护盾 ×0.5 · 终结技再 ×1.5 · 坦克/护卫 ×1.8；
+       ② 衰减：每回合 ×0.9（不衰减的话开局一发大招会被追到死）；
+       ③ 嘲讽是硬规则：离线（引擎 pickTarget）与接通接口那一路（ai 的 intentOf）
+          都只能打引仇者，哪怕别人威胁更高；
+       ④ 没有嘲讽时打威胁最高的那一个（造一个「治疗威胁最高 + 输出次高」的局面）；
+       ⑤ 简报里带「威胁」，且我方那张表按威胁降序；
+       ⑥ 提示词里那七条准则都在，mech 那三个锁结局词一个都没进来。
+
+     每一条都配一条对照 —— 不然「选对了人」也可能只是场地本来就只有他一个。 */
+  try {
+    /** 敌人的技能表换成「一记单体普攻」：群攻会让命中记录里出现别人的名字，量不出挑的是谁 */
+    const soloFoe = (s: BattleState, id = '_t-hit') => {
+      const foe = s.enemies[0]!
+      const plain = foe.skills.find((k) => k.kind === '普攻') ?? foe.skills[0]!
+      foe.skills = [{ ...plain, id, name: '复核 · 一击', target: 'one', power: plain.power, cost: 0, effect: undefined }]
+      foe.hpMax = 1e9; foe.hp = 1e9; foe.bar = TUNING.barMax
+      foe.threat = 0
+      sureHit(foe)
+      return foe
+    }
+    /** 把场子摆成「敌体马上要出手」：我方条清零，敌体满格 */
+    const armFoe = (s: BattleState) => {
+      for (const a of s.allies) a.bar = 0
+      s.phase = 'select'; s.actor = null
+    }
+    /** 这一场里某只敌体真的打出去的那几手（只认出手，指令条目不算） */
+    const shotsOf = (s: BattleState, foeId: string) => s.log.filter(
+      (e) => e.actorId === foeId && e.kind !== '指令' && !!e.targetId,
+    )
+    /** 清掉「坦克系数」：那一条是单独一条断言，别让它混进 1.0 那几笔里 */
+    const plainDuty = (s: BattleState) => {
+      for (const c of s.allies) { c.duty = '主音'; c.cls = '复核' }
+    }
+
+    /* ①-a 造成伤害 ×1.0 */
+    const dmg = (() => {
+      const s = mk()
+      const me = ready(s, 'isis')
+      plainDuty(s)
+      const foe = s.enemies[0]!
+      sureHit(me); foe.hp = 1e9; foe.hpMax = 1e9
+      freezeFoes(s)
+      s.actor = me.id; s.phase = 'select'
+      const before = threatOf(me)
+      act(s, { t: 'atk', targetId: foe.id })
+      const sum = s.log.filter((e) => e.actorId === me.id && (e.dmg ?? 0) > 0)
+        .reduce((n, e) => n + (e.dmg ?? 0), 0)
+      return { got: threatOf(me) - before, sum }
+    })()
+    ok('仇恨账 · 造成伤害按 1.0 入账（打出多少伤害，威胁就涨多少）',
+      dmg.sum > 0 && Math.abs(dmg.got - dmg.sum) < 1e-6,
+      '伤害 ' + dmg.sum + ' → 威胁 +' + dmg.got)
+
+    /* ①-b 治疗 ×0.5（走道具那一支：治人的是**施术者**，落账也记在他头上） */
+    const heal = (() => {
+      const s = mk()
+      const me = ready(s, 'isis')
+      plainDuty(s)
+      freezeFoes(s)
+      me.hp = Math.round(me.hpMax * 0.5)
+      s.actor = me.id; s.phase = 'select'
+      const before = threatOf(me)
+      act(s, { t: 'item', itemId: 'ration', targetId: me.id })
+      const n = s.log.filter((e) => e.actorId === me.id && (e.heal ?? 0) > 0)
+        .reduce((m, e) => m + (e.heal ?? 0), 0)
+      return { got: threatOf(me) - before, n }
+    })()
+    ok('仇恨账 · 治疗按 0.5 入账（治 100 点血的，威胁只涨 50）',
+      heal.n > 0 && Math.abs(heal.got - heal.n * 0.5) < 1e-6,
+      '回复 ' + heal.n + ' → 威胁 +' + heal.got)
+
+    /* ①-c 护盾 / 减伤 ×0.5（按「替目标挡下多少血」折算：减伤比例 × 目标满血） */
+    const ward = (() => {
+      const s = mk()
+      const me = ready(s, 'isis')
+      plainDuty(s)
+      freezeFoes(s)
+      s.actor = me.id; s.phase = 'select'
+      const before = threatOf(me)
+      const totalHp = aliveOf(s.allies).reduce((n, a) => n + a.hpMax, 0)
+      act(s, { t: 'item', itemId: 'wardfilm' })
+      return { got: threatOf(me) - before, want: 0.3 * totalHp * 0.5, totalHp }
+    })()
+    ok('仇恨账 · 护盾 / 减伤按 0.5 入账（3 成减伤 × 全队满血 ÷ 2）',
+      ward.got > 0 && Math.abs(ward.got - ward.want) < 1e-6,
+      '全队满血 ' + ward.totalHp + ' → 威胁 +' + ward.got + '（应为 ' + ward.want + '）')
+
+    /* ①-d 坦克 / 护卫类定位 ×1.8 */
+    const tank = (() => {
+      const s = mk()
+      const me = ready(s, 'isis')
+      plainDuty(s)
+      me.duty = '护卫'
+      const foe = s.enemies[0]!
+      sureHit(me); foe.hp = 1e9; foe.hpMax = 1e9
+      freezeFoes(s)
+      s.actor = me.id; s.phase = 'select'
+      const before = threatOf(me)
+      act(s, { t: 'atk', targetId: foe.id })
+      const sum = s.log.filter((e) => e.actorId === me.id && (e.dmg ?? 0) > 0)
+        .reduce((n, e) => n + (e.dmg ?? 0), 0)
+      return { got: threatOf(me) - before, sum }
+    })()
+    ok('仇恨账 · 坦克 / 护卫类定位再 ×1.8（他往那一站就是一面墙）',
+      tank.sum > 0 && Math.abs(tank.got - tank.sum * 1.8) < 1e-6,
+      '伤害 ' + tank.sum + ' → 威胁 +' + tank.got)
+
+    /* ①-e 终结技 ×1.5（沙包场：敌体的技能表只留「一记必放的终结技 + 一记 0 伤普攻」，
+       于是这一场里它的**全部**伤害都出自大招，威胁的涨落才量得准） */
+    const ult = (() => {
+      const s = mk()
+      const foe = s.enemies[0]!
+      const plain = foe.skills.find((k) => k.kind === '普攻') ?? foe.skills[0]!
+      const zero = { ...plain, id: '_t-zero', name: '复核 · 空手', power: 0, cost: 0, effect: undefined }
+      const bomb = { ...plain, id: '_t-ult', name: '复核 · 大招', kind: '战技' as const, ult: 1, ultBreak: 0.99, power: 2, cost: 0, effect: undefined }
+      foe.skills = [zero, bomb]
+      foe.chant = { '_t-ult': 1 }
+      foe.hpMax = 1e9; foe.hp = 1e9; foe.threat = 0; foe.bar = TUNING.barMax
+      foe.duty = '主音'; foe.cls = '复核'
+      /* 必中：这一条量的是「同一份伤害按 ×1.5 入账」，不是「打不打得到」——
+         不封的话我方闪避会让这一记直接 miss（威胁 +0），断言随机红（2026-09-24 撞过两次）。 */
+      sureHit(foe)
+      for (const a of s.allies) {
+        a.duty = '主音'; a.cls = '复核'; a.hpMax = 1e9; a.hp = 1e9; a.bar = 0; a.evade = 0
+      }
+      armFoe(s)
+      advance(s)
+      const sum = s.log.filter((e) => e.actorId === foe.id && (e.dmg ?? 0) > 0)
+        .reduce((n, e) => n + (e.dmg ?? 0), 0)
+      const tail = s.log.slice(-4).map((x) => x.actor + '·' + x.skill + '·' + (x.dmg ?? '-')).join(' / ')
+      return { got: threatOf(foe), sum, hand: s.hand, dbg: 'phase=' + s.phase + ' hand=' + s.hand + ' actor=' + (s.actor ?? '无') + ' 尾四条：' + tail }
+    })()
+    ok('仇恨账 · 终结技那一手再 ×1.5（同一份伤害，大招的分量重一档）',
+      /* 必中已封（见上），这里 sum=0 只可能是引擎真的没打出伤害 —— 当成失败而不是跳过 */
+      ult.sum > 0 && Math.abs(ult.got - ult.sum * 1.5) < 1e-6,
+      '大招打出 ' + ult.sum + ' → 威胁 ' + ult.got + '〔' + ult.dbg + '〕')
+
+    /* ② 每回合衰减 ×0.9 */
+    const decay = (() => {
+      const s = mk()
+      freezeFoes(s)
+      for (const a of s.allies) a.threat = 100
+      const tick0 = s.tick
+      let spin = 0
+      while (s.tick === tick0 && s.phase === 'select' && spin++ < 40) {
+        if (!s.actor) { advance(s); continue }
+        const who = find(s, s.actor)
+        if (!who || who.side !== 'ally') { advance(s); continue }
+        act(s, { t: 'guard' })
+      }
+      return { tick: s.tick, got: threatOf(s.allies[0]!) }
+    })()
+    ok('仇恨账 · 每回合衰减 ×0.9（100 走完一回合剩 90 —— 否则开局一发大招被追到死）',
+      decay.tick === 1 && Math.abs(decay.got - 90) < 1e-6,
+      '回合 ' + decay.tick + ' · 威胁 100 → ' + decay.got)
+
+    /* ③ 嘲讽是硬规则 —— 两条路都要打引仇者，哪怕别人威胁高出十倍 */
+    const tauntOff = (() => {
+      const s = mk()
+      const tag = s.allies[0]!
+      const other = s.allies[1]!
+      plainDuty(s)
+      for (const a of s.allies) a.threat = 0
+      tag.taunt = 9
+      other.threat = 9999
+      const foe = soloFoe(s)
+      armFoe(s)
+      advance(s)
+      return { shots: shotsOf(s, foe.id), tagId: tag.id, foe, s }
+    })()
+    ok('仇恨账 · 有嘲讽时**离线那一手**只打引仇者（别人威胁再高也不换人）',
+      tauntOff.shots.length > 0 && tauntOff.shots.every((e) => e.targetId === tauntOff.tagId),
+      '命中记录：' + (tauntOff.shots.map((e) => e.target ?? e.targetId).join('、') || '（一手也没打）')
+      + '　引仇者 ' + tauntOff.tagId)
+
+    const tauntAi = (() => {
+      const s = tauntOff.s
+      const foe = tauntOff.foe
+      const tag = s.allies.find((a) => a.id === tauntOff.tagId)!
+      tag.taunt = Math.max(tag.taunt, 9)
+      const other = s.allies.find((a) => a.id !== tag.id && !a.down && a.taunt <= 0)!
+      // 模型挑了个**没引仇**的人 —— 这一手必须被改回引仇者
+      const it = enemyIntentOf(s, foe, { skill: foe.skills[0]!.id, target: other.id, note: '' })
+      return { picked: it?.targetId, tagId: tag.id, otherId: other.id }
+    })()
+    ok('仇恨账 · 有嘲讽时**接通接口那一路**也打引仇者（模型挑错了人，intentOf 把它改回来）',
+      tauntAi.picked === tauntAi.tagId,
+      '模型挑 ' + tauntAi.otherId + ' → 落地 ' + (tauntAi.picked ?? '（没挑出来）')
+      + '　引仇者 ' + tauntAi.tagId)
+
+    /* ④ 没有嘲讽 → 打威胁最高的（治疗威胁最高、输出次高） */
+    const rank = (() => {
+      const s = mk()
+      const healer = s.allies[0]!
+      const dps = s.allies[1]!
+      plainDuty(s)
+      for (const a of s.allies) { a.taunt = 0; a.threat = 0 }
+      healer.threat = 900
+      dps.threat = 600
+      const foe = soloFoe(s)
+      armFoe(s)
+      advance(s)
+      return { shots: shotsOf(s, foe.id), healerId: healer.id }
+    })()
+    ok('仇恨账 · 没有嘲讽时打**威胁最高**的那一个（治疗 900 / 输出 600 → 打治疗）',
+      rank.shots.length > 0 && rank.shots.every((e) => e.targetId === rank.healerId),
+      '命中记录：' + (rank.shots.map((e) => e.target ?? e.targetId).join('、') || '（一手也没打）')
+      + '　威胁最高的 ' + rank.healerId)
+
+    const planRank = (() => {
+      const s = mk()
+      const healer = s.allies[0]!
+      const dps = s.allies[1]!
+      plainDuty(s)
+      for (const a of s.allies) { a.taunt = 0; a.threat = 0 }
+      healer.threat = 900
+      dps.threat = 600
+      const foe = s.enemies[0]!
+      foe.hp = foe.hpMax
+      const plan = planFoeAct(s, foe)
+      return { picked: plan?.targetId, healerId: healer.id }
+    })()
+    ok('仇恨账 · 离线规划器（foeplan）与引擎同一套判据：也挑威胁最高的那一个',
+      planRank.picked === planRank.healerId,
+      '规划器挑 ' + (planRank.picked ?? '（null）') + '　威胁最高的 ' + planRank.healerId)
+
+    const planTaunt = (() => {
+      const s = mk()
+      const tag = s.allies[0]!
+      const dps = s.allies[1]!
+      plainDuty(s)
+      for (const a of s.allies) { a.taunt = 0; a.threat = 0 }
+      tag.taunt = 5
+      dps.threat = 9999
+      const foe = s.enemies[0]!
+      foe.hp = foe.hpMax
+      const plan = planFoeAct(s, foe)
+      return { picked: plan?.targetId, tagId: tag.id }
+    })()
+    ok('仇恨账（对照）· 规划器也认嘲讽：引仇者威胁为 0 时照样打引仇者',
+      planTaunt.picked === planTaunt.tagId,
+      '规划器挑 ' + (planTaunt.picked ?? '（null）') + '　引仇者 ' + planTaunt.tagId)
+
+    /* ⑤ 简报：带「威胁」，且我方那张表按威胁降序 */
+    const brief = (() => {
+      const s = mk()
+      s.allies[0]!.threat = 120
+      s.allies[1]!.threat = 900
+      s.allies[2]!.threat = 480
+      const foe = s.enemies[0]!
+      const b = enemyBriefOf(s, foe)
+      return { mine: b.我方, foeKeys: Object.keys(b.敌方), json: JSON.stringify(b.我方.slice(0, 2)) }
+    })()
+    const desc = brief.mine.every((x, i) => i === 0 || (brief.mine[i - 1]!.威胁 >= x.威胁))
+    ok('简报 · 我方每人带「威胁」与「嘲讽剩余」，且那张表按威胁降序',
+      brief.mine.length > 1
+      && brief.mine.every((x) => typeof x.威胁 === 'number' && typeof x.嘲讽剩余 === 'number')
+      && desc,
+      '顺序：' + brief.mine.map((x) => x.名 + '(' + x.威胁 + ')').join(' > '))
+    ok('简报 · 敌体自己那一栏带减伤 / 减益（并保留终结技与技能表）',
+      brief.foeKeys.includes('减伤') && brief.foeKeys.includes('身上的减益层数'),
+      brief.foeKeys.join('、'))
+
+    /* ⑥ 提示词：七条准则都在，三个锁结局词一个都不许进来 */
+    const need = [
+      '嘲讽剩余', '威胁', '先掐奶', '补刀', '群攻', '减伤超过 0.6', '低于 40%', '终结技',
+      '只输出一行 JSON', '像那个敌体',
+    ]
+    const lack = need.filter((x) => !ENEMY_SYSTEM.includes(x))
+    ok('提示词 · 七条怪物思维准则 + 「像那个敌体」+ 「只输出一行 JSON」都在',
+      lack.length === 0,
+      lack.length ? '缺：' + lack.join('、') : '共 ' + ENEMY_SYSTEM.length + ' 字，七条逐条点名查过')
+    const banned = ['唯一事实来源', '就是定论', '必须发生'].filter((x) => ENEMY_SYSTEM.includes(x))
+    ok('提示词（对照）· mech 那三个锁结局词一个都没进来',
+      banned.length === 0,
+      banned.length ? '出现了：' + banned.join('、') : '三个词都不在')
+
+    info.push('仇恨账：伤害 ×1 · 治疗 ×0.5 · 护盾 ×0.5 · 终结技 ×1.5 · 坦克 ×1.8 · 每回合 ×0.9；'
+      + '嘲讽是硬规则（引擎 / foeplan / ai 三条腿同一套判据）· 简报按威胁降序')
+  } catch (e) {
+    fail.push('仇恨账段抛错 :: ' + (e instanceof Error ? e.message : String(e)))
   }
 
   return { pass, fail, info }

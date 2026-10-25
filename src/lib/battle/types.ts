@@ -627,6 +627,61 @@ export function isSpec(k: BuffKey): boolean {
   return SPEC_KEYS.includes(k)
 }
 
+/* ============================================================
+   仇恨账的读法（选敌判据只此一份）
+   ------------------------------------------------------------
+   敌人的 AI 有三条腿：离线的 pickTarget、离线的 foeplan、接通接口的 ai.ts。
+   三条腿挑人用的是**同一套判据** —— 只有写在同一个函数里，才谈得上「同一套」。
+   放在 types 而不是 engine，是因为 foeplan 与 engine 互相 import（engine 调
+   planFoeAct），把判据挪进两者都依赖的那一层才不会有环。
+   ============================================================ */
+
+/**
+ * 这一份仇恨记到多少（没记过 = 0）。
+ *
+ * 为什么这一栏是可缺的（`threat?: number`）而不是必填：造人那四处在 derive，
+ * 那一份这一轮不动；把这一栏做成可缺的，「没记过」与「记了个 0」读出来是同一个数，
+ * 而 createBattle / 召唤 / 阶段切换不用各自再补一格。 */
+export function threatOf(c: { threat?: number }): number {
+  return c.threat ?? 0
+}
+
+/** `foeTargetOf` 的附加口径（见那条注释） */
+export interface FoeTargetOpts {
+  /** 补刀线：有人血量比例跌破它 → 先咬最残的那个（0 / 缺省 = 不开这一层） */
+  finishBelow?: number
+}
+
+/**
+ * 该先处理谁 —— 敌方选敌的唯一出口。
+ *
+ * ① **嘲讽是硬规则**：只要名单里有人 `taunt > 0`，候选池就只剩这几个人
+ *    （多个引仇者里挑威胁最高的那个）。嘲讽之所以不参与「权衡」，是因为它是
+ *    一个**明说的**机制：玩家花了那一手换来的就是「这几拍只能打我」。
+ * ② 没有嘲讽 → 挑威胁最高的。
+ *    例外只有一层：`finishBelow` 那一档补刀（有人跌破血线就先咬最残的那个）。
+ *    它不给嘲讽开口子（嘲讽在上面就返回了），也不改「威胁最高」这条主判据 ——
+ *    只在「账最高的那位正满血、而有人快倒了」这种局面里翻盘。为什么非得有它，
+ *    见 tuning 的 threatFinishAt 那一段。
+ * 并列时按 id 稳定排序 —— 离线那一路要可复现，不把随机数塞进判据里。
+ *
+ * @param pool 候选（调用方先滤掉倒下的 / 蛰伏的）
+ * @param opts.finishBelow 补刀线（0 / 缺省 = 不开这一层）
+ */
+export function foeTargetOf(pool: Combatant[], opts?: FoeTargetOpts): Combatant | undefined {
+  if (!pool.length) return undefined
+  const byThreat = (list: Combatant[]) => [...list]
+    .sort((a, b) => threatOf(b) - threatOf(a) || a.id.localeCompare(b.id))[0]
+  const taunting = pool.filter((c) => c.taunt > 0)
+  if (taunting.length) return byThreat(taunting)
+  const line = opts?.finishBelow ?? 0
+  if (line > 0) {
+    const weak = pool.filter((c) => c.hpMax > 0 && c.hp / c.hpMax <= line)
+    if (weak.length) return [...weak].sort((a, b) => a.hp - b.hp || a.id.localeCompare(b.id))[0]
+  }
+  return byThreat(pool)
+}
+
 export interface Buff {
   k: BuffKey
   v: number
@@ -696,6 +751,16 @@ export interface Combatant {
   shield: number
   /** 引仇剩余行动次数 */
   taunt: number
+  /**
+   * 仇恨（威胁值）—— **敌方的选敌账**：这一场里谁造出了多少「该先被处理」的分量。
+   * 记在**造成分量的人**头上：伤害 ×1.0 / 治疗 ×0.5 / 护盾 ×0.5 / 终结技 ×1.5 /
+   * 坦克护卫类定位 ×1.8（权重全在 tuning 的「仇恨账」那一节），每回合 ×0.9 衰减。
+   *
+   * 只在**我方**身上有意义（敌方也照记，只是没人读它）—— 读它的是敌方 AI 那三条腿，
+   * 判据统一在 `foeTargetOf`：嘲讽优先，其次威胁最高。
+   * 可缺省：造人那几处在 derive（见 `threatOf` 的注）。
+   */
+  threat?: number
   /**
    * 防御姿态（架着盾）：这一手选了「防御」，本人下次出手之前一直架着。
    * 好处是充能 ×TUNING.stanceSpdMul、免暴击、吃掉 TUNING.stanceImmune 里那几样硬直；

@@ -18,6 +18,7 @@
 
 import { TUNING } from './tuning'
 import { axisHits, axisReadOf } from './derive'
+import { foeTargetOf, threatOf } from './types'
 import type { BattleState, Combatant, SkillSpec } from './types'
 
 /** 这一手打算做什么 */
@@ -165,16 +166,26 @@ export function planFoeAct(s: BattleState, foe: Combatant): FoePlan | null {
     }
   }
 
-  /* ③ 挑靶：集火认焦点（还站着就继续咬）；焦点没了、或没开集火就随机 ——
-     随机那一路照旧不挑血最少的，玩家才看得见「它在乱打」。 */
+  /* ③ 挑靶：**嘲讽优先 → 威胁最高**。
+     与另外两条腿（engine 的 pickTarget、接通接口那一侧的 ai.ts）用的是同一个判据
+     （见 types 的 foeTargetOf）—— 三条腿各写一份的话，模型失手时行为就退化了。
+
+     底下那两条（补刀式集火 / 乱打）只在**全场还没人攒出威胁**时生效：
+     开局那几拍账全是 0，威胁挑不出先后，就退回改动前那套行为
+     （随机那一路照旧不挑血最少的，玩家才看得见「它在乱打」）。 */
+  const taunting = theirs.filter((a) => a.taunt > 0)
   let target: Combatant | undefined
-  if (TUNING.foeFocusOn) {
-    /* 已经咬住的靶还站着、且还在开咬线以下 → 继续咬（「直到他倒下才改口」）；
-       否则重新挑一次。补刀式集火在**咬住之后**才是不松口的 —— 见 pickFocus。 */
-    const held = s.focus ? theirs.find((c) => c.id === s.focus) : undefined
-    target = held && hpFrac(held) <= TUNING.foeFocusBelow ? held : pickFocus(s)
+  if (taunting.length) target = foeTargetOf(taunting)
+  else if (theirs.some((a) => threatOf(a) > 0)) target = foeTargetOf(theirs, { finishBelow: TUNING.threatFinishAt })
+  else {
+    if (TUNING.foeFocusOn) {
+      /* 已经咬住的靶还站着、且还在开咬线以下 → 继续咬（「直到他倒下才改口」）；
+         否则重新挑一次。补刀式集火在**咬住之后**才是不松口的 —— 见 pickFocus。 */
+      const held = s.focus ? theirs.find((c) => c.id === s.focus) : undefined
+      target = held && hpFrac(held) <= TUNING.foeFocusBelow ? held : pickFocus(s)
+    }
+    if (!target) target = theirs[Math.floor(Math.random() * theirs.length)]
   }
-  if (!target) target = theirs[Math.floor(Math.random() * theirs.length)]
   if (!target) return null
 
   /* ④ 选招：只挑**重手**（战技、有伤害、出得起）。打不打重手由 engine 掷硬币，
