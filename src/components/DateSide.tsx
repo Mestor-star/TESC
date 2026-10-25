@@ -21,9 +21,10 @@
    那张情境图是另一回事，由导演点名，走的是会话流顶部那个 3:2 的 CgSlot。
 
    **图位不再写「待补」（主人 2026-10-21）**：这一栏走 lib/cg.ts 的**兜底链** ——
-   常服立绘（`cg-datewear-<角色id>`）→ 她的 SFW 图（表里登记过的那几位）→
-   她的立绘（`public/charimg/<id>.jpg`）。三档全空才写一行小字。
-   链子与剧演舞台共用 `probeSceneCg` 一个函数，两处各写一套必然对不上。
+   常服立绘（`cg-datewear-<角色id>`）→ 她的立绘（`public/charimg/<id>.jpg`）。
+   两档全空才写一行小字。链子与剧演舞台共用 `probeSceneCg` 一个函数，两处各写一套必然对不上。
+   ⚠ **中间那一档「她的 SFW 图」已删**（主人：「那是 CG 图……不是立绘」）——
+   那张 `lunaSFW/cg-date-shop-luna` 是换上新衣那一刻的 CG，摆在这一栏就成了常驻定妆图。
    ============================================================ */
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
@@ -54,8 +55,8 @@ const REL_UNSET = '关系还没走到需要定名的那一步 —— 由剧情�
 /**
  * 一人一张图位：走 lib/cg.ts 的**兜底链**。
  *
- * 第一档是这一格的常服立绘（`cg-datewear-<角色id>`）；探不到就往她的 SFW 图、
- * 再往她的立绘退。**私密图不会漏进来**：这里不传 `intimate`，
+ * 第一档是这一格的常服立绘（`cg-datewear-<角色id>`）；探不到就往她的**立绘**退
+ * （`public/charimg/<id>`）—— 不往任何 CG 退。**私密图不会漏进来**：这里不传 `intimate`，
  * 兜底链那道闸对 `lunaNSFW/**` 一律不放行（见 `probeSceneCg`）。
  *
  * 版式照旧：2 : 3 竖构图、`contain` 摆、最宽 320 —— 整身要看得见。

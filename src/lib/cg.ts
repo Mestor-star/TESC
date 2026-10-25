@@ -23,9 +23,14 @@
  * **CG 由上下文自动放置，立绘不进候选**：立绘跟着人走，一人一张、文件名写死。
  *
  * 除了「取一张图」（`probeCg`），这里还有**舞台兜底链**（`probeSceneCg`）：
- * 选中的 CG → 该角色的 SFW 图 → 该角色的立绘。剧演舞台（Galgame）与见面右栏
- * （DateSide）共用它 —— 两处各写一套，退到哪一档必然对不上。
+ * 选中的 CG → 该角色的**立绘**（`public/charimg/<id>`）。剧演舞台（Galgame）与
+ * 见面右栏（DateSide）共用它 —— 两处各写一套，退到哪一档必然对不上。
  * 私密素材（`lunaNSFW/**`）在这条链上另有自己的闸，见那个函数的头注。
+ *
+ * ⚠ **没有「逐人的 SFW 图」这一档**（2026-… 撤掉）：主人给的那张
+ * `lunaSFW/cg-date-shop-luna` 是**CG**（换上新衣那一刻的镜头），不是立绘 ——
+ * 拿它当舞台/右栏的常驻兜底，等于把一张情节画铺到每一场见面里。
+ * 兜底只往**立绘**退，退不到就整块不出。
  */
 
 import { assetBase } from './assetbase'
@@ -96,7 +101,7 @@ export function probeCg(ref: CgRef | string, dir?: string): Promise<string | nul
 /* ============================================================
    开发期断言：CgRef.file 别名不许静默失败
    ------------------------------------------------------------
-   `file` 别名（`cg-date-shop-luna-any` → 真文件 `cg-date-shop-luna`）是**登记位**与
+   `file` 别名（例：某个「另一条前提」的登记位 → 真文件另指一个 id）是**登记位**与
    **文件名**两套身份。取图那一侧只认文件名，所以谁把 `cgIdOf(ref)` 直接递进
    `probeCg` 就是一次静默 404 —— 探针照旧返回 null，兜底链再把它盖住，屏上看着没事，
    素材却一直没被读到。`probeCg` 那一侧已经靠入参类型收窄堵住了（给 CgRef 就自动走
@@ -169,22 +174,25 @@ export function cgFileOf(ref: CgRef): string {
    或者这一场压根没人点名 —— 先前那两处就什么都不铺（舞台空着、右栏写「CG 待补」）。
    主人要的是「别留空」：退到**这一场真有的那张**上去。
 
-   链子三档，**顺序即优先级**，第一档探通就用它：
+   链子两档，**顺序即优先级**，第一档探通就用它：
      ① 选中的 CG（调用方已经过 dateCgPalette 三道窄法：档位 / 认人 / 节拍）；
-     ② 该场角色的 **SFW** 图（下表登记；没登记的人没有这一档）；
-     ③ 该角色的**立绘**（public/charimg/<id>.jpg，走 probeCharImg）。
-   三档全空 → null（调用方自己决定「那就什么都不摆」）。
+     ② 该场角色的**立绘**（public/charimg/<id>.webp|png|jpg，走 probeCharImg）。
+   两档全空 → null（调用方自己决定「那就什么都不摆」）。
+
+   **CG 与立绘不混**（主人 2026-… ）：从前中间还夹着一档「每人的 SFW 图」，
+   实际只有露娜一条 —— 而且那张 `cg-date-shop-luna` 画的是**换上新衣那一刻**，
+   是 CG 不是立绘。把它当兜底，舞台与右栏每一场都在铺那张情节画。
+   那一档整表已删：兜底一律往立绘退（charimg 才是「这个人长什么样」）。
 
    **不把私密图漏进普通约会**：这条链自己带一道闸 ——
    凡是 dir 落在 lunaNSFW/** 那种目录里的素材，只有调用方明说
    intimate: true（这一场确实到了私密那一档）才取；否则连试都不试。
-   下面的 SFW 兜底表同理：表里若登记了 nsfw: true 的那一档也要过这道闸。
    这道闸是**兜底链自己的**，与 dateCgPalette 那三道叠着 —— 两头各锁一次：
    这一层拿不到 Rendezvous，只拿到「谁是这一场的人」。
    ============================================================ */
 
 /** 兜底命中的是第几档 */
-export type SceneCgKind = 'cg' | 'sfw' | 'portrait'
+export type SceneCgKind = 'cg' | 'portrait'
 
 export interface SceneCg {
   /** 真能加载的 URL（已经探通，不是候选链） */
@@ -200,16 +208,6 @@ export interface SceneCg {
   note?: string
 }
 
-/**
- * 每人的 **SFW** 兜底图（只在「这个人本人在场」时才取）。
- *
- * 为什么按人登记、不外推成「谁在场就摆露娜那张」：这张画的是她一个人，
- * 在没有她的场面里摆出来就是凭空多一个人 —— 与 CgRef.cast 同一条规矩。
- * 没登记的人**没有这一档**，直接往立绘退。
- */
-const SFW_FALLBACK: Record<string, { id: string; dir: string; note: string; nsfw?: boolean }> = {
-  luna: { id: 'cg-date-shop-luna', dir: 'lunaSFW', note: '换上新的一身，站在你面前' },
-}
 
 /** 目录名里带 nsfw（lunaNSFW/...）= 私密档素材 */
 function isNsfwDir(dir?: string): boolean {
@@ -217,7 +215,7 @@ function isNsfwDir(dir?: string): boolean {
 }
 
 /**
- * 舞台 / 右栏那一格到底摆哪张：选中的 CG → 该角色的 SFW 图 → 该角色的立绘。
+ * 舞台 / 右栏那一格到底摆哪张：选中的 CG → 该角色的立绘（charimg）。
  *
  * @param refs          选中的那几张（按优先级；一般就一张。空 = 这一场没人点名）
  * @param charIds       这一场在场的人（**主位在前**）—— 兜底只在这几个人身上找
@@ -241,22 +239,10 @@ export async function probeSceneCg(
     if (url) return { url, id: cgIdOf(ref), isFallback: false, kind: 'cg', charId: here[0], note: cgNoteOf(ref) }
   }
 
-  /* ② **主位**的 SFW 图：只认这一场的主角。
-     从前这里遍历全体在场者 —— 主位是恋兔、同场带着露娜时，舞台会退成「露娜一个人的画」，
-     明明这一场不是她的戏。所以这一档只给 here[0]；同场的人只在下一档（立绘）里有位置。 */
-  const main = here[0]
-  if (main) {
-    const f = SFW_FALLBACK[main]
-    if (f && !(f.nsfw && !intimate)) {
-      const url = await probeCg(f.id, f.dir)
-      if (url) {
-        if (DEV) console.info('[cg] 兜底：选中的那张没探到，退到 ' + main + ' 的 SFW 图 —— ' + f.dir + '/' + f.id)
-        return { url, id: f.id, isFallback: true, kind: 'sfw', charId: main, note: f.note }
-      }
-    }
-  }
-
-  /* ③ 立绘：public/charimg/<id>.webp|png|jpg（主位优先，主位缺图才轮到同场的人） */
+  /* ② 立绘：public/charimg/<id>.webp|png|jpg（主位优先，主位缺图才轮到同场的人）。
+     这一档是链子的**地板** —— 「这个人长什么样」只有立绘说得准，CG 说的是一幕。
+     ⚠ 别在它前面再加一档「某人的某张画」：那正是 `cg-date-shop-luna` 当兜底时
+     铺满每一场见面的来路（已撤）。 */
   for (const cid of [...here]) {
     const url = await probeCharImg(cid)
     if (url) {

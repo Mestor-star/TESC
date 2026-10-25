@@ -9,8 +9,11 @@
        可搜；落进 `Rendezvous.place` 的就是节点名，往后与地图对得上账；
      · 时间 —— 今天 / 明天 / 周末 / 自定义（日期 + 时段），落成一句 `Rendezvous.time`
        （「明天下午」「3 月 14 日傍晚」这类，与已有那几场同一个写法）；
-     · 流程（可选）—— 从 `DATE_BEATS` 里多选几拍，写进 `Rendezvous.plan`
-       （**打算走的**，与「已经走到过的」`beats` 两件事，别混）；
+     · 流程（可选）—— 从 `dateBeatsForInvite()` 里多选几拍，写进 `Rendezvous.plan`
+       （**打算走的**，与「已经走到过的」`beats` 两件事，别混）。
+       **这一栏只列非私密的节拍**（主人：「约会流程里面不要有性行为选择啊」）——
+       私密那几拍仍然登记在 `DATE_BEATS` 里（它们守着私密 CG 的 `needs`），
+       但那是场上真发生的事，不是约会前先勾好的行程；
      · 多人（可选）—— 同行的几位，写进 `Rendezvous.party`，上限 `PARTY_MAX`。
 
    校验在 `lib/rendezvous.ts` 的 `validateInvite()` 里（不静默、给一句人话）：
@@ -29,7 +32,7 @@ import { useTerminal } from '../terminal/Terminal'
 import { charOf } from '../data/personas'
 import { PERSON_IDS } from '../data/castmeta'
 import {
-  DATE_BEATS, PARTY_MAX, datePlaces, openDateOf, openRendezvous, validateInvite,
+  PARTY_MAX, dateBeatsForInvite, datePlaces, openDateOf, openRendezvous, validateInvite,
 } from '../lib/rendezvous'
 import type { DatePlace } from '../lib/rendezvous'
 
@@ -54,18 +57,12 @@ const TIME_KINDS: { id: TimeKind; label: string }[] = [
  * `DATE_BEATS[].when` 是**给导演照着判真假**的整句（「这一场里真的买了新衣服、
  * 并且已经试穿上了」），摆进勾选清单太长。这里只给短名，整句放 `title` 里当说明。
  * 登记了新节拍而这里没跟上 → 回落到 id（不至于凭空消失），只是不好读。
+ *
+ * 只有非私密的节拍会出现在这张表里（清单本身由 `dateBeatsForInvite()` 出） ——
+ * 私密那几拍不是玩家的行程选项，也就不需要短名。
  */
 const BEAT_LABEL: Record<string, string> = {
   'outfit-tryon': '买新衣 · 试穿',
-  'intim-handjob': '手交',
-  'intim-oral': '口交',
-  'intim-oral-b': '口交 · 第二轮',
-  'intim-paizuri': '乳交',
-  'intim-missionary': '正常位',
-  'intim-spooning': '侧入式',
-  'intim-doggystyle': '后入式',
-  'intim-cowgirl': '骑乘位',
-  'intim-straddle': '对面座位',
 }
 
 /** 自定义日期那一格（`<input type="date">`）→ 「3 月 14 日」 */
@@ -118,8 +115,11 @@ export function InviteDate({ onClose }: { onClose: () => void }) {
   /** 这一场的在座（主位 + 同行）—— 节拍清单按它筛（`DateBeat.cast`：谁在场才提哪几拍） */
   const castIds = useMemo(() => (to ? [to, ...party] : []), [to, party])
   const beatChoices = useMemo(() => {
-    if (!castIds.length) return DATE_BEATS
-    return DATE_BEATS.filter((b) => !b.cast?.length || b.cast.some((id) => castIds.includes(id)))
+    /* **只列非私密的节拍**（`dateBeatsForInvite`）—— 私密那几拍不进玩家的流程清单，
+       它们只负责「场上真发生了才记一笔」与私密 CG 的 `needs`。 */
+    const pool = dateBeatsForInvite()
+    if (!castIds.length) return pool
+    return pool.filter((b) => !b.cast?.length || b.cast.some((id) => castIds.includes(id)))
   }, [castIds])
   /* 换了人之后，勾过但这一位不搭的节拍自己落下去（否则会留下一截点不着的选择） */
   useEffect(() => {

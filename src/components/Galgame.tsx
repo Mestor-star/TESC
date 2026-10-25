@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 
 import type { ChatMsg } from '../data/types'
-import { probeSceneCg } from '../lib/cg'
+import { probeCg, probeSceneCg } from '../lib/cg'
 import type { SceneCg } from '../lib/cg'
 
 import { Portrait } from './Portrait'
@@ -86,6 +86,19 @@ export interface GalgameProps {
    * 于是 `lunaNSFW/**` 连试都不会试（见 lib/cg.ts 的 `probeSceneCg`）。
    */
   intimate?: boolean
+  /**
+   * 换上新衣那一刻的**一次性镜头**（没有就 null）。
+   *
+   * 这一场走到 `outfit-tryon` 那一拍时，把那张 CG 铺满舞台、**立绘全部让开**
+   * （主位与同行者一起）—— 主人：「那是 CG 图，在触发换衣的时候出现，而且那时候
+   * 旁边的角色立绘需要隐藏」。
+   *
+   * 它不是常驻背景：继续一下（Z / 点舞台）就收，收的时候喊 `onShowcaseDone` ——
+   * 「这一场播过没有」由调用方记（components/DateLane.tsx），这里只管摆。
+   */
+  showcase?: { id: string; dir?: string; note?: string } | null
+  /** 这个镜头看过了（继续那一下）—— 调用方把它收走，别在同一场里再播 */
+  onShowcaseDone?: () => void
   /** 接续选项：只在「已经是最后一行、并且字显示完了」时铺出来 */
   options?: string[]
   /** 生成中：选项按住不让点（别的照旧能翻） */
@@ -105,6 +118,9 @@ export interface GalgameProps {
 const CHAR_MS = 50
 /** 长按多久算「要编辑」（与触屏上「长按」的通行值同档） */
 const LONG_PRESS_MS = 500
+
+/** 立绘让开时的那两笔：`visibility` 保住版位（不 `display: none`，恢复时不跳） */
+const OFF: CSSProperties = { visibility: 'hidden', opacity: 0 }
 
 /**
  * 把账切成行：一行一拍。
@@ -132,7 +148,8 @@ function toScript(log: ChatMsg[], people: GalPerson[]): GalLine[] {
 }
 
 export function Galgame({
-  cast, party, log, cgId, cgDir, cgNote, intimate, options, busy, youName = '你',
+  cast, party, log, cgId, cgDir, cgNote, intimate, showcase, onShowcaseDone,
+  options, busy, youName = '你',
   onPickOption, onEditLine, editor, empty,
 }: GalgameProps) {
   const people = useMemo(() => [cast, ...party], [cast, party])
@@ -164,6 +181,21 @@ export function Galgame({
     ? (cur.kind === 'you' ? youName : (people.find((p) => p.id === cur.who)?.name ?? '旁白'))
     : ''
 
+  /* 换上新衣那一刻的那张画：**只探这一张，不走兜底链**。
+     它是「这一幕的镜头」，不是「这一场总有张画」—— 探不到就干脆不演这个镜头
+     （退到立绘再把它铺满、又把人藏起来，屏上就只剩一张立绘当 CG，两样都不对）。 */
+  const showId = showcase?.id ?? ''
+  const showDir = showcase?.dir ?? ''
+  const [showUrl, setShowUrl] = useState<string | null>(null)
+  useEffect(() => {
+    setShowUrl(null)
+    if (!showId) return
+    let alive = true
+    void probeCg({ id: showId, dir: showDir || undefined }).then((u) => { if (alive) setShowUrl(u) })
+    return () => { alive = false }
+  }, [showId, showDir])
+  /** 这一刻是不是在演「换上新衣」那个镜头（有画才算演） */
+  const table = showcase && showUrl ? { url: showUrl, id: showcase.id, note: showcase.note } : null
   /* 减少动态 */
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -225,10 +257,13 @@ export function Galgame({
   }, [stopTyping, text.length])
 
   const advance = useCallback(() => {
+    /* 换上新衣那个镜头：继续那一下**先收镜头**，不前翻 ——
+       一次性的一幕，字还没念完就先让它过去，等于把这一场接下去的那句跳了。 */
+    if (table) { onShowcaseDone?.(); return }
     if (!cur) return
     if (typing) { complete(); return }
     if (idx < script.length - 1) setIdx(idx + 1)
-  }, [cur, typing, complete, idx, script.length])
+  }, [cur, typing, complete, idx, script.length, table, onShowcaseDone])
 
   const pickOption = useCallback((op: string) => {
     if (busy) return
@@ -313,17 +348,20 @@ export function Galgame({
     return () => { alive = false }
   }, [cgId, cgDir, cgNote, intimate, hereKey])
 
+
   /* 署名位那一行：CG · 露娜 · 换上新的一身（立绘那一档写「立绘」）。
      兜底命中时末尾补一个「（兜底）」—— **只在开发期出**：那是内部说法
      （「这一张不是导演点的那张」），玩家读到只会以为素材缺了；
      排查的人一眼就知道自己看到的是退下来那一档。 */
-  const credit = scene
-    ? [
-        scene.kind === 'portrait' ? '立绘' : 'CG',
-        people.find((p) => p.id === scene.charId)?.name ?? '',
-        scene.note ?? '',
-      ].filter(Boolean).join(' · ') + (scene.isFallback && DEV ? '（兜底）' : '')
-    : ''
+  const credit = table
+    ? ['CG', cast.name, table.note ?? ''].filter(Boolean).join(' · ')
+    : scene
+      ? [
+          scene.kind === 'portrait' ? '立绘' : 'CG',
+          people.find((p) => p.id === scene.charId)?.name ?? '',
+          scene.note ?? '',
+        ].filter(Boolean).join(' · ') + (scene.isFallback && DEV ? '（兜底）' : '')
+      : ''
 
   const visiblePeers = party.slice(0, 3)
   const overflow = party.length - visiblePeers.length
@@ -336,12 +374,24 @@ export function Galgame({
       data-gal-stage={cur ? '1' : '0'}
       data-gal-speaker={speakerHere ? speakerId : ''}
       data-gal-line={idx}
+      data-gal-curtain={table ? '1' : '0'}
     >
       <div className={css.stage} onClick={() => { if (!editor) advance() }}>
         {/* 铺底那张：**cover 裁满 + 焦点偏上（50% 30%）** —— 舞台是横的、画多半是竖的，
             比例对不上时优先保住人物（脸与上半身），别从头顶往下裁。
             兜底链退到立绘那一档时也照这一套摆（所以 data-gal-cg 记的是实际摆上的素材 id）。 */}
-        {scene ? (
+        {table ? (
+          /* 「换上新衣」那一刻：这一张顶掉舞台上的一切（立绘随之让开） */
+          <img
+            className={css.cg}
+            src={table.url}
+            alt=""
+            aria-hidden="true"
+            data-gal-cg={table.id}
+            data-gal-showcase="1"
+            style={{ objectFit: 'cover', objectPosition: '50% 30%' }}
+          />
+        ) : scene ? (
           <img
             className={css.cg}
             src={scene.url}
@@ -354,11 +404,20 @@ export function Galgame({
         ) : null}
         <div className={css.scrim} aria-hidden="true" />
 
-        <div className={css.figures} aria-hidden="true">
+        {/* 立绘那一层：**换上新衣那一刻整层让开**（`visibility` 而不是 `display: none` ——
+            版位照旧占着，恢复时不会整块跳一下）。挂在这一层与每一位身上各一份：
+            层上那份管「+N」小牌与别的零碎，各位身上那份让计算样式也读得出「藏了」。 */}
+        <div
+          className={css.figures}
+          aria-hidden="true"
+          data-gal-figs-off={table ? '1' : '0'}
+          style={table ? OFF : undefined}
+        >
           <div
             className={[css.lead, speakerHere && speakerId !== cast.id ? css.dim : ''].filter(Boolean).join(' ')}
             data-gal-left={cast.id}
             data-gal-lit={!speakerHere || speakerId === cast.id ? '1' : '0'}
+            style={table ? OFF : undefined}
           >
             <Portrait
               avatarId={cast.id}
@@ -380,7 +439,7 @@ export function Galgame({
               <div
                 key={p.id}
                 className={[css.peer, css['peer' + i], lit ? '' : css.dim].filter(Boolean).join(' ')}
-                style={{ '--gal-op': String(0.9 - i * 0.1) } as CSSProperties}
+                style={{ '--gal-op': String(0.9 - i * 0.1), ...(table ? OFF : {}) } as CSSProperties}
                 data-gal-peer={p.id}
                 data-gal-lit={lit ? '1' : '0'}
               >
@@ -496,7 +555,7 @@ export function Galgame({
           没有 CG（三档全空）时**整行不出** —— 摆一行空的比不摆更难看。 */}
       {credit ? (
         <div
-          data-cg-credit={scene?.kind ?? ''}
+          data-cg-credit={table ? 'cg' : (scene?.kind ?? '')}
           style={{
             marginTop: 4,
             textAlign: 'right',

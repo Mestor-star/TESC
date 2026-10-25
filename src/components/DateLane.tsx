@@ -61,9 +61,9 @@ import {
 import { applyLooks } from '../lib/look'
 import type { Rendezvous } from '../lib/rendezvous'
 import {
-  PARTY_MAX, cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous,
-  isDateBeat, listRendezvous, patchRendezvous, rendezvousPrompt, rendezvousVersion, rvAllIds,
-  subscribeRendezvous,
+  OUTFIT_BEAT, PARTY_MAX, cgListText, dateBondRule, dateCgPalette, dateOpeningPrompt, dropRendezvous,
+  isDateBeat, listRendezvous, outfitTryonCg, patchRendezvous, rendezvousPrompt, rendezvousVersion,
+  rvAllIds, subscribeRendezvous,
 } from '../lib/rendezvous'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
@@ -110,6 +110,16 @@ function bondNote(delta: number): string {
   if (delta <= -1) return '起了点小摩擦'
   return ''
 }
+
+/**
+ * 这一趟里**已经播过「换上新衣」那个镜头**的场次（键是 `Rendezvous.id`）。
+ *
+ * 为什么不拿 `beats` 当依据就够了：`beats` 只增不减，一旦落到名册上，往后每次进这一场
+ * 都还看得见它 —— 那就成了**常驻**背景，而主人要的是「换上新衣那一刻」的一次性镜头。
+ * 所以「播过没有」得另记一笔：记在模块上（换页签、切剧演↔对话都不重播；刷新页面算新的一趟，
+ * 这一场再演一次也不算错），且只认**这一场**（`d:<uuid>`）—— 下一场是另一条记录。
+ */
+const tryonPlayed = new Set<string>()
 
 export interface DateLaneProps {
   /** 这一路此刻该开哪一场（Plot 持有；给 null / 认不出就落到头一场没散场的） */
@@ -201,6 +211,20 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
     if (!named) return null
     return dateCgPalette(rv).find((r) => cgIdOf(r) === named) ?? null
   }, [rv, cgOf])
+
+  /* 换上新衣那一刻的**一次性镜头**：这一场走到 `outfit-tryon` 那一拍（或本回合刚记下它）
+     → 剧演舞台把那张 CG 铺满、立绘全部让开，继续一下就收（见 components/Galgame.tsx 的
+     `showcase`）。播过没有记在模块上（`tryonPlayed`），同一场不重播。
+     ⚠ 只在**剧演**那一套里演：对话流那一套没有「舞台」，也就没有可让开的立绘。 */
+  const [tryonOn, setTryonOn] = useState(false)
+  const tryonBeat = !!rv && (rv.beats ?? []).includes(OUTFIT_BEAT)
+  useEffect(() => {
+    /* 对话流那一套没有舞台，也就不演 —— 这一条同时省掉一次白白的重渲染。 */
+    if (mode !== 'galgame' || !rv || !tryonBeat) { setTryonOn(false); return }
+    if (tryonPlayed.has(rv.id)) return
+    tryonPlayed.add(rv.id)
+    setTryonOn(true)
+  }, [rv, tryonBeat, mode])
 
   /* 色情状态栏的名单：这一场在场的每一位（主位在前，同场跟上）。
      够不够格看的是关系本身（hasIntimate + 羁绊过线），与主线那一栏同一把尺。 */
@@ -825,6 +849,8 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
               cgDir={galCg ? galCg.dir : undefined}
               cgNote={galCg ? galCg.note : undefined}
               intimate={rv.kind === 'intimate'}
+              showcase={tryonOn && mode === 'galgame' ? (outfitTryonCg() ?? null) : null}
+              onShowcaseDone={() => setTryonOn(false)}
               options={galOptions}
               busy={busy}
               youName={opName}

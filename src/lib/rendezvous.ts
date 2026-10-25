@@ -161,7 +161,7 @@ export function listRendezvous(): Rendezvous[] {
       /* 说好想走的流程：口径与 beats 逐条一样 —— 只认登记过的、去重、空则不写这个键。
          旧档没有 → 空数组（自由约会） */
       const plan = Array.isArray(o.plan)
-        ? [...new Set(o.plan.filter((x): x is string => typeof x === 'string' && isDateBeat(x)))]
+        ? [...new Set(o.plan.filter((x): x is string => typeof x === 'string' && isPlanBeat(x)))]
         : []
       out.push({
         id: o.id,
@@ -219,9 +219,10 @@ export function openRendezvous(
     .filter((x) => !!charOf(x) && x !== charId)
     .filter((x, i, a) => a.indexOf(x) === i)
     .slice(0, PARTY_MAX)
-  /* 打算走的流程：与读回来时同一道筛（只认登记过的 id、去重） */
+  /* 打算走的流程：与读回来时同一道筛（只认登记过的、且**非私密**的 id、去重）——
+     私密那几拍是场上真发生的事，从来不是约会前勾好的行程 */
   const plan = (opts.plan ?? [])
-    .filter((x) => isDateBeat(x))
+    .filter((x) => isPlanBeat(x))
     .filter((x, i, a) => a.indexOf(x) === i)
   const rv: Rendezvous = {
     id: `${DATE_PREFIX}${crypto.randomUUID()}`,
@@ -391,12 +392,26 @@ export interface DateBeat {
    * 都往「买衣服」上带。
    */
   cast?: string[]
+  /**
+   * **这一拍属私密那一档 —— 不进玩家的流程清单**（见下面的 `dateBeatsForInvite`）。
+   *
+   * 它照旧登记、照旧能记：私密那几张画的 `needs` 就钉在这些节拍上
+   * （`DATE_CG_INTIMATE`），场上真的发生了才由导演报 `beat`。
+   * 这一条只决定**「邀请约会」那一栏里列不列**，与「能不能记」是两件事。
+   */
+  intimate?: true
 }
+
+/**
+ * 换上新衣那一拍。**唯一带「一次性镜头」的一拍**：剧演舞台走到它时把那张画铺满、
+ * 立绘让开（见 components/Galgame.tsx 的 `showcase`）。取那张画走 `outfitTryonCg`。
+ */
+export const OUTFIT_BEAT = 'outfit-tryon'
 
 /** 登记在册的节拍（见 `DateBeat`）。加一个节拍 = 在这儿加一行 + 在那张画上写 `needs` */
 export const DATE_BEATS: DateBeat[] = [
   {
-    id: 'outfit-tryon',
+    id: OUTFIT_BEAT,
     when: '这一场里真的买了新衣服、并且已经试穿上了',
     cast: ['luna'],
   },
@@ -404,15 +419,15 @@ export const DATE_BEATS: DateBeat[] = [
      而是**某一件具体的事真的发生了**才铺那张。一件算一个节拍、一个节拍对一张画 ——
      不合并成「做过了」那种大节拍，否则点一张就顺带点亮一整排。
      ⚠ 这几条的 when 会原样进提示词，所以都写成「照着能判真假」的一句话。 */
-  { id: 'intim-handjob', when: '这一场里真的做成了手交（她的手到了那儿，并且做完了）', cast: ['luna'] },
-  { id: 'intim-oral', when: '这一场里她真的含弄过（口交真的发生了）', cast: ['luna'] },
-  { id: 'intim-oral-b', when: '这一场里口交又走了一轮（她再一次伏下去，或换她主导）', cast: ['luna'] },
-  { id: 'intim-paizuri', when: '这一场里真的用胸部做了（乳交真的发生了）', cast: ['luna'] },
-  { id: 'intim-missionary', when: '这一场里真的用了正常位（她躺着、他从正面进去）', cast: ['luna'] },
-  { id: 'intim-spooning', when: '这一场里真的用了侧入式（两个人侧躺着连在一起）', cast: ['luna'] },
-  { id: 'intim-doggystyle', when: '这一场里真的用了后入式（她背对着、跪着或撑着）', cast: ['luna'] },
-  { id: 'intim-cowgirl', when: '这一场里真的用了骑乘位（她在上面自己来）', cast: ['luna'] },
-  { id: 'intim-straddle', when: '这一场里真的用了对面座位（她面对面坐在他身上）', cast: ['luna'] },
+  { id: 'intim-handjob', when: '这一场里真的做成了手交（她的手到了那儿，并且做完了）', cast: ['luna'], intimate: true },
+  { id: 'intim-oral', when: '这一场里她真的含弄过（口交真的发生了）', cast: ['luna'], intimate: true },
+  { id: 'intim-oral-b', when: '这一场里口交又走了一轮（她再一次伏下去，或换她主导）', cast: ['luna'], intimate: true },
+  { id: 'intim-paizuri', when: '这一场里真的用胸部做了（乳交真的发生了）', cast: ['luna'], intimate: true },
+  { id: 'intim-missionary', when: '这一场里真的用了正常位（她躺着、他从正面进去）', cast: ['luna'], intimate: true },
+  { id: 'intim-spooning', when: '这一场里真的用了侧入式（两个人侧躺着连在一起）', cast: ['luna'], intimate: true },
+  { id: 'intim-doggystyle', when: '这一场里真的用了后入式（她背对着、跪着或撑着）', cast: ['luna'], intimate: true },
+  { id: 'intim-cowgirl', when: '这一场里真的用了骑乘位（她在上面自己来）', cast: ['luna'], intimate: true },
+  { id: 'intim-straddle', when: '这一场里真的用了对面座位（她面对面坐在他身上）', cast: ['luna'], intimate: true },
 ]
 
 /** 是不是登记过的节拍 id —— `listRendezvous` 读回来时拿它筛（编的 id 一律丢掉） */
@@ -431,35 +446,58 @@ export function dateBeatsFor(rv: Rendezvous): DateBeat[] {
   return DATE_BEATS.filter((b) => !b.cast?.length || b.cast.some((id) => here.has(id)))
 }
 
+/**
+ * **「邀请约会」流程那一栏能勾的节拍** —— 只吐非私密的那几条（`intimate` 之外的）。
+ *
+ * 主人那句「约会流程里面不要有性行为选择啊」：私密那几拍照旧登记在册
+ * （它们还守着私密那几张画的 `needs`），只是**不出现在玩家的流程选择里** ——
+ * 那是场上真发生的事，不是约会之前先勾好的行程。
+ *
+ * 「谁在场才提哪几拍」仍由 `DateBeat.cast` 管，调用方自己按在场者再筛一道。
+ */
+export function dateBeatsForInvite(): DateBeat[] {
+  return DATE_BEATS.filter((b) => !b.intimate)
+}
+
+/** 这个 id 能不能当「打算走的流程」（`Rendezvous.plan`）—— 私密那几拍只记、不安排 */
+export function isPlanBeat(id: string): boolean {
+  return DATE_BEATS.some((b) => b.id === id && !b.intimate)
+}
+
 export const DATE_CG: CgRef[] = [
   { id: 'cg-date-street', note: '并肩走着的两人 · 黄昏的学园街' },
   { id: 'cg-date-night', note: '夜里的高处 · 脚下的城市灯海' },
   { id: 'cg-date-room', note: '房间门口 · 只开着一盏灯' },
   /* 买衣服那一场：**先走到试穿那一步才进候选**（`needs`）。这一张是主人 2026-09-15
      自己丢进来的（`lunaSFW/cg-date-shop-luna.webp`），画的是露娜一个人 ——
-     所以 `cast` 与 `needs` 两样都带，缺人、或还没走到那一步，都进来不了。 */
+     所以 `cast` 与 `needs` 两样都带，缺人、或还没走到那一步，都进来不了。
+     ⚠ **它是 CG，不是立绘**（主人：「那是 CG 图，在触发换衣的时候出现」）：
+     别拿它去当舞台/右栏/常驻背景的兜底图 —— 立绘一律走 `public/charimg/<id>`。
+     这一张**只有这一个登记位**：从前还挂着一条无 needs 的 `cg-date-shop-luna-any`
+     （同一张画随时可用），那一条已删。要它上屏只有两条路：走到这一拍，
+     或者剧演舞台那个一次性镜头（`outfitTryonCg`）。 */
   {
     id: 'cg-date-shop-luna',
     note: '买完衣服 · 换上新的一身站到你面前',
     cast: ['luna'],
     dir: 'lunaSFW',
-    needs: 'outfit-tryon',
-  },
-  /* **随时可用**那一条（主人 2026-10-21）：同一张素材、另一个登记位。
-     上面那条守的是「买完衣服、试穿上了才给」；这一条守的是「她就站在你面前」——
-     两件事、两个前提，所以是两条登记，而不是把上面那条的 needs 松掉
-     （松掉就等于试穿那道闸不存在了）。
-     素材只有一份、也**不许复制**（public/cg/** 归主人收着），所以用 CgRef.file
-     把文件名指回 lunaSFW/cg-date-shop-luna.webp —— 登记位各走各的 id，文件同一个。
-     cast 保留：这张画的是**她一个人**，她不在场就不该摆（这条约束不能松）。 */
-  {
-    id: 'cg-date-shop-luna-any',
-    file: 'cg-date-shop-luna',
-    dir: 'lunaSFW',
-    note: '换上新的一身，站在你面前',
-    cast: ['luna'],
+    needs: OUTFIT_BEAT,
   },
 ]
+
+/**
+ * 换上新衣那一张（`DATE_CG` 里带 `needs: OUTFIT_BEAT` 的那一条登记位）。
+ *
+ * 剧演舞台那个**一次性镜头**用它（components/DateLane.tsx → components/Galgame.tsx）：
+ * 这一场走到试穿那一步时把这张铺满舞台、立绘让开，继续一下就收。
+ * 登记位被挪走 / 改了 needs → `undefined`，调用方按「没有这个镜头」处理。
+ */
+export function outfitTryonCg(): { id: string; dir?: string; note?: string } | undefined {
+  const hit = DATE_CG.find((r): r is Exclude<CgRef, string> =>
+    typeof r !== 'string' && r.needs === OUTFIT_BEAT)
+  if (!hit) return undefined
+  return { id: hit.id, ...(hit.dir ? { dir: hit.dir } : {}), ...(hit.note ? { note: hit.note } : {}) }
+}
 
 /**
  * 已到私密那一档才进候选的那几张（挪进清单里，导演才点得到）。
@@ -561,8 +599,8 @@ export function dateCgPalette(rv: Rendezvous): CgRef[] {
     if (r.needs && !beats.has(r.needs)) return false
     return true
   })
-  /* 候选装配处跑一次开发期断言：`file` 别名的登记位（`cg-date-shop-luna-any`）在这里
-     被喊一声「取图请用 cgFileOf」。喊在**装配**这一处、而不是每个取图点各喊一次 ——
+  /* 候选装配处跑一次开发期断言：用了 `file` 别名的登记位在这里被喊一声
+     「取图请用 cgFileOf」。喊在**装配**这一处、而不是每个取图点各喊一次 ——
      候选就是导演能点到的全集，漏网只可能漏在这儿。断言自己按 id→file 去重，
      这场约会重渲染多少回也只喊一次。 */
   assertCgRefs(refs)
@@ -654,7 +692,12 @@ ${beatsTodo.map((b) => `- ${b.id} —— ${b.when}`).join('\n')}
 这几步是这一场往下走会经过的节点。**这一件事真的发生了**，才在那一回合的收尾 JSON 里
 加上 "beat": "那一步的 id"（一次只报刚走到的这一个，id 照抄上面）。
 没发生就别报 —— 提前报等于把还没发生的那一幕先算成发生了：那一笔会当场记进这一场，
-对应的那张画会立刻铺出来。宁可少报一步，也别先把画面给了。`
+对应的那张画会立刻铺出来。宁可少报一步，也别先把画面给了。${
+  beatsTodo.some((b) => b.intimate)
+    ? '\n\n注意：id 以 intim- 开头的那几步不属于玩家在这一场之前勾选的行程（那张清单里已经不再列它们）——'
+      + ' 它们只是「场上真发生了才记一笔」的记账用节拍，照着当场的情形走就行：'
+      + '真的走到了才照上面那一条记，没走到就一个字也不提，也别替操作员往那儿安排。'
+    : ''}`
     : ''
   /* 正文那一截紧跟在情境后面 —— 与短信那一条同一个位置、同一个用法：
      都是「一路推下来真发生的事」，只作延续性背景，不许逐条复述。 */
