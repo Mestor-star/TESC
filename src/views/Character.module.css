@@ -58,14 +58,28 @@
   white-space: nowrap;
 }
 
+/* ---- 一页的高度 ----
+   这一页不靠文档滚动：把它钉在**一屏**上（页头与切换栏在流里，剩下的给三栏），
+   于是右栏内容再长也只是**右栏自己**滚轮滚动，左导航与中间立绘不会被拉长、
+   整张页面也不会被撑高。 */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 104px);
+  min-height: 520px;
+  overflow: hidden;
+}
+
 /* ---- 三栏 ----
-   三栏**等高**：左导航、中间立绘都跟右边主内容区一样长（`stretch`），
-   内容比它长的那一栏自己滚（见 .rail / .artCol 的 overflow-y）。 */
+   三栏**等高**：左导航与中间立绘跟右边主内容区一样长（`stretch`），
+   但每栏各自滚（.rail / .artCol / .main 的 overflow-y），谁也不拉长谁。 */
 .stage {
   display: grid;
   grid-template-columns: 208px 352px minmax(0, 1fr);
   gap: 14px;
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
   min-width: 0;
 }
 
@@ -188,7 +202,16 @@
 .artName small { font-size: 10.5px; color: var(--ink-faint); line-height: 1.4; }
 
 /* ---- 右：主内容 ---- */
-.main { min-width: 0; display: grid; gap: 12px; }
+/* 右栏：**只有它**滚轮滚动（min-height:0 是 flex/grid 子项能内部滚的前提） */
+.main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding-right: 4px;
+}
 .panel { display: grid; gap: 12px; min-width: 0; }
 .card {
   min-width: 0;

@@ -344,7 +344,7 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
   }, [c])
 
   return (
-    <div className="vpage" data-character-page>
+    <div className={`vpage ${css.page}`} data-character-page>
       {/* ---- 顶：横向切换栏。只摆头像与分类，别的什么也不摆 ---- */}
       <div className={css.bar} data-char-bar role="tablist" aria-label="角色切换">
         {catalog.map((r) => {
