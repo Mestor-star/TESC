@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import type { RegionReading, Toast, ToastKind, BondSnap, BondGate, WorldState, OwnEndEntry, WorldRecord, RecordMode, FlagValue, IntimateProfile, IntimateProgress, AttireProfile, AttireProgress, ActCount, RelId, TimelineEvent, AnchorLog } from '../data/types'
 import { castOf } from '../lib/cast'
@@ -32,18 +33,23 @@ import { syncResearch } from '../lib/research'
 import { awardColorDrops } from '../lib/growth'
 import {
   applySnapshot,
+  capturePreLoadNow,
   captureSnapshot,
   clearRunStorage,
   ensureMigration,
   hasRunProgress,
   readAutosave,
   readAutosaveHistory,
+  readPreLoad,
   fmtSlotTime,
   readSlot,
   RUN_KEY,
+  undoLoadNow,
   writeAutosave,
   writeSlot,
 } from '../lib/slots'
+/* 读档确认面板借存读档浮层那一套壳（遮罩 + 面板），不另开一份样式 */
+import scss from '../components/SaveDialog.module.css'
 
 export type ViewId = 'dashboard' | 'plot' | 'map' | 'saga' | 'memory' | 'lore' | 'arms' | 'research' | 'archive' | 'missions' | 'codex' | 'tavern' | 'settings'
 
@@ -63,6 +69,19 @@ interface Saved {
   /** 手动钉住的观测点 id；null = 跟随剧情（默认） */
   focusId: string | null
   world?: Partial<WorldState>
+}
+
+/**
+ * 读档确认：要读的是哪一份 + 确认之后才跑的那一段。
+ *
+ * 任何「读取」入口（8 格手动档 / 自动档历史 / 读档前快照 / 撤回上一次读档）
+ * 都先把它挂进 state、由 LoadConfirm 弹一次 —— 读档是**覆写**当前运行态，
+ * 误点一下就是整轮进度换掉。确认之后才压 preLoad、才 applySnapshot。
+ */
+interface LoadAsk {
+  /** 面板上写给人看的那一行：读的是哪一份 */
+  target: string
+  go: () => void
 }
 
 export interface TerminalState {
@@ -109,6 +128,10 @@ export interface TerminalState {
   loadSlot: (i: number) => void
   /** 读回自动档历史里的第 i 份（0 = 最近一份） */
   loadAutosaveHistory: (i: number) => void
+  /** 读回读档前快照里的第 i 份（0 = 最近一份） */
+  loadPreLoad: (i: number) => void
+  /** 撤回上一次读档：把 preLoad[0] 换回来；没有可撤的返回 false */
+  undoLoad: () => boolean
   /** 存档：把当前 run 存进第 i 槽，返回是否成功 */
   saveSlot: (i: number, name: string) => boolean
   /** 游戏内「存读档」浮层开关 */
@@ -936,6 +959,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [unlocked, push],
   )
 
+  /** 读档确认面板（null = 没在问）—— 任何「读取」入口都先过这一道 */
+  const [loadAsk, setLoadAsk] = useState<LoadAsk | null>(null)
+  /** 挂一次确认：确认之后才真读 */
+  const askLoad = useCallback((target: string, go: () => void) => setLoadAsk({ target, go }), [])
+  const closeLoadAsk = useCallback(() => setLoadAsk(null), [])
+
   const enter = useCallback(() => {
     sessionAuthed = true
     setAuthed(true)
@@ -968,18 +997,31 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     if (tabWriteBlocked()) { speakReadonly(); return false }
     const a = readAutosave()
     if (!a) return false
-    // 同上：先把 'zts-battle' 收回初值，再写回快照并重挂载（返回值仍同步给出去）
-    void (async () => {
-      await applySnapshot(a.snapshot)
-      sessionAuthed = true
-      sessionStage = 'game'
-      sessionSetup = false
-      pendingView = 'dashboard'
-      pushToast('info', '已读取自动存档', `${a.name || '自动存档'} · 收束 ${a.records} 段`)
-      requestRemount()
-    })()
+    /* 读档确认先过一道（标题页那一路也走这里）。确认之前什么都不动：
+       不压 preLoad、不写运行档 —— 取消就等于没发生过。 */
+    askLoad(`自动存档 · ${fmtSlotTime(a.savedAt)} · 记录 ${a.records} 条`, () => {
+      // 同上：先把 'zts-battle' 收回初值，再写回快照并重挂载（返回值仍同步给出去）
+      void (async () => {
+        try {
+          /* 读档前快照：必须在 applySnapshot **之前**压，之后压的就是刚读进来的那一份了 */
+          capturePreLoadNow()
+          await applySnapshot(a.snapshot)
+          sessionAuthed = true
+          sessionStage = 'game'
+          sessionSetup = false
+          pendingView = 'dashboard'
+          pushToast('info', '已读取自动存档', `${a.name || '自动存档'} · 收束 ${a.records} 段`)
+          requestRemount()
+        } catch (e) {
+          /* 读档失败要说人话（从前这条 async 里抛出来会被静默吞掉：面板关了、页面没动，
+             看上去像「按钮坏了」）。 */
+          console.warn('[load] 读自动档失败', e)
+          pushToast('warn', '读档没走通', e instanceof Error ? e.message : String(e))
+        }
+      })()
+    })
     return true
-  }, [])
+  }, [askLoad])
 
   /** 清空当前 run（手动槽保留）并全量重挂载 → 全新记录落到终端总览 */
   const hardReset = useCallback(async (title: string, body: string) => {
@@ -1051,17 +1093,21 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         return
       }
       // 同上：读档 = 连战斗域一起换（军需 / 体力 / 战报），await 在重挂载之前
-      void (async () => {
-        await applySnapshot(slot.snapshot)
-        sessionAuthed = true
-        sessionStage = 'game'
-        sessionSetup = false
-        setSetupMode(false)
-        pushToast('success', '存档已读取', `载入「${slot.name}」。`)
-        requestRemount()
-      })()
+      askLoad(`手动档 ${i + 1} ·「${slot.name}」 · ${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`, () => {
+        void (async () => {
+          /* 压一份「读档前快照」再换 —— 读错了才有得撤回 */
+          capturePreLoadNow()
+          await applySnapshot(slot.snapshot)
+          sessionAuthed = true
+          sessionStage = 'game'
+          sessionSetup = false
+          setSetupMode(false)
+          pushToast('success', '存档已读取', `载入「${slot.name}」。`)
+          requestRemount()
+        })()
+      })
     },
-    [push],
+    [push, askLoad],
   )
 
   /** 读回自动档历史里的某一份（2026-09-24 事故之后加的「后悔药」） */
@@ -1073,18 +1119,75 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         push('warn', '没有这一份', '自动档历史里没有第 ' + (i + 1) + ' 份。')
         return
       }
+      askLoad(`自动档历史 · ${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`, () => {
+        void (async () => {
+          capturePreLoadNow()
+          await applySnapshot(slot.snapshot)
+          sessionAuthed = true
+          sessionStage = 'game'
+          sessionSetup = false
+          setSetupMode(false)
+          pushToast('success', '已读回自动档历史', `${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`)
+          requestRemount()
+        })()
+      })
+    },
+    [push, askLoad],
+  )
+
+  /** 读回「读档前快照」里的某一份（面板里那几枚「读回这份」） */
+  const loadPreLoad = useCallback(
+    (i: number) => {
+      if (tabWriteBlocked()) { speakReadonly(); return }
+      const slot = readPreLoad()[i]
+      if (!slot) {
+        push('warn', '没有这一份', '读档前快照里没有第 ' + (i + 1) + ' 份。')
+        return
+      }
+      askLoad(`读档前快照 · ${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`, () => {
+        void (async () => {
+          /* 同一口径：读之前先把「此刻」也压一份 —— 读回前快照同样是覆写 */
+          capturePreLoadNow()
+          await applySnapshot(slot.snapshot)
+          sessionAuthed = true
+          sessionStage = 'game'
+          sessionSetup = false
+          setSetupMode(false)
+          pushToast('success', '已读回读档前快照', `${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`)
+          requestRemount()
+        })()
+      })
+    },
+    [push, askLoad],
+  )
+
+  /**
+   * 撤回上一次读档：把 preLoad[0] 换回来。
+   *
+   * 读回之前那一份由 slots 的 undoLoadNow 压在链尾（见那边的头注）：
+   * 所以连撤两次是继续往更前一份走，撤销前的那一刻也还在面板里，点得回去。
+   */
+  const undoLoad = useCallback((): boolean => {
+    if (tabWriteBlocked()) { speakReadonly(); return false }
+    const list = readPreLoad()
+    if (!list.length) {
+      push('warn', '没有可撤回的读档', '还没读过档 —— 读一次之后这儿才留得下东西。')
+      return false
+    }
+    askLoad(`撤回上一次读档 · ${fmtSlotTime(list[0].savedAt)} · 记录 ${list[0].records} 条`, () => {
       void (async () => {
-        await applySnapshot(slot.snapshot)
+        const target = await undoLoadNow()
+        if (!target) return
         sessionAuthed = true
         sessionStage = 'game'
         sessionSetup = false
         setSetupMode(false)
-        pushToast('success', '已读回自动档历史', `${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`)
+        pushToast('success', '已撤回上一次读档', `${fmtSlotTime(target.savedAt)} · 记录 ${target.records} 条`)
         requestRemount()
       })()
-    },
-    [push],
-  )
+    })
+    return true
+  }, [push, askLoad])
 
   /** 存档：把当前 run 存进手动槽并弹通知（不重挂载） */
   const saveSlot = useCallback(
@@ -1817,6 +1920,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     exitToBoot,
     loadSlot,
     loadAutosaveHistory,
+    loadPreLoad,
+    undoLoad,
     saveSlot,
     slotsOpen,
     setSlotsOpen,
@@ -1891,7 +1996,130 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     resetWorld,
   }
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  const askGo = loadAsk?.go
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      {/* 读档确认：挂在整个外壳最外面（portal 到 body），标题菜单与终端本体都盖得住 */}
+      {loadAsk && askGo ? (
+        <LoadConfirm
+          target={loadAsk.target}
+          records={Object.keys(epDone).length}
+          operator={operatorName || '言万心叶'}
+          autoAt={readAutosave()?.savedAt ?? 0}
+          onCancel={closeLoadAsk}
+          onGo={() => {
+            setLoadAsk(null)
+            askGo()
+          }}
+        />
+      ) : null}
+    </Ctx.Provider>
+  )
+}
+
+/**
+ * 读档确认面板（2026-09-25 主人点名要的那一道）—— 任何「读取」入口都先过它。
+ *
+ * 面板要说清两件事，少一件这个确认就只是多按一次：
+ *  ① **当前进度会被替换**：记录数 / 操作员 / 最近一次自动存档时间 ——
+ *    让人知道自己要盖掉的是什么；
+ *  ② 读档前会自动留一份「读档前快照」，在存读档面板里用「撤回上一次读档」拿得回来。
+ *
+ * 焦点默认落在**取消**上（回车误触也只会取消），Esc 取消、Enter 确认。
+ * 两个键都在**捕获阶段**拦下：否则焦点在取消按钮上按回车，浏览器会先按那枚按钮
+ * （取消），与「Enter 确认」正好相反；SaveDialog 的 Esc 收听也在冒泡阶段，
+ * 这里一并止住，免得确认面板和它一起关。
+ */
+function LoadConfirm(props: {
+  target: string
+  records: number
+  operator: string
+  autoAt: number
+  onCancel: () => void
+  onGo: () => void
+}) {
+  const { target, records, operator, autoAt, onCancel, onGo } = props
+  /* 键位监听只挂一次：handler 走 ref，重渲染不必重挂 */
+  const acts = useRef({ onCancel, onGo })
+  acts.current = { onCancel, onGo }
+  const cancelRef = useRef<HTMLButtonElement | null>(null)
+
+  useEffect(() => {
+    cancelRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        acts.current.onCancel()
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        acts.current.onGo()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  return createPortal(
+    <div
+      className={scss.mask}
+      data-load-confirm="1"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) acts.current.onCancel()
+      }}
+    >
+      <div
+        className={scss.panel + ' ' + scss.confirmPanel}
+        role="dialog"
+        aria-modal="true"
+        aria-label="确认读取存档"
+      >
+        <div className={scss.head}>
+          <div>
+            <div className={scss.kicker}>LOAD CONFIRM</div>
+            <b className={scss.title}>读取存档 · 会覆盖当前进度</b>
+          </div>
+        </div>
+        <div className={scss.body}>
+          <div className={scss.hint}>
+            <b>当前进度会被替换。</b>
+            <span>
+              正在玩的这一路：记录 <b>{records}</b> 条 · 操作员 <b>{operator}</b> · 最近自动存档{' '}
+              <b>{autoAt ? fmtSlotTime(autoAt) : '还没有'}</b>。
+            </span>
+            <span>
+              读档前会自动留一份「读档前快照」—— 在「存读档 → 读档前快照」里用
+              「撤回上一次读档」就能拿回来，所以读错了也还有得退。
+            </span>
+          </div>
+          <div className={scss.hint}>
+            <span>
+              要读的是：<b>{target}</b>
+            </span>
+          </div>
+          <div className={scss.confirmRow}>
+            <button
+              ref={cancelRef}
+              className="btn btn--ghost"
+              data-load-cancel
+              onClick={() => acts.current.onCancel()}
+            >
+              取消
+            </button>
+            <button className="btn btn--primary" data-load-go onClick={() => acts.current.onGo()}>
+              确认读取（覆盖当前进度）
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 export function useTerminal(): TerminalState {

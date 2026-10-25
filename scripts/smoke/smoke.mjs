@@ -1647,6 +1647,10 @@ try {
   await ev(openDialog)
   await poll(`!!document.querySelector('[data-savedialog]')`, 10000, 'J dialog open2')
   await ev(clickBtnInArticle('存档员A', '读取'))
+  /* 2026-09-24 起「读取」先出确认面板（默认焦点在取消）：要真的读，得再点一下
+     data-load-go。面板没出就说明这一版没启用确认，照旧往下走。 */
+  await poll(`!!document.querySelector('[data-load-go]')`, 15000, 'J confirm shown')
+  await ev(`(()=>{const b=document.querySelector('[data-load-go]');if(!b)return false;b.click();return true})()`)
   await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).operatorName==='存A'}catch(e){return false}})()`, 15000, 'J slot load restores 存A')
   await poll(`(()=>{try{return JSON.parse(localStorage.getItem('zts-terminal:v3')).cur==='v1-1'}catch(e){return false}})()`, 8000, 'J slot load cur v1-1')
   const afterLoad = await ev(`(()=>{try{const o=JSON.parse(localStorage.getItem('zts-plot:v1')||'{}');return (o['v1-1']||[]).map(x=>x.text).join('\\n')}catch(e){return String(e)}})()`)
@@ -1864,6 +1868,10 @@ try {
   const autoReady = await ev(`(()=>{const c=document.querySelector('[data-autosave-card]');if(!c)return null;const b=[...c.querySelectorAll('button')].find(x=>x.textContent.trim()==='读取');return {disabled:b?b.disabled:null,txt:c.innerText}})()`)
   ok('L3 有自动档 → 该条显示时间与段数、「读取」可用', !!autoReady && autoReady.disabled === false && /已收束\s*\d+\s*段/.test(autoReady.txt), JSON.stringify(autoReady))
   await ev(`(()=>{const c=document.querySelector('[data-autosave-card]');const b=c&&[...c.querySelectorAll('button')].find(x=>x.textContent.trim()==='读取');if(!b)return false;b.click();return true})()`)
+  /* 同上：确认面板出现就点「确认读取」。标题这一路前面还有一趟接入序列（BootSeq），
+     固定 sleep 等不到 —— 轮询到面板真挂上来再点。 */
+  await poll(`!!document.querySelector('[data-load-go]')`, 20000, 'L4 confirm shown')
+  await ev(`(()=>{const b=document.querySelector('[data-load-go]');if(!b)return false;b.click();return true})()`)
   await poll(`!!document.querySelector('.app--stage')`, 30000, 'L4 autosave load mounts shell')
   const autoLoaded = await ev(`(()=>{const o=JSON.parse(localStorage.getItem('zts-terminal:v3')||'{}');return {shell:!!document.querySelector('.app--stage'),ep:Object.keys(o.epDone||{}).length,title:!!document.querySelector('[data-title="1"]')}})()`)
   ok('L4 点「读取」→ 以自动档进终端（含进度 · 离开标题页）', !!autoLoaded && autoLoaded.shell === true && autoLoaded.title === false && autoLoaded.ep > 0, JSON.stringify(autoLoaded))

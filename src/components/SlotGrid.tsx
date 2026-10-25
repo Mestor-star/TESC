@@ -51,7 +51,10 @@ export function SlotGrid({ mode, beforeLoad }: { mode: 'load' | 'manage'; before
         const idx = String(i + 1).padStart(2, '0')
         const isEdit = editing === i
         const isArm = arm === i
-        const overwriting = isArm && !!slot
+        /* 覆盖已有内容的那一格：**武装**时（第一下）与**编辑中**（第二下之后）都算 ——
+           从前只认 isArm，而 openEditor 一进去就把 arm 清掉了，于是「将覆盖…」那行
+           文案永远画不出来（覆盖确认等于没有说明）。 */
+        const overwriting = (isArm || isEdit) && !!slot
         return (
           <article key={i} className={`${css.card} ${slot ? css.filled : css.empty}`}>
             <header className={css.cardHead}>
@@ -82,7 +85,12 @@ export function SlotGrid({ mode, beforeLoad }: { mode: 'load' | 'manage'; before
 
             {isEdit ? (
               <div className={css.editBox}>
-                {overwriting ? <div className={css.overwrite}>将覆盖「{slot?.name}」的原进度</div> : null}
+                {/* 覆盖已有内容要写清**盖掉的是什么**：名字 · 时间 · 记录数三样缺一不可 */}
+                {overwriting ? (
+                  <div className={css.overwrite}>
+                    将覆盖「{slot?.name}」 · {fmtSlotTime(slot?.savedAt ?? 0)} · 记录 {slot?.records ?? 0} 条
+                  </div>
+                ) : null}
                 <input
                   autoFocus
                   className="field"
@@ -117,11 +125,12 @@ export function SlotGrid({ mode, beforeLoad }: { mode: 'load' | 'manage'; before
                   <button
                     className="btn btn--ghost"
                     style={{ clipPath: 'none' }}
+                    data-load-ask
                     onClick={() => {
                       if (beforeLoad) beforeLoad(() => loadSlot(i))
                       else loadSlot(i)
                     }}
-                    title="以此档续接观测 · 覆盖当前运行进度"
+                    title="以此档续接观测 · 覆盖当前运行进度（读取前会再确认一次）"
                   >
                     <FolderOpen size={12} weight="bold" /> 读取
                   </button>

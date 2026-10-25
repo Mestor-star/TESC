@@ -101,6 +101,19 @@
 }
 .grow { margin-left: auto; }
 
+
+/* 读档确认面板（Terminal.tsx 的 LoadConfirm 借这一套壳：遮罩 + 面板） */
+.confirmPanel {
+  width: min(520px, 96vw);
+  max-height: none;
+}
+.confirmRow {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
 /* 手机档 · 粗指针：对话框右上那枚关闭（桌面 30px）抬到 44 */
 @media (pointer: coarse) {
   .iconBtn { min-width: 44px; min-height: 44px; }

@@ -19,6 +19,8 @@
  * 绝不把整份备份塞进 React state 反复重渲染。
  */
 
+import { adoptSlotsFileFromBackup, SLOTS_KEY } from './slots'
+
 export const BACKUP_MAGIC = 'ZTS-BACKUP'
 export const BACKUP_VERSION = 1
 /** localStorage 里属于本终端的键前缀 */
@@ -597,6 +599,11 @@ export async function restoreBackup(file: BackupFile): Promise<RestoreReport> {
   const before = await snapshotAll(true)
   try {
     writeLocal(file.local)
+    /* 存档槽**整份换成备份里的那一份**（8 手动槽 + 自动档 + 自动档历史 + 读档前快照）。
+       writeLocal 已经是整份替换，这一句把口径落到实处：两格历史在备份里没有就落成
+       空数组 —— 否则「换设备恢复」之后，这一台的历史/快照还挂在面板上，
+       点「读回这份」能读回**别人家**的进度（备份里那一份坏壳也一并收成空档）。 */
+    adoptSlotsFileFromBackup(file.local[SLOTS_KEY] ?? null)
     for (const name of BACKUP_DB_NAMES) {
       await writeDb(name, file.idb[name] ?? {}, true)
     }

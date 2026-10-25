@@ -146,6 +146,16 @@ export interface SlotsFile {
    * 列出这 5 份，任何一份都能单独读回来。旧档没有这一格 = 空数组（不崩）。
    */
   autosaveHistory?: SaveSlot[]
+  /**
+   * 读档前的当前进度快照（最多 3 份，新的在前）。
+   *
+   * 自动档历史管的是「自动存档把上一份盖掉」，管不了「读错档」：读档那一下
+   * 是拿另一份档**整轮覆写**当前运行态（zts-terminal / zts-plot / 战斗域一起换），
+   * 读完才发现读错，当前进度已经不在任何一处了。所以每个读档入口在
+   * applySnapshot **之前**先拿当前运行态压一份进来，面板里一枚「撤回上一次读档」
+   * 就能换回来。旧的档文件没有这一格 = 空数组（不崩）。
+   */
+  preLoad?: SaveSlot[]
 }
 
 function emptyWorld(): WorldState {
@@ -228,7 +238,7 @@ function asSlotOf(v: unknown, index: number): SaveSlot | null {
 function readFile(): SlotsFile {
   try {
     const raw = localStorage.getItem(SLOTS_KEY)
-    if (!raw) return { v: 1, slots: Array(SLOT_COUNT).fill(null), autosave: null }
+    if (!raw) return emptyFile()
     const p = JSON.parse(raw) as Partial<SlotsFile>
     const slots: (SaveSlot | null)[] = Array.isArray(p.slots)
       ? p.slots.slice(0, SLOT_COUNT).map((v, i) => asSlotOf(v, i))
@@ -242,10 +252,23 @@ function readFile(): SlotsFile {
         .filter((x): x is SaveSlot => !!x)
         .slice(0, AUTOSAVE_HISTORY_MAX)
       : []
-    return { v: 1, slots, autosave: asSlotOf(p.autosave, 0), autosaveHistory: hist }
+    /* preLoad 同样是外来内容：认不出的那一份丢掉，认得出的按形状补齐 ——
+       它与 autosaveHistory 一样是「这台设备的后悔药」，坏壳读回来只会让面板炸 */
+    const pre = Array.isArray((p as SlotsFile).preLoad)
+      ? ((p as SlotsFile).preLoad as unknown[])
+        .map((x, i) => asSlotOf(x, i))
+        .filter((x): x is SaveSlot => !!x)
+        .slice(0, PRELOAD_MAX)
+      : []
+    return { v: 1, slots, autosave: asSlotOf(p.autosave, 0), autosaveHistory: hist, preLoad: pre }
   } catch {
-    return { v: 1, slots: Array(SLOT_COUNT).fill(null), autosave: null }
+    return emptyFile()
   }
+}
+
+/** 空档文件（没有 / 坏壳都落到这里）—— 两格历史一律显式空数组 */
+function emptyFile(): SlotsFile {
+  return { v: 1, slots: Array(SLOT_COUNT).fill(null), autosave: null, autosaveHistory: [], preLoad: [] }
 }
 
 function saveFile(f: SlotsFile): void {
@@ -401,6 +424,171 @@ export function writeAutosave(snapshot: RunSnapshot): SaveSlot {
 /** 自动档历史（新的在前）—— 面板里列给人看，也用来「读回被覆盖的那一份」 */
 export function readAutosaveHistory(): SaveSlot[] {
   return readFile().autosaveHistory ?? []
+}
+
+/* ---------- 读档前快照（preLoad）：读档这一下的后悔药 ----------
+ *
+ * 与自动档历史管的是两件事：
+ *   · autosaveHistory —— 自动存档把**上一份自动档**盖掉了，去那儿捡；
+ *   · preLoad          —— 读档把**当前整轮运行态**换掉了，来这儿捡。
+ * 读档是覆写：zts-terminal:v3 / zts-plot:v1 / zts-tavern:v1 与战斗域一起换，
+ * 读完才发现读错，原来那一路哪儿都不剩了。所以每个读档入口都先压一份。
+ */
+
+/** 读档前快照保留几份 */
+export const PRELOAD_MAX = 3
+/** 这一格在面板 / 存档里的固定名字 */
+export const PRELOAD_NAME = '读档前快照'
+
+/** 读档前快照（新的在前）；旧档没有这一格 = 空数组 */
+export function readPreLoad(): SaveSlot[] {
+  return readFile().preLoad ?? []
+}
+
+/**
+ * 单调时间戳：同一毫秒里连点两下也一样分得开。
+ *
+ * 去重键就是 savedAt（见 pushPreLoad），面板里的 React key 也是它 ——
+ * 直接用 Date.now() 时，两次读档落在同一毫秒里会「撞成一份」。
+ */
+function nextStamp(f: SlotsFile): number {
+  const newest = (f.preLoad ?? []).reduce((n, s) => Math.max(n, s.savedAt || 0), 0)
+  return Math.max(Date.now(), newest + 1)
+}
+
+/** 推一份进来（新的在前 · 同一 savedAt 不重复推 · 最多 PRELOAD_MAX 份） */
+function unshiftPreLoad(f: SlotsFile, slot: SaveSlot): SlotsFile {
+  const list = (f.preLoad ?? []).filter((s) => s.savedAt !== slot.savedAt)
+  f.preLoad = [slot, ...list].slice(0, PRELOAD_MAX)
+  return f
+}
+
+/** 把一份已组好的快照推进读档前快照（去重 / 限量都在这儿） */
+export function pushPreLoad(slot: SaveSlot): void {
+  saveFile(unshiftPreLoad(readFile(), slot))
+}
+
+/**
+ * **读档入口统一走这一枚**：拿当前运行态压一份「读档前快照」。
+ *
+ * 必须在 applySnapshot **之前**调用 —— 之后当前运行态就是刚读进来的那一份了，
+ * 那时再压就是把「读进来的」当成「读之前的」，撤回等于什么也没撤。
+ */
+export function capturePreLoad(
+  run: RunStateInput,
+  sessions?: { plot?: Record<string, ChatMsg[]> },
+): SaveSlot {
+  const f = readFile()
+  const snap = captureSnapshot(run, sessions)
+  snap.savedAt = nextStamp(f)
+  const slot = slotFrom(snap, PRELOAD_NAME)
+  saveFile(unshiftPreLoad(f, slot))
+  return slot
+}
+
+/**
+ * 当前运行态（从 zts-terminal:v3 读）—— 压「读档前快照」用的那一份。
+ *
+ * 为什么不从组件 state 拿：读档入口都是 memo 过的 useCallback（依赖里只有 push 那种），
+ * 闭包里那一份是它创建时的快照，点下去可能已经旧了 —— 压出来的「读档前」就成了假的。
+ * 运行档指针在每次世界变化后都会写回（Terminal 那个 effect），读存储反而是最实的那一份。
+ * 形状照 ensureMigration 的口径来：认不出的字段按空值补齐，不猜内容。
+ */
+export function currentRunInput(): RunStateInput {
+  let p: Partial<RunStateInput> & { world?: unknown } = {}
+  try {
+    const raw = localStorage.getItem(RUN_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        p = parsed as Partial<RunStateInput>
+      }
+    }
+  } catch {
+    /* 坏壳当空档 */
+  }
+  return {
+    operatorName: typeof p.operatorName === 'string' && p.operatorName ? p.operatorName : '言万心叶',
+    unlocked: p.unlocked === true,
+    epDone: p.epDone && typeof p.epDone === 'object' ? (p.epDone as Record<string, true>) : {},
+    cur: typeof p.cur === 'string' ? p.cur : null,
+    focusId: typeof p.focusId === 'string' ? p.focusId : null,
+    world: p.world && typeof p.world === 'object' ? (p.world as WorldState) : emptyWorld(),
+  }
+}
+
+/** 读档入口在 applySnapshot 之前的那一句：按存储里的当前运行态压一份 */
+export function capturePreLoadNow(): SaveSlot {
+  return capturePreLoad(currentRunInput())
+}
+
+/**
+ * 撤回一次读档：把 preLoad[0] 读回来，并先把**撤销前的那一刻**留在链尾。
+ *
+ * 为什么留链尾、而不是「新的在前」那条规矩里的最前：
+ * 最前那份正是下一枚「撤回」要读的 —— 放在最前，撤第二次就原地打转
+ * （撤到自己刚存下来的那一刻，第三条断言里「再撤回一次回到更前一份」就不成立了）。
+ * 挂在链尾，下一枚「撤回」继续往更前一份走；撤销前的那一份仍在面板里，
+ * 点「读回这份」照样回得去 —— 所以连续撤回也弄不丢自己。
+ */
+export async function undoLoadSnapshot(current: RunSnapshot): Promise<SaveSlot | null> {
+  if (tabWriteBlocked()) return null
+  const f = readFile()
+  const list = f.preLoad ?? []
+  const target = list[0]
+  if (!target) return null
+  /* 撤销前那一刻的档期也要单调：与已有条目同毫秒时会**撞成同一把键**，
+     去重那一步就会把「再前一份」误当成自己的重影删掉（本机实测：连撤第二次
+     直接读回自己刚存下的那一份）。 */
+  const cur = slotFrom({ ...current, savedAt: nextStamp(f) }, PRELOAD_NAME)
+  const rest = list.slice(1, PRELOAD_MAX).filter((s) => s.savedAt !== cur.savedAt)
+  f.preLoad = [...rest, cur].slice(0, PRELOAD_MAX)
+  saveFile(f)
+  await applySnapshot(target.snapshot)
+  return target
+}
+
+/** 撤回上一次读档（当前运行态由本函数自己按存储取）；没有可撤的返回 null */
+export async function undoLoadNow(): Promise<SaveSlot | null> {
+  return undoLoadSnapshot(captureSnapshot(currentRunInput()))
+}
+
+/**
+ * 「整份换成**备份里的那一份**」—— 备份恢复专用（backup.ts 在写回之后调）。
+ *
+ * 为什么单开一条路，而不是让 writeLocal 顺手写回去就完事：
+ * 恢复是换设备 / 换一轮，**这一台**的自动档历史与读档前快照指的是上一台设备
+ * （或者上一轮）的事，留着就是串档 —— 点「读回这份」能读回别人家的进度。
+ * 所以口径只有一条：以备份里的 zts-slots:v1 为准，**整份替换**；
+ * 备份里那一份没有 autosaveHistory / preLoad 两格，就落成空数组（清空）。
+ */
+export function adoptSlotsFileFromBackup(raw: string | null): void {
+  if (tabWriteBlocked()) return
+  if (!raw) {
+    // 备份里根本没有存档文件：这一侧跟着清掉，别留着本机的旧历史
+    try {
+      localStorage.removeItem(SLOTS_KEY)
+    } catch {
+      /* noop */
+    }
+    return
+  }
+  try {
+    localStorage.setItem(SLOTS_KEY, raw)
+  } catch (e) {
+    noteStorageFault(SLOTS_KEY, e)
+    return
+  }
+  /* 再按本模块的口径过一遍：逐槽形状兜底，并把两格历史落成显式数组。
+     走 readFile() 读的正是刚写进去的那一份备份 —— 没有「本机旧值」参与。 */
+  const f = readFile()
+  saveFile({
+    v: 1,
+    slots: f.slots,
+    autosave: f.autosave,
+    autosaveHistory: f.autosaveHistory ?? [],
+    preLoad: f.preLoad ?? [],
+  })
 }
 
 /* ---------- 运行态键清单（BUG-01） ----------

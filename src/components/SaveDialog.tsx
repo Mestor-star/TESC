@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
-import { readAutosave, readAutosaveHistory } from '../lib/slots'
+import { readAutosave, readAutosaveHistory, readPreLoad } from '../lib/slots'
 import { fmtSlotTime } from '../lib/slots'
 import { SLOTS_KEY } from '../lib/slots'
 import { SlotGrid } from './SlotGrid'
@@ -12,11 +12,14 @@ import css from './SaveDialog.module.css'
 
 /** 游戏内「存读档」浮层：8 手动槽读写 + 自动档只读信息。 */
 export function SaveDialog() {
-  const { setSlotsOpen, push, loadAutosaveHistory } = useTerminal()
+  const { setSlotsOpen, push, loadAutosaveHistory, loadPreLoad, undoLoad } = useTerminal()
   const autosave = readAutosave()
   /* 自动档历史：每次自动存档都把**被覆盖的那一份**推进来（最多 5 份）。
      2026-09-24 的事故之后加的后悔药 —— 读错档时能从这儿把旧的读回来。 */
   const history = readAutosaveHistory()
+  /* 读档前快照：读任何一档之前先压一份当前进度（最多 3 份），一枚「撤回上一次读档」
+     就能换回来。与上面的自动档历史是两件事：那个管「自动存档盖掉上一份」。 */
+  const pre = readPreLoad()
 
   /* 把整份存档文件（zts-slots:v1）导出成 .json，用于事故取证与换设备迁移 */
   const exportAll = () => {
@@ -141,9 +144,62 @@ export function SaveDialog() {
                       className="btn btn--ghost"
                       style={{ fontSize: 11, padding: '4px 10px' }}
                       data-history-load={i}
+                      data-load-ask
                       onClick={() => loadAutosaveHistory(i)}
                     >
                       读回这一份
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 读档前快照：读错档之后，把「读之前那一刻」拿回来（最多 3 份） */}
+          <div className={css.autoCard} data-preload={pre.length}>
+            <span className={css.autoLabel}>读档前快照</span>
+            {pre.length === 0 ? (
+              <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>还没读过档</span>
+            ) : (
+              <span className={css.autoTxt}>{pre.length} 份 · 最多留 3 份</span>
+            )}
+            <span className={css.grow} />
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 11, padding: '6px 12px' }}
+              data-undo-load
+              data-load-ask
+              disabled={pre.length === 0}
+              onClick={() => undoLoad()}
+              title={
+                pre.length === 0
+                  ? '还没读过档 —— 读任何一档之前会自动留一份在这儿'
+                  : '把上一次读档之前的进度换回来（读回前也会再压一份，所以能连着撤）'
+              }
+            >
+              撤回上一次读档
+            </button>
+            {pre.length === 0 ? (
+              <span className="muted tiny" style={{ color: 'var(--ink-faint)', width: '100%' }}>
+                每次「读取」（手动档 / 自动档历史 / 备份恢复）之前，当前进度会自动压一份到这儿。
+              </span>
+            ) : (
+              <div style={{ display: 'grid', gap: 6, width: '100%' }}>
+                {pre.map((s, i) => (
+                  <div key={s.savedAt} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span className={css.autoTxt}>
+                      {fmtSlotTime(s.savedAt)} · {s.records} 条记录
+                      {s.snapshot.operatorName ? ` · ${s.snapshot.operatorName}` : ''}
+                    </span>
+                    <span className={css.grow} />
+                    <button
+                      className="btn btn--ghost"
+                      style={{ fontSize: 11, padding: '4px 10px' }}
+                      data-preload-load={i}
+                      data-load-ask
+                      onClick={() => loadPreLoad(i)}
+                    >
+                      读回这份
                     </button>
                   </div>
                 ))}
