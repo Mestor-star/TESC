@@ -11,7 +11,7 @@ import type { PlotBattle } from '../plot'
 import type { Mission } from '../../data/types'
 import { OPERATOR_ID } from '../../data/castmeta'
 import { namedBossOf } from './bosses'
-import { headFoeOf, isMainlineEvent } from './mainline'
+import { UNGATE, headFoeOf, isMainlineEvent } from './mainline'
 import { TUNING } from './tuning'
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
@@ -88,5 +88,7 @@ export function battleMissionOf(b: PlotBattle, evId: string): Mission {
        那一段主线。带上这个记号，归档才会走「详细战斗过程」那一路，
        作战记录里也会挂着「主线」—— 与简报上的那一条对得上号。 */
     ...(isMainlineEvent(evId) ? { mainline: true } : {}),
+    /* 原文里她就是全开的那一场（见 mainline 的 UNGATE）：把解封门拆掉 */
+    ...(UNGATE[evId]?.length ? { ungate: [...UNGATE[evId]] } : {}),
   }
 }

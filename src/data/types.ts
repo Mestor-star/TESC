@@ -140,6 +140,13 @@ export interface Mission {
   reward: string[];      // 可能回报（用于氛围）
   /** 主线作战：取自时间线上确曾交过手的事件，可反复复盘（记录里出详细战斗过程） */
   mainline?: boolean;
+  /**
+   * 这一场里**不设解封门**的人（角色 id）。
+   * 依据是原文：v1-9 死骸机关之神冲到地面上时，恋兔光一记「樱之残影」当空击碎它 ——
+   * 那一下她就是全开的，没有「先解五重封印」这一步（见 tuning 的 START_GATE）。
+   * 名单由 mainline 的 UNGATE 给，engine 在开打时把对应人的 startNeed 清零。
+   */
+  ungate?: string[];
   /** 主线作战锚定的事件 id（时间线） */
   at?: string;
   /**

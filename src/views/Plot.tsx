@@ -1086,14 +1086,23 @@ export function Plot() {
       if (d.battle?.name && eventHasNoFoe(evId)) {
         push('warn', '交战不成立', `${d.battle.name} —— 这一段原文里没有对手，这一条交战指令已丢弃。`, false)
       } else if (d.battle?.name) {
-        /* 参战名单由模型点（`plotSquadOf` 只放行不保送），点空了才退回「已遇见者里挑」。
-           上限读 TUNING.squadMax —— 与作战屏编队同一个数（从前这儿硬写 4）。 */
-        const want = plotSquadOf(d.battle.squad ?? [], isMet)
-        const squad = want.length ? want : PERSON_IDS.filter((id) => isMet(id)).slice(0, TUNING.squadMax)
-        if (squad.length) {
+        /* 参战名单：模型点了就以它为准，但**必须在场**（主人 2026-09-24：
+           「主线不一定全要主角参战，主要注意正文在场人物就行」）。
+           点空了（或点的人一个都不在场）→ 退回**这一段在场名册**，
+           主角只有在名册里时才上场；名册也空 → 才退回「已遇见者里挑」那套兜底。
+           上限读 TUNING.squadMax —— 与作战屏编队同一个数。 */
+        const here = castOfEvent(EPISODES.find((e) => e.id === evId) ?? { id: evId, cast: [], chars: [] })
+        const allowed = (id: string) => (id === OPERATOR_ID ? here.includes(OPERATOR_ID) : isMet(id))
+        const named = plotSquadOf(d.battle.squad ?? [], isMet)
+        const picked = named.filter(allowed)
+        const squad = picked.length
+          ? picked.slice(0, TUNING.squadMax)
+          : here.filter((id) => id === OPERATOR_ID || isMet(id)).slice(0, TUNING.squadMax)
+        const fallbackSquad = squad.length ? squad : PERSON_IDS.filter((id) => isMet(id)).slice(0, TUNING.squadMax)
+        if (fallbackSquad.length) {
           // 落成待战，而不是当场开打：点「进入战斗」才进；打赢了本段才继续
-          applyBattle({ evId, name: d.battle.name, mission: battleMissionOf(d.battle, evId), squad })
-          push('danger', '交战', `${d.battle.name} 出现在现场 —— 由在场的 ${squad.length} 名成员应敌。点「进入战斗」开始。`, false)
+          applyBattle({ evId, name: d.battle.name, mission: battleMissionOf(d.battle, evId), squad: fallbackSquad })
+          push('danger', '交战', `${d.battle.name} 出现在现场 —— 由在场的 ${fallbackSquad.length} 名成员应敌。点「进入战斗」开始。`, false)
         } else {
           push('warn', '无可应敌者', `${d.battle.name} 出现在现场，但此刻没有可派遣的成员。`, false)
         }

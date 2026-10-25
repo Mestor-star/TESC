@@ -303,6 +303,14 @@ export function createBattle(opts: CreateOpts): BattleState {
   const { mission, squad, progress, growth, gear = {}, sp, spMax } = opts
   const bond = opts.bond ?? {}
   const allies = squad.map((id) => combatantOf(id, progress, growth[id] ?? 0, gear[id]))
+  /* 原文里「这一场她就是全开」的人（Mission.ungate，见 mainline 的 UNGATE）：
+     把解封门清零 —— 普通场次不受影响，门仍按 tuning 的 START_GATE 走。 */
+  if (mission.ungate?.length) {
+    for (const id of mission.ungate) {
+      const c = allies.find((a) => a.id === id)
+      if (c) c.startNeed = 0
+    }
+  }
   // 羁绊：谁站在场上（队伍协同 + 双人）＋ 每人与你的交情攒到了哪一档
   applySynergies(allies, undefined, bond)
   // 敌方也读时期：同一档危险度，小队走到哪一卷，站上来的东西就硬到哪一档
