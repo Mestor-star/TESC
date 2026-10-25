@@ -3,16 +3,36 @@ import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
-import { readAutosave } from '../lib/slots'
+import { readAutosave, readAutosaveHistory } from '../lib/slots'
 import { fmtSlotTime } from '../lib/slots'
+import { SLOTS_KEY } from '../lib/slots'
 import { SlotGrid } from './SlotGrid'
 
 import css from './SaveDialog.module.css'
 
 /** 游戏内「存读档」浮层：8 手动槽读写 + 自动档只读信息。 */
 export function SaveDialog() {
-  const { setSlotsOpen, push } = useTerminal()
+  const { setSlotsOpen, push, loadAutosaveHistory } = useTerminal()
   const autosave = readAutosave()
+  /* 自动档历史：每次自动存档都把**被覆盖的那一份**推进来（最多 5 份）。
+     2026-09-24 的事故之后加的后悔药 —— 读错档时能从这儿把旧的读回来。 */
+  const history = readAutosaveHistory()
+
+  /* 把整份存档文件（zts-slots:v1）导出成 .json，用于事故取证与换设备迁移 */
+  const exportAll = () => {
+    const raw = localStorage.getItem(SLOTS_KEY)
+    if (!raw) { push('warn', '没有存档可导出', '本机还没有任何存档。'); return }
+    const blob = new Blob([raw], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const d = new Date()
+    const p = (n: number) => String(n).padStart(2, '0')
+    a.download = `TESC-存档全部-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    push('success', '已导出全部存档', '包含 8 个手动槽、自动档与自动档历史 —— 存好它。', false)
+  }
 
   const close = () => setSlotsOpen(false)
 
@@ -86,10 +106,49 @@ export function SaveDialog() {
             <button
               className="btn btn--ghost"
               style={{ fontSize: 11, padding: '6px 12px' }}
-              onClick={() => push('info', '自动存档说明', '终端每有进度变化，1.5 秒后自动把当前运行镜像到自动档——只落在本终端，不外传。', false)}
+              data-export-all
+              onClick={exportAll}
+              title="把 8 个手动槽、自动档与自动档历史整份导出成 json"
+            >
+              导出全部
+            </button>
+            <button
+              className="btn btn--ghost"
+              style={{ fontSize: 11, padding: '6px 12px' }}
+              onClick={() => push('info', '自动存档说明', '终端每有进度变化，1.5 秒后自动把当前运行镜像到自动档——只落在本终端，不外传。每次覆盖前，旧的那一份会进下面的「自动档历史」（最多 5 份）。', false)}
             >
               说明
             </button>
+          </div>
+
+          {/* 自动档历史：读错档之后从这儿把旧的读回来（2026-09-24 事故的后悔药） */}
+          <div className={css.autoCard} data-autosave-history={history.length}>
+            <span className={css.autoLabel}>自动档历史</span>
+            {history.length === 0 ? (
+              <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>
+                还没有被覆盖过的自动档 —— 这一格会在每次自动存档时留下上一份
+              </span>
+            ) : (
+              <div style={{ display: 'grid', gap: 6, width: '100%' }}>
+                {history.map((s, i) => (
+                  <div key={s.savedAt} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span className={css.autoTxt}>
+                      {fmtSlotTime(s.savedAt)} · {s.records} 条记录
+                      {s.snapshot.operatorName ? ` · ${s.snapshot.operatorName}` : ''}
+                    </span>
+                    <span className={css.grow} />
+                    <button
+                      className="btn btn--ghost"
+                      style={{ fontSize: 11, padding: '4px 10px' }}
+                      data-history-load={i}
+                      onClick={() => loadAutosaveHistory(i)}
+                    >
+                      读回这一份
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <SlotGrid mode="manage" />

@@ -389,6 +389,9 @@ export function Galgame({
             aria-hidden="true"
             data-gal-cg={table.id}
             data-gal-showcase="1"
+            /* 同一把把手也给这一张：CgSlot 那一套数法（冒烟 V8 用 data-cg-slot 数）
+               在剧演这一路同样数得到 —— 「这一刻摆的就是它」这件事两处是同一件。 */
+            data-cg-slot={table.id}
             style={{ objectFit: 'cover', objectPosition: '50% 30%' }}
           />
         ) : scene ? (

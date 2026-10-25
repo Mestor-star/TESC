@@ -864,6 +864,19 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
             />
           ) : (
           <div className={plot.thread} data-date-thread>
+            {/* 「换上新衣」这一刻：不论在剧演还是对话流，那张 CG 都该当场出现 ——
+                剧演那边走 showcase（连立绘一起让开），对话流这边就摆进这一格。 */}
+            {tryonOn ? (
+              <div className={css.threadCg} data-cg-slot="cg-date-shop-luna">
+                <CgSlot
+                  cgId="cg-date-shop-luna"
+                  dir="lunaSFW"
+                  caption="换上新的一身，站在你面前"
+                  charIds={rvAllIds(rv)}
+                  ratio="3 / 2"
+                />
+              </div>
+            ) : null}
             {activeCg ? (
               <div className={css.threadCg}>
                 {/* 同一张画有多版时（`CgRef.variants`）换着摆：拿这场约会**被点过几次名**

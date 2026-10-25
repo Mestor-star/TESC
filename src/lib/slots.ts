@@ -137,6 +137,15 @@ export interface SlotsFile {
   v: 1
   slots: (SaveSlot | null)[]
   autosave: SaveSlot | null
+  /**
+   * 自动档的历史（最近 5 份，新的在前）。
+   *
+   * 2026-09-24 的事故：主人只有自动存档，读取点错了档，下一次自动存档就把
+   * 原来那份盖掉了 —— localStorage 不做版本历史，旧进度当场没了。
+   * 从这一版起，每次自动存档都把**被覆盖的那一份**推进这里；存读档面板里
+   * 列出这 5 份，任何一份都能单独读回来。旧档没有这一格 = 空数组（不崩）。
+   */
+  autosaveHistory?: SaveSlot[]
 }
 
 function emptyWorld(): WorldState {
@@ -227,7 +236,13 @@ function readFile(): SlotsFile {
     while (slots.length < SLOT_COUNT) slots.push(null)
     /* autosave 同样是外来内容：认不出就当没有自动档 —— canContinue() 要读
        a.snapshot.epDone，读档那一路要读 snapshot.world，坏壳交给它们只会抛 */
-    return { v: 1, slots, autosave: asSlotOf(p.autosave, 0) }
+    const hist = Array.isArray((p as SlotsFile).autosaveHistory)
+      ? ((p as SlotsFile).autosaveHistory as unknown[])
+        .map((x, i) => asSlotOf(x, i))
+        .filter((x): x is SaveSlot => !!x)
+        .slice(0, AUTOSAVE_HISTORY_MAX)
+      : []
+    return { v: 1, slots, autosave: asSlotOf(p.autosave, 0), autosaveHistory: hist }
   } catch {
     return { v: 1, slots: Array(SLOT_COUNT).fill(null), autosave: null }
   }
@@ -366,11 +381,26 @@ export function writeSlot(index: number, name: string, snapshot: RunSnapshot): S
   return slot
 }
 
+/** 自动档历史保留几份（再老的丢掉） */
+export const AUTOSAVE_HISTORY_MAX = 5
+
 export function writeAutosave(snapshot: RunSnapshot): SaveSlot {
   const f = readFile()
+  const prev = f.autosave
   f.autosave = slotFrom(snapshot, '自动存档')
+  /* 被覆盖的那一份先进历史 —— 同一时刻（savedAt 相同）的不重复推。 */
+  if (prev && prev.savedAt !== f.autosave.savedAt) {
+    const hist = (f.autosaveHistory ?? []).filter((s) => s.savedAt !== prev.savedAt)
+    hist.unshift(prev)
+    f.autosaveHistory = hist.slice(0, AUTOSAVE_HISTORY_MAX)
+  }
   saveFile(f)
   return f.autosave
+}
+
+/** 自动档历史（新的在前）—— 面板里列给人看，也用来「读回被覆盖的那一份」 */
+export function readAutosaveHistory(): SaveSlot[] {
+  return readFile().autosaveHistory ?? []
 }
 
 /* ---------- 运行态键清单（BUG-01） ----------

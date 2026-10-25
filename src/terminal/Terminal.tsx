@@ -37,6 +37,8 @@ import {
   ensureMigration,
   hasRunProgress,
   readAutosave,
+  readAutosaveHistory,
+  fmtSlotTime,
   readSlot,
   RUN_KEY,
   writeAutosave,
@@ -105,6 +107,8 @@ export interface TerminalState {
   exitToBoot: () => void
   /** 读档：写入第 i 槽快照后全量重挂载 */
   loadSlot: (i: number) => void
+  /** 读回自动档历史里的第 i 份（0 = 最近一份） */
+  loadAutosaveHistory: (i: number) => void
   /** 存档：把当前 run 存进第 i 槽，返回是否成功 */
   saveSlot: (i: number, name: string) => boolean
   /** 游戏内「存读档」浮层开关 */
@@ -1060,6 +1064,28 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     [push],
   )
 
+  /** 读回自动档历史里的某一份（2026-09-24 事故之后加的「后悔药」） */
+  const loadAutosaveHistory = useCallback(
+    (i: number) => {
+      if (tabWriteBlocked()) { speakReadonly(); return }
+      const slot = readAutosaveHistory()[i]
+      if (!slot) {
+        push('warn', '没有这一份', '自动档历史里没有第 ' + (i + 1) + ' 份。')
+        return
+      }
+      void (async () => {
+        await applySnapshot(slot.snapshot)
+        sessionAuthed = true
+        sessionStage = 'game'
+        sessionSetup = false
+        setSetupMode(false)
+        pushToast('success', '已读回自动档历史', `${fmtSlotTime(slot.savedAt)} · 记录 ${slot.records} 条`)
+        requestRemount()
+      })()
+    },
+    [push],
+  )
+
   /** 存档：把当前 run 存进手动槽并弹通知（不重挂载） */
   const saveSlot = useCallback(
     (i: number, name: string): boolean => {
@@ -1790,6 +1816,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     exitSetup,
     exitToBoot,
     loadSlot,
+    loadAutosaveHistory,
     saveSlot,
     slotsOpen,
     setSlotsOpen,

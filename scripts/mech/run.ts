@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    定点复核 —— 让源码自己证明这些规矩真的生效
    ------------------------------------------------------------
    这一支叫 mech 出身，从「战斗机制」起家；如今它量的是**整个终端凡是
@@ -7598,16 +7598,20 @@ export function run(): MechReport {
       ids({ ...base, beats: [TOP] }).includes(SHOP),
       `beats: ['${TOP}'] → ${ids({ ...base, beats: [TOP] }).length} 张`)
 
-    /* 随时可用那一张（主人 2026-10-21）：同一份素材、另一个登记位 —— 不等试穿那一步，
-       她在场就该进候选。与上面那条配成一对：SHOP 被节拍挡着，ANY 照样进。 */
+    /* 「随时可用」那一条**已撤**（主人：「那是 CG 图，在触发换衣的时候出现」）。
+       这一对钉的是「撤干净了」：同一张素材只认带 needs 的那个登记位，普通见面里
+       （节拍还没到）候选里连它的影子都没有。原先这两条断的是反面（它在、且随时可点），
+       期望值随口径翻过来，断言本身不删 —— 留着它，往后谁再把无前提的登记位加回来，
+       这里当场变红。 */
     const ANY = 'cg-date-shop-luna-any'
-    ok('约会 CG · 随时可用那一张：普通见面、她在场 → 进候选（不必等试穿那一步）',
-      ids(base).includes(ANY) && !ids(base).includes(SHOP),
+    ok('约会 CG · 「随时可用」那一条已撤：普通见面、她在场 → 候选里没有它（同一张画只认试穿那一拍）',
+      !ids(base).includes(ANY) && ids(base).every((id) => id !== ANY),
       `露娜 · kind: date · beats 空 → ANY=${ids(base).includes(ANY)} / SHOP=${ids(base).includes(SHOP)}`)
 
-    ok('约会 CG（对照）· 随时可用那一张也认人：主位换成 hikari（她不在场）→ 不进候选',
-      !ids({ ...base, charId: 'hikari' }).includes(ANY),
-      `主位 hikari → ANY=${ids({ ...base, charId: 'hikari' }).includes(ANY)}`)
+    ok('约会 CG（对照）· 它也不是被「认人」挡掉的：节拍到了、人不在场，候选里同样没有它',
+      !ids({ ...base, charId: 'hikari', beats: [TOP] }).includes(ANY)
+      && ids({ ...base, beats: [TOP] }).every((id) => id !== ANY),
+      `主位 hikari + beats 到了 → ANY=${ids({ ...base, charId: 'hikari', beats: [TOP] }).includes(ANY)}`)
 
     /* —— 三道**叠着**：节拍到了但人不在场 → 照样不进（认人那一道不因为节拍到了就让路） —— */
     ok('约会 CG 节拍（对照）· 节拍到了、但这一场不是她（露娜不在场）→ 那张仍不进候选',
