@@ -172,11 +172,25 @@ export interface GrowthLine {
 /** 技能：第 1 级免费（剧情）· 第 2、3 级只能买（较贵 —— 比等级贵一档） */
 export const SKILL_COST_LV2 = 5000
 export const SKILL_COST_LV3 = 14000
+
+/** 技能等级上限（主人 2026-09-21：技能可以升级，上限 10 级） */
+export const SKILL_MAX_LEVEL = 10
+
+/** 第 2 级到第 10 级的价（第 1 级只认剧情、不要钱）。
+ *  前两级是原来那两格（5000 / 14000，别动），之后每级约 ×1.8，
+ *  到第 10 级要 82 万点 —— 一条技能线练满 ≈ 中期主线 60 场，是长期目标。 */
+export const SKILL_COSTS: readonly number[] = [
+  5000, 14000, 26000, 46000, 82000, 145000, 260000, 460000, 820000,
+]
 /** 天赋：两级，第 2 级只能买 */
 export const TALENT_COST_LV2 = 4000
 
 /** 技能三级的倍率加成（是「到这一级为止的总加成」，不是增量） */
-const SKILL_POWER: [number, number, number] = [0.06, 0.09, 0.12]
+/** 第 n 级的技能倍率加成：第 1 级 +6%，此后每级再 +3%（第 10 级 +33%）。
+ *  加成是**到这一级为止的总量**（不是叠乘），所以 derive 只要拿当前级那一格。 */
+function skillPowerOf(lv: number): number {
+  return Number((0.06 + (Math.max(1, Math.min(SKILL_MAX_LEVEL, lv)) - 1) * 0.03).toFixed(4))
+}
 /** 天赋两级的加成 */
 const TALENT_BONUS: [Partial<GrowthBonus>, Partial<GrowthBonus>] = [
   { power: 0.03, atk: 0.02 },
@@ -226,26 +240,20 @@ function skillLevels(charId: string, key: string, base: {
 }): GrowthLevel[] {
   const extra = (base.arch && ARCH_EXTRA[base.arch]) || EXTRA_DEFAULT
   const story = storyPointOf(charId, key, 'skill')
-  return [
-    {
-      lv: 1, story,
-      desc: base.desc,
+  /* 十级：第 1 级只认剧情（免费），第 2 级起按 SKILL_COSTS 花点数。
+     每级的说明只在句尾加一句「这一手又熟了一层」，不另写十段文案 ——
+     文案要能一眼看出「升了这一级多了什么」，那件事在 bonus 与 extra 里。 */
+  const out: GrowthLevel[] = []
+  for (let lv = 1; lv <= SKILL_MAX_LEVEL; lv++) {
+    out.push({
+      lv,
+      ...(lv === 1 ? { story } : { cost: SKILL_COSTS[lv - 2] }),
+      desc: lv === 1 ? base.desc : base.desc + `（第 ${lv} 级：这一手又熟了一层。）`,
       extra, energy: base.cost, cd: base.cd,
-      bonus: { power: SKILL_POWER[0] },
-    },
-    {
-      lv: 2, cost: SKILL_COST_LV2,
-      desc: base.desc + '（第 2 级：这一手的分量又厚了一层。）',
-      extra, energy: base.cost, cd: base.cd,
-      bonus: { power: SKILL_POWER[1] },
-    },
-    {
-      lv: 3, cost: SKILL_COST_LV3,
-      desc: base.desc + '（第 3 级：这一手到此算是练透了。）',
-      extra, energy: base.cost, cd: base.cd,
-      bonus: { power: SKILL_POWER[2] },
-    },
-  ]
+      bonus: { power: skillPowerOf(lv) },
+    })
+  }
+  return out
 }
 
 function talentLevels(charId: string, key: string, desc: string): GrowthLevel[] {
