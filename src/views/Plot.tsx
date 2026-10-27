@@ -610,6 +610,15 @@ export function Plot() {
   const [lastEnded, setLastEnded] = useState<{ id: string; title: string; digest: string; diverged: boolean; mode: RecordMode } | null>(null)
   /** 「回退到上一段」的二次确认（与设置页「再按一次确认」同一套口径） */
   const [confirmBack, setConfirmBack] = useState(false)
+  /**
+   * 「段账一起退」—— 回退要不要把**这一段写下的账**也撤掉（默认开）。
+   *
+   * 撤的是：在场名册 / 地点里这一段的键、归因落在这一段的世界变量那几格、
+   * 好感增量按 keep 基线回落、以及归到这一段的作战记录。逐笔口径与局限见
+   * terminal/Terminal.tsx 的「段账撤销」那一节。它是一条**开关**，不是静默行为：
+   * 关掉就是回退的旧样子（只撤进度与记录），按钮旁边那一行字会跟着说。
+   */
+  const [undoAccounts, setUndoAccounts] = useState(true)
 
   /* —— 消息编辑（两类共用一格 `editId`：一次只编一条，切走即收）—— */
   const [editId, setEditId] = useState<string | null>(null)
@@ -2222,11 +2231,13 @@ export function Plot() {
     if (!backEv) return
     if (!confirmBack) {
       setConfirmBack(true)
-      push('warn', '回退到上一段', `再按一次确认：把《${backEv.title}》连同它那一条记录一起撤下 —— 推演退回这一段之前。`, false)
+      push('warn', '回退到上一段', `再按一次确认：把《${backEv.title}》连同它那一条记录一起撤下 —— 推演退回这一段之前。` + (undoAccounts
+        ? '这一段的段账也一起退：在场名册、地点、它写过的世界变量、好感增量回落到上一段基线，归到它的作战记录一并删掉。'
+        : '段账一起退是关着的：只撤进度与记录，在场名册 / 地点 / 世界变量 / 好感增量 / 作战记录都留在原处。'), false)
       return
     }
     setConfirmBack(false)
-    if (reopenEvent(backEv.id)) {
+    if (reopenEvent(backEv.id, { accounts: undoAccounts })) {
       setLastEnded(null)
       applyConcluded(null)
     }
@@ -2450,6 +2461,24 @@ export function Plot() {
               <ArrowUUpLeft size={13} weight="bold" />
               {confirmBack ? `再按一次确认回退《${backEv.title}》` : '回退到上一段'}
             </button>
+          ) : null}
+          {/* 「段账一起退」开关：回退**不静默**撤人物账，摆在这儿给人关。
+              默认开；关掉就回到旧样子（只撤进度与记录）。判据与局限见
+              terminal/Terminal.tsx 的「段账撤销」那一节。 */}
+          {backEv ? (
+            <label
+              className="tiny muted"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+              title="回退时连这一段写下的账一起撤：在场名册 / 地点 / 它写过的世界变量 / 好感增量回落到上一段基线 / 归到它的作战记录"
+            >
+              <input
+                type="checkbox"
+                data-rollback-accounts
+                checked={undoAccounts}
+                onChange={(e) => setUndoAccounts(e.target.checked)}
+              />
+              段账一起退
+            </label>
           ) : null}
           {/* 推进方式这一对是 `role=tablist` 的两个页签，所以带上 `role=tab` + `aria-selected` ——
               视觉上的「选中」本来就是拿 class 画的（css.isOn），屏幕阅读器读不到；

@@ -15,7 +15,7 @@ import type { ChatMsg, ChatMsgMeta } from '../data/types'
 import { clock } from './format'
 import { nameKey } from './namekey'
 import { extractLiveDisplay } from './plot'
-import { clearStorageFault, noteStorageFault } from './slots'
+import { clearStorageFault, noteStorageFault, setSmsTruthReset } from './slots'
 import { BOTTOM_RULES } from './worldrules'
 import { ANTI_AI_STYLE_SHORT } from './writing-rules'
 
@@ -65,6 +65,34 @@ function readSmsLogsOnDisk(): Record<string, ChatMsg[]> {
 export function loadSmsLogs(): Record<string, ChatMsg[]> {
   return unsavedLogs ?? readSmsLogsOnDisk()
 }
+
+/**
+ * 作废内存真账 —— **读档 / 重置**那两条路必须调（现在由 lib/slots.ts 代调）。
+ *
+ * 为什么需要它：写失败之后那本账是「这一轮」的真账，而读档换的是整整一轮运行态
+ * （zts-tavern:v1 被覆写成新档）。内存那本不清，loadSmsLogs 端出的就是**上一档**的账，
+ * 下一次写成功还会把旧账整本回写进新档 —— 跨档串账，界面上一个字不解释。
+ *
+ * 谁调：只该是读档 / 重置那条路（slots.ts 的 applySnapshot / clearRunStorage），
+ * 见下面那段注册。写成功时由 writeSmsLogs 自己清，不需要走这儿。
+ */
+export function resetSmsTruth(): void {
+  unsavedLogs = null
+}
+
+/* —— 把作废器交给 slots.ts（**注册式解耦，不 import 回去**）——
+ *
+ * 方向不能反：本模块已经 import 了 slots 的故障通道（noteStorageFault /
+ * clearStorageFault）。slots 再 import 本模块就是一个 ESM 环 —— 环里先求值的那一侧
+ * 拿到的是尚未初始化的绑定，而本模块顶层那两个模块级变量（unsavedLogs）与这条注册
+ * 语句正好落在环上，读档路径上就会撞 TDZ；何况底层模块不该反过来依赖上层。
+ * 所以由**本模块**（上层）在初始化时把 resetSmsTruth 这个函数指针登记过去，
+ * slots 那侧只握着它、在读完 / 重置之后调一下，全程不知道账长什么样。
+ *
+ * 惰性兜底：从未 import 过本模块的会话里 slots 拿到的是 null，resetSmsTruth 那侧
+ * 按「没有」处理 —— 那种会话里本来也没有内存真账需要作废。
+ */
+setSmsTruthReset(resetSmsTruth)
 
 export function newMsgId(threadId: string): string {
   return `${threadId}::${Date.now().toString(36)}::${Math.random().toString(36).slice(2, 6)}`

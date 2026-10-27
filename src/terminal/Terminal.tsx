@@ -28,7 +28,8 @@ import { ensureBuiltinGroups } from '../lib/smsthreads'
 import { requestRemount } from '../lib/remount'
 import { subscribeTabLock, tabLockState, tabWriteBlocked } from '../lib/tablock'
 import { sfx } from '../lib/audio'
-import { resetBattleStore } from '../lib/battle/store'
+import { deleteRecordsForEvents, resetBattleStore } from '../lib/battle/store'
+import { TIE_ONCE_KEY } from '../lib/battle/settle'
 import { syncResearch } from '../lib/research'
 import { awardColorDrops } from '../lib/growth'
 import {
@@ -299,12 +300,16 @@ export interface TerminalState {
    *   · `world.records` 里那一条（低语者日志上不再挂着它）；
    *   · 这一段 `lock` 写下的羁绊下限（按**剩下还收着的段**重算，不是整份清空）；
    *   · `cur` 退回它前面最近一段（前面没有了就退回 null）。
+   * 第二参数 `opts.accounts`（默认开，见 ACCOUNT_UNDO_DEFAULT）另撤**这一段写下的段账**：
+   *   `world.cast[这一段]` / `world.place[这一段]`、归因落在这一段上的 `world.flags` 那几格、
+   *   好感增量按 keep 基线回落、以及归到这一段（missionId = main-<段 id>）的作战记录。
+   *   逐笔口径与局限见本文件「段账撤销」那一节。
    * **不删**会话正文（`zts-plot`，那一段推过的话还在，能重读），但撤下的那一屏
    * 从此**不再喂给导演**：这一段每一条消息打个 `meta.stale` 记号（见 `lib/turns.ts`
    * 的 `turnsFor`），重推写下的新消息照常进历史。`met` / `ends` 登记（「见过」
    * 「登记过」是不可逆的事实，与进度无关）以及别段的任何东西同样不动。返回是否真的撤了。
    */
-  reopenEvent: (id: string) => boolean
+  reopenEvent: (id: string, opts?: RewindOpts) => boolean
 
 
   /**
@@ -319,11 +324,15 @@ export interface TerminalState {
    * `zts-plot-pending:v1` **只清指着被撤段的那一半**（段不在了才清，更靠后那一段
    * 合法的收束栏 / 待战按钮不许误伤），以及给被撤段的正文打上「不再喂给导演」的记号。
    *
-   * **不删**：会话正文（照旧留在 `zts-plot` 里能重读，只是不进提示词）、`world.cast`、
-   * `met`、图鉴登记、作战记录、`world.tick`（tick 只增不减是既有口径 —— 回退不回拨时钟）。
+   * 第四件（可关，`opts.accounts`，默认开）：**这些段写下的账一并撤** —— `world.cast` /
+   * `world.place` 里这些段的键、归因落在这些段的 `world.flags` 那几格、好感增量按 keep
+   * 基线回落、以及归到这些段的作战记录。逐笔口径与局限见本文件「段账撤销」那一节。
+   *
+   * **不删**：会话正文（照旧留在 `zts-plot` 里能重读，只是不进提示词）、`met`、图鉴登记、
+   * `world.tick`（tick 只增不减是既有口径 —— 回退不回拨时钟）。
    * 返回是否真的撤了。
    */
-  rewindTo: (id: string) => boolean
+  rewindTo: (id: string, opts?: RewindOpts) => boolean
 
   /**
    * 会话账「重读过」的信号：每回退一次（`rewindTo` / `reopenEvent`）落完 `meta.stale`
@@ -471,6 +480,204 @@ function sortRecords(list: WorldRecord[]): WorldRecord[] {
   return [...list].sort(
     (a, b) => (readingIndexOf(a.eventId) - readingIndexOf(b.eventId)) || (a.ts - b.ts),
   )
+}
+
+
+/* ============================================================
+   段账撤销 —— 回退时把「这一段写下的账」也撤掉
+   ------------------------------------------------------------
+   回退（rewindTo / reopenEvent）从前只撤进度、记录、锚点账与羁绊下限；
+   world.offset / world.cast / world.place / world.flags 与作战记录都停在旧时间线上 ——
+   玩家退回去之后，好感读数、现场名册、地点、变量还是撤掉那一段写下的样子。
+
+   这里补一份**按段的快照式撤销**：撤哪几段由 lib/rewind.ts 的 planRewind 定，
+   本模块只负责算「该删哪些键」。逐笔的判定口径（也写在 planAccountUndo 里）：
+     · world.cast / world.place —— **按段记的**（键就是段 id），撤段 → 删该段的键。
+     · world.flags —— 变量表没有段这一维，所以另记一本**归因账**（FLAG_SRC_KEY：
+       变量键 → 写它的那一段）。只撤「归因落在被撤段里的」那几格；从没归过因的键
+       （旧档、手改、别的路写的）**一律不撤**。
+     · world.offset —— 好感增量是**一路累加**的，不是按段分账的，所以只能按段落回落：
+       被撤段声明过好感的角色，偏移回落到「keep 里最后一段声明的基线」（口径与
+       bondNow 同源：读数 = defaultBondOf + offset，locked 优先）。三条护栏：
+       有 locked 的不动（锁定值优先，动了也读不出来）、keep 里没人声明过基线的不动、
+       基线不低于此刻的不动（**只回落，不往上顶** —— 往上顶等于替玩家刷好感）。
+     · 作战记录（IndexedDB 的 zts-battle）—— 只认 missionId = main-<段 id> 的那一种
+       （lib/battle/store.ts 的 eventIdOfRecord），对不上的不撤；删掉的那几条若正是
+       battle.settled 记着的，连这一格变量一起撤。
+
+   开关：ACCOUNT_UNDO_DEFAULT 为真（默认开），每次回退也可以显式传 opts.accounts=false。
+   文案不许静默 —— 回退的观测记录里写清「这些人物的账也一起退」。
+   ============================================================ */
+
+/** 世界变量的段归因账（localStorage；slots.ts 的 RUN_STATE_KEYS 里登记同一把键） */
+export const FLAG_SRC_KEY = 'zts-flag-src:v1'
+
+/** 变量键 → 写它的段 id */
+export type FlagSrcLedger = Record<string, string>
+
+/** 回退时要不要连段账一起撤（默认开；传 false 就是旧行为） */
+export interface RewindOpts {
+  accounts?: boolean
+}
+
+/** 默认开 —— 「默认安全」指的是：**只撤归因得到的、只回落不往上顶、拿不准一律不动** */
+export const ACCOUNT_UNDO_DEFAULT = true
+
+/** 读归因账；坏数据 / 没有 → 空表（空表 = 什么变量都不撤） */
+export function readFlagSrcLedger(): FlagSrcLedger {
+  try {
+    const raw = localStorage.getItem(FLAG_SRC_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const out: FlagSrcLedger = {}
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'string' && v) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeFlagSrcLedger(next: FlagSrcLedger): void {
+  try {
+    localStorage.setItem(FLAG_SRC_KEY, JSON.stringify(next))
+  } catch {
+    /* 配额满 / 隐私模式：归因账退化成「没记过」—— 代价是回退时这些变量不撤（宁可不撤，不许撤错） */
+  }
+}
+
+/**
+ * 记一笔「这一段写了这一格」。段未知（还没开始推 / 没有指针）→ **不记**：
+ * 没有归因的键在回退时就不撤，这是刻意的保守。
+ */
+export function noteFlagSrc(key: string, evId: string | null): void {
+  if (!evId) return
+  const cur = readFlagSrcLedger()
+  if (cur[key] === evId) return
+  writeFlagSrcLedger({ ...cur, [key]: evId })
+}
+
+/** 删掉这些段的归因（回退落完账之后调一次；键本身已经被撤了，账也要跟着走） */
+export function pruneFlagSrc(evIds: Iterable<string>): void {
+  const drop = new Set(evIds)
+  const cur = readFlagSrcLedger()
+  const next = { ...cur }
+  let changed = false
+  for (const [k, v] of Object.entries(cur)) {
+    if (drop.has(v)) { delete next[k]; changed = true }
+  }
+  if (changed) writeFlagSrcLedger(next)
+}
+
+/** 这一格变量没了（删 / 改名）→ 归因也撤掉，免得账上留着一个不存在的键 */
+export function forgetFlagSrc(key: string): void {
+  const cur = readFlagSrcLedger()
+  if (!(key in cur)) return
+  const next = { ...cur }
+  delete next[key]
+  writeFlagSrcLedger(next)
+}
+
+/** 一次段账撤销的方案（纯数据：调用方照着落到 world 上） */
+export interface AccountUndo {
+  /** world.cast 里要删的段键 */
+  cast: string[]
+  /** world.place 里要删的段键 */
+  place: string[]
+  /** world.flags 里要删的键（按归因账） */
+  flags: string[]
+  /** 新的 offset 表；null = 这一栏不动（原因见 bondNotes） */
+  offset: Record<string, number> | null
+  /** 好感回落逐条的判据（前后数字都在里面，给观测记录与离线断言读） */
+  bondNotes: string[]
+}
+
+/** keep 里最后一段对该角色声明过的好感；一段都没有 → null */
+function baselineInKeep(keep: readonly string[], charId: string): number | null {
+  for (let i = keep.length - 1; i >= 0; i--) {
+    const ev = TIMELINE.find((e) => e.id === keep[i])
+    const b = ev?.bond as unknown as Record<string, number | undefined> | undefined
+    const v = b?.[charId]
+    if (typeof v === 'number') return v
+  }
+  return null
+}
+
+/**
+ * 算一份「撤这些段时要撤的账」（**纯函数**：不碰存储、不碰 React，离线可验）。
+ *
+ * `drop` = 被撤的段，`keep` = 剩下的段（回落后基线从 keep 里找）。逐笔口径见文件头。
+ */
+export function planAccountUndo(input: {
+  drop: readonly string[]
+  keep: readonly string[]
+  cast?: Record<string, string[]>
+  place?: Record<string, string>
+  flagSrc: FlagSrcLedger
+  offset: Record<string, number>
+  locked?: Record<string, number>
+}): AccountUndo {
+  const dropSet = new Set(input.drop)
+
+  /* ① 名册 / 地点：键就是段 id，按段直接删 */
+  const cast = Object.keys(input.cast ?? {}).filter((k) => dropSet.has(k))
+  const place = Object.keys(input.place ?? {}).filter((k) => dropSet.has(k))
+
+  /* ② 变量：只撤归因落在被撤段里的那几格 */
+  const flags = Object.entries(input.flagSrc)
+    .filter(([, evId]) => dropSet.has(evId))
+    .map(([k]) => k)
+
+  /* ③ 好感增量：只对「被撤段声明过好感」的角色回落，只降不升 */
+  const touched = new Set<string>()
+  for (const evId of input.drop) {
+    const ev = TIMELINE.find((e) => e.id === evId)
+    const b = ev?.bond as unknown as Record<string, number | undefined> | undefined
+    for (const c of Object.keys(b ?? {})) if (typeof b?.[c] === 'number') touched.add(c)
+  }
+  let offset: Record<string, number> | null = null
+  const bondNotes: string[] = []
+  if (touched.size) {
+    const next = { ...input.offset }
+    let changed = false
+    for (const c of touched) {
+      const who = personOf(c)?.name ?? c
+      if (typeof input.locked?.[c] === 'number') {
+        bondNotes.push(who + '：已被事件锁定（' + String(input.locked[c]) + '），锁定值优先于偏移 —— 偏移不动')
+        continue
+      }
+      const base = baselineInKeep(input.keep, c)
+      if (base === null) {
+        bondNotes.push(who + '：keep 里没有哪一段声明过好感基线 —— 偏移不动')
+        continue
+      }
+      const now = input.offset[c] ?? 0
+      /* 偏移 0 = 主角没在这一格上动过（bondNow 的口径：什么都不做就是不动）。
+         拿基线回落到负偏移等于**替玩家造一笔没做过的减法** —— 不撤，留着。
+         局限：谁写过这一格没有账，只能按「此刻有没有偏移」粗判。 */
+      if (now === 0) {
+        bondNotes.push(who + '：偏移从未动过（0），不替它造负账 —— 不动')
+        continue
+      }
+      const target = clamp(base - defaultBondOf(c), -100, 100)
+      if (target >= now) {
+        bondNotes.push(who + '：基线 ' + String(base) + ' 不低于此刻，只回落不往上顶 —— 偏移 ' + String(now) + ' 不动')
+        continue
+      }
+      next[c] = target
+      changed = true
+      bondNotes.push(
+        who + '：偏移 ' + String(now) + ' → ' + String(target)
+        + '（读数 ' + String(clamp(defaultBondOf(c) + now, 0, 100))
+        + ' → ' + String(clamp(defaultBondOf(c) + target, 0, 100)) + '）',
+      )
+    }
+    if (changed) offset = next
+  }
+
+  return { cast, place, flags, offset, bondNotes }
 }
 
 /* ============================================================
@@ -805,6 +1012,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [epDone, setEpDone] = useState<Record<string, true>>(initial.epDone)
   const [cur, setCur] = useState<string | null>(initial.cur)
   const [world, setWorld] = useState<WorldState>(() => hydrateWorld(initial.epDone, initial.cur, initial.world))
+  /* 段归因要读「此刻在推哪一段」，而 setFlag / addVar 都是 memo 的（依赖空）—— 走 ref 取最新值。
+     `cur` 是**正在演的那一段**（markRead 收束时才往后挪，见下面的 markRead），所以这一段里
+     导演 / 推演写下的变量就归到这一段上；还没开始推（cur 为 null）→ 不归因，回退时不撤。 */
+  const curRef = useRef<string | null>(cur)
+  useEffect(() => { curRef.current = cur }, [cur])
   /* 回退落完 stale 记号之后 +1 —— 剧情推进页据此重读会话账（见 TerminalState.logEpoch） */
   const [logEpoch, setLogEpoch] = useState(0)
 
@@ -1292,7 +1504,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
      差一点点就并到老键上（见 lib/flagname.ts）—— 手打的那个键一个字都不动。 */
   const flagKeys = useCallback(() => Object.keys(world.flags), [world.flags])
 
+  /**
+   * 写一格世界变量。**顺记一笔段归因**（哪一段写的）—— 回退时要按段撤变量，
+   * 靠的就是这本账（FLAG_SRC_KEY，见本文件「段账撤销」）。归因只在 cur 在位时记：
+   * 归不到的键回退时一律不撤（宁可留一笔，不许撤错一笔）。
+   */
   const setFlag = useCallback((k: string, v: FlagValue) => {
+    noteFlagSrc(k, curRef.current)
     setWorld((prev) => ({ ...prev, flags: { ...prev.flags, [k]: v } }))
   }, [])
 
@@ -1301,6 +1519,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       const key = k.trim()
       if (!key) return false
       if (Object.prototype.hasOwnProperty.call(world.flags, key)) return false
+      noteFlagSrc(key, curRef.current)
       setWorld((prev) => ({ ...prev, flags: { ...prev.flags, [key]: v } }))
       return true
     },
@@ -1312,6 +1531,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       const key = k.trim()
       if (!key) return false
       if (!Object.prototype.hasOwnProperty.call(world.flags, key)) return false
+      forgetFlagSrc(key)
       setWorld((prev) => {
         if (!Object.prototype.hasOwnProperty.call(prev.flags, key)) return prev
         const flags = { ...prev.flags }
@@ -1331,6 +1551,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       if (f === t) return true
       if (!Object.prototype.hasOwnProperty.call(world.flags, f)) return false
       if (Object.prototype.hasOwnProperty.call(world.flags, t)) return false
+      /* 改名：归因跟着这一格走（从旧键搬到新键），不然回退时按旧键撤不到它 */
+      const src = readFlagSrcLedger()
+      forgetFlagSrc(f)
+      noteFlagSrc(t, src[f] ?? curRef.current)
       setWorld((prev) => {
         const v = prev.flags[f]
         if (v === undefined && !Object.prototype.hasOwnProperty.call(prev.flags, f)) return prev
@@ -1741,11 +1965,50 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    * 还留着能重读，只是不进提示词）、`world.cast`、`met`、图鉴登记（`world.ends`）、
    * 作战记录（battle store）、`world.tick` —— **回退不回拨时钟**（tick 只增不减，既有口径）。
    */
+  /**
+   * 撤「归到这些段」的作战记录（IndexedDB，异步 —— 回退本身不必等它）。
+   *
+   * 只认 missionId = main-<段 id> 的那一种（lib/battle/store.ts 的 eventIdOfRecord），
+   * 挂不到段上的记录一律不动。删掉的那几条若正是 battle.settled 记着的，连那一格
+   * 变量一起撤：它存的是「最近一次并进世界变量的记录 id」，记录没了、记号留着，
+   * 重打同一场时 applyTie 会以为已经并过了（见 lib/battle/settle.ts 的 TIE_ONCE_KEY）。
+   */
+  const dropSegmentBattles = useCallback(
+    (evIds: string[]): void => {
+      void deleteRecordsForEvents(evIds).then((ids) => {
+        if (!ids.length) return
+        const gone = new Set(ids)
+        setWorld((prev) => {
+          const tie = prev.flags[TIE_ONCE_KEY]
+          if (typeof tie !== 'string' || !gone.has(tie)) return prev
+          const flags = { ...prev.flags }
+          delete flags[TIE_ONCE_KEY]
+          return { ...prev, flags }
+        })
+        push('info', '回退 · 作战记录一并撤下', '归到被撤段的作战记录已删除：' + ids.join('、') + '。', false)
+      })
+    },
+    [push],
+  )
+
   const rewindTo = useCallback(
-    (id: string): boolean => {
+    (id: string, opts?: RewindOpts): boolean => {
       const plan = planRewind(id, epDone)
       if (!plan) return false
       const dropped = new Set(plan.drop)
+      /* 段账方案先按此刻这一份 world 算出来（判据与局限见「段账撤销」那一节）。
+         accounts=false 就整笔跳过 —— 那是回退的旧行为，开关关了也不许静默照做。 */
+      const undo = (opts?.accounts ?? ACCOUNT_UNDO_DEFAULT)
+        ? planAccountUndo({
+            drop: plan.drop,
+            keep: plan.keep,
+            cast: world.cast,
+            place: world.place,
+            flagSrc: readFlagSrcLedger(),
+            offset: world.offset,
+            locked: world.locked,
+          })
+        : null
 
       setEpDone((prev) => {
         const next = { ...prev }
@@ -1765,11 +2028,33 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         }
         const anchors = { ...(prev.anchors ?? {}) }
         for (const a of plan.anchors) delete anchors[a]
+        /* ⑤' 段账：名册 / 地点按段删键，变量按归因删键，好感增量按基线回落。
+           三样都只动「算得出来的那几格」，没算出来的键原样留着（见 planAccountUndo）。 */
+        let cast = prev.cast
+        let place = prev.place
+        let flags = prev.flags
+        let offset = prev.offset
+        if (undo) {
+          if (undo.cast.length) {
+            cast = { ...(prev.cast ?? {}) }
+            for (const k of undo.cast) delete cast[k]
+          }
+          if (undo.place.length) {
+            place = { ...(prev.place ?? {}) }
+            for (const k of undo.place) delete place[k]
+          }
+          if (undo.flags.length) {
+            flags = { ...prev.flags }
+            for (const k of undo.flags) delete flags[k]
+          }
+          if (undo.offset) offset = undo.offset
+        }
         return {
           ...prev,
           locked,
           anchors,
           records: prev.records.filter((r) => !dropped.has(r.eventId)),
+          ...(undo ? { cast, place, flags, offset } : null),
         }
       })
 
@@ -1790,13 +2075,37 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       /* 记号是在账上改的，屏上那份 logs 还是旧的 —— 让剧情推进页重读一次 */
       setLogEpoch((n) => n + 1)
 
+      /* 段账落完之后，归因账跟着走一遍（键已经撤了，账上不能再指着它），
+         再把归到这些段的作战记录删掉（异步，不等它）。 */
+      if (undo) {
+        pruneFlagSrc(dropped)
+        dropSegmentBattles(plan.drop)
+      }
+
       /* 观测记录（toast）由调用方推：它比这里更清楚「用户点的是哪一段」——
          Saga 那枚「回到这一段之前」推的就是 plan.drop 那份名单。这里补的是
          「正文去了哪儿」那一句：玩家最怕的是回退把正文弄丢了。 */
       push('info', '回退 · 正文的去向', '这一段此前的正文仍保留在记录里，但不会再喂给导演。', false)
+      /* 段账的去向**明说**，不静默：撤了什么、哪几格拿不准没动，都写进观测记录。 */
+      if (undo) {
+        const parts: string[] = []
+        if (undo.cast.length) parts.push('在场名册 ' + String(undo.cast.length) + ' 段')
+        if (undo.place.length) parts.push('地点 ' + String(undo.place.length) + ' 段')
+        if (undo.flags.length) parts.push('世界变量 ' + undo.flags.join('、'))
+        for (const n of undo.bondNotes) parts.push(n)
+        push(
+          'info',
+          '回退 · 这些人物的账也一起退',
+          (parts.length ? parts.join('；') + '。' : '这几段没留下可撤的段账，只有进度与记录被撤。')
+          + '（回退确认里那一枚「段账一起退」关掉就不会动它们。）',
+          false,
+        )
+      } else {
+        push('info', '回退 · 段账保留', '「段账一起退」是关着的：在场名册、地点、世界变量、好感增量与作战记录都留在原处，只撤了进度与记录。', false)
+      }
       return true
     },
-    [epDone, push],
+    [epDone, push, world, dropSegmentBattles],
   )
 
   /**
@@ -1807,9 +2116,22 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    * 契约见 `TerminalState.reopenEvent`。
    */
   const reopenEvent = useCallback(
-    (id: string): boolean => {
+    (id: string, opts?: RewindOpts): boolean => {
       if (!TIMELINE.some((e) => e.id === id) || !epDone[id]) return false
       const at = readingIndexOf(id)
+      /* 段账：只撤**这一段**（reopenEvent 的口径就是「一格」）。keep = 剩下还收着的段。 */
+      const keep = Object.keys(epDone).filter((k) => k !== id)
+      const undo = (opts?.accounts ?? ACCOUNT_UNDO_DEFAULT)
+        ? planAccountUndo({
+            drop: [id],
+            keep,
+            cast: world.cast,
+            place: world.place,
+            flagSrc: readFlagSrcLedger(),
+            offset: world.offset,
+            locked: world.locked,
+          })
+        : null
 
       setEpDone((prev) => {
         if (!prev[id]) return prev
@@ -1843,10 +2165,31 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
             if (l.value > (locked[l.char] ?? 0)) locked[l.char] = l.value
           }
         }
+        /* 段账：与 rewindTo 同一套（名册 / 地点按段删键、变量按归因删键、好感增量按基线回落） */
+        let cast = prev.cast
+        let place = prev.place
+        let flags = prev.flags
+        let offset = prev.offset
+        if (undo) {
+          if (undo.cast.length) {
+            cast = { ...(prev.cast ?? {}) }
+            for (const k of undo.cast) delete cast[k]
+          }
+          if (undo.place.length) {
+            place = { ...(prev.place ?? {}) }
+            for (const k of undo.place) delete place[k]
+          }
+          if (undo.flags.length) {
+            flags = { ...prev.flags }
+            for (const k of undo.flags) delete flags[k]
+          }
+          if (undo.offset) offset = undo.offset
+        }
         return {
           ...prev,
           locked,
           records: prev.records.filter((r) => r.eventId !== id),
+          ...(undo ? { cast, place, flags, offset } : null),
         }
       })
 
@@ -1860,11 +2203,34 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       markStale([id])
       setLogEpoch((n) => n + 1)
 
+      /* 归因账跟着走；归到这一段的作战记录删掉（异步） */
+      if (undo) {
+        pruneFlagSrc([id])
+        dropSegmentBattles([id])
+      }
+
       const ev = TIMELINE.find((e) => e.id === id)
       push('info', '回退一段 · 已撤回', `《${ev?.title ?? id}》已从低语者日志撤下，推演退回这一段之前。这一段此前的正文仍保留在记录里，但不会再喂给导演。`, false)
+      /* 段账的去向明说（与 rewindTo 同一套口径） */
+      if (undo) {
+        const parts: string[] = []
+        if (undo.cast.length) parts.push('在场名册')
+        if (undo.place.length) parts.push('地点')
+        if (undo.flags.length) parts.push('世界变量 ' + undo.flags.join('、'))
+        for (const n of undo.bondNotes) parts.push(n)
+        push(
+          'info',
+          '回退一段 · 这些人物的账也一起退',
+          (parts.length ? parts.join('；') + '。' : '这一段没留下可撤的段账。')
+          + '（回退确认里那一枚「段账一起退」关掉就不会动它们。）',
+          false,
+        )
+      } else {
+        push('info', '回退一段 · 段账保留', '「段账一起退」是关着的：在场名册、地点、世界变量与好感增量都留在原处。', false)
+      }
       return true
     },
-    [epDone, push],
+    [epDone, push, world, dropSegmentBattles],
   )
 
   // 完成目标事件 → 自动解锁受门禁保护的视图（含角色档案）

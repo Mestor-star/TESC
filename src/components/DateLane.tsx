@@ -50,7 +50,7 @@ import { DateSide } from './DateSide'
 import type { ApiSettings, ChatTurn, StreamResult } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { cgDirOf, cgFileOf, cgIdOf, cgNoteOf, cgVariantId, cgVariantsOf } from '../lib/cg'
+import { cgDirOf, cgFileOf, cgIdOf, cgNoteOf, cgUrl, cgVariantId, cgVariantsOf } from '../lib/cg'
 import { clock } from '../lib/format'
 import { inkOf } from '../lib/hue'
 import type { ChatMsg } from '../data/types'
@@ -219,8 +219,10 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
   const [tryonOn, setTryonOn] = useState(false)
   const tryonBeat = !!rv && (rv.beats ?? []).includes(OUTFIT_BEAT)
   useEffect(() => {
-    /* 对话流那一套没有舞台，也就不演 —— 这一条同时省掉一次白白的重渲染。 */
-    if (mode !== 'galgame' || !rv || !tryonBeat) { setTryonOn(false); return }
+    /* 两套界面都要能看见这一张：剧演那边是 `showcase`（立绘让开），
+       对话流那边摆进会话流最上面那一格（见下面 thread 里的 `tryonOn` 分支）。
+       所以这里**不再按 mode 关掉** —— 关掉过一次之后，对话流就永远看不到它。 */
+    if (!rv || !tryonBeat) { setTryonOn(false); return }
     if (tryonPlayed.has(rv.id)) return
     tryonPlayed.add(rv.id)
     setTryonOn(true)
@@ -866,14 +868,17 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
           <div className={plot.thread} data-date-thread>
             {/* 「换上新衣」这一刻：不论在剧演还是对话流，那张 CG 都该当场出现 ——
                 剧演那边走 showcase（连立绘一起让开），对话流这边就摆进这一格。 */}
-            {tryonOn ? (
-              <div className={css.threadCg} data-cg-slot="cg-date-shop-luna">
-                <CgSlot
-                  cgId="cg-date-shop-luna"
-                  dir="lunaSFW"
-                  caption="换上新的一身，站在你面前"
-                  charIds={rvAllIds(rv)}
-                  ratio="3 / 2"
+            {/* 只在这一格「本来不会摆」时才补 —— activeCg 已经包含它时下面那一块会摆，
+                两处都摆就成了同一张画出现两次。 */}
+            {tryonOn && !activeCg ? (
+              <div className={css.threadCg} data-tryon-cg>
+                {/* 单独一枚 img，不走 CgSlot：那张画是**确定的素材**（换上新衣那一刻），
+                    不需要兜底链，也免得 CgSlot 自己的把手把「摆了几张」数成两三张。 */}
+                <img
+                  src={cgUrl('cg-date-shop-luna', 'lunaSFW')}
+                  alt="换上新的一身，站在你面前"
+                  data-cg-slot="cg-date-shop-luna"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius)' }}
                 />
               </div>
             ) : null}

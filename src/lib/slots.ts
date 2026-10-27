@@ -364,6 +364,38 @@ function resetPlotLogs(): void {
     /* noop */
   }
 }
+/* ---------- 短信那份内存真账（lib/sms.ts 的 unsavedLogs）----------
+ *
+ * 与剧情正文那一份**同一个毛病、同一条解法**：写盘失败（配额满 / 隐私模式）时
+ * 短信把整本账挂在内存里当真相（loadSmsLogs 优先返回它），而读档 / 重置换的是
+ * 整整一轮运行态 —— 内存那本还留着，zts-tavern:v1 已经被刚读进来的那一档覆写了，
+ * 于是下一次读端出的是**上一档**的账，下一次写成功还会把它整本回写进新档。
+ *
+ * 为什么用**回调注册**而不是本模块直接 import sms：
+ *   lib/sms.ts 已经 import 了本模块（noteStorageFault / clearStorageFault —— 存储故障
+ *   那条通道）。本模块再 import sms，ESM 就成环：先被求值的那一侧拿到的另一半还是
+ *   未初始化的绑定（函数声明能糊过去，可 sms 顶层的 unsavedLogs 与注册语句落在环里
+ *   会踩 TDZ），而且依赖方向也反了 —— slots 是底层，sms 是上层。
+ *   所以方向定成：**上层把「作废」这件小事托付给底层**（与上面的 plotLogsBridge
+ *   同一套），本模块只握一个函数指针，不握账、不 import 任何上层模块。
+ */
+type SmsTruthReset = () => void
+
+let smsTruthReset: SmsTruthReset | null = null
+
+/** 注册短信内存真账的作废器（由 lib/sms.ts 在模块初始化时调用；传 null 撤销） */
+export function setSmsTruthReset(fn: SmsTruthReset | null): void {
+  smsTruthReset = fn
+}
+
+/** 作废短信内存真账：没注册就当没有，绝不因此抛 */
+function resetSmsTruth(): void {
+  try {
+    smsTruthReset?.()
+  } catch {
+    /* noop */
+  }
+}
 
 /** 由当前运行档（含会话日志）组一份快照；sessions.plot 覆盖会话账（默认读存储） */
 export function captureSnapshot(
@@ -658,6 +690,11 @@ const SMS_AUTO_KEY = 'zts-sms-auto:v1'
 /** 科研树已完成节点（lib/research.ts 的 KEY）—— 研究点本身按来源现算，但「已研成」
  *  是这一档的成果，读档/重置必须一起清；否则下一档会带着上一档的科研加成开局。 */
 const RESEARCH_KEY = 'zts-research:v1'
+/** 世界变量的「哪一段写过它」归因账（terminal/Terminal.tsx 的 FLAG_SRC_KEY）。
+ *  回退时要按段撤 world.flags 的某一格，靠的就是这本账；它描述的是**这一轮**
+ *  谁写了哪一格，读档 / 重置必须一起清（留着就会拿上一档的归因去撤这一档的变量）。 */
+const FLAG_SRC_KEY = 'zts-flag-src:v1'
+
 /** 成长系统（lib/growth.ts 的 GROWTH_STORAGE_KEY）：技能 / 天赋解锁到第几级、
  *  世界的色彩几级、哪些具名首领的掉落已经结算过 —— 全是**这一档**的成果，
  *  读档 / 重置必须一起清（不清就会拿上一档的解锁接着打）。 */
@@ -676,6 +713,7 @@ export const RUN_STATE_KEYS: readonly string[] = [
   SMS_AUTO_KEY,
   RESEARCH_KEY,
   GROWTH_KEY,
+  FLAG_SRC_KEY,
 ]
 
 /** 逐键清；键不在、localStorage 抛（隐私模式 / 配额）都不炸 —— 幂等且容错 */
@@ -735,6 +773,11 @@ export async function applySnapshot(snapshot: RunSnapshot): Promise<void> {
      放在这儿而不是调用方那一侧：读档 = 换一整轮运行态，账的作废与键的覆写是同一件事，
      以后谁再调 applySnapshot（Title / Terminal 四条入口）都自动带上。 */
   resetPlotLogs()
+  /* 短信那份内存真账同一条口径（见上面 setSmsTruthReset 那一段）：读档把
+     zts-tavern:v1 覆写成新档，内存里那本旧账必须一并作废 —— 否则 loadSmsLogs
+     端出上一档，下一次写成功还把旧账整本回写进新档。放在存储写完**之后**，
+     理由与 resetPlotLogs 完全相同（写失败时两头都空才是最坏的那种）。 */
+  resetSmsTruth()
   /* 读档 = 这一轮的运行态整个换掉：与重置共用 RUN_STATE_KEYS（收束栏 / 待战按钮、
      约会名册、自建群、未读角标、短信任务、主动来信节拍）。不跟着搬，否则新档一进来就可能
      顶着上一档那一段的收束栏（段 id 偶尔会撞上），名册上还挂着上一档的空线程、侧栏还亮着
@@ -785,6 +828,9 @@ export function clearRunStorage(): void {
   /* 档连存储都清了，内存那份真账更不能留着 —— 否则下一次 currentLogs() 还端出上一档的账，
      而下一次写成功又把它整本回写进刚清空的 zts-plot:v1。与读档同一条路。 */
   resetPlotLogs()
+  /* 短信那本内存真账同理（见 setSmsTruthReset 那一段）：档连存储都清了，
+     内存那份更不能留着。 */
+  resetSmsTruth()
   // 新的一档就是新的一轮：连同梅芙讲到哪儿一起清掉，引导从头再来
   resetGuide()
 }

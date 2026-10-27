@@ -100,6 +100,50 @@ export async function deleteRecord(id: string): Promise<void> {
     await db().records.delete(id)
   }, undefined)
 }
+/* ---------- 按剧情段撤记录（剧情回退那一侧用） ----------
+ *
+ * 回退（Terminal 的 rewindTo / reopenEvent）撤的是「这一段写下的账」。作战记录也在
+ * 其列 —— 可它不在 world 里，落在 IndexedDB 的 records 表。这里只补**一小块**：
+ * 按段删 + 一个纯函数，让「哪条记录归哪一段」这条判据能被离线验。
+ *
+ * 只认**写着映射的那一种**：主线作战的 missionId 是 main-<段 id>（lib/battle/mainline.ts
+ * 拼的，字段名就叫 missionId）。别的来路的作战记录（自由任务 / 演习）挂不到任何一段上
+ * —— 返回 null，一律**不撤**：撤错了就是凭空吃掉一份战报。
+ */
+
+/** 这条记录归到哪一段剧情；不是主线作战（没有映射）→ null */
+export function eventIdOfRecord(rec: Pick<BattleRecord, 'missionId'>): string | null {
+  const m = /^main-(.+)$/.exec(rec.missionId ?? '')
+  return m ? m[1] ?? null : null
+}
+
+/** 这些段名下的记录（**纯函数**，不碰库；回退的判据就是它） */
+export function recordsOfEvents(
+  recs: readonly BattleRecord[],
+  evIds: readonly string[],
+): BattleRecord[] {
+  const set = new Set(evIds)
+  return recs.filter((r) => {
+    const ev = eventIdOfRecord(r)
+    return ev !== null && set.has(ev)
+  })
+}
+
+/**
+ * 删掉归到这些段的作战记录，返回**真删掉**的那些 id（给调用方撤配套的 flag 用）。
+ *
+ * 库不可用（隐私模式）时 safe() 兜底成空数组 —— 回退本身照常完成，只是这一小笔
+ * 没撤掉；调用方的文案不该把它说成撤了。
+ */
+export async function deleteRecordsForEvents(evIds: readonly string[]): Promise<string[]> {
+  if (!evIds.length) return []
+  const missions = evIds.map((id) => 'main-' + id)
+  return safe(async () => {
+    const ids = (await db().records.where('missionId').anyOf(missions).primaryKeys()) as string[]
+    if (ids.length) await db().records.bulkDelete(ids)
+    return ids
+  }, [] as string[])
+}
 
 /* ---------- 体力池（小队共用 · 只在执行任务时消耗） ---------- */
 
