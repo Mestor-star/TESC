@@ -271,6 +271,217 @@
 .varCell b { font-family: var(--font-mono); font-size: 19px; color: var(--ink); }
 .varCell small { font-size: 10px; color: var(--ink-faint); letter-spacing: 0.04em; }
 
+/* ===== 世界线 · 锚点脊梁（Saga.tsx 那一段） =====
+   整段默认收着，折的机制走 components/Fold.tsx（栏头按钮 + data-fold-body），
+   这里只管它长什么样。左侧那条色臂是**状态**：本色当底，字一律走 -deep 档。 */
+.worldBox { margin-bottom: 16px; }
+.wlNote {
+  padding: 0 2px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed var(--line-2);
+  font-size: 11.5px;
+  line-height: 1.85;
+  color: var(--ink-faint);
+}
+
+.ancList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ancRow {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+/* 四档状态的色臂（底走本色，字走 -deep） */
+.anc_landed { border-left-color: var(--jade); }
+.anc_due { border-left-color: var(--amber); }
+.anc_missed { border-left-color: var(--red); }
+.anc_pending { border-left-color: var(--line-3); }
+/* 当前段那一行：色臂让位给「你正读到这儿」，面上再掺一层 */
+.ancCur {
+  border-left-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 9%, var(--bg-2));
+}
+
+.ancBtn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: var(--cursor-point);
+}
+.ancBtn:hover { background: color-mix(in srgb, var(--steel) 6%, transparent); }
+.ancBtn:focus-visible { outline: 1px solid var(--line-3); outline-offset: -1px; }
+
+.ancBadge {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+.bd_landed {
+  color: var(--jade-deep);
+  border-color: color-mix(in srgb, var(--jade) 45%, transparent);
+  background: color-mix(in srgb, var(--jade) 9%, transparent);
+}
+.bd_due {
+  color: var(--amber-deep);
+  border-color: color-mix(in srgb, var(--amber) 50%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.bd_missed {
+  color: var(--red-deep);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: var(--red-soft);
+}
+.bd_pending { color: var(--ink-mute); }
+
+.ancTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.ancHere {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--amber-deep);
+}
+.ancSide {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.ancChev {
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform 0.18s ease;
+}
+.ancChevOn { transform: rotate(180deg); }
+
+/* 已错过的那一行：fallback 的首句直接摆在行上，收着也看得见「它该怎么回来」 */
+.ancMiss {
+  margin: -2px 11px 9px;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--red-deep);
+  word-break: break-word;
+}
+
+.ancDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 11px 11px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line-2);
+}
+.ancField { display: flex; flex-direction: column; gap: 3px; }
+.ancLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.ancText {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-mute);
+  word-break: break-word;
+}
+.ancSrc { font-size: 11px; color: var(--ink-faint); }
+
+/* —— 偏离账本 —— */
+.divHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 16px 2px 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+.divEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 16px 14px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+.divEmpty b { font-size: 13px; color: var(--ink); }
+.divTable { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.divCols,
+.divRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) 92px minmax(0, 1.6fr);
+  gap: 4px 10px;
+  align-items: start;
+}
+.divCols {
+  padding: 0 11px 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+.divRow {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+.divRow .md { justify-self: start; }
+.divTitle {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.divDigest {
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+  word-break: break-word;
+}
+
 @media (max-width: 1080px) {
   .layout { grid-template-columns: 1fr; }
   .side { position: static; }
@@ -284,9 +495,16 @@
   /* 进度条那三格：170 + 220 两条下限加起来正好 390，把整条顶出去。
      放开之后 `.strip` 那一层自己会把它们摞起来。 */
   .stripCellEvent, .stripCellPct { min-width: 0; }
+  /* 世界线那一段：三列表在 390 屏上每格不到 90px，标题与摘要都挤成竖条 ——
+     退回「标题 + 收束方式」一行、摘要整行铺开（列头那一行随之收掉）。 */
+  .divCols { display: none; }
+  .divRow { grid-template-columns: minmax(0, 1fr) auto; }
+  .divDigest { grid-column: 1 / -1; }
+  .ancSide { white-space: normal; }
 }
 
-/* 手机档 · 粗指针：人物那一行（桌面 37px）抬到 44 */
+/* 手机档 · 粗指针：人物那一行（桌面 37px）抬到 44；世界线那一行（桌面 34）同样抬到 44 */
 @media (pointer: coarse) {
   .charRow { min-height: 44px; }
+  .ancBtn { min-height: 44px; }
 }

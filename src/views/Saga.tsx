@@ -1,15 +1,17 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowRight, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/react'
+import { ArrowRight, CaretDown, GitBranch, Lock, LockSimpleOpen } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { Linkified } from '../components/Linkified'
 import { Portrait } from '../components/Portrait'
+import { FoldHead, useFolds } from '../components/Fold'
 import { TIMELINE, CHAR_ORDER } from '../data/timeline'
 import { rosterRowOf, rosterRowsFor } from '../lib/cast'
 import { personOf } from '../data/castmeta'
 import { clock } from '../lib/format'
 import { inkOf } from '../lib/hue'
+import { buildWorldline } from '../lib/worldline'
 import type { RecordMode } from '../data/types'
 
 import css from './Saga.module.css'
@@ -53,6 +55,26 @@ export function Saga() {
     for (const r of records) if (r.diverged) s.add(r.eventId)
     return s.size
   }, [records])
+
+  /* —— 世界线脊梁 ——
+     24 个真锚点 + 偏离账本，折成看得见的一页。折法在 lib/worldline.ts（纯函数，只读），
+     这一页只负责摆：整段默认收着（折的机制与全终端其它栏同一套，见 components/Fold.tsx），
+     点栏头展开；每一行再点开看那四项（不可动摇的那件事 / 可改的部分 / 替代形态 / 出处）。
+     当前段那一行按 evId 命中高亮 —— 「我读到世界线的哪一格」得有地方看得出来。 */
+  const folds = useFolds()
+  const worldline = useMemo(
+    () => buildWorldline({ world, epDone, curEvId: focusEv?.id ?? null }),
+    [world, epDone, focusEv],
+  )
+  const [openAnchors, setOpenAnchors] = useState<Record<string, true>>({})
+  const toggleAnchor = useCallback((id: string) => {
+    setOpenAnchors((o) => {
+      const next = { ...o }
+      if (next[id]) delete next[id]
+      else next[id] = true
+      return next
+    })
+  }, [])
 
   const metCount = CHAR_ORDER.filter((id) => isMet(id)).length
   const regCount = Object.keys(world.ends).length
@@ -138,6 +160,138 @@ export function Saga() {
           于「剧情推进」中收束该事件后自动解锁。
         </div>
       ) : null}
+
+      {/* ============ 世界线 · 锚点脊梁（整段默认收着）============
+          折的机制是公用的：栏头是按钮（aria-expanded），栏体是它紧跟的下一个兄弟并标着
+          data-fold-body，收起由 tokens.css 的一条规则办 —— 栏体不卸 DOM，条数照旧读得到。
+          冒烟那几个把手：data-worldline / data-anchor-row / data-anchor-state /
+          data-diverged-row / data-diverged-empty。 */}
+      <section className={`panel ${css.worldBox}`} data-worldline>
+        <FoldHead k="worldline" open={folds.isOpen('worldline')} folds={folds} className="panel__head">
+          <span className="panel__title">世界线 · 锚点脊梁 <span className="slash" /></span>
+          <span className="muted tiny" style={{ color: 'var(--ink-faint)' }} data-worldline-count="1">
+            锚点 {worldline.count.total} · 已落地 {worldline.count.landed} · 到期 {worldline.count.due}
+          </span>
+          <span className={css.grow} />
+          <span
+            className={`chip ${worldline.count.diverged > 0 ? 'chip--warn' : 'chip--off'}`}
+            data-worldline-diverged={worldline.count.diverged}
+          >
+            偏离 {worldline.count.diverged} 段
+          </span>
+        </FoldHead>
+
+        <div className="panel__body" data-fold-body>
+          <div className={css.wlNote}>
+            这 24 条是原文里绕不开的那几件事。结果不动，过程归你 —— 每条下面写着能改的那几样，
+            以及「你把它绕开时，它怎么回来」。已落地 / 此刻到期 / 还没到 / 已错过，四档各自有记。
+          </div>
+
+          <ol className={css.ancList}>
+            {worldline.rows.map((row) => {
+              const open = !!openAnchors[row.id]
+              return (
+                <li
+                  key={row.id}
+                  className={`${css.ancRow} ${css['anc_' + row.state]} ${row.current ? css.ancCur : ''}`}
+                  data-anchor-row={row.id}
+                  data-anchor-state={row.state}
+                  data-anchor-current={row.current ? '1' : undefined}
+                  aria-current={row.current ? 'step' : undefined}
+                >
+                  <button
+                    type="button"
+                    className={css.ancBtn}
+                    aria-expanded={open}
+                    data-anchor-toggle={row.id}
+                    onClick={() => toggleAnchor(row.id)}
+                    title={open ? '收起这一条' : '展开：不可动摇的那件事 / 可改的部分 / 替代形态 / 原文出处'}
+                  >
+                    <span className={`${css.ancBadge} ${css['bd_' + row.state]}`} data-anchor-badge={row.state}>
+                      {row.stateLabel}
+                    </span>
+                    <span className={css.ancTitle}>{row.title}</span>
+                    {row.current ? <span className={css.ancHere} data-anchor-here="1">当前段</span> : null}
+                    <span className={css.ancSide}>
+                      {row.state === 'landed'
+                        ? `第 ${row.tick} 格 · ${row.howLabel}`
+                        : row.state === 'due'
+                          ? '就在这一段'
+                          : row.dayAfter !== null
+                            ? `第 ${row.dayAfter} 日之后`
+                            : row.state === 'missed'
+                              ? '已错过'
+                              : '时机未到'}
+                    </span>
+                    <CaretDown size={12} weight="bold" className={`${css.ancChev} ${open ? css.ancChevOn : ''}`} />
+                  </button>
+
+                  {/* 已错过的那一行：把 fallback 的首句直接摆在行上 —— 收着也看得见「它该怎么回来」 */}
+                  {row.state === 'missed' && row.missedNote ? (
+                    <p className={css.ancMiss} data-anchor-missed={row.id}>{row.missedNote}</p>
+                  ) : null}
+
+                  {open ? (
+                    <div className={css.ancDetail} data-anchor-detail={row.id}>
+                      <div className={css.ancField}>
+                        <span className={css.ancLabel}>不可动摇的那一件事</span>
+                        <p className={css.ancText} data-anchor-outcome={row.id}>{row.outcome}</p>
+                      </div>
+                      {row.variables.length > 0 ? (
+                        <div className={css.ancField}>
+                          <span className={css.ancLabel}>可以改的部分</span>
+                          <div className={css.chipRow}>
+                            {row.variables.map((v) => (
+                              <span key={v} className="chip">{v}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className={css.ancField}>
+                        <span className={css.ancLabel}>绕开时的替代形态</span>
+                        <p className={css.ancText}>{row.fallback}</p>
+                      </div>
+                      <span className={css.ancSrc}>原文 · {row.sourceRef}</span>
+                    </div>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ol>
+
+          {/* —— 偏离账本：world.records 里 diverged === true 的那几条 —— */}
+          <div className={css.divHead}>
+            <span className="panel__title">偏离账本 <span className="slash" /></span>
+            <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+              与原著相异的收束 · {worldline.count.diverged} 段
+            </span>
+          </div>
+
+          {worldline.diverged.length === 0 ? (
+            <div className={css.divEmpty} data-diverged-empty="1">
+              <b>还没有偏离过原著</b>
+              <span>偏离由导演在收束时判定：那一段收得与原文不一样才记一笔。记下来之后这里就会多一行。</span>
+            </div>
+          ) : (
+            <div className={css.divTable}>
+              <div className={css.divCols} aria-hidden="true">
+                <span>时间线事件</span>
+                <span>收束方式</span>
+                <span>摘要首句</span>
+              </div>
+              {worldline.diverged.map((d) => (
+                <div key={d.eventId} className={css.divRow} data-diverged-row={d.eventId} data-diverged-mode={d.mode}>
+                  <b className={css.divTitle}>{d.title}</b>
+                  <span className={`${css.md} ${d.mode === 'online' ? css.mdOn : d.mode === 'offline' ? css.mdOff : css.mdOld}`}>
+                    {REC_MODE_LABEL[d.mode]}
+                  </span>
+                  <span className={css.divDigest}>{d.digestFirst || '（这一条没有留下摘要）'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className={css.layout}>
         {/* ============ 主栏：当前事件 + 记录流 ============ */}
