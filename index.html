@@ -2,7 +2,10 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- ?v=2 是图标换版时的一次性缓存绕过：favicon 的地址不带指纹，
+         浏览器会一直用旧的；改图时把这个数字加一即可。 -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- `viewport-fit=cover` 是手机档的前提：**不加它，`env(safe-area-inset-*)` 恒为 0**，
          底条与吐司那两处安全区内边距会白写（刘海机上看不出来，是因为浏览器悄悄帮忙留了边）。
          加了之后版面才真的铺到圆角与 Home 指示条底下，由我们自己按 inset 让路。 -->
