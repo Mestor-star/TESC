@@ -258,6 +258,22 @@ async function waitSel(sel, ms) {
 }
 const clickSel = (sel) => `(()=>{const b=document.querySelector(${JSON.stringify(sel)});if(!b)return false;b.click();return true})()`
 
+/* 终端设置改成按钮切换之后，一次只挂一组：要读哪一组的内容，得先按到那一组。
+   这两支就是给 F / M / Z 三段用的；删了它们，那几段会读到空页面。 */
+async function settingsTab(id) {
+  const hit = await ev(clickSel(`[data-settings-tab="${id}"]`))
+  await sleep(160)
+  return hit
+}
+async function settingsText() {
+  let s = ''
+  for (const id of ['set-channel', 'set-audio', 'set-sms', 'set-backup', 'set-lore', 'set-security', 'set-log']) {
+    await settingsTab(id)
+    s += (await ev(`(()=>{const v=document.querySelector('.vpage');return v?v.innerText:''})()`)) + '\n'
+  }
+  return s
+}
+
 async function goto(viewTxt) {
   let c
   let soft = false
@@ -1128,10 +1144,17 @@ try {
   // Settings 视图挂载冒烟：防「首帧 effect 引用后置 const(TDZ)」类整页黑屏回归（曾致设置黑屏）
   await goto('终端设置')
   await sleep(900)
-  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('世界书数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,hasFetch:v?v.innerText.includes('拉取模型'):false,hasSt:v?v.innerText.includes('导入 ST 世界书'):false,hasPreset:v?v.innerText.includes('导入 ChatPreset'):false,hasBudget:v?(v.innerText.includes('输出预算')&&v.innerText.includes('MAX TOKENS')):false,len:v?v.innerText.length:0}})()`)
+  const setText = await settingsText()
+  const setMount = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v}})()`)
+  const setProbe = { hasVpage: setMount.hasVpage, len: setText.length,
+    hasPanel: setText.includes('世界书数据管理'), hasHead: setText.includes('终端设置'),
+    hasFetch: setText.includes('拉取模型'), hasSt: setText.includes('导入 ST 世界书'),
+    hasPreset: setText.includes('导入 ChatPreset'),
+    hasBudget: setText.includes('输出预算') && setText.includes('MAX TOKENS') }
   ok('F1 设置视图挂载无黑屏（世界书数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
   ok('F2 P3 增强就位：拉取模型 / 导入 ST 世界书 / 导入 ChatPreset', setProbe.hasFetch === true && setProbe.hasSt === true && setProbe.hasPreset === true, JSON.stringify(setProbe))
   ok('F2b P7 输出预算可配：设置卡片含 MAX TOKENS 输入', setProbe.hasBudget === true, JSON.stringify(setProbe))
+  await settingsTab('set-lore') // F2g 要读方案行，那一组在「世界书与方案」里
   // 内置预设：随终端来，不必手动找 json 导入
   const bp = await ev(`(()=>{const l=JSON.parse(localStorage.getItem('zts-schemes:v1')||'[]');
     const b=l.filter(s=>s.builtin);const k=JSON.parse(localStorage.getItem('zts-builtin-presets:v1')||'null');
@@ -1156,12 +1179,15 @@ try {
     onRow.rows >= 2 && onRow.on === 1 && onRow.onId === onRow.act && onRow.mark === true,
     JSON.stringify(onRow))
   // 输出预算编辑并保存 → 随通道配置持久（思考型模型需调大预算时走这里）
+  await settingsTab('set-channel') // 输出预算输入框在「推演通道」
+  await poll(`!!document.querySelector('input[type="number"]')`, 8000, 'F2c budget input mounted')
   await ev(`(()=>{const i=document.querySelector('input[type="number"]');if(!i)return false;const set=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;set.call(i,'2000');i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`)
   await sleep(200)
   const saved = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.innerText.includes('保存设置'));if(!b)return false;b.click();return true})()`)
   await poll(`(async()=>{try{const db=await new Promise((res,rej)=>{const r=indexedDB.open('zts-terminal-store',1);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return new Promise((res)=>{const tx=db.transaction('kv','readonly');const g=tx.objectStore('kv').get('api:main');g.onsuccess=()=>res(g.result&&g.result.maxTokens===2000);g.onerror=()=>res(false)})}catch(e){return false}})()`, 8000, 'F maxTokens persist')
   ok('F2c 输出预算改动随通道配置持久（api:main.maxTokens=2000）', saved === true, 'saved=' + saved)
 
+  await settingsTab('set-lore') // 方案行与「内置」标都在这一组
   /* 内置预设「删了不重播」——F2d 只验了「播进去」，这条验它「删掉之后不回来」。
      走真实 UI 删除（不直接改存储）：从「内置」标往上爬到最近一个含「删除方案」按钮的祖先再点，
      每轮重查 DOM，避开上一次点击触发重渲染后节点失效。 */
@@ -1181,6 +1207,7 @@ try {
   await reloadFresh()
   await boot()
   await goto('终端设置')
+  await settingsTab('set-lore')
   await poll(`document.body.innerText.includes('世界书数据管理')`, 20000, 'F2f settings after reload')
   const afterReboot = await ev(`(()=>{const l=JSON.parse(localStorage.getItem('zts-schemes:v1')||'[]');const k=JSON.parse(localStorage.getItem('zts-builtin-presets:v1')||'null');return {n:l.filter(s=>s.builtin).length,seen:k?k.seeded.length:0,badge:[...document.querySelectorAll('span')].filter(x=>x.textContent==='内置').length}})()`)
   ok('F2f 内置预设删了不重播（重启后不复活）',
@@ -1194,6 +1221,7 @@ try {
      再把 window 上的 error 接住：调度器跑在 setInterval 里，它抛错只走这一条路。 */
   console.log('\n[Phase P] 背景音：底噪开关 · 六段床各排得动 · 调度器不抛错')
   await goto('终端设置')
+  await settingsTab('set-audio') // 底噪开关在「声音」那一组里
   await sleep(700)
   const pArm = await ev(`(()=>{
     window.__au = { src: 0, err: [] };
@@ -1232,6 +1260,7 @@ try {
     await goto(v)
     await sleep(1100)
   }
+  await settingsTab('set-audio') // 这一圈最后停在设置页，回来还得把「声音」那一组按出来
   const pRoam1 = await ev(`window.__au.src`)
   const pErrs = await ev(`window.__au.err`)
   ok('P4 六段床在真浏览器里都排得动（换一次页就排满一小节）', pRoam1 - pRoam0 > 60, `Δ=${pRoam1 - pRoam0}`)
@@ -1947,6 +1976,7 @@ try {
   await reloadFresh()
   await boot()
   await goto('终端设置')
+  await settingsTab('set-lore')
   await poll(`document.body.innerText.includes('管理预设')`, 15000, 'M settings mounted')
   ok('M1 设置页方案行出现「管理预设」入口', (await ev(clickTxt('管理预设'))) === true, '')
   await poll(`!!document.querySelector('[data-preset-panel]')`, 12000, 'M preset panel')
@@ -4226,21 +4256,29 @@ try {
 
   await goto('终端设置')
   await sleep(900)
-  const zTap3 = await ev(`(()=>{
+  /* 设置页改成按钮切换后，滑杆与勾选框分在不同的两组里：
+     勾选框在「推演通道」（默认就挂着），滑杆在「声音」，得先按过去再量。 */
+  const zTapCk = await ev(`(()=>{
+    const h=(el)=>Math.round(el.getBoundingClientRect().height)
+    const shown=(sel)=>[...document.querySelectorAll(sel)].filter((el)=>{
+      const r=el.getBoundingClientRect()
+      return r.width>=1&&r.height>=1&&getComputedStyle(el).visibility!=='hidden'})
+    const ck=shown("input[type='checkbox']").map(h)
+    return {ckMin:ck.length?Math.min(...ck):null,ckN:ck.length}})()`)
+  await settingsTab('set-audio')
+  const zTapRng = await ev(`(()=>{
     const h=(el)=>Math.round(el.getBoundingClientRect().height)
     const shown=(sel)=>[...document.querySelectorAll(sel)].filter((el)=>{
       const r=el.getBoundingClientRect()
       return r.width>=1&&r.height>=1&&getComputedStyle(el).visibility!=='hidden'})
     const rng=shown("input[type='range']").map(h)
-    const ck=shown("input[type='checkbox']").map(h)
-    return {rngMin:rng.length?Math.min(...rng):null,rngN:rng.length,
-      ckMin:ck.length?Math.min(...ck):null,ckN:ck.length}})()`)
-  if (zTap3.rngN === 0) skip('Z6f 滑杆抬到 40', '（这一屏没有 input[type=range]）')
+    return {rngMin:rng.length?Math.min(...rng):null,rngN:rng.length}})()`)
+  if (zTapRng.rngN === 0) skip('Z6f 滑杆抬到 40', '（这一屏没有 input[type=range]）')
   else ok('Z6f 设置页那两支滑杆（桌面 16~18px）抬到了 40（尺寸写在 Settings.module.css，见该处注）',
-    zTap3.rngMin >= 40, `最小 ${zTap3.rngMin}px · 共 ${zTap3.rngN} 枚`)
-  if (zTap3.ckN === 0) skip('Z6g 勾选框抬到 24', '（这一屏没有 input[type=checkbox]）')
+    zTapRng.rngMin >= 40, `最小 ${zTapRng.rngMin}px · 共 ${zTapRng.rngN} 枚`)
+  if (zTapCk.ckN === 0) skip('Z6g 勾选框抬到 24', '（这一屏没有 input[type=checkbox]）')
   else ok('Z6g 勾选框（浏览器默认 13px）抬到了 24（WCAG 2.2 那条线）',
-    zTap3.ckMin >= 24, `最小 ${zTap3.ckMin}px · 共 ${zTap3.ckN} 枚`)
+    zTapCk.ckMin >= 24, `最小 ${zTapCk.ckMin}px · 共 ${zTapCk.ckN} 枚`)
 
   /* 还原：往后（含 SHOT 那一段）回到 1440×1000 的桌面档 —— 这一相是借了设备仿真，
      不属于它的一律当场还回去。 */

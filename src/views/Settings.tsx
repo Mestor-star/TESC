@@ -650,6 +650,8 @@ export function Settings() {
   const [modelList, setModelList] = useState<Record<Channel, string[] | null>>({ main: null, sms: null })
   const [fetchingModels, setFetchingModels] = useState<Channel | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  /** 当前挂在台面上的那一组设置（按钮切换，不再是一条长页面往下滚） */
+  const [sec, setSec] = useState<string>('set-channel')
 
   /* 置于任何早返回之前：下方 useEffect 需在首帧（cfgs 为空走 loading 分支）就引用它，
      若声明在组件体靠后，首帧闭包里的该 const 处于 TDZ，commit 触发 effect 即抛错 → 黑屏。 */
@@ -1136,7 +1138,7 @@ export function Settings() {
   }
 
   return (
-    <div className="vpage">
+    <div className={`vpage ${css.setPage}`}>
       <div className="vhead">
         <div>
           <div className="vhead__kicker">SYSTEM / SETTINGS</div>
@@ -1155,38 +1157,51 @@ export function Settings() {
       </div>
 
       <div className={css.shell}>
-        <nav className={css.nav} aria-label="设置分组">
+        <div className={css.tabs} role="tablist" aria-label="设置分组">
           {NAV.map((s) => (
             <button
               key={s.id}
-              className={css.navItem}
-              onClick={() => document.getElementById(s.id)?.scrollIntoView({ block: 'start' })}
+              role="tab"
+              aria-selected={sec === s.id}
+              data-settings-tab={s.id}
+              className={`${css.tab} ${sec === s.id ? css.tabOn : ''}`}
+              onClick={() => setSec(s.id)}
             >
               {s.cn}
               <i>{s.en}</i>
             </button>
           ))}
-        </nav>
+        </div>
 
-        <div className={css.sections}>
+        <div className={css.panelBody} role="tabpanel">
+          {/* 一次只挂一组：切走的那些连同表单状态一起卸下，页面不必一直往下长 */}
+          {sec === 'set-channel' && (
           <div id="set-channel" className={css.group}>
             {card('main')}
             {card('sms')}
           </div>
+          )}
 
+          {sec === 'set-audio' && (
           <div id="set-audio">
             <AudioPanel />
           </div>
+          )}
 
+          {sec === 'set-sms' && (
           <div id="set-sms">
             <SmsAutoPanel />
           </div>
+          )}
 
+          {sec === 'set-backup' && (
           <div id="set-backup">
             <BackupPanel />
           </div>
+          )}
 
           {/* 世界书数据管理与方案 */}
+          {sec === 'set-lore' && (
           <section id="set-lore" className="panel">
             <div className="panel__head">
               <span className="panel__title"><Database size={15} weight="bold" /> 世界书数据管理</span>
@@ -1363,8 +1378,10 @@ export function Settings() {
           </div>
         </div>
       </section>
+          )}
 
       {/* 关于与安全 */}
+      {sec === 'set-security' && (
       <section id="set-security" className="panel">
         <div className="panel__head">
           <span className="panel__title"><Wrench size={15} weight="bold" /> 存储与安全</span>
@@ -1395,10 +1412,13 @@ export function Settings() {
           </div>
         </div>
       </section>
+      )}
 
+      {sec === 'set-log' && (
       <div id="set-log">
         <AiLogPanel />
       </div>
+      )}
         </div>
       </div>
 
