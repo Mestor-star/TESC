@@ -118,6 +118,8 @@ export function Memory() {
      折这件事的机制是公用的（components/Fold.tsx）：栏头是按钮，栏体是它紧跟的
      下一个兄弟并标着 data-fold-body，收起由 tokens.css 的一条规则办。 */
   const folds = useFolds()
+  /** 目录里当前那一项：点过哪栏就亮哪栏，跳转本身仍交给 jump */
+  const [activeSec, setActiveSec] = useState<MemSection | null>(null)
   /** 目录跳过去：那一栏若还收着，先展开再滚 —— 否则跳过去只剩一条栏头 */
   const jump = useCallback((s: MemSection) => {
     if (!folds.isOpen(s)) folds.toggle(s)
@@ -140,7 +142,7 @@ export function Memory() {
   )
 
   return (
-    <div className="vpage" data-mem>
+    <div className={`vpage ${css.page}`} data-mem>
       <div className="vhead">
         <div>
           <div className="vhead__kicker">MEMORY / SITUATIONAL</div>
@@ -164,7 +166,17 @@ export function Memory() {
         <aside className={css.index} data-mem-nav>
           <div className={css.indexHead}>目录 · INDEX</div>
           {MEM_SECTIONS.map((s, i) => (
-            <button key={s} className={css.indexRow} data-mem-jump={s} onClick={() => jump(s)} type="button">
+            <button
+              key={s}
+              className={css.indexRow}
+              data-mem-jump={s}
+              aria-pressed={activeSec === s}
+              onClick={() => {
+                setActiveSec(s)
+                jump(s)
+              }}
+              type="button"
+            >
               <span className={css.indexNo}>{String(i + 1).padStart(2, '0')}</span>
               <span className={css.indexIc}>{SEC_ICON[s]}</span>
               <span className={css.indexName}>{s}</span>

@@ -448,3 +448,16 @@
   opacity: var(--core-stop, 0.6);
   transform: scale(1);
 }
+
+/* 全屏特效一层（Canvas）：压在作战屏之上（.stage z6）、DOM 演出层（z20）与大字报（z22）之下。
+   只放「一手落地的分量」——冲击波、火星、碎屑、色散与压边；形状仍由 DOM 层负责。 */
+.canvasLayer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  z-index: 12;
+  pointer-events: none;
+}
+

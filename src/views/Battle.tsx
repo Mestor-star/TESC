@@ -63,6 +63,7 @@ import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
 import { BattleFx, FX_PREVIEW, familyOf, specOf } from './BattleFx'
+import { FxCanvas, type FxCanvasHandle } from './BattleFxCanvas'
 
 import css from './Battle.module.css'
 
@@ -251,6 +252,8 @@ function BattleField({
   )
   const [shown, setShown] = useState(0)
   const [fx, setFx] = useState<FxView | null>(null)
+  /* 全屏那一层（粒子/冲击波/色散）—— 与 DOM 演出层同一份数据表，各画一半 */
+  const fxCanvas = useRef<FxCanvasHandle | null>(null)
   /** 正在演的这一条账「打实了没有」—— 到点才把血账翻过去（见回放那一段与 hpView） */
   const [impacted, setImpacted] = useState(false)
   /** 正立着的那一屏终结技大字报；没有就是 null（见 CutView） */
@@ -682,6 +685,9 @@ function BattleField({
     const tgt = e.targetId ? [...st.allies, ...st.enemies].find((c) => c.id === e.targetId) : undefined
     const ks = who?.skills.find((x) => x.id === e.skillId)
 
+    /* 这一手是不是终结技（大字报与全屏那一层都用它） */
+    const isUltNow = ks?.kind === '终结技' || !!ks?.ult
+
     /* 放这一手：立 fx、点名那一响、按 hold 排下一条。整段装成一个函数 ——
        终结技要先让大字报走完再叫它（见下面 isUlt 那一段）。 */
     const play = (): number => {
@@ -694,6 +700,16 @@ function BattleField({
         crit: e.crit, critMul: e.critMul,
         weight: e.dmg && tgt ? e.dmg / Math.max(1, tgt.hpMax) : 0,
         stance: e.stance,
+      })
+      /* 同一次落地：Canvas 那层管「分量」（冲击波、火星、碎屑、色散、压边），
+         DOM 层管「形状」。分量按伤害占对方上限的比例给，暴击与大招各再抬一档。 */
+      fxCanvas.current?.play({
+        family: familyOf(e.skillId, { fx: e.fx, name: e.skill, tone: e.tone }),
+        spec: specOf(e.skillId, { fx: e.fx, name: e.skill, tone: e.tone }).spec,
+        hue: fxSeed(e.skillId).hue,
+        power: e.dmg && tgt ? e.dmg / Math.max(1, tgt.hpMax) : 0.32,
+        crit: e.crit, down: e.down, ult: isUltNow,
+        side: e.side, seed: shown * 31 + 7,
       })
       // 打实的那一下先响暴击 —— 同一个 FxKind 里，暴与不暴得听得出来
       if (e.crit) sfx('crit')
@@ -737,8 +753,13 @@ function BattleField({
        大字报走完（ULT_CUT），`play()` 才把 fx 放出来。
        ⚠️ 大字报期间要把 fx 清掉：不清的话，上一条账的演出还挂在屏上不动
        （它那些层是 `forwards` 收尾的，不前推就一直停在最后一帧）。 */
+    /* 一发打多个目标时，引擎按目标各追一条账：出手者与招式相同、只是 targetId 不同。
+       「这一次施放」的大字报只立在第一条上 —— 否则每命中一个敌人就闪一次立绘
+       （主人 2026-11 报的就是这一条）。后续几条直接演出，不再重放大字报。 */
+    const prevE = shown > 0 ? st.log[shown - 1] : undefined
+    const sameCast = !!prevE && prevE.actorId === e.actorId && prevE.skillId === e.skillId
     const ULT_CUT = 1100
-    const isUlt = ks?.kind === '终结技' || !!ks?.ult
+    const isUlt = !sameCast && isUltNow
     if (isUlt) {
       setCut({
         n: shown, id: e.actorId, name: who?.name ?? e.actor,
@@ -1319,6 +1340,9 @@ function BattleField({
           <span className={css.fxTag} data-fx-tag={fx.skillId}>{fx.skill}</span>
         </div>
       ) : null}
+
+      {/* 全屏那一层：冲击波、火星、碎屑、色散与压边（z12：在作战屏之上、DOM 演出层之下） */}
+      <FxCanvas ref={fxCanvas} level={fxLevel} />
 
       {/* 终结技大字报 —— 压在演出层之上（z 22 > 20），只在那一手放出来之前立一屏 */}
       {cut ? <UltCut key={cut.n} cut={cut} /> : null}

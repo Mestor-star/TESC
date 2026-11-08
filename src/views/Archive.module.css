@@ -7,6 +7,44 @@
    立面：白底 + 1px 细线；强调只有 --steel，且只出现在「悬停 / 选中」这一处语义上。
    ============================================================ */
 
+/* ---------------- 一屏骨架：页头不动，两栏各自滚动 ---------------- */
+
+:global(.vpage).page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--topbar-h));
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+:global(.vhead).head {
+  flex: none;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+
+/* 长说明独占页头第二行：页头高度固定，正文区才有整屏可用 */
+:global(.vhead) :global(.vhead__sub).headSub {
+  flex: 1 0 100%;
+  max-width: none;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 移入正文栏的五轴 / 操作员区块：留在块流里，不吃正文栏的 flex 间距 */
+.prelude {
+  display: block;
+  min-width: 0;
+}
+
 /* ---------------- 顶部：五轴说明 / 操作员横幅 ---------------- */
 
 .axisGrid {
@@ -353,12 +391,15 @@
 
 .shell {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
-  gap: 36px;
-  align-items: start;
-  margin-top: 26px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line-2);
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 32px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .index {
@@ -366,6 +407,12 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
 }
 
 .idxGroup {
@@ -374,6 +421,9 @@
 }
 
 .idxGroupTitle {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -385,6 +435,7 @@
   font-weight: 400;
   letter-spacing: 0.12em;
   color: var(--ink-faint);
+  background: var(--bg-0);
 }
 
 .idxGroupTitle i {
@@ -450,8 +501,15 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 34px;
+  gap: 30px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 10px;
+  padding-bottom: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
 }
 
 /* ---------------- 一组 ---------------- */
@@ -1450,8 +1508,8 @@
 
 @media (max-width: 1120px) {
   .shell {
-    grid-template-columns: 168px minmax(0, 1fr);
-    gap: 24px;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 22px;
   }
 
   .opArc,
@@ -1473,10 +1531,28 @@
 }
 
 @media (max-width: 860px) {
+  /* 手机上锁高会把内容压没：解除锁高一屏，回到单列自然滚动 */
+  :global(.vpage).page {
+    display: block;
+    height: auto;
+    overflow: visible;
+    padding: 16px 14px 44px;
+  }
+
+  .root {
+    display: block;
+  }
+
   .shell {
     display: block;
-    margin-top: 22px;
-    padding-top: 16px;
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  .body {
+    overflow: visible;
+    padding-right: 0;
+    padding-bottom: 0;
   }
 
   .index {

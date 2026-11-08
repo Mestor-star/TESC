@@ -3,23 +3,43 @@
    1px 细线成组、零圆角、零投影、零渐变；强调色只用 --steel；字阶 11/12/13/14/16。
    条目统一按「左栏 11px mono 记号 + 右栏 14px 正文」排，不再给每条套一张厚卡片。 */
 
+/* ---------- 一屏锁定：页头不动，目录与正文两栏各自滚 ---------- */
+
+:global(.vpage).page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+  padding-bottom: 20px;
+  overflow: hidden;
+}
+
+.page > :global(.vhead) {
+  flex: 0 0 auto;
+}
+
 .layout {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   gap: 32px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ---------- 左栏：目录 / 分组 ---------- */
 
 .index {
-  position: sticky;
-  top: calc(var(--topbar-h) + 16px);
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   border-top: 1px solid var(--line-2);
   padding-top: 10px;
-  min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
 }
 
 .indexHead {
@@ -49,6 +69,19 @@
 
 .indexRow:hover {
   background: var(--bg-2);
+}
+
+.indexRow[aria-pressed='true'] {
+  background: var(--bg-2);
+}
+
+.indexRow[aria-pressed='true'] .indexName {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.indexRow[aria-pressed='true'] .indexNo {
+  color: var(--steel-deep);
 }
 
 .indexRow:focus-visible {
@@ -100,6 +133,16 @@
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
+}
+
+/* 折起来时每栏只剩栏头，摊开后要按内容长 —— flex 子项默认会被压扁（实测栏高只剩 11–43px）。 */
+.col > * {
+  flex: 0 0 auto;
 }
 
 .headNote {
@@ -703,10 +746,23 @@
 
 /* ---------- 窄屏 ---------- */
 
+@media (max-width: 1120px) {
+  .layout {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+
 @media (max-width: 960px) {
+  /* 单列但仍锁一屏：目录收成顶部一行，正文照旧在栏内滚 */
   .layout {
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .index {
+    overflow: visible;
   }
 
   /* 目录收成顶部一行分组：仍是分组与筛选，不再占一整列 */
@@ -744,6 +800,27 @@
 }
 
 @media (max-width: 860px) {
+  /* 手机档解除锁高：整页恢复自然滚动 */
+  :global(.vpage).page {
+    height: auto;
+    overflow: visible;
+    padding-bottom: 40px;
+  }
+
+  .layout {
+    display: block;
+  }
+
+  .index {
+    overflow: visible;
+    margin-bottom: 16px;
+  }
+
+  .col {
+    overflow: visible;
+    padding-right: 0;
+  }
+
   .deed,
   .war {
     grid-template-columns: minmax(0, 1fr);

@@ -258,10 +258,11 @@ function gearAxes(gearId: string | undefined, axes: AxisSheet): AxisSheet {
  * ⚠️ **只给我方**：敌阵走 `buildFoe`，那里一处都不读科研（见 tuning 的敌方曲线注释）。
  */
 function researchAxes(axes: AxisSheet, rb: ResearchBonus): AxisSheet {
-  if (!rb.resPhysical && !rb.aff) return axes
+  if (!rb.resPhysical && !rb.aff && !rb.will) return axes
   const out = { ...axes }
   if (rb.resPhysical) out.物理抗性 = out.物理抗性 * (1 + rb.resPhysical)
   if (rb.aff) out.反现实亲和 = out.反现实亲和 * (1 + rb.aff)
+  if (rb.will) out.意志力 = out.意志力 * (1 + rb.will)
   return out
 }
 
@@ -300,13 +301,13 @@ function growthHp(base: number, gb: GrowthBonus): number {
 }
 
 /**
- * 技能表那一笔：倍率按 power 乘算，附带效果里的回复 / 屏障也按同一把尺抬
+ * 技能表按一份比例抬上去：倍率乘 k，附带效果里的回复 / 屏障也按同一把尺抬
  * （那两样本来就是「按技能倍率算出来的分量」，只抬伤害会让治愈手原地不动）。
- * power 为 0 时返回**同一个数组** —— 一格都不改。
+ * 比例为 0 时返回**同一个数组** —— 一格都不改（科研与成长两条链共用这一条）。
  */
-function growthSkills(list: SkillSpec[], gb: GrowthBonus): SkillSpec[] {
-  if (!gb.power) return list
-  const k = 1 + gb.power
+function skillsTimes(list: SkillSpec[], bonus: number): SkillSpec[] {
+  if (!bonus) return list
+  const k = 1 + bonus
   return list.map((s) => {
     const effect = s.effect
       ? {
@@ -317,6 +318,16 @@ function growthSkills(list: SkillSpec[], gb: GrowthBonus): SkillSpec[] {
       : s.effect
     return { ...s, power: s.power * k, effect }
   })
+}
+
+/** 科研对技能倍率的那一笔（第五层与贯通加赠才开始有，0 时原样返回） */
+function researchSkills(list: SkillSpec[], rb: ResearchBonus): SkillSpec[] {
+  return skillsTimes(list, rb.power)
+}
+
+/** 成长（技能线 / 天赋线 / 世界的色彩）对技能倍率的那一笔 */
+function growthSkills(list: SkillSpec[], gb: GrowthBonus): SkillSpec[] {
+  return skillsTimes(list, gb.power)
 }
 
 /* ---------- 武装 → 技能 ---------- */
@@ -495,7 +506,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
       hp: hpMax,
       hpMax,
       axes,
-      skills: growthSkills(skills, gb),
+      skills: growthSkills(researchSkills(skills, rb), gb),
       fx: per.abilities[0]?.fx ?? 'slash',
       rated: true,
       bar: 0,
@@ -570,7 +581,7 @@ export function combatantOf(id: string, progress: number, growthPct = 0, gearId?
     hp: hpMax,
     hpMax,
     axes,
-    skills: growthSkills(skillsOf(id, gearId), gb),
+    skills: growthSkills(researchSkills(skillsOf(id, gearId), rb), gb),
     fx: role?.skills[0]?.fx ?? ((arm && FX_OF_KIND[arm.kind]) || 'slash'),
     rated: !!CORE[id],
     bar: 0,

@@ -2,13 +2,27 @@
    旧稿的两栏骨架住在 Comms.module.css（那一页还在用），这里按新骨架重写一份本地同名类：
    行 56px、头像 24px、1px 分隔线，气泡两端只靠底色与边线区分，零圆角之外的一切装饰都去掉。 */
 
+/* ── 一屏：页头不滚，两栏各自在栏内滚 ─────────────────────
+   与 Comms 同一套结构钩子：.vpage 里只要有这一层 .wrap，就不再让整页往下长。
+   手机上（≤860）整条作废 —— 锁住之后列表与消息流会互相挤。 */
+:global(.vpage):has(> .wrap) {
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+:global(.vpage):has(> .wrap) > :global(.vhead) { flex: 0 0 auto; margin-bottom: 10px; padding-bottom: 10px; }
+
 /* ── 两栏骨架 ─────────────────────────────────────────────── */
 .wrap {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 16px;
-  height: clamp(440px, calc(100dvh - 268px), 920px);
+  flex: 1;
   min-height: 0;
+  height: auto;
 }
 
 /* ── 左栏：会话列表 ───────────────────────────────────────── */
@@ -604,13 +618,19 @@
 
 /* ── 收窄：先列表后消息 ───────────────────────────────────── */
 @media (max-width: 860px) {
+  /* 手机档不锁高：整页恢复自然滚动 */
+  :global(.vpage):has(> .wrap) { height: auto; overflow: visible; }
   .wrap {
-    grid-template-columns: minmax(0, 1fr);
+    display: block;
     height: auto;
+    min-height: 0;
   }
-  .contactList { max-height: none; }
-  .listBody { overflow: visible; }
-  .chatPane { min-height: clamp(420px, 62vh, 720px); }
+  /* 列表给一个定值、自己滚：整页已经在滚，再让联系人把会话推到几屏之外，
+     点开一个人要先划三段。 */
+  .contactList { height: clamp(168px, 30vh, 300px); max-height: none; }
+  /* 列表底下那两段说明文在 168px 里自己就要吃一半 —— 手机上让它退场 */
+  .contactList > :global(.panel__body) { display: none; }
+  .chatPane { min-height: clamp(420px, 62vh, 720px); margin-top: 16px; }
   .msg { max-width: 86%; }
 }
 

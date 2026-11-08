@@ -35,18 +35,35 @@ export interface ResearchEffect {
   hp?: number
   resPhysical?: number
   aff?: number
+  /** 技能倍率 —— 落到 growthSkills 那条乘算上（伤害、回复、屏障一起抬） */
+  power?: number
+  /** 意志力 —— 五轴之一，一头经 hpPerWill 抬生命 */
+  will?: number
+}
+
+/**
+ * 可重复投入的「深研」：同一格可以一直投，价一次比一次贵。
+ * 第 n 次（从 0 起）的价 = base + step × n；投到 max 次为止。
+ * 这是科研的长尾 —— 主树研完之后，剩下的点数仍然有地方去。
+ */
+export interface ResearchRepeat {
+  base: number
+  step: number
+  max: number
 }
 
 export interface ResearchNode {
   id: string
   name: string
   line: ResearchLineId
-  /** 层（1~4）。界面按层排，成本也按层走。 */
-  tier: 1 | 2 | 3 | 4
-  /** 研成它要花的研究点 */
+  /** 层（1~6）。界面按层排，成本也按层走。深研落在第 6 层。 */
+  tier: 1 | 2 | 3 | 4 | 5 | 6
+  /** 研成它要花的研究点（repeat 节点写第一次的价，实际价走 researchNextCost） */
   cost: number
   /** 前置节点 id（没写 = 线上第一层） */
   require?: string
+  /** 可重复投入（有这一格就不是一次性节点） */
+  repeat?: ResearchRepeat
   effect: ResearchEffect
   /** 一句话。原文语气，不写「科技树」那套黑话。 */
   desc: string
@@ -169,4 +186,62 @@ export const RESEARCH: ResearchNode[] = [
     effect: { hp: 0.05, resPhysical: 0.02 },
     desc: '照终末等级一级一级往上练：哪一级的东西能把人怎么样，练过的人心里有数，身上也有。',
   },
+
+  /* —— 第五层：主树的顶 ——
+     这一层开始不只加「读数」，还加「那一手本身」（power）。
+     研到这里的时候主线大多已经推到中后段，所以它给的是**质变**，不是又一次加厚。 */
+  {
+    id: 'parse-veil', name: '现实帷幕', line: '反现实解析', tier: 5, cost: 26,
+    require: 'parse-density',
+    effect: { aff: 0.03, power: 0.02 },
+    desc: '把算出来的密度重新铺回那一块地方 —— 铺得住，反现实的东西落进来就慢半拍，队伍那一下正好压在它慢下来的空里。',
+  },
+  {
+    id: 'arm-caliber', name: '口径重铸', line: '武装改良', tier: 5, cost: 26,
+    require: 'arm-accumulator',
+    effect: { atk: 0.035, power: 0.02 },
+    desc: '照蓄积器的回路把每一件的口径重铸一遍：同一手打出去，落在对面的分量比规格表上写的重。',
+  },
+  {
+    id: 'body-marrow', name: '终末耐受 · 深', line: '体能训练', tier: 5, cost: 26,
+    require: 'body-grade',
+    effect: { hp: 0.06, resPhysical: 0.03, will: 0.02 },
+    desc: '练到这一层，挨住的不只是身体：意志那一栏也一起抬。反现实压过来的时候，先垮的从来不是骨头。',
+  },
+
+  /* —— 第六层：深研（可重复） ——
+     主树研完之后的去处。每投一次只加一点点，价一次比一次贵，
+     投到 max 次封顶 —— 它是「长期变强」的那条尾巴，不是第二棵主树。 */
+  {
+    id: 'deep-parse', name: '深研 · 反现实', line: '反现实解析', tier: 6, cost: 10,
+    require: 'parse-veil',
+    repeat: { base: 10, step: 5, max: 12 },
+    effect: { aff: 0.004 },
+    desc: '同一批样本反复读，读到最后只剩下小数点后面那几位 —— 那几位才是它真正怕的地方。',
+  },
+  {
+    id: 'deep-arm', name: '深研 · 武装', line: '武装改良', tier: 6, cost: 10,
+    require: 'arm-caliber',
+    repeat: { base: 10, step: 5, max: 12 },
+    effect: { atk: 0.004 },
+    desc: '一件一件往下调：调到最后，改的不是规格，是每一件东西用旧之后还剩多少。',
+  },
+  {
+    id: 'deep-body', name: '深研 · 体能', line: '体能训练', tier: 6, cost: 10,
+    require: 'body-marrow',
+    repeat: { base: 10, step: 5, max: 12 },
+    effect: { hp: 0.006 },
+    desc: '体能表上没有新项目了，只有同一个动作再做一遍 —— 做到后面，长出来的是底子。',
+  },
 ]
+
+/**
+ * 全线贯通的加赠：一条线上的**一次性节点**全部研成之后，额外给一份。
+ * 只算一次性节点（深研不算 —— 那是无底的，不能拿它当贯通的判据）。
+ * 三条线的加赠各自对得上那条线的主轴，power 那一份是「贯通的证据」。
+ */
+export const RESEARCH_LINE_GIFT: Record<ResearchLineId, ResearchEffect> = {
+  反现实解析: { aff: 0.04, power: 0.01 },
+  武装改良: { atk: 0.04, power: 0.01 },
+  体能训练: { hp: 0.06, will: 0.03 },
+}

@@ -259,14 +259,15 @@ function appearanceOf(id: string): string[] {
 }
 
 /**
- * 科研给这一轴的那一份（比例）—— 只有两条轴吃得到：
- * 物理抗性 与 反现实亲和（见 lib/battle/derive 的 researchAxes）。
+ * 科研给这一轴的那一份（比例）—— 三条轴吃得到：
+ * 物理抗性、反现实亲和、意志力（见 lib/battle/derive 的 researchAxes）。
  * 攻击与生命不在五轴上，摆在下面那一行 `ResearchNote` 里。
  */
 function researchPctOf(k: string): number {
   const rb = researchBonus()
   if (k === '物理抗性') return rb.resPhysical
   if (k === '反现实亲和') return rb.aff
+  if (k === '意志力') return rb.will
   return 0
 }
 
@@ -276,7 +277,7 @@ function researchPctOf(k: string): number {
  * 读的是 `lib/research.ts` 的 `researchBonus()` —— 与战斗那一侧**同一份**：
  * derive 把我方单位的轴 / 生命 / 攻击按这份比例推上去，档案这一行只是把它念出来。
  * 所以「档案上写着 +16.5%」与「下场之后那一手确实重了一截」是同一条账，不会各说各的。
- * 没有成果时也照样摆一行 —— 得让人知道还有这个去处（入口在武装图鉴里，不另开导航）。
+ * 没有成果时也照样摆一行 —— 得让人知道还有这个去处（入口在左栏「研究」那一屏）。
  */
 function ResearchNote() {
   useResearch()
@@ -286,6 +287,8 @@ function ResearchNote() {
     { k: '生命', v: rb.hp },
     { k: '物理抗性', v: rb.resPhysical },
     { k: '反现实亲和', v: rb.aff },
+    { k: '意志力', v: rb.will },
+    { k: '技能倍率', v: rb.power },
   ].filter((x) => x.v > 0)
   return (
     <div
@@ -299,7 +302,7 @@ function ResearchNote() {
         : '尚无成果'}
       {parts.length
         ? '（乘在我方战斗面板上；敌方不吃这一份）'
-        : '（去「武装图鉴 · 研究室」投入研究点）'}
+        : '（去「研究」投入研究点）'}
     </div>
   )
 }
@@ -956,10 +959,10 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
   const focus = rows.find((r) => r.id === openId) ?? null
 
   /* 研究室那一份存档：订阅它，研成一件 / 花掉一点，这一页的读数就立刻跟着变。
-     合计 = 四条比例相加（见下面那枚 chip 的注释）。 */
+     合计 = 六条比例相加（见下面那枚 chip 的注释）。 */
   const researchSave = useResearch()
   const rbNow = researchBonus()
-  const researchSum = rbNow.atk + rbNow.hp + rbNow.resPhysical + rbNow.aff
+  const researchSum = rbNow.atk + rbNow.hp + rbNow.resPhysical + rbNow.aff + rbNow.will + rbNow.power
   /**
    * 这一张卡翻不翻得过去：只要**有底档**（女角色）就翻得开 —— 私密档案不封存。
    * 门槛在翻之前就判 —— 翻到一半被人拦下会剩一张空白的背面。
@@ -1126,19 +1129,12 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
 
   /* —— 渲染 —— */
   return (
-    <div className="vpage">
-      <div ref={rootRef}>
-        <div className="vhead">
+    <div className={`vpage ${css.page}`}>
+      <div ref={rootRef} className={css.root}>
+        <div className={`vhead ${css.head}`}>
           <div>
             <div className="vhead__kicker">DATA / ARCHIVE</div>
             <h1>角色档案</h1>
-            <div className="vhead__sub">
-              委员会全量角色档案，主役与登场者并置同一名册，按学院／所属归组，格式一致。
-              能力参数按委员会五轴评定，以「学生排行榜 RANK」与已观测的战绩、称号为参照——10 ≈ 普通成年人的该轴水准，
-              量表读数到 200 为止（那是档案给的格子，不是能力的天花板——战斗数值不封顶，超出量表的另标「超限」），『∞』为无法测量；凡观测记录载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
-              （陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的走向推进，
-              好感随主角行为——推演中的抉择、短信往来——实时增减。
-            </div>
           </div>
           <div className="vhead__right">
             {onShowNew ? (
@@ -1147,21 +1143,67 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
               </button>
             ) : null}
             <span className="chip chip--warn">五轴以 RANK 与正文为参照</span>
-            {/* 研究室：全队加成合计（四条比例相加 —— 它是个「一共加了多少」的读数，
+            {/* 研究室：全队加成合计（六条比例相加 —— 它是个「一共加了多少」的读数，
                 不是可以互相折算的同一把尺；分项在每人的档案里） */}
             <span
               className="chip"
               data-research-chip={researchSum}
               data-research-points={researchSave.points}
-              title="研究室：全队加成合计（攻击 / 生命 / 物理抗性 / 反现实亲和四条比例相加）"
+              title="研究室：全队加成合计（攻击 / 生命 / 物理抗性 / 反现实亲和 / 意志力 / 技能倍率六条比例相加）"
             >
               科研 · {researchSum > 0 ? `全队加成合计 +${(researchSum * 100).toFixed(1)}%` : '尚未开研'}
             </span>
             <span className="chip">全员 24 · 含羁绊</span>
             <span className="chip">入学后开放 · 逐人解封</span>
           </div>
+          <div className={`vhead__sub ${css.headSub}`}>
+            委员会全量角色档案，主役与登场者并置同一名册，按学院／所属归组，格式一致。
+            能力参数按委员会五轴评定，以「学生排行榜 RANK」与已观测的战绩、称号为参照——10 ≈ 普通成年人的该轴水准，
+            量表读数到 200 为止（那是档案给的格子，不是能力的天花板——战斗数值不封顶，超出量表的另标「超限」），『∞』为无法测量；凡观测记录载明委员会排行者，已在其档案标示 RANK。羁绊起步皆为「初见」
+            （陌生≈20、按性格小幅浮动）；主役另沿已读剧情段的走向推进，
+            好感随主角行为——推演中的抉择、短信往来——实时增减。
+          </div>
         </div>
 
+        {/* 全量档案 · 左索引 + 右正文 */}
+        <div className={css.shell}>
+          <aside className={css.index} aria-label="档案索引">
+            {ROSTER_GROUPS.map((g) => {
+              const members = rows.filter((r) => r.groupKey === g.key)
+              return (
+                <div key={g.key} className={css.idxGroup}>
+                  <div className={css.idxGroupTitle}>
+                    {g.label}
+                    <i>{members.length}</i>
+                  </div>
+                  {members.map((r) => {
+                    const met = isMet(r.id)
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className={met ? css.idxRow : `${css.idxRow} ${css.idxLocked}`}
+                        onClick={() => {
+                          if (!met) {
+                            const el = rootRef.current?.querySelector(`[data-archive-card="${r.id}"]`) as HTMLElement | null
+                            el?.scrollIntoView({ block: 'center' })
+                            return
+                          }
+                          openFromId(r.id)
+                        }}
+                      >
+                        <b>{met ? r.name : '？？？'}</b>
+                        <span>{met && r.rank ? r.rank : ''}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </aside>
+
+          <div className={css.body}>
+        <div className={css.prelude}>
         {/* 能力五轴说明 */}
         {/* 五轴那五格。栅格与格子都从前是**内联**写的：栅格那一条媒体查询够不着，
             而 `.tag` 本体是**全局**的（`tokens.css` 里 `.badge, .chip, .tag` 那一条
@@ -1338,45 +1380,8 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
             </div>
           </section>
         ) : null}
+        </div>
 
-        {/* 全量档案 · 左索引 + 右正文 */}
-        <div className={css.shell}>
-          <aside className={css.index} aria-label="档案索引">
-            {ROSTER_GROUPS.map((g) => {
-              const members = rows.filter((r) => r.groupKey === g.key)
-              return (
-                <div key={g.key} className={css.idxGroup}>
-                  <div className={css.idxGroupTitle}>
-                    {g.label}
-                    <i>{members.length}</i>
-                  </div>
-                  {members.map((r) => {
-                    const met = isMet(r.id)
-                    return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        className={met ? css.idxRow : `${css.idxRow} ${css.idxLocked}`}
-                        onClick={() => {
-                          if (!met) {
-                            const el = rootRef.current?.querySelector(`[data-archive-card="${r.id}"]`) as HTMLElement | null
-                            el?.scrollIntoView({ block: 'center' })
-                            return
-                          }
-                          openFromId(r.id)
-                        }}
-                      >
-                        <b>{met ? r.name : '？？？'}</b>
-                        <span>{met && r.rank ? r.rank : ''}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </aside>
-
-          <div className={css.body}>
         {ROSTER_GROUPS.map((g) => {
           const members = rows.filter((r) => r.groupKey === g.key)
           return (

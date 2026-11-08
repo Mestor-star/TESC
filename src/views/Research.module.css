@@ -9,8 +9,20 @@
    与编队面板还在用，留着那一份，这里是同值的一份副本）。
    ============================================================ */
 
+/* ---------- 锁视口：页头不动，树自己滚，柜台钉在底下 ---------- */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--topbar-h));
+  padding: 16px 26px 12px;
+  overflow: hidden;
+}
+.page > :global(.vhead) { flex: none; }
+.lab { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
 /* ---------- 抬头那一段说明 ---------- */
 .intro {
+  flex: none;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -25,7 +37,7 @@
 .keys kbd {
   padding: 1px 5px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   background: var(--bg-1);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -33,12 +45,42 @@
 }
 
 /* ---------- 树的容器：宽屏树在左、详情在右；不够宽就折成一列 ---------- */
-.shell { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
-.tree { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; min-width: 0; max-width: 100%; }
+.shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* 树是这一屏唯一滚的东西：三条线并排折行，纵向自己滚 */
+.tree {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+  align-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  padding-right: 6px;
+}
 .line { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
 /* 三根主干的抬头高度钉成两行：副标长短不一，抬头高一点低一点，下面那棵树就错行了 */
 .lineHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; min-height: 32px; align-content: flex-start; }
 .lineHead b { flex-shrink: 0; white-space: nowrap; font-size: 12.5px; font-weight: 600; letter-spacing: 0.06em; color: var(--ink); }
+.giftTag {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0 5px;
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 15px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+}
 .lineMark { flex-shrink: 0; width: 6px; height: 6px; align-self: center; }
 
 /* 画布：格子与线共用同一套 px 坐标（宽高由 tsx 内联给） */
@@ -121,6 +163,8 @@
   flex: 1 1 268px;
   min-width: 0;
   max-width: 340px;
+  max-height: 100%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -167,19 +211,19 @@
    军需处（从 Missions.module.css 搬来，行为与外观不变）
    ============================================================ */
 .shopBar {
+  flex: none;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin-top: 22px;
+  margin-top: 14px;
   padding: 10px 13px; border: 1px solid var(--line);
-  border-left: 3px solid var(--amber);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+  border-radius: 0;
+  background: var(--bg-1);
 }
 .shopSigil {
   flex-shrink: 0; display: grid; place-items: center;
   width: 30px; height: 30px; font-size: 13px; font-weight: 600;
-  color: var(--amber-deep); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  color: var(--amber-deep); border: 1px solid var(--line-2);
+  border-radius: 0;
+  background: none;
 }
 .shopWho { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
 .shopWho b { font-size: 13px; letter-spacing: 0.05em; }
@@ -204,7 +248,7 @@
   gap: 12px;
   padding: 16px 18px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius);
+  border-radius: 0;
   background: var(--bg-1);
   box-shadow: none;
 }
@@ -215,25 +259,24 @@
 .modalFoot > span { flex: 1; min-width: 180px; }
 
 .shopSeller {
-  padding: 9px 11px; border-left: 3px solid var(--amber);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-2) 78%, transparent);
+  padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
   font-size: 11.5px; line-height: 1.7; color: var(--ink-mute);
 }
 /* 终末等级那一栏的开场白：先把名字说清楚 */
 .levelNote {
   display: flex; flex-direction: column; gap: 4px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--steel) 35%, transparent);
-  border-left: 3px solid var(--steel);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-2) 82%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
   font-size: 11.5px; line-height: 1.75; color: var(--ink-mute);
 }
 .levelNote b { color: var(--amber-deep); font-size: 12px; letter-spacing: 0.04em; }
 .levelNote span { color: var(--ink-mute); }
 .limitTag {
-  font-style: normal; padding: 0 6px; border: 1px solid var(--line-2); border-radius: var(--radius-pill);
+  font-style: normal; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 2px;
   font-family: var(--font-mono); font-size: 9px; line-height: 15px; color: var(--amber-deep);
 }
 .shopTabs { display: flex; gap: 4px; }
@@ -242,11 +285,11 @@
   font-size: 11.5px;
   color: var(--ink-mute);
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
+  border-radius: 0;
   background: transparent;
   cursor: var(--cursor-point);
 }
-.shopTab.isOn { color: var(--amber-deep); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.shopTab.isOn { color: var(--ink); border-color: var(--ink); font-weight: 600; }
 .shopGrid {
   overflow-y: auto; min-height: 0;
   display: grid;
@@ -259,12 +302,10 @@
   gap: 6px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-2);
+  border-radius: 0;
+  background: none;
 }
-.shopItem[data-rank='2'] { border-left-color: var(--violet); }
-.shopItem[data-rank='3'] { border-left-color: var(--amber); }
+
 .shopName { display: flex; align-items: baseline; gap: 7px; }
 .shopName b { font-size: 13px; }
 .shopName i { font-style: normal; font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
@@ -285,11 +326,21 @@
    桌面是三根主干并排折行；窄到这里改成一条横向轨道 —— 轨道自己滚，
    不推页面横向溢出。右栏落回树下。 */
 @media (max-width: 860px) {
-  .shell { flex-direction: column; align-items: stretch; gap: 16px; }
-  .tree { flex-wrap: nowrap; width: 100%; overflow-x: auto; padding-bottom: 6px; }
+  .page { height: auto; overflow: visible; }
+  .lab { flex: none; }
+  .shell { flex: none; flex-direction: column; align-items: stretch; gap: 16px; }
+  .tree {
+    flex-wrap: nowrap;
+    width: 100%;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding-bottom: 6px;
+  }
   .detail {
     flex: 1 1 auto;
     max-width: none;
+    max-height: none;
     padding: 16px 0 0;
     border-left: 0;
     border-top: 1px solid var(--line);

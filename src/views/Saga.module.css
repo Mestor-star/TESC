@@ -335,14 +335,146 @@
 .mdOff { color: var(--ink-dim); }
 .mdOld { color: var(--ink-faint); }
 
-/* ---------- 主栏 / 侧栏 ---------- */
+/* ---------- 一屏锁定：页头与摘要栏不动，主体两栏各自滚动 ---------- */
+
+:global(.vpage).page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+  padding-bottom: 20px;
+  overflow: hidden;
+}
+
+.page > :global(.vhead) {
+  flex: 0 0 auto;
+}
+
+.page > .sum,
+.page > .gate {
+  flex: 0 0 auto;
+}
+
+.page > .sum {
+  margin-bottom: 16px;
+}
+
+/* 主体：左卷索引定宽，右详情 1fr；两栏各自滚，整页不再往下长 */
+.body {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 28px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.index {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--line-2);
+  padding-top: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
+}
+
+.indexHead {
+  padding-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.indexRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'code val'
+    'name name';
+  align-items: baseline;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 9px 6px 9px 8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.indexRow:hover {
+  background: var(--bg-2);
+}
+
+.indexRow:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: -2px;
+}
+
+.indexRow[aria-pressed='true'] {
+  border-left-color: var(--steel);
+  background: var(--bg-2);
+}
+
+.indexRow[aria-pressed='true'] .indexName {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.indexCode {
+  grid-area: code;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.indexName {
+  grid-area: name;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.indexVal {
+  grid-area: val;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- 右栏：世界线 + 当前事件 + 记录流 + 只读变量 ---------- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
+}
+
+/* 右栏里每一块按内容长，不被 flex 压扁（与记忆库同一条）。 */
+.detail > * {
+  flex: 0 0 auto;
+}
 
 .layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 288px;
-  align-items: start;
-  gap: 32px;
-  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .col {
@@ -661,9 +793,10 @@
 /* ---------- 侧栏 ---------- */
 
 .side {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
+  align-items: start;
   min-width: 0;
 }
 
@@ -760,9 +893,48 @@
 /* ---------- 窄屏 ---------- */
 
 @media (max-width: 1080px) {
-  .layout {
+  /* 单列但仍锁一屏：卷索引收成顶部一条横滑，右栏照旧自己滚 */
+  .body {
     grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .index {
+    flex-direction: row;
+    align-items: baseline;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-top: 0;
+    border-bottom: 1px solid var(--line-2);
+    padding-top: 0;
+  }
+
+  .indexHead {
+    display: none;
+  }
+
+  .indexCode {
+    display: none;
+  }
+
+  .indexRow {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: baseline;
+    gap: 8px;
+    width: auto;
+    padding: 8px 12px 6px 0;
+    margin-right: 8px;
+    border-left: 0;
+    border-top: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+
+  .indexRow[aria-pressed='true'] {
+    background: none;
+    border-bottom-color: var(--steel);
   }
 
   .side {
@@ -774,6 +946,18 @@
 }
 
 @media (max-width: 860px) {
+  /* 手机档解除锁高：整页恢复自然滚动，栏内的滚动条让位给页面 */
+  :global(.vpage).page {
+    height: auto;
+    overflow: visible;
+    padding-bottom: 40px;
+  }
+
+  .detail {
+    overflow: visible;
+    padding-right: 0;
+  }
+
   .sum {
     grid-template-columns: minmax(0, 1fr);
     border-bottom: 1px solid var(--line);
@@ -865,6 +1049,7 @@
 }
 
 @media (pointer: coarse) {
+  .indexRow,
   .ancBtn,
   .charRow,
   .rewind {

@@ -147,6 +147,7 @@ export function Missions() {
   const [filter, setFilter] = useState<FilterKey>('全部')
   const [status, setStatus] = useState<Record<string, LocalStatus>>({})
   const [openId, setOpenId] = useState<string | null>(null)
+  const [doneOpen, setDoneOpen] = useState<string | null>(null)
 
   /* —— 作战子系统状态 —— */
   const [stamina, setStamina] = useState<StaminaState>({ cur: TUNING.spMax, max: TUNING.spMax, chargeAt: 0 })
@@ -631,298 +632,346 @@ export function Missions() {
 
       {/* 「可接任务」＝原来那整页，一条都不动；只是整块挂到页签下面 */}
       {tab === 'open' ? (
-        <>
-          {/* 小队体力：只在执行任务时消耗，随观测间隔缓慢回复 */}
-          <div className={css.stamina} data-squad-stamina>
-            <span className="tiny mono" style={{ letterSpacing: '0.18em', color: 'var(--ink-mute)' }}>小队体力</span>
-            <div className={css.staminaBar}>
-              <i
-                style={{ width: `${(stamina.cur / stamina.max) * 100}%` }}
-                data-low={stamina.cur <= TUNING.overdriveAt ? '1' : undefined}
-              />
+        <div className={css.wrap}>
+          <div className={css.rail}>
+            {/* 小队体力：只在执行任务时消耗，随观测间隔缓慢回复 */}
+            <div className={css.stamina} data-squad-stamina>
+              <span className="tiny mono" style={{ letterSpacing: '0.18em', color: 'var(--ink-mute)' }}>小队体力</span>
+              <div className={css.staminaBar}>
+                <i
+                  style={{ width: `${(stamina.cur / stamina.max) * 100}%` }}
+                  data-low={stamina.cur <= TUNING.overdriveAt ? '1' : undefined}
+                />
+              </div>
+              <span className="tiny mono">{Math.round(stamina.cur)}/{stamina.max}</span>
+              <span className="tiny muted">出击扣除，观测推进时回补</span>
             </div>
-            <span className="tiny mono">{Math.round(stamina.cur)}/{stamina.max}</span>
-            <span className="tiny muted">出击扣除，观测推进时回补</span>
+
+            {/* 军需处整块搬去了「研究」那一页：这里只留一枚门，不在两处各摆一套柜台。
+                挂牌（谁在看店 / 有多少贡献点 / 怎么兑）在那边的 `data-gear-shop` 上。 */}
+            <section className={css.shopJump} data-guide="shop">
+              <Storefront size={14} weight="bold" />
+              <span className={css.shopJumpText}>
+                <b>军需处已迁至「研究」</b>
+                <i>研究所产出的装备、道具补给、终末等级，都在那一页的柜台里。</i>
+              </span>
+              <button
+                className="btn btn--ghost"
+                style={{ fontSize: 12 }}
+                data-go-research
+                onClick={() => navigate('research')}
+              >
+                去研究 · 军需处 <ArrowRight size={12} weight="bold" />
+              </button>
+            </section>
+
+            {/* 巡逻任务未放行：先走正史，脏器公寓一案结清后才派单 */}
+            {!patrolOpen ? (
+              <div className={css.empty} data-patrol-locked>
+                <b className={css.emptyTitle}>巡逻区尚未放行</b>
+                <span className={css.emptyHint}>
+                  可刷新任务将在主线「{patrolOpenTitle}」结清后开放 · 眼下只走主线
+                </span>
+              </div>
+            ) : null}
           </div>
 
-          {/* 军需处整块搬去了「研究」那一页：这里只留一枚门，不在两处各摆一套柜台。
-              挂牌（谁在看店 / 有多少贡献点 / 怎么兑）在那边的 `data-gear-shop` 上。 */}
-          <section className={css.shopJump} data-guide="shop">
-            <Storefront size={14} weight="bold" />
-            <span className={css.shopJumpText}>
-              <b>军需处已迁至「研究」</b>
-              <i>研究所产出的装备、道具补给、终末等级，都在那一页的柜台里。</i>
-            </span>
-            <button
-              className="btn btn--ghost"
-              style={{ fontSize: 12 }}
-              data-go-research
-              onClick={() => navigate('research')}
-            >
-              去研究 · 军需处 <ArrowRight size={12} weight="bold" />
-            </button>
-          </section>
-
-          {/* 巡逻任务未放行：先走正史，脏器公寓一案结清后才派单 */}
-          {!patrolOpen ? (
-            <div className={css.empty} data-patrol-locked>
-              <b className={css.emptyTitle}>巡逻区尚未放行</b>
-              <span className={css.emptyHint}>
-                可刷新任务将在主线「{patrolOpenTitle}」结清后开放 · 眼下只走主线
-              </span>
-            </div>
-          ) : null}
-
-          {list.length === 0 ? (
-            <div className={css.empty}>
-              <b className={css.emptyTitle}>NO ACTIVE TASKS</b>
-              <span className={css.emptyHint}>当前筛选下没有任务。第 12 区暂时平稳——去休息一下吧。</span>
-            </div>
-          ) : (
-            <div className={css.board}>
-              {list.map((m2) => {
-                const sev = stageSeverity(m2.stage)
-                const sm = STATUS_META[m2.status]
-                const done = m2.status === '完成'
-                const isOpen = openId === m2.id
-                /* 该地 R 值 → 敌人成色：出击前就该看得见，好让人决定带谁去 */
-                const rb = rBadgeOf(m2.place, m2.stage)
-                const amp = Math.round((rb.f.mul - 1) * 100)
-                /* 危险度另挂一份 data-mission-stage：卡面上它是「阶段 S6」这样一行字，
-                   要按危险度挑任务得有个准头，别让谁去正则屏上的文案。 */
-                return (
-                  <article
-                    key={m2.id}
-                    className={css.row}
-                    data-mission={m2.mainline ? undefined : m2.id}
-                    data-mainline-mission={m2.mainline ? m2.id : undefined}
-                    data-mission-stage={m2.stage}
-                  >
-                    <div className={css.rowMain}>
-                      <span className={css.kind}>{m2.mainline ? '主线 · 观测' : m2.nature}</span>
-                      <h3 className={css.rowTitle}>{m2.title}</h3>
-                      <p className={css.rowDesc} title={m2.desc}>{m2.desc}</p>
-                      <span className={css.rowState} style={{ color: sm.color }}>{sm.label}</span>
-                    </div>
-
-
-                    <div className={css.rowSide}>
-                      <div className={css.asideAction}>
-                        {m2.status === '锁定' ? (
-                          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m2)}>
-                            <PaperPlaneTilt size={13} /> 等待签署
-                          </button>
-                        ) : done && m2.mainline ? (
-                          /* 剧情作战打赢了就是「已完成」，但还挂在牌面上等人提交 ——
-                             不提交它就一直在（战果已经在记录里，别让人以为白打了） */
-                          <>
-                            <button
-                              className="btn btn--primary"
-                              style={{ fontSize: 12 }}
-                              title="现场那一仗的胜果已经在作战记录里 —— 提交只把这一段收进档案"
-                              data-archive={m2.id}
-                              data-act="提交"
-                              onClick={() => act(m2)}
-                            >
-                              提交归档 <Check size={13} weight="bold" />
-                            </button>
-                            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('plot')} data-mainline-fight={m2.at}>
-                              <Crosshair size={13} /> 回推演现场
-                            </button>
-                          </>
-                        ) : done ? (
-                          <>
-                            <button className="btn btn--ghost" style={{ fontSize: 12 }} disabled>已归档</button>
-                            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => openBriefing(m2)} title="再次出击（不计入首次归档）">
-                              <Crosshair size={13} /> 再出击
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            {/* 剧情作战没得接取：只把「到哪儿打」摆出来 —— 打完才谈领取 */}
-                            {m2.mainline ? (
+          <div className={css.split}>
+            <div className={css.list}>
+              {list.length === 0 ? (
+                <div className={css.empty}>
+                  <b className={css.emptyTitle}>NO ACTIVE TASKS</b>
+                  <span className={css.emptyHint}>当前筛选下没有任务。第 12 区暂时平稳——去休息一下吧。</span>
+                </div>
+              ) : (
+                <div className={css.board}>
+                  {list.map((m2) => {
+                    const sm = STATUS_META[m2.status]
+                    const done = m2.status === '完成'
+                    const isOpen = openId === m2.id
+                    /* 危险度另挂一份 data-mission-stage：卡面上它是「阶段 S6」这样一行字，
+                       要按危险度挑任务得有个准头，别让谁去正则屏上的文案。 */
+                    return (
+                      <article
+                        key={m2.id}
+                        className={css.row + (isOpen ? ' ' + css.rowOn : '')}
+                        data-mission={m2.mainline ? undefined : m2.id}
+                        data-mainline-mission={m2.mainline ? m2.id : undefined}
+                        data-mission-stage={m2.stage}
+                      >
+                        <div className={css.rowMain}>
+                          <span className={css.kind}>{m2.mainline ? '主线 · 观测' : m2.nature}</span>
+                          <h3 className={css.rowTitle}>{m2.title}</h3>
+                          <span className={css.rowState} style={{ color: sm.color }}>{sm.label}</span>
+                        </div>
+                        <div className={css.rowSide}>
+                          <div className={css.asideAction}>
+                            {m2.status === '锁定' ? (
+                              <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m2)}>
+                                <PaperPlaneTilt size={13} /> 等待签署
+                              </button>
+                            ) : done && m2.mainline ? (
+                              /* 剧情作战打赢了就是「已完成」，但还挂在牌面上等人提交 ——
+                                 不提交它就一直在（战果已经在记录里，别让人以为白打了） */
                               <>
-                                <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('plot')} data-sortie={m2.id} data-mainline-fight={m2.at}>
-                                  <Crosshair size={13} weight="bold" /> 进入推演
-                                </button>
                                 <button
-                                  className="btn btn--ghost"
+                                  className="btn btn--primary"
                                   style={{ fontSize: 12 }}
-                                  disabled={!hasWin(m2)}
-                                  title={hasWin(m2)
-                                    ? '现场那一仗已经赢了 —— 领取战果，牌面翻到下一场'
-                                    : '剧情战斗在推演现场发生：走到这一段、打赢那一仗，这里才收得到战果'}
+                                  title="现场那一仗的胜果已经在作战记录里 —— 提交只把这一段收进档案"
                                   data-archive={m2.id}
-                                  data-act={hasWin(m2) ? '领取' : '待战'}
+                                  data-act="提交"
                                   onClick={() => act(m2)}
                                 >
-                                  {hasWin(m2) ? <>领取归档 <Check size={13} weight="bold" /></> : <>待剧情战斗 <Crosshair size={13} /></>}
+                                  提交归档 <Check size={13} weight="bold" />
+                                </button>
+                                <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('plot')} data-mainline-fight={m2.at}>
+                                  <Crosshair size={13} /> 回推演现场
+                                </button>
+                              </>
+                            ) : done ? (
+                              <>
+                                <button className="btn btn--ghost" style={{ fontSize: 12 }} disabled>已归档</button>
+                                <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => openBriefing(m2)} title="再次出击（不计入首次归档）">
+                                  <Crosshair size={13} /> 再出击
                                 </button>
                               </>
                             ) : (
                               <>
-                                {/* 出击是接取之后才有的事：还没点头的任务，先签字再说 */}
-                                {m2.status !== '待接取' && (
-                                  <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => openBriefing(m2)} data-sortie={m2.id}>
-                                    <Crosshair size={13} weight="bold" /> 出击
-                                  </button>
+                                {/* 剧情作战没得接取：只把「到哪儿打」摆出来 —— 打完才谈领取 */}
+                                {m2.mainline ? (
+                                  <>
+                                    <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('plot')} data-sortie={m2.id} data-mainline-fight={m2.at}>
+                                      <Crosshair size={13} weight="bold" /> 进入推演
+                                    </button>
+                                    <button
+                                      className="btn btn--ghost"
+                                      style={{ fontSize: 12 }}
+                                      disabled={!hasWin(m2)}
+                                      title={hasWin(m2)
+                                        ? '现场那一仗已经赢了 —— 领取战果，牌面翻到下一场'
+                                        : '剧情战斗在推演现场发生：走到这一段、打赢那一仗，这里才收得到战果'}
+                                      data-archive={m2.id}
+                                      data-act={hasWin(m2) ? '领取' : '待战'}
+                                      onClick={() => act(m2)}
+                                    >
+                                      {hasWin(m2) ? <>领取归档 <Check size={13} weight="bold" /></> : <>待剧情战斗 <Crosshair size={13} /></>}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* 出击是接取之后才有的事：还没点头的任务，先签字再说 */}
+                                    {m2.status !== '待接取' && (
+                                      <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => openBriefing(m2)} data-sortie={m2.id}>
+                                        <Crosshair size={13} weight="bold" /> 出击
+                                      </button>
+                                    )}
+                                    <button
+                                      className="btn btn--ghost"
+                                      style={{ fontSize: 12 }}
+                                      disabled={m2.status === '压制中' && !hasWin(m2)}
+                                      title={m2.status === '压制中' && !hasWin(m2) ? '还是一场胜仗都没有，归档无从谈起' : undefined}
+                                      data-archive={m2.status === '压制中' ? m2.id : undefined}
+                                      data-act={m2.status === '待接取' ? '接取' : m2.status === '已派遣' ? '压制' : m2.status === '压制中' ? '归档' : undefined}
+                                      onClick={() => act(m2)}
+                                    >
+                                      {m2.status === '待接取' && <>接取任务 <Check size={13} weight="bold" /></>}
+                                      {m2.status === '已派遣' && <>下令压制 <ArrowRight size={13} /></>}
+                                      {m2.status === '压制中' && <>提交归档 <Check size={13} weight="bold" /></>}
+                                    </button>
+                                  </>
                                 )}
-                                <button
-                                  className="btn btn--ghost"
-                                  style={{ fontSize: 12 }}
-                                  disabled={m2.status === '压制中' && !hasWin(m2)}
-                                  title={m2.status === '压制中' && !hasWin(m2) ? '还是一场胜仗都没有，归档无从谈起' : undefined}
-                                  data-archive={m2.status === '压制中' ? m2.id : undefined}
-                                  data-act={m2.status === '待接取' ? '接取' : m2.status === '已派遣' ? '压制' : m2.status === '压制中' ? '归档' : undefined}
-                                  onClick={() => act(m2)}
-                                >
-                                  {m2.status === '待接取' && <>接取任务 <Check size={13} weight="bold" /></>}
-                                  {m2.status === '已派遣' && <>下令压制 <ArrowRight size={13} /></>}
-                                  {m2.status === '压制中' && <>提交归档 <Check size={13} weight="bold" /></>}
-                                </button>
                               </>
                             )}
-                          </>
-                        )}
-                        <button className="linkGo" onClick={() => setOpenId(isOpen ? null : m2.id)}>
-                          {isOpen ? '收起' : '展开详情'}
-                        </button>
-                      </div>
+                            <button className="linkGo" onClick={() => setOpenId(m2.id)}>
+                              展开详情
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            <div className={css.detail}>
+              {(() => {
+                const am = list.find((m) => m.id === openId) ?? list[0]
+                if (!am) return null
+                const dsm = STATUS_META[am.status]
+                const dsev = stageSeverity(am.stage)
+                const drb = rBadgeOf(am.place, am.stage)
+                const damp = Math.round((drb.f.mul - 1) * 100)
+                return (
+                  <>
+                    <div className={css.detailHead}>
+                      <span className={css.kind}>{am.mainline ? '主线 · 观测' : am.nature}</span>
+                      <span className={css.rowState} style={{ color: dsm.color }}>{dsm.label}</span>
                     </div>
-                    <div className={`${css.rowMore} ${isOpen ? css.isOpen : ''}`}>
-                      <div className={css.rowMeta}>
-                        <span className={css.rowNo}>档案 {m2.no} / 阶段 S{m2.stage}</span>
-                        <span className={css.sep}>/</span>
-                        <span>地点 {m2.place}</span>
-                        <span className={css.sep}>/</span>
-                        <span
-                          className={css.rChip}
-                          data-mission-r={m2.id}
-                          data-r-known={rb.reading.known ? '1' : undefined}
-                          data-r-src={rb.reading.src}
-                          data-r-amp={amp}
-                          title={`${rb.reading.note}
-    ${rb.f.word}`}
-                        >
-                          R {rb.reading.r.toFixed(3)}
-                          {rb.reading.over ? ' · 量程外' : amp ? ` · 敌 +${amp}%` : ' · 常规'}
-                        </span>
-                        <span className={css.sep}>/</span>
-                        <span className={css.deadline}>期限 · {m2.deadline}</span>
-                        <span className={css.sep}>/</span>
-                        <span>编号 {m2.no}</span>
-                        <span className={css.sep}>/</span>
-                        <span style={{ color: sev.color }}>{sev.label}</span>
-                        {m2.reward.map((rw) => (
-                          <span key={rw} className={css.rewardLine}>{rw}</span>
-                        ))}
-                      </div>
+                    <h2 className={css.detailTitle}>{am.title}</h2>
+                    <p className={css.detailDesc}>{am.desc}</p>
+                    <div className={css.rowMeta}>
+                      <span className={css.rowNo}>档案 {am.no} / 阶段 S{am.stage}</span>
+                      <span className={css.sep}>/</span>
+                      <span>地点 {am.place}</span>
+                      <span className={css.sep}>/</span>
+                      <span
+                        className={css.rChip}
+                        data-mission-r={am.id}
+                        data-r-known={drb.reading.known ? '1' : undefined}
+                        data-r-src={drb.reading.src}
+                        data-r-amp={damp}
+                        title={drb.reading.note + '\n    ' + drb.f.word}
+                      >
+                        R {drb.reading.r.toFixed(3)}
+                        {drb.reading.over ? ' · 量程外' : damp ? ' · 敌 +' + damp + '%' : ' · 常规'}
+                      </span>
+                      <span className={css.sep}>/</span>
+                      <span className={css.deadline}>期限 · {am.deadline}</span>
+                      <span className={css.sep}>/</span>
+                      <span>编号 {am.no}</span>
+                      <span className={css.sep}>/</span>
+                      <span style={{ color: dsev.color }}>{dsev.label}</span>
+                      {am.reward.map((rw) => (
+                        <span key={rw} className={css.rewardLine}>{rw}</span>
+                      ))}
+                    </div>
+                    <div className={css.crewRow}>
                       <span className={css.crewTag}>推荐小队</span>
-                      {m2.recommend.map((token) => {
+                      {am.recommend.map((token) => {
                         // 派单写中文名、剧情作战写 id —— 一律翻成名录里的中文名再上屏
-                        const id = personIdOf(token)
-                        const p = id ? personOf(id) : undefined
+                        const pid = personIdOf(token)
+                        const pp = pid ? personOf(pid) : undefined
                         return (
-                          <span key={token} className={css.crewChip} style={{ '--crew': p?.hue ?? 'var(--violet)' }}>
-                            <i>{p?.sigil ?? '?'}</i>
-                            {p?.name ?? token}
+                          <span key={token} className={css.crewChip} style={{ '--crew': pp?.hue ?? 'var(--violet)' }}>
+                            <i>{pp?.sigil ?? '?'}</i>
+                            {pp?.name ?? token}
                           </span>
                         )
                       })}
                     </div>
-                  </article>
+                  </>
                 )
-              })}
+              })()}
+              {/* 作战记录 */}
+              <section className={css.records} data-battle-records>
+                <div className={css.recordsHead}>
+                  <b>作战记录</b>
+                  <span className="tiny muted">{records.length} 场已归档 · 逐手底稿、成文与缴获一并留档（只留胜仗）</span>
+                </div>
+                {records.length === 0 ? (
+                  <div className="tiny muted" style={{ padding: '10px 2px' }}>尚无作战记录。出击一次，回来就有了。</div>
+                ) : (
+                  <div className={css.recList}>
+                    {records.map((r) => (
+                      <article key={r.id} className={`${css.rec} ${r.mainline ? css.recMain : ''}`} data-battle-record={r.id} data-outcome={r.outcome} data-mainline={r.mainline ? '1' : undefined}>
+                        <button className={css.recTop} onClick={() => setOpenRec(openRec === r.id ? null : r.id)}>
+                          <span className={css.recOut} data-outcome={r.outcome}>{r.outcome}</span>
+                          {r.mainline ? <span className={css.mainTag} data-rec-main="1">主线</span> : null}
+                          <b className={css.recTitle}>{r.no}「{r.title}」</b>
+                          <span className="tiny muted">
+                            {r.rounds} 手 / {r.ticks} 拍 · MVP {r.mvp} · 终末点数 +{r.coin}
+                            {r.loot.length ? ` · ${r.loot.map((g) => GEAR_OF[g]?.name ?? g).join('、')}` : ''} · {r.narrativeBy}
+                          </span>
+                          <span className={css.recChev} data-open={openRec === r.id ? '1' : undefined}>›</span>
+                        </button>
+                        {openRec === r.id ? (
+                          <div className={css.recBody}>
+                            <div className={css.recNarr} data-battle-narrative data-mainline-narr={r.mainline ? '1' : undefined}>{r.narrative || '（未成文）'}</div>
+                            <details className={css.recRaw}>
+                              <summary className="tiny mono">逐手底稿</summary>
+                              <pre className={css.recPre}>{r.digest}</pre>
+                            </details>
+                            <div className={css.recActs}>
+                              <button
+                                className="btn btn--ghost"
+                                style={{ fontSize: 11 }}
+                                data-battle-archive-open={r.id}
+                                onClick={() => setOpenArch(r.id)}
+                              >
+                                <Crosshair size={12} weight="bold" /> 展开作战档案
+                              </button>
+                              <button className="btn btn--ghost" style={{ fontSize: 11 }} onClick={() => deleteRec(r.id)}>
+                                <Trash size={12} /> 删除此条
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </article>
+                  ))}
+                </div>
+              )}
+            </section>
             </div>
-          )}
-
-          {/* 作战记录 */}
-          <section className={css.records} data-battle-records>
-            <div className={css.recordsHead}>
-              <b>作战记录</b>
-              <span className="tiny muted">{records.length} 场已归档 · 逐手底稿、成文与缴获一并留档（只留胜仗）</span>
-            </div>
-            {records.length === 0 ? (
-              <div className="tiny muted" style={{ padding: '10px 2px' }}>尚无作战记录。出击一次，回来就有了。</div>
-            ) : (
-              <div className={css.recList}>
-                {records.map((r) => (
-                  <article key={r.id} className={`${css.rec} ${r.mainline ? css.recMain : ''}`} data-battle-record={r.id} data-outcome={r.outcome} data-mainline={r.mainline ? '1' : undefined}>
-                    <button className={css.recTop} onClick={() => setOpenRec(openRec === r.id ? null : r.id)}>
-                      <span className={css.recOut} data-outcome={r.outcome}>{r.outcome}</span>
-                      {r.mainline ? <span className={css.mainTag} data-rec-main="1">主线</span> : null}
-                      <b className={css.recTitle}>{r.no}「{r.title}」</b>
-                      <span className="tiny muted">
-                        {r.rounds} 手 / {r.ticks} 拍 · MVP {r.mvp} · 终末点数 +{r.coin}
-                        {r.loot.length ? ` · ${r.loot.map((g) => GEAR_OF[g]?.name ?? g).join('、')}` : ''} · {r.narrativeBy}
-                      </span>
-                      <span className={css.recChev} data-open={openRec === r.id ? '1' : undefined}>›</span>
-                    </button>
-                    {openRec === r.id ? (
-                      <div className={css.recBody}>
-                        <div className={css.recNarr} data-battle-narrative data-mainline-narr={r.mainline ? '1' : undefined}>{r.narrative || '（未成文）'}</div>
-                        <details className={css.recRaw}>
-                          <summary className="tiny mono">逐手底稿</summary>
-                          <pre className={css.recPre}>{r.digest}</pre>
-                        </details>
-                        <div className={css.recActs}>
-                          <button
-                            className="btn btn--ghost"
-                            style={{ fontSize: 11 }}
-                            data-battle-archive-open={r.id}
-                            onClick={() => setOpenArch(r.id)}
-                          >
-                            <Crosshair size={12} weight="bold" /> 展开作战档案
-                          </button>
-                          <button className="btn btn--ghost" style={{ fontSize: 11 }} onClick={() => deleteRec(r.id)}>
-                            <Trash size={12} /> 删除此条
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
+          </div>
+        </div>
       ) : (
-        <section className={css.donePage} data-mission-done>
+        <section className={css.wrap + ' ' + css.donePage} data-mission-done>
           <div className={css.doneHead}>
             <b>已完成记录</b>
             <span className="tiny muted">
-              {doneRows.length ? `${doneRows.length} 条 · 只读留档` : '只读留档'}
+              {doneRows.length ? doneRows.length + ' 条 · 只读留档' : '只读留档'}
             </span>
           </div>
           {doneRows.length === 0 ? (
-            <div className={`${css.empty} ${css.doneEmpty}`} data-mission-done-empty>
+            <div className={css.empty + ' ' + css.doneEmpty} data-mission-done-empty>
               还没有完成的记录。推完一段剧情，或打完一场委托，这里会自己长出来。
             </div>
           ) : (
-            <div className={css.doneList}>
-              {doneRows.map((d) => (
-                <article key={d.key} className={css.doneRow} data-kind={d.kind} data-mission-done-row={d.key}>
-                  <div className={css.doneMain}>
-                    <div className={css.doneTop}>
-                      <span className={css.doneKind} data-kind={d.kind}>{d.kind}</span>
-                      <b className={css.doneTitle}>{d.title}</b>
-                    </div>
-                    {d.note ? <p className={css.doneNote}>{d.note}</p> : null}
-                    {d.ts ? <span className="tiny muted">入档 {fmtSlotTime(d.ts)}</span> : null}
-                  </div>
-                  {d.recId ? (
+            <div className={css.split}>
+              <div className={css.list}>
+                <div className={css.doneList}>
+                  {doneRows.map((d) => (
                     <button
+                      key={d.key}
                       type="button"
-                      className="btn btn--ghost"
-                      style={{ fontSize: 11 }}
-                      data-mission-done-view={d.recId}
-                      onClick={() => setOpenArch(d.recId ?? null)}
+                      className={css.doneRow + (d.key === doneOpen ? ' ' + css.doneRowOn : '')}
+                      data-kind={d.kind}
+                      data-mission-done-row={d.key}
+                      onClick={() => setDoneOpen(d.key)}
                     >
-                      <Crosshair size={12} weight="bold" /> 查看
+                      <span className={css.doneMain}>
+                        <span className={css.doneTop}>
+                          <span className={css.doneKind} data-kind={d.kind}>{d.kind}</span>
+                          <b className={css.doneTitle}>{d.title}</b>
+                        </span>
+                        {d.note ? <span className={css.doneNote}>{d.note}</span> : null}
+                      </span>
                     </button>
-                  ) : null}
-                </article>
-              ))}
+                  ))}
+                </div>
+              </div>
+              <div className={css.detail}>
+                {(() => {
+                  const d = doneRows.find((x) => x.key === doneOpen) ?? doneRows[0]
+                  if (!d) return null
+                  return (
+                    <>
+                      <div className={css.detailHead}>
+                        <span className={css.doneKind}>{d.kind}</span>
+                        <span className="tiny mono muted">只读留档</span>
+                      </div>
+                      <h2 className={css.detailTitle}>{d.title}</h2>
+                      {d.note ? <p className={css.detailDesc}>{d.note}</p> : null}
+                      <div className={css.rowMeta}>
+                        {d.ts ? <span>入档 {fmtSlotTime(d.ts)}</span> : null}
+                      </div>
+                      {d.recId ? (
+                        <div className={css.crewRow}>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            style={{ fontSize: 11 }}
+                            data-mission-done-view={d.recId}
+                            onClick={() => setOpenArch(d.recId ?? null)}
+                          >
+                            <Crosshair size={12} weight="bold" /> 查看
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  )
+                })()}
+              </div>
             </div>
           )}
         </section>

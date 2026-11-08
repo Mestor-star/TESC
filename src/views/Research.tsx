@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent } from 'react'
 import { Storefront, X } from '@phosphor-icons/react'
 
-import { RESEARCH, RESEARCH_LINES } from '../data/research'
+import { RESEARCH, RESEARCH_LINES, RESEARCH_LINE_GIFT } from '../data/research'
 import type { ResearchEffect, ResearchLineId, ResearchNode } from '../data/research'
-import { investResearch, researchStatusOf, syncResearch, useResearch } from '../lib/research'
+import {
+  investResearch, researchNextCost, researchStatusOf, syncResearch, useResearch,
+  researchLineDone,
+} from '../lib/research'
 import { OPERATOR_ID, PERSON_IDS, personOf } from '../data/castmeta'
 import { TIMELINE } from '../data/timeline'
 import { useTerminal } from '../terminal/Terminal'
@@ -41,14 +44,26 @@ const LANE = 138
 const GAP_Y = 38
 const PITCH = NODE_H + GAP_Y
 
-/** 一份 effect 念成人话：按四条比例偏序，写的顺序照「攻击 / 生命 / 物理抗性 / 反现实亲和」 */
+/** 一份 effect 念成人话：按六条比例偏序，写的顺序照「攻击 / 生命 / 物理抗性 / 反现实亲和 / 意志力 / 技能倍率」 */
 function effectTextOf(e: ResearchEffect): string {
   const parts: string[] = []
   if (e.atk) parts.push('攻击 +' + (e.atk * 100).toFixed(1) + '%')
   if (e.hp) parts.push('生命 +' + (e.hp * 100).toFixed(1) + '%')
   if (e.resPhysical) parts.push('物理抗性 +' + (e.resPhysical * 100).toFixed(1) + '%')
   if (e.aff) parts.push('反现实亲和 +' + (e.aff * 100).toFixed(1) + '%')
+  if (e.will) parts.push('意志力 +' + (e.will * 100).toFixed(1) + '%')
+  if (e.power) parts.push('技能倍率 +' + (e.power * 100).toFixed(1) + '%')
   return parts.join(' · ')
+}
+
+/** 同一份 effect 按次数放大（深研的累计读数用） */
+function effectTimes(e: ResearchEffect, times: number): ResearchEffect {
+  const out: ResearchEffect = {}
+  for (const k of ['atk', 'hp', 'resPhysical', 'aff', 'will', 'power'] as const) {
+    const v = e[k]
+    if (v) out[k] = v * times
+  }
+  return out
 }
 
 interface Placed {
@@ -194,14 +209,20 @@ export function Research() {
   /* ============================================================
      二、树的读写
      ============================================================ */
-  const done = RESEARCH.filter((n) => save.done[n.id]).length
+  const done = RESEARCH.filter((n) => !n.repeat && save.done[n.id]).length
+  const coreTotal = RESEARCH.filter((n) => !n.repeat).length
   const sel = selId ? RESEARCH.find((n) => n.id === selId) ?? null : null
   const selState = sel ? researchStatusOf(sel) : null
+  const selRank = sel?.repeat ? save.ranks[sel.id] ?? 0 : 0
+  const selCap = sel?.repeat?.max ?? 0
+  const selCost = sel ? (sel.repeat ? researchNextCost(sel) : sel.cost) : 0
   const selPrev = sel?.require ? RESEARCH.find((n) => n.id === sel.require) ?? null : null
   /** 锁定的时候差在哪 —— 前置没研 / 点数不够，各说各的 */
-  const selBlocked = sel && selState === 'locked' && selPrev && !save.done[selPrev.id]
-    ? '要先研成「' + selPrev.name + '」'
-    : '研究点不足'
+  const selBlocked = sel?.repeat && selRank >= selCap
+    ? '已研满 ' + selCap + ' 次'
+    : sel && selState === 'locked' && selPrev && !save.done[selPrev.id]
+      ? '要先研成「' + selPrev.name + '」'
+      : '研究点不足'
 
   const invest = (node: ResearchNode) => {
     const res = investResearch(node.id)
@@ -212,7 +233,9 @@ export function Research() {
     push(
       'success',
       '研究室 · 「' + node.name + '」研成',
-      '投入 ' + node.cost + ' 研究点 —— ' + effectTextOf(node.effect) + '（全队 · 我方战斗面板）。',
+      '投入 ' + (res.cost ?? node.cost) + ' 研究点 —— ' + effectTextOf(node.effect)
+        + (node.repeat ? '（第 ' + ((save.ranks[node.id] ?? 0) + 1) + ' 次深研）' : '')
+        + '（全队 · 我方战斗面板）。',
       false,
     )
   }
@@ -277,7 +300,7 @@ export function Research() {
   }
 
   return (
-    <div className="vpage">
+    <div className={'vpage ' + css.page}>
       <div className="vhead">
         <div>
           <div className="vhead__kicker">RESEARCH / LAB</div>
@@ -291,16 +314,17 @@ export function Research() {
             研究点 <b>{save.points}</b>
           </span>
           <span className="mono tiny" data-research-done-count={done}>
-            已研 <b>{done}</b>/{RESEARCH.length}
+            已研 <b>{done}</b>/{coreTotal}
           </span>
         </div>
       </div>
 
       {/* ============ 上：科研树 ============ */}
-      <section data-research-lab>
+      <section className={css.lab} data-research-lab>
         <div className={css.intro}>
           观测攒下来的东西拿去换目录，换回来的不是新武器，是全队都受用的一层读数 ——
           它直接乘在我方的战斗面板上，敌方不吃这一份。点数来自：主线收束、任务完成、击破具名首领。
+          一条线的一次性节点全研成算「贯通」，另给一份；第五层起加技能倍率，末端是可反复投入的深研。
           <span className={css.keys}>
             <kbd>↑</kbd><kbd>↓</kbd> 换层 · <kbd>←</kbd><kbd>→</kbd> 换线 · <kbd>Z</kbd> 研成 · <kbd>Esc</kbd> 收起
           </span>
@@ -314,6 +338,13 @@ export function Research() {
                   <span className={css.lineMark} style={{ background: LINE_TINT[line.id] }} />
                   <b>{line.id}</b>
                   <span className="tiny muted">{line.sub}</span>
+                  {researchLineDone(line.id) ? (
+                    <span
+                      className={css.giftTag}
+                      data-research-gift={line.id}
+                      title={'全线贯通 · ' + effectTextOf(RESEARCH_LINE_GIFT[line.id])}
+                    >贯通</span>
+                  ) : null}
                 </div>
 
                 <div className={css.canvas} style={{ width: line.width, height: line.height }}>
@@ -342,6 +373,9 @@ export function Research() {
                   {line.nodes.map(({ node, x, top }) => {
                     const st = researchStatusOf(node)
                     const on = node.id === selId
+                    const rank = node.repeat ? save.ranks[node.id] ?? 0 : 0
+                    const cost = node.repeat ? researchNextCost(node) : node.cost
+                    const cap = node.repeat?.max ?? 0
                     return (
                       <button
                         key={node.id}
@@ -351,16 +385,23 @@ export function Research() {
                         style={{ left: x * LANE, top } as CSSProperties}
                         data-research-node={node.id}
                         data-research-state={st}
-                        data-research-cost={node.cost}
+                        data-research-cost={cost}
+                        data-research-rank={node.repeat ? rank : undefined}
                         data-research-on={on ? '1' : '0'}
                         aria-pressed={on}
-                        title={node.name + ' · 第 ' + node.tier + ' 层 · ' + node.cost + ' 点'}
+                        title={node.name + (node.repeat
+                          ? ' · 第 ' + node.tier + ' 层 · 深研 ' + rank + '/' + cap + ' · 下一次 ' + cost + ' 点'
+                          : ' · 第 ' + node.tier + ' 层 · ' + cost + ' 点')}
                         onClick={() => setSelId(node.id)}
                       >
                         <span className={css.dot} aria-hidden />
                         <span className={css.nodeBody}>
                           <b className={css.nodeName}>{node.name}</b>
-                          <i className={css.nodeState}>{STATE_LABEL[st]} · {node.cost} 点</i>
+                          <i className={css.nodeState}>
+                            {node.repeat
+                              ? (st === 'done' ? '已研满 ' + rank + '/' + cap : rank + '/' + cap + ' · ' + cost + ' 点')
+                              : STATE_LABEL[st] + ' · ' + cost + ' 点'}
+                          </i>
                         </span>
                       </button>
                     )
@@ -383,17 +424,31 @@ export function Research() {
                 </div>
                 <p className={css.detailDesc}>{sel.desc}</p>
                 <dl className={css.facts}>
-                  <dt>效果</dt><dd>{effectTextOf(sel.effect)}</dd>
-                  <dt>成本</dt><dd>{sel.cost} 研究点</dd>
+                  <dt>效果</dt><dd>{effectTextOf(sel.effect)}{sel.repeat ? ' / 次' : ''}</dd>
+                  <dt>成本</dt>
+                  <dd data-research-detail-cost={selCost}>
+                    {sel.repeat && selState === 'done' ? '已研满' : selCost + ' 研究点'}
+                  </dd>
                   <dt>前置</dt><dd>{selPrev ? selPrev.name : '无 —— 本线的起点'}</dd>
+                  {sel.repeat ? (
+                    <>
+                      <dt>深研</dt>
+                      <dd data-research-detail-rank={selRank}>{selRank}/{selCap} 次</dd>
+                      <dt>累计</dt>
+                      <dd>{selRank ? effectTextOf(effectTimes(sel.effect, selRank)) : '尚未投入'}</dd>
+                    </>
+                  ) : null}
                 </dl>
                 {selState === 'done' ? (
-                  <span className="chip chip--on" data-research-done>已研成</span>
+                  <span className="chip chip--on" data-research-done>
+                    {sel.repeat ? '已研满 ' + selRank + '/' + selCap : '已研成'}
+                  </span>
                 ) : (
                   <button
                     className="btn btn--ghost"
                     style={{ fontSize: 12 }}
                     data-research-invest={sel.id}
+                    data-research-invest-cost={selCost}
                     disabled={selState !== 'ready'}
                     onClick={() => invest(sel)}
                   >

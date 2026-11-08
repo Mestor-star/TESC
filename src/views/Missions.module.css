@@ -53,23 +53,64 @@
 
 .board { display: flex; flex-direction: column; }
 
-/* ---------- 一条任务 = 一行 ----------
-   旧稿是一张厚卡片（左竖带 + 三栏 + 悬停垫片）；这一版收成表格式的列表行：
-   左栏名称 / 一句说明 / 一行 11px 读数，右栏只留动作。行与行之间 1px —— 
-   没有卡片壳，也没有投影。 */
-.row {
+/* ---------- 一屏两栏：左索引 / 右详情 ----------
+   任务列表在左栏自己滚，选中那条的档案在右栏自己滚：页头与页签不参与
+   滚动，整页也不再往下长。手机上（≤860）这条锁高的规则整条作废 ——
+   锁住之后列表与详情互相挤，长内容反而没处放。 */
+:global(.vpage):has(> .wrap) {
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+:global(.vpage):has(> .wrap) > :global(.vhead) { flex: 0 0 auto; margin-bottom: 10px; padding-bottom: 10px; }
+.wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.rail { flex: 0 0 auto; }
+.rail .stamina { margin-bottom: 12px; }
+.rail .shopJump { margin-bottom: 12px; }
+.rail .empty { padding: 14px 0; }
+.split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 20px;
+  grid-template-columns: 360px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.list { min-width: 0; overflow-y: auto; border-right: 1px solid var(--line); }
+.detail { min-width: 0; overflow-y: auto; padding: 2px 0 0 18px; }
+
+/* 右栏：选中任务的档案 —— 抬头一行是类别与状态，下面才是正题。 */
+.detailHead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.detailTitle { margin: 0 0 6px; font-size: 20px; font-weight: 600; line-height: 1.35; letter-spacing: 0.01em; }
+.detailDesc { margin: 0 0 10px; font-size: 12.5px; line-height: 1.8; color: var(--ink-mute); }
+.crewRow {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- 一条任务 = 一行 ----------
+   两行：上面名称与状态，下面只留动作。选中那条左缘压一道 2px --steel，
+   与作战记录的语汇一致 —— 不加底色，也不加卡片壳。 */
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-height: 44px;
-  padding: 4px 6px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
   transition: background var(--t-fast);
 }
 .row:hover { background: var(--bg-2); }
+.rowOn { border-left-color: var(--steel); }
 
-.rowMain { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rowMain { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .kind {
   flex: 0 0 auto;
   padding: 2px 7px;
@@ -94,17 +135,6 @@
   white-space: nowrap;
 }
 .rowState { flex: 0 0 auto; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; white-space: nowrap; }
-.rowDesc {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ink-mute);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .rowMeta {
   flex: 1 1 100%;
   display: flex;
@@ -120,30 +150,21 @@
 .rowNo { letter-spacing: 0.02em; }
 .rewardLine { color: var(--ink-dim); }
 
-.rowMore {
-  grid-column: 1 / -1;
-  display: none;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  padding: 2px 0 6px;
-}
-.rowMore.isOpen { display: flex; }
 .crewTag { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; color: var(--ink-faint); }
 .crewChip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-dim); }
 .crewChip i { font-style: normal; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
 
-.rowSide { justify-self: end; }
-.asideAction { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.rowSide { min-width: 0; }
+.asideAction { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-start; }
 .rowSide :global(.btn) {
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: 28px;
+  padding: 0 10px;
   border: 1px solid var(--line-2);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
   color: var(--ink-dim);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 .rowSide :global(.btn:hover:not(:disabled)) { color: var(--ink); border-color: var(--line-3); background: var(--bg-2); }
 .rowSide :global(.btn--primary) { color: var(--ink); border-color: var(--ink-faint); }
@@ -176,11 +197,20 @@
 .emptyHint { font-size: 11.5px; line-height: 1.7; color: var(--ink-faint); }
 
 @media (max-width: 860px) {
-  .row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  /* 手机档不锁高：两栏改成上下两段，各自按内容长 */
+  :global(.vpage):has(> .wrap) { height: auto; overflow: visible; }
+  .wrap { display: block; }
+  .split { display: block; }
+  .list { overflow: visible; border-right: 0; }
+  .detail {
+    overflow: visible;
+    padding: 14px 0 0;
+    margin-top: 20px;
+    border-top: 1px solid var(--line);
+  }
   .rowMain { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 6px 10px; }
-  .rowDesc { grid-column: 1 / -1; overflow: visible; white-space: normal; }
-  .rowSide { justify-self: start; }
   .asideAction { justify-content: flex-start; }
+  .detailTitle { font-size: 16px; }
 }
 
 /* ============================================================
@@ -529,6 +559,7 @@
    一行一条，按打过的/走过的既有记录摆出来；不放会改状态的按钮。
    左边那 2px 是类别，与作战记录同一条语汇：只做标记，不做卡片。 */
 .donePage { margin-top: 4px; }
+.donePage > .doneHead { flex: 0 0 auto; }
 .doneHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .doneHead b { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; }
 .doneList { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
@@ -537,6 +568,10 @@
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 12px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: var(--cursor-point);
   padding: 11px 10px 11px 12px;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -549,6 +584,8 @@
 .doneRow[data-kind='主线'] { border-left-color: var(--violet); }
 .doneRow[data-kind='支线'] { border-left-color: var(--steel); }
 .doneRow[data-kind='委托'] { border-left-color: var(--jade); }
+/* 选中的那条：左缘换成与任务列表同一道 --steel（类别仍由 .doneKind 那枚字标着） */
+.doneRow.doneRowOn { border-left-color: var(--steel); }
 .doneMain { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .doneTop { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .doneKind {
