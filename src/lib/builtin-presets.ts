@@ -45,8 +45,12 @@ export const BUILTIN_KEY = 'zts-builtin-presets:v1'
  *            反八股从 465 字中文收成一份英文死句清单（同样的禁令，token 更少）；
  *            「模型适配」拆成 DeepSeek / Gemini / Claude / 其他（GLM·Qwen）四条，默认只开 DeepSeek，
  *            用哪家就开哪条 —— 四家的八股不是同一套。
+ *   v7 → v8 = 反八股那份清单补一行中文禁例：结算腔（「这句话稳」「我记下了」「这个账我记住了」
+ *            「认下来」「你自己掂量」）、刻度腔（「比之前的都重」「比刚才稳」「很平」）、
+ *            收口腔（「睡吧，我守着」「你去，我跟」「行，我认」）与替读者说穿心事那一类。
+ *            与 lib/writing-rules.ts 的 receipt / gauge / oath 三条同一份清单，两处必须一起改。
  */
-export const BUILTIN_V = 7
+export const BUILTIN_V = 8
 /**
  * 预算归位那一步的账。**记版本号**：目标值改过两代
  * （1500 → 上限 65536 → 30000），老账本记的是一次已经过时的动作，
