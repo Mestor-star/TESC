@@ -1,122 +1,328 @@
-/* ===== 智库：世界观 / 势力 / 概念 ===== */
-
-.filterRow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.catBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
-  background: var(--bg-2);
-  color: var(--ink-dim);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  cursor: var(--cursor-point);
-  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
-}
-.catBtn small { font-family: var(--font-mono); font-size: 10px; font-weight: 400; color: var(--ink-faint); margin-left: 2px; }
-.catBtn:hover { color: var(--ink); border-color: var(--line-3); }
-/* 选中态：底是 16% 的淡彩，字就不能再是白的（浅底上的白字等于没有）——
-   同一个 --c 收深一档当字色，框仍由 inset 那道描边撑住。 */
-.catBtn.isOn {
-  /* 兜底那一支跟着主调走：没有身份色时吃霓虹青（上一版兜的是粉） */
-  color: color-mix(in srgb, var(--c, var(--steel)) 82%, var(--ink));
-  border-color: var(--c, var(--steel));
-  background: color-mix(in srgb, var(--c, var(--steel)) 16%, transparent);
-  box-shadow: inset 0 0 0 1px var(--c, var(--steel));
-}
-
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
-.card {
-  position: relative;
-  --c: var(--steel);
+/* 智库：页头之后三段（管理器 / 手册 / canon），手册与 canon 共用「左侧目录 + 右侧正文」的骨架。 */
+.secHead {
   display: flex;
-  flex-direction: column;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  border-top: 3px solid var(--c);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--c) 7%, transparent), transparent 40%),
-    var(--bg-1);
-  transition: transform var(--t-mid) var(--ease-out), border-color var(--t-mid), box-shadow var(--t-mid);
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
-.card:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--c) 45%, var(--line-2));
-  box-shadow: var(--shadow-3);
+
+.secHeadFirst {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
-.card::after {
-  content: attr(data-sub);
-  position: absolute;
-  right: 12px; bottom: -6px;
+
+.secKicker {
+  order: -1;
+  width: 100%;
   font-family: var(--font-mono);
-  font-size: 42px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--c) 9%, transparent);
-  pointer-events: none;
-  user-select: none;
+  font-size: 11px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--ink-faint);
 }
-.cardHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.cardTitle { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: 0.01em; }
-.cardSub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); letter-spacing: 0.1em; text-transform: uppercase; }
-/* 来源标：--c 是数据表带来的本色（深浅不可知，没有 -deep 档），当字先掺墨压深 ——
-   45% 那一档对白底最差 4.44（琥珀 5.79 / 薄荷 4.94 / 浅灰紫 5.33），底色只用来认色相。 */
-.cardRef { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: color-mix(in srgb, var(--c) 45%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); border-radius: var(--radius-pill); padding: 2px 7px; background: color-mix(in srgb, var(--c) 8%, transparent); }
-.cardBody { margin: 12px 0 0; font-size: 13px; line-height: 1.85; color: var(--ink-dim); flex: 1; }
-.cardTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-.tag {
+
+.secTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.secNote {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.manualBar {
+  padding: 12px 0;
+}
+
+.rows {
+  border-top: 1px solid var(--line);
+}
+
+.mRow {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  align-items: start;
+  border-bottom: 1px solid var(--line);
+}
+
+.mHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 44px;
+  padding: 12px 12px 11px 0;
+  border-right: 1px solid var(--line);
+  text-align: left;
+}
+
+.mHead svg {
+  margin-left: auto;
+  align-self: center;
+}
+
+.mTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.mSub {
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: color-mix(in srgb, var(--c) 82%, var(--ink));
-  border: 1px dashed color-mix(in srgb, var(--c) 42%, transparent);
-  border-radius: var(--radius-pill);
-  padding: 3px 8px;
-  background: color-mix(in srgb, var(--c) 7%, transparent);
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
 }
-.empty { color: var(--ink-faint); font-size: 13px; padding: 30px 0; line-height: 1.8; }
 
-/* ---------- 观测终端操作手册（智库 · 文本教程） ---------- */
+.mRef {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
 
-/* 「全部展开 / 全部收起」那一条（组件是 components/Fold.tsx 的 FoldAll） */
-.manualBar { margin-bottom: 12px; }
+.mBody {
+  min-width: 0;
+  padding: 12px 0 16px 24px;
+}
 
-/* 一节的栏体（等于 cardHead 之下那整块，折叠时靠这条配对规则整块收起）。
-   手册的卡片是 flex 列，所以这里得自己撑出一格来，否则里面的 .cardBody 拿不到 flex: 1。 */
-.mBody { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.mLead {
+  max-width: 46em;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink);
+}
 
 .mList {
-  margin: 10px 0 0;
-  padding-left: 0;
-  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-}
-.mItem {
-  position: relative;
-  padding-left: 16px;
-  font-size: 12.5px;
-  line-height: 1.75;
-  color: var(--ink-dim);
-}
-.mItem::before {
-  content: '▸';
-  position: absolute;
-  left: 0;
-  color: color-mix(in srgb, var(--amber-deep) 82%, transparent);
-  font-size: 10px;
-  line-height: 1.9;
+  gap: 6px;
+  max-width: 46em;
+  margin: 12px 0 0;
+  padding-left: 18px;
 }
 
-/* ============ 手机档（≤720px）============
-   `.grid` 的 `minmax(330px, 1fr)` 是给桌面那一栏定的 —— 390 屏上正文只有
-   ~362px，`auto-fill` 一格都排不下，卡片会横向溢出去。窄屏直接单栏。 */
-@media (max-width: 720px) {
-  .grid { grid-template-columns: 1fr; }
+.mItem {
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink-dim);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  align-items: start;
+  border-top: 1px solid var(--line);
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+}
+
+.treeGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px 8px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.groupRow:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.groupOn {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.groupLabel {
+  min-width: 0;
+}
+
+.groupNum {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 44px;
+  padding: 9px 12px 9px 14px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.node::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--steel);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.node:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.nodeOn {
+  color: var(--ink);
+}
+
+.nodeOn::before {
+  opacity: 1;
+}
+
+.nodeTitle {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeOn .nodeTitle {
+  font-weight: 600;
+}
+
+.nodeSub {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.article {
+  min-width: 0;
+}
+
+.read {
+  min-width: 0;
+  padding: 20px 0 8px 28px;
+}
+
+.articleHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.articleTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.articleSub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.articleRef {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.articleBody {
+  max-width: 46em;
+  margin: 16px 0 0;
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: var(--ink-dim);
+}
+
+.articleTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  max-width: 46em;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 900px) {
+  .mRow,
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mHead {
+    border-right: 0;
+  }
+
+  .mBody {
+    padding: 0 0 16px;
+  }
+
+  .tree {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .read {
+    padding: 18px 0 8px;
+  }
 }

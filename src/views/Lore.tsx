@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import type { CSSProperties } from 'react'
 import { LORE } from '../data/lore'
 import { MANUAL } from '../data/manual'
 import type { LoreCat } from '../data/types'
@@ -8,23 +7,11 @@ import { LoreManager } from './lorebook/LoreManager'
 
 import css from './Lore.module.css'
 
-const CATS: { key: LoreCat; label: string; color: string }[] = [
-  { key: '世界观', label: '世界观 · 世界运行的规则', color: 'var(--steel-deep)' },
-  { key: '势力', label: '势力 · 组织与机构', color: 'var(--amber-deep)' },
-  { key: '概念', label: '概念 · 术语与法理', color: 'var(--violet-deep)' },
+const CATS: { key: LoreCat; label: string }[] = [
+  { key: '世界观', label: '世界观 · 世界运行的规则' },
+  { key: '势力', label: '势力 · 组织与机构' },
+  { key: '概念', label: '概念 · 术语与法理' },
 ]
-
-const secHead: CSSProperties = {
-  display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap',
-  margin: '6px 0 10px',
-}
-const secTitle: CSSProperties = {
-  margin: 0, fontSize: 17, fontWeight: 900, letterSpacing: '0.03em', color: 'var(--ink)',
-}
-const secKicker: CSSProperties = {
-  fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em', color: 'var(--ink-faint)',
-  textTransform: 'uppercase', marginRight: 'auto',
-}
 
 /** 手册各节的折叠键（= 节的 id），给 FoldAll 用 */
 const MANUAL_KEYS = MANUAL.map((s) => s.id)
@@ -32,8 +19,10 @@ const MANUAL_KEYS = MANUAL.map((s) => s.id)
 export function Lore() {
   const [cat, setCat] = useState<LoreCat>('世界观')
   /* 手册是「按需查阅」的文档，不是要通读的文章：默认折着，先给九行标题，
-     要点哪一节再摊开哪一节。（canon 速览那一栏不折 —— 那本来就是本页要读的东西。） */
+     要点哪一节再摊开哪一节。（canon 那一栏不折 —— 那本来就是本页要读的东西。） */
   const folds = useFolds()
+
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const list = useMemo(() => LORE.filter((l) => l.cat === cat), [cat])
   const counts = useMemo(() => {
@@ -41,7 +30,7 @@ export function Lore() {
     for (const l of LORE) c[l.cat] = (c[l.cat] ?? 0) + 1
     return c
   }, [])
-  const meta = CATS.find((c) => c.key === cat)!
+  const sel = LORE.find((l) => l.id === openId && l.cat === cat) ?? list[0]
 
   return (
     <div className="vpage">
@@ -61,37 +50,32 @@ export function Lore() {
       </div>
 
       {/* 世界书管理器（整页内嵌） */}
-      <div style={{ ...secHead, marginTop: 0 }}>
-        <span style={secKicker}>WORLDINFO / MANAGER</span>
-        <h2 style={secTitle}>世界书管理器</h2>
-        <span className="chip chip--warn" style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>
-          密级 · 委员会内部
-        </span>
+      <div className={`${css.secHead} ${css.secHeadFirst}`}>
+        <span className={css.secKicker}>WORLDINFO / MANAGER</span>
+        <h2 className={css.secTitle}>世界书管理器</h2>
+        <span className="chip">密级 · 委员会内部</span>
       </div>
       <LoreManager embedded />
 
       {/* 观测终端操作手册（文本教程）—— 讲这台终端怎么用，不是设定，故不进世界书 */}
-      <div style={{ ...secHead, marginTop: 26, paddingTop: 18, borderTop: '1px dashed var(--line-2)' }}>
-        <span style={secKicker}>MANUAL / OPERATION</span>
-        <h2 style={secTitle}>观测终端操作手册</h2>
-        <span className="chip chip--warn" style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>
-          共 {MANUAL.length} 节 · 可照着做
-        </span>
+      <div className={css.secHead}>
+        <span className={css.secKicker}>MANUAL / OPERATION</span>
+        <h2 className={css.secTitle}>观测终端操作手册</h2>
+        <span className="chip">共 {MANUAL.length} 节 · 可照着做</span>
       </div>
       <FoldAll folds={folds} keys={MANUAL_KEYS} label={`${MANUAL.length} 节`}
         className={css.manualBar}
         hint={`${MANUAL.length} 节默认都折着：先看标题，点哪一节的抬头就摊开哪一节。`} />
-      <div className={css.grid} data-manual>
+      <div className={css.rows} data-manual>
         {MANUAL.map((s) => (
-          <article key={s.id} className={css.card} data-sub={s.no} data-manual-section={s.id}
-            style={{ '--c': 'var(--amber)' } as CSSProperties}>
-            <FoldHead k={s.id} open={folds.isOpen(s.id)} folds={folds} className={css.cardHead} plain>
-              <h3 className={css.cardTitle}>{s.title}</h3>
-              <span className={css.cardSub}>{s.no}</span>
-              <span className={css.cardRef}>{s.at}</span>
+          <article key={s.id} className={css.mRow} data-sub={s.no} data-manual-section={s.id}>
+            <FoldHead k={s.id} open={folds.isOpen(s.id)} folds={folds} className={css.mHead} plain>
+              <h3 className={css.mTitle}>{s.title}</h3>
+              <span className={css.mSub}>{s.no}</span>
+              <span className={css.mRef}>{s.at}</span>
             </FoldHead>
             <div className={css.mBody} data-fold-body>
-              <p className={css.cardBody}><b>{s.lead}</b></p>
+              <p className={css.mLead}><b>{s.lead}</b></p>
               <ol className={css.mList}>
                 {s.items.map((t) => (
                   <li key={t} className={css.mItem}>{t}</li>
@@ -103,49 +87,57 @@ export function Lore() {
       </div>
 
       {/* 内置 canon 速览 */}
-      <div style={{ ...secHead, marginTop: 26, paddingTop: 18, borderTop: '1px dashed var(--line-2)' }}>
-        <span style={secKicker}>CANON / OVERVIEW</span>
-        <h2 style={secTitle}>内置 canon 词条 · 速览</h2>
-        <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
-          只读陈列 · 内容编辑请在上方世界书管理器
-        </span>
+      <div className={css.secHead}>
+        <span className={css.secKicker}>CANON / OVERVIEW</span>
+        <h2 className={css.secTitle}>内置 canon 词条 · 速览</h2>
+        <span className={css.secNote}>只读陈列 · 内容编辑请在上方世界书管理器</span>
       </div>
 
-      <div className={css.filterRow}>
-        {CATS.map((c) => (
-          <button
-            key={c.key}
-            className={`${css.catBtn} ${cat === c.key ? css.isOn : ''}`}
-            style={{ '--c': c.color } as CSSProperties}
-            onClick={() => setCat(c.key)}
-          >
-            {c.key}
-            <small>{counts[c.key] ?? 0} · {c.label}</small>
-          </button>
-        ))}
-      </div>
+      <div className={css.shell}>
+        <nav className={css.tree}>
+          {CATS.map((c) => (
+            <div key={c.key} className={css.treeGroup}>
+              <button
+                className={`${css.groupRow} ${cat === c.key ? css.groupOn : ''}`}
+                onClick={() => { setCat(c.key); setOpenId(null) }}
+              >
+                <span className={css.groupLabel}>{c.label}</span>
+                <span className={css.groupNum}>{counts[c.key] ?? 0}</span>
+              </button>
+              {cat === c.key
+                ? list.map((l) => (
+                    <button
+                      key={l.id}
+                      className={`${css.node} ${sel?.id === l.id ? css.nodeOn : ''}`}
+                      data-sub={l.sub}
+                      onClick={() => setOpenId(l.id)}
+                    >
+                      <span className={css.nodeTitle}>{l.title}</span>
+                      <span className={css.nodeSub}>{l.sub}</span>
+                    </button>
+                  ))
+                : null}
+            </div>
+          ))}
+        </nav>
 
-      <div className={css.grid}>
-        {list.map((l) => (
-          <article
-            key={l.id}
-            className={css.card}
-            data-sub={l.sub}
-            style={{ '--c': meta.color } as CSSProperties}
-          >
-            <div className={css.cardHead}>
-              <h3 className={css.cardTitle}>{l.title}</h3>
-              <span className={css.cardSub}>{l.sub}</span>
-              {l.ref ? <span className={css.cardRef}>出处 {l.ref}</span> : null}
-            </div>
-            <p className={css.cardBody}>{l.body}</p>
-            <div className={css.cardTags}>
-              {l.tags.map((t) => (
-                <span key={t} className={css.tag}>{t}</span>
-              ))}
-            </div>
-          </article>
-        ))}
+        <div className={css.read}>
+          {sel ? (
+            <article className={css.article}>
+              <div className={css.articleHead}>
+                <h3 className={css.articleTitle}>{sel.title}</h3>
+                <span className={css.articleSub}>{sel.sub}</span>
+                {sel.ref ? <span className={css.articleRef}>出处 {sel.ref}</span> : null}
+              </div>
+              <p className={css.articleBody}>{sel.body}</p>
+              <div className={css.articleTags}>
+                {sel.tags.map((t) => (
+                  <span key={t} className={css.tag}>{t}</span>
+                ))}
+              </div>
+            </article>
+          ) : null}
+        </div>
       </div>
     </div>
   )

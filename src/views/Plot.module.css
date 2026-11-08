@@ -19,13 +19,11 @@
 .bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 10px 16px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-2);
+  padding: 12px 0 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
 }
 .barMain {
   display: flex;
@@ -34,13 +32,24 @@
   gap: 8px 10px;
   min-width: 0;
 }
-.barMain b { font-size: 15px; line-height: 1.4; }
+.barMain b { font-size: 19px; font-weight: 600; line-height: 1.35; }
 .barRight {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
   margin-left: auto;
 }
+/* 小件不折行；世界线那句是正文，允许折行 —— 否则窄屏上整条撑出视口 */
+.barRight .btn,
+.barRight .chip,
+.barRight .seg { white-space: nowrap; }
+/* 顶部工具条压成一行 32px 的小件：七个方块并排时不该有按钮那么重的体量 */
+.barRight .btn { height: 32px; padding: 0 11px; font-size: 11.5px; letter-spacing: 0.02em; }
+.barRight .chip { font-size: 11px; }
+.barRight .seg { height: 32px; }
+.barRight .segBtn { padding: 0 12px; font-size: 11.5px; }
 
 /* —— 内嵌预设条：套用 / 另存 / 导入「方案」（与设置页共享本机 zts-schemes:v1） —— */
 .presetBar {
@@ -50,8 +59,7 @@
   gap: 8px;
   padding: 8px 12px;
   margin-bottom: 16px;
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
   background: var(--bg-1);
 }
 .presetBar .field { flex: 0 1 auto; min-width: 0; }
@@ -86,6 +94,7 @@
   overflow: hidden;
 }
 .segBtn {
+  white-space: nowrap;
   border: none;
   background: transparent;
   color: var(--ink-mute);
@@ -97,9 +106,9 @@
 }
 .segBtn:hover { color: var(--ink); }
 .segBtn.isOn {
-  background: var(--amber);
-  color: var(--ink);
-  font-weight: 700;
+  background: var(--ink);
+  color: var(--bg-1);
+  font-weight: 600;
 }
 
 /* —— 在线会话体 —— */
@@ -151,8 +160,7 @@
   min-height: 120px;
 }
 .emptyHint {
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius);
+  border: 1px solid var(--line);
   background: var(--bg-1);
   padding: 22px 18px;
   display: flex;
@@ -180,7 +188,7 @@
   flex-wrap: wrap;
   padding: 4px 0 2px;
   margin-top: 4px;
-  border-top: 1px dashed var(--line-2);
+  border-top: 1px solid var(--line);
   letter-spacing: 0.04em;
 }
 .pastHead b { font-size: 13px; color: var(--ink); }
@@ -213,10 +221,8 @@
 .pastCount { margin-left: auto; letter-spacing: 0.08em; }
 
 .narr {
-  border-left: 3px solid var(--amber);
-  background: var(--bg-2);
-  padding: 12px 15px;
-  border-radius: var(--radius);
+  border-left: 2px solid var(--amber);
+  padding: 2px 0 2px 15px;
 }
 
 .narrMeta, .userMeta {
@@ -230,14 +236,12 @@
 /* —— 开场白 · 原文：原文注入的事件开头（无 AI 参与），与导演叙述稍作区分 —— */
 .open {
   border-left-color: var(--steel);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--steel) 7%, transparent), transparent 55%), var(--bg-2);
 }
 .open .narrMeta b { color: var(--steel-deep); }
 /* 交战成文：打完之后回填的那一段正文。与「导演叙述」同一栏，
    只是换个边色 —— 一眼看回过去，知道这里是哪一仗打完了。 */
 .fight {
   border-left-color: var(--red);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--red) 7%, transparent), transparent 55%), var(--bg-2);
 }
 .fight .narrMeta b { color: var(--red-deep); }
 /* 旁白压暗一档、台词留亮（见 components/Linkified 的 .q）：
@@ -252,10 +256,8 @@
   word-break: break-word;
 }
 .user {
-  border-right: 3px solid var(--steel);
-  background: var(--bg-2);
-  padding: 10px 15px;
-  border-radius: var(--radius);
+  border-right: 2px solid var(--steel);
+  padding: 2px 15px 2px 0;
 }
 .userText {
   margin-top: 6px;
@@ -316,9 +318,8 @@
 /* 无名台词框：与台词框同一套版式，但没有立绘位与名牌（说话人未写明，不猜）。
    只把底色压一档、边线换成更淡的一档，与「有主的台词」区分开。 */
 .quoteFrame {
-  border-style: dashed;
   border-color: var(--line-2);
-  background: var(--bg-2);
+  background: var(--bg-1);
 }
 .quoteFrame .bubble {
   padding-left: 18px;
@@ -405,10 +406,8 @@
   font-size: 12px;
   color: var(--ink-mute);
   /* 「指令已落地」是提醒，不是危险 —— 与收束栏同一档琥珀 */
-  border-left: 3px solid var(--amber);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--amber) 7%, var(--bg-1));
-  padding: 8px 12px;
+  border-left: 2px solid var(--amber);
+  padding: 8px 0 8px 12px;
   margin-top: 2px;
 }
 .dirNotice .linkGo { white-space: nowrap; }
@@ -449,8 +448,7 @@
 /* —— AI 起草：候选行动 chips + 失败提示（输入框上方） —— */
 .draftSugg {
   margin-bottom: 10px;
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
   background: var(--bg-1);
   padding: 10px 12px;
 }
@@ -496,10 +494,8 @@
   gap: 12px;
 }
 .offNote {
-  border-left: 3px solid var(--steel);
-  border-radius: var(--radius);
-  background: var(--bg-2);
-  padding: 9px 13px;
+  border-left: 2px solid var(--steel);
+  padding: 2px 0 2px 13px;
   font-size: 12.5px;
   line-height: 1.8;
   color: var(--ink-mute);
@@ -507,8 +503,6 @@
 .offNote b { color: var(--steel-deep); }
 .offSummary {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-2);
   padding: 11px 14px;
 }
 .offSummary > span { display: block; margin-bottom: 6px; }
@@ -647,8 +641,7 @@
 /* —— 推演（可折叠） —— */
 .thinkFold {
   margin-top: 10px;
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
   background: var(--bg-1);
   overflow: hidden;
 }
@@ -673,7 +666,7 @@
 .thinkHead:hover b { color: var(--ink); }
 .thinkBody {
   padding: 9px 12px 11px;
-  border-top: 1px dashed var(--line-2);
+  border-top: 1px solid var(--line);
   font-size: 12px;
   line-height: 1.85;
   color: var(--ink-faint);
@@ -836,7 +829,7 @@
   line-height: 1.75;
   color: var(--ink-mute);
 }
-.voiceName { font-weight: 700; }
+.voiceName { font-weight: 600; }
 .voiceText { min-width: 0; }
 .voiceKind {
   flex: 0 0 auto;

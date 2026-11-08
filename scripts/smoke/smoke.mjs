@@ -1128,7 +1128,7 @@ try {
   // Settings 视图挂载冒烟：防「首帧 effect 引用后置 const(TDZ)」类整页黑屏回归（曾致设置黑屏）
   await goto('终端设置')
   await sleep(900)
-  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('世界书数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,hasFetch:v?v.innerText.includes('拉取模型'):false,hasSt:v?v.innerText.includes('导入 ST 世界书'):false,hasPreset:v?v.innerText.includes('导入 ChatPreset'):false,hasBudget:v?v.innerText.includes('输出预算 MAX TOKENS'):false,len:v?v.innerText.length:0}})()`)
+  const setProbe = await ev(`(()=>{const v=document.querySelector('.vpage');return {hasVpage:!!v,hasPanel:v?v.innerText.includes('世界书数据管理'):false,hasHead:v?v.innerText.includes('终端设置'):false,hasFetch:v?v.innerText.includes('拉取模型'):false,hasSt:v?v.innerText.includes('导入 ST 世界书'):false,hasPreset:v?v.innerText.includes('导入 ChatPreset'):false,hasBudget:v?(v.innerText.includes('输出预算')&&v.innerText.includes('MAX TOKENS')):false,len:v?v.innerText.length:0}})()`)
   ok('F1 设置视图挂载无黑屏（世界书数据管理面板可见）', setProbe.hasVpage === true && setProbe.hasPanel === true && setProbe.hasHead === true && setProbe.len > 400, JSON.stringify(setProbe))
   ok('F2 P3 增强就位：拉取模型 / 导入 ST 世界书 / 导入 ChatPreset', setProbe.hasFetch === true && setProbe.hasSt === true && setProbe.hasPreset === true, JSON.stringify(setProbe))
   ok('F2b P7 输出预算可配：设置卡片含 MAX TOKENS 输入', setProbe.hasBudget === true, JSON.stringify(setProbe))
@@ -1347,7 +1347,7 @@ try {
       right:top?Math.round(top.getBoundingClientRect().right):null,cardRight:Math.round(c.getBoundingClientRect().right)}})()`)
   ok('G0d 战术执行：卡右上角「能耗 / 冷却」+ 卡底分割线后的加粗附加效果',
     !!g0d && !!g0d.rate && /能耗:\s*\d+ \/ 冷却:\s*\d+/.test(g0d.rate) && !!g0d.extra
-    && Number(g0d.bold) >= 700 && parseFloat(g0d.border) >= 1, JSON.stringify(g0d))
+    && Number(g0d.bold) >= 600 && parseFloat(g0d.border) >= 1, JSON.stringify(g0d))
   await ev(`(()=>{document.querySelector('[data-char-tab="colors"]').click();return true})()`)
   await sleep(250)
   const g0e = await ev(`(()=>{const rows=[...document.querySelectorAll('[data-char-color]')];

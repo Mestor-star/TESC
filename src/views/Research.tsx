@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent } from 'react'
-import { Check, Lock, Storefront, X } from '@phosphor-icons/react'
+import { Storefront, X } from '@phosphor-icons/react'
 
 import { RESEARCH, RESEARCH_LINES } from '../data/research'
 import type { ResearchEffect, ResearchLineId, ResearchNode } from '../data/research'
@@ -357,13 +357,10 @@ export function Research() {
                         title={node.name + ' · 第 ' + node.tier + ' 层 · ' + node.cost + ' 点'}
                         onClick={() => setSelId(node.id)}
                       >
-                        <span className={css.dot} aria-hidden>
-                          {st === 'done' ? <Check size={9} weight="bold" /> : null}
-                          {st === 'locked' ? <Lock size={8} weight="bold" /> : null}
-                        </span>
+                        <span className={css.dot} aria-hidden />
                         <span className={css.nodeBody}>
                           <b className={css.nodeName}>{node.name}</b>
-                          <i className={css.nodeCost}>{node.cost} 点</i>
+                          <i className={css.nodeState}>{STATE_LABEL[st]} · {node.cost} 点</i>
                         </span>
                       </button>
                     )

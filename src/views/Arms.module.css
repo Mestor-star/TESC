@@ -1,263 +1,396 @@
-/* ===== 武装图鉴（弹痕 / 斩击 / 片羽） ===== */
-
-.metrics { display: flex; flex-wrap: wrap; gap: 10px; }
-.metric {
-  min-width: 128px;
-  padding: 10px 16px;
-  text-align: left;
-  cursor: var(--cursor-point);
-  border: 1px solid var(--line);
-  background: var(--bg-1);
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease-out);
-}
-.metric:hover { border-color: var(--line-3); transform: translateY(-1px); }
-.metric small { display: block; color: var(--ink-mute); font-size: 11px; letter-spacing: 0.14em; }
-.metric b { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 20px; font-weight: 600; line-height: 1; color: var(--ink-dim); transition: color var(--t-fast); }
-.metric.isOn { border-color: var(--steel); background: color-mix(in srgb, var(--steel) 10%, transparent); }
-.metric.isOn b { color: var(--steel-deep); }
-
-.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 6px; }
-.kindChip {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.1em;
-  padding: 6px 16px;
-  cursor: var(--cursor-point);
-  border: 1px solid var(--line-2);
-  background: var(--bg-2);
-  border-radius: var(--radius-pill);
-  color: var(--ink-dim);
-  transition: color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
-}
-.kindChip:hover { color: var(--ink); }
-
-/* ---- 系谱传统卡 ---- */
-.trad {
-  position: relative;
-  margin-top: 16px;
+/* 武装图鉴：左侧系谱索引 + 右侧正文。索引行与条目行共用 44px / 1px 分隔线节奏。 */
+.shell {
   display: grid;
-  grid-template-columns: 148px 1fr auto;
-  gap: 20px;
-  align-items: stretch;
-  padding: 20px 22px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  border-left: 4px solid var(--c);
-  border-radius: var(--radius);
-  background: var(--bg-1);
+  grid-template-columns: 196px minmax(0, 1fr);
+  align-items: start;
+  border-top: 1px solid var(--line);
 }
-.tradMark {
+
+.index {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 8px;
-  padding-right: 20px;
   border-right: 1px solid var(--line);
 }
-.tradKind {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  /* 本色当底、字掺墨：--c 是数据表本色（浅到 #cfcfef 那种都有），原色当字只有 1.42。
-     28px/600 算大字，掺到 55% 对白底最差 3.68（浅灰紫 4.10、琥珀 4.47）；压到 --bg-2 也有 3.31。 */
-  color: color-mix(in srgb, var(--c) 55%, var(--ink));
-  /* 大字那一档的装饰影：走全站唯一的错位重影（原来是 `0 6px 18px` 的柔光） */
-}
-.tradMark small {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: var(--ink-mute);
-}
-.tradBody { min-width: 0; }
-.tradSchool {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  color: var(--ink);
-  margin-bottom: 6px;
-}
-.tradBody p { margin: 5px 0 0; font-size: 13px; line-height: 1.75; color: var(--ink-dim); }
-.tradQuote {
-  align-self: flex-end;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  /* 12px 要正文线：再往下掺（35%）才扛得住 .85 的透明度 —— 合成后最差 4.77 */
-  color: color-mix(in srgb, var(--c) 35%, var(--ink));
-  opacity: 0.85;
-  white-space: nowrap;
-  writing-mode: vertical-rl;
+
+.idxRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
 }
 
-/* ---- 分组头 ---- */
+.idxRow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--steel);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.idxRow:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.idxOn {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.idxOn::before {
+  opacity: 1;
+}
+
+.idxNum {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.idxOn .idxNum {
+  color: var(--ink-mute);
+}
+
+.body {
+  min-width: 0;
+  padding-left: 28px;
+}
+
+.group {
+  margin-top: 26px;
+}
+
+.tradHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+.tradKind {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tradSub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tradSchool {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.tradText {
+  margin: 8px 0 0;
+  max-width: 54em;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-dim);
+}
+
+.tradQuote {
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
 .groupHead {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 26px 0 10px;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 44px;
+  margin-top: 18px;
+  border-bottom: 1px solid var(--line);
 }
-.groupMark { width: 4px; height: 18px; border-radius: var(--radius-pill); }
-.groupTitle { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
-/* 分组计数是要读的内容，不是角标 —— 走 mute（faint 只留占位符与纯装饰） */
-.groupCount { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
 
-/* ---- 条目 ---- */
-.list { display: flex; flex-direction: column; gap: 12px; }
-.item {
-  --c: var(--steel);
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--c);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-  transition: border-color var(--t-fast), transform var(--t-mid) var(--ease-out), background var(--t-fast);
-}
-.item:hover { border-color: var(--line-3); background: var(--bg-2); transform: translateX(2px); }
-.itemRow {
-  display: grid;
-  grid-template-columns: 96px 1fr auto;
-  gap: 16px;
-  align-items: center;
-  padding: 14px 18px;
-  cursor: var(--cursor-point);
-  text-align: left;
-  width: 100%;
-  background: none;
-  border: none;
-  color: inherit;
-}
-.itemNo { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-/* 编号同 .tradKind：28px 大字，掺 55% 墨（悬浮到 --bg-2 上仍有 3.31） */
-.itemNo .no { font-family: var(--font-mono); font-size: 28px; font-weight: 600; line-height: 1; color: color-mix(in srgb, var(--c) 55%, var(--ink)); }
-.itemNo small { color: var(--ink-mute); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; }
-.itemMain { min-width: 0; }
-.itemMain b { font-size: 16px; font-weight: 600; }
-.itemMain .alias { font-family: var(--font-mono); color: var(--ink-mute); font-size: 11px; letter-spacing: 0.14em; margin-left: 8px; }
-.itemMain p {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--ink-dim);
-  line-height: 1.65;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.itemMain p.open { -webkit-line-clamp: unset; }
-.itemRight { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-.holderChip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+.groupTitle {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
 }
-.holderChip i {
-  font-style: normal;
+
+.groupCount {
+  margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
   color: var(--ink-faint);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
-  padding: 2px 6px;
 }
-.chev { font-family: var(--font-mono); color: var(--c); font-size: 12px; transition: transform var(--t-mid) var(--ease-out); }
-.itemRow.open .chev { transform: rotate(90deg); }
 
-/* ---- 未点亮条目（门禁灰卡：？？？/首见或被告知后解锁） ---- */
-.itemLocked {
-  display: block;
-  width: 100%;
-  border-style: dashed;
-  border-color: var(--line-2);
-  border-left: 3px dashed var(--line-3);
-  background: var(--bg-1);
-  color: var(--ink-faint);
+.list {
+  display: flex;
+  flex-direction: column;
 }
-.itemLocked:hover { border-color: var(--line-3); background: var(--bg-2); }
-.lockRow {
+
+.item {
+  border-bottom: 1px solid var(--line);
+}
+
+.row {
+  position: relative;
   display: grid;
-  grid-template-columns: 96px 1fr auto;
-  gap: 16px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 14px 18px;
+  gap: 14px;
   width: 100%;
-}
-.lockBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  color: var(--ink-faint);
-  opacity: 0.7;
-}
-.lockMain { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.lockMain b { font-size: 20px; font-weight: 600; letter-spacing: 0.12em; color: var(--ink-faint); }
-.lockMain i { font-style: normal; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint); }
-.lockCode {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: var(--ink-faint);
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius-pill);
-  padding: 3px 8px;
-}
-@media (max-width: 900px) {
-  .lockRow { grid-template-columns: 1fr; gap: 8px; }
-  .lockBadge { justify-content: flex-start; }
+  min-height: 44px;
+  padding: 10px 4px 10px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
 }
 
-.expand { display: none; padding: 0 18px 16px; }
-.expand.open { display: block; }
-.expBody { padding: 4px 18px 16px 18px; }
-.expGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
-.expLabel {
+.row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--steel);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.row:hover {
+  background: var(--bg-2);
+}
+
+.rowOn::before {
+  opacity: 1;
+}
+
+.no {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowOn .name {
+  font-weight: 600;
+}
+
+.alias {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.power {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.rowOn .power {
+  -webkit-line-clamp: 2;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+
+.kindTag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.holder {
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+
+.holder i {
+  margin-right: 5px;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.lockRow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--ink-mute);
-  margin: 12px 0 6px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-height: 44px;
+  padding: 0 4px 0 0;
 }
-.expLabel::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-.expText { font-size: 13px; line-height: 1.85; color: var(--ink-dim); }
-.holderName { font-size: 14px; color: var(--ink); }
-.holderNote { display: block; margin-top: 3px; font-size: 12px; color: var(--ink-mute); }
-.expFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
-.schoolChip {
+
+.lockMark {
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.lockHint {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.lockCode {
+  margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.05em;
-  color: var(--steel-deep);
-  border: 1px solid color-mix(in srgb, var(--steel) 40%, transparent);
-  background: color-mix(in srgb, var(--steel) 8%, transparent);
-  border-radius: var(--radius-pill);
-  padding: 3px 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
 }
-.refChip { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); }
+
+.detail {
+  padding: 2px 4px 14px 48px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: start;
+  min-height: 32px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+
+.detail .kv:first-child {
+  border-top: 0;
+}
+
+.k {
+  padding-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.v {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink-dim);
+  overflow-wrap: anywhere;
+}
+
+.v b {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.holderNote {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-mute);
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
 
 @media (max-width: 900px) {
-  .trad { grid-template-columns: 1fr; gap: 12px; }
-  .tradMark { flex-direction: row; align-items: baseline; border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
-  .tradQuote { writing-mode: horizontal-tb; align-self: flex-start; }
-  .itemRow { grid-template-columns: 1fr; gap: 8px; }
-  .itemRight { flex-direction: row; align-items: center; justify-content: space-between; }
-  .expGrid { grid-template-columns: 1fr; }
+  .row {
+    grid-template-columns: 28px minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .meta {
+    grid-column: 2;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .detail {
+    padding-left: 42px;
+  }
+
+  .kv {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
 }
 
-/* 手机档 · 粗指针：上面那一排系谱筛选（桌面实测 31px 高）。
-   `.kindChip` **不是**全站的 `.chip` —— 它自己长了一套 padding 与字号，
-   tokens.css 那条 `button.chip` 够不着，所以尺寸归这里管（34 是 tokens.css
-   里定的次级控件那一档，两边同一个数）。 */
-@media (pointer: coarse) {
-  .kindChip { min-height: 34px; }
+@media (max-width: 720px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .index {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .body {
+    padding-left: 0;
+  }
+
+  .detail {
+    padding-left: 0;
+  }
 }

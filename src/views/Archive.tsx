@@ -236,7 +236,7 @@ function DossierArt({ focus, onView }: { focus: Row; onView: () => void }) {
       />
       <span className={css.artFade} aria-hidden />
       <div className={css.artCap}>
-        <span className="vhead__kicker" style={{ fontSize: 9 }}>PORTRAIT / 全身</span>
+        <span className="vhead__kicker">PORTRAIT / 全身</span>
         <span className="tiny muted">
           {url ? '立绘整身。点「查看全图」放大到整屏。' : '尚无立绘素材，此位为纹章占位。'}
         </span>
@@ -318,8 +318,6 @@ function Meters({ row }: { row: Row }) {
         // '∞' 那一侧单独用条纹：「读不出数」与「数很大」不是一回事
         const inf = v === '∞'
         const limInf = lim === '∞'
-        const stripe = (c: string) => `repeating-linear-gradient(-45deg, ${c} 0 5px, transparent 5px 10px)`
-        const fillBg = inf ? stripe(row.hue) : `linear-gradient(90deg, ${row.hue}66, ${row.hue})`
         return (
           <div key={k} className={css.stat}>
             <small>{k}</small>
@@ -333,12 +331,12 @@ function Meters({ row }: { row: Row }) {
               {lim !== null && limW > vW ? (
                 <div
                   className={`meter__fill ${limInf ? css.infFill : css.limitFill}`}
-                  style={{ width: `${limW}%`, background: limInf ? stripe('var(--red)') : undefined }}
+                  style={{ width: `${limW}%` }}
                 />
               ) : null}
               <div
                 className={`meter__fill ${inf ? css.infFill : ''}`}
-                style={{ width: `${vW}%`, background: fillBg }}
+                style={{ width: `${vW}%`, background: inf ? undefined : row.hue }}
               />
             </div>
             <span
@@ -498,7 +496,7 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
         <CgSlot cgId={`cg-intim-${charId}`} dir={intimArtDir(charId)} fill fit="contain" />
         <span className={css.artFade} aria-hidden />
         <div className={css.artCap}>
-          <span className="vhead__kicker" style={{ fontSize: 9 }}>PRIVATE DOSSIER / 立绘</span>
+          <span className="vhead__kicker">PRIVATE DOSSIER / 立绘</span>
           <span className="tiny muted">
             私密档案立绘。丢一张 <code>public/cg/{intimArtDir(charId) ? `${intimArtDir(charId)}/` : ''}cg-intim-{charId}.webp</code> 进来即点亮。
           </span>
@@ -530,7 +528,7 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
               <div className="meter meter--thick">
                 <div
                   className="meter__fill"
-                  style={{ width: `${prof.lewd}%`, background: 'linear-gradient(90deg, var(--rose-deep), var(--rose))' }}
+                  style={{ width: `${prof.lewd}%`, background: 'var(--rose)' }}
                 />
               </div>
               <b className="num">{prof.lewd}</b>
@@ -591,7 +589,7 @@ function IntimateBack({ charId, hue, name, onBack }: { charId: string; hue: stri
                           <div className="meter">
                             <div
                               className="meter__fill"
-                              style={{ width: `${p.wet}%`, background: 'linear-gradient(90deg, color-mix(in srgb, var(--steel) 30%, transparent), var(--steel))' }}
+                              style={{ width: `${p.wet}%`, background: 'var(--steel)' }}
                             />
                           </div>
                           <b className="num">{p.wet}</b>
@@ -1175,8 +1173,8 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
         <div className={css.axisGrid}>
           {AXIS_ORDER.map((k) => (
             <div key={k} className={`tag ${css.axisTag}`}>
-              <b style={{ color: 'var(--ink)' }}>{k}</b>
-              <span style={{ display: 'block', marginTop: 2, fontSize: 10.5 }}>{STAT_HINT[k]}</span>
+              <b>{k}</b>
+              <span>{STAT_HINT[k]}</span>
             </div>
           ))}
         </div>
@@ -1251,7 +1249,7 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
                 />
                 <span className={css.opArtFade} aria-hidden />
                 <div className={css.opArtCap}>
-                  <span className="vhead__kicker" style={{ fontSize: 9 }}>PORTRAIT / 全身</span>
+                  <span className="vhead__kicker">PORTRAIT / 全身</span>
                   <button className="btn btn--ghost" style={{ fontSize: 12 }} data-op-portrait-view onClick={() => setViewer(opTarget)}>
                     查看全图
                   </button>
@@ -1341,11 +1339,48 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
           </section>
         ) : null}
 
-        {/* 全量档案 · 按所属归组 */}
+        {/* 全量档案 · 左索引 + 右正文 */}
+        <div className={css.shell}>
+          <aside className={css.index} aria-label="档案索引">
+            {ROSTER_GROUPS.map((g) => {
+              const members = rows.filter((r) => r.groupKey === g.key)
+              return (
+                <div key={g.key} className={css.idxGroup}>
+                  <div className={css.idxGroupTitle}>
+                    {g.label}
+                    <i>{members.length}</i>
+                  </div>
+                  {members.map((r) => {
+                    const met = isMet(r.id)
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className={met ? css.idxRow : `${css.idxRow} ${css.idxLocked}`}
+                        onClick={() => {
+                          if (!met) {
+                            const el = rootRef.current?.querySelector(`[data-archive-card="${r.id}"]`) as HTMLElement | null
+                            el?.scrollIntoView({ block: 'center' })
+                            return
+                          }
+                          openFromId(r.id)
+                        }}
+                      >
+                        <b>{met ? r.name : '？？？'}</b>
+                        <span>{met && r.rank ? r.rank : ''}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </aside>
+
+          <div className={css.body}>
         {ROSTER_GROUPS.map((g) => {
           const members = rows.filter((r) => r.groupKey === g.key)
           return (
-            <section key={g.key} className={css.group} style={{ '--ga': groupAccent(g.key) } as CSSProperties}>
+            <section key={g.key} className={css.group}>
               <header className={css.groupBand}>
                 <div className={css.groupTitleBox}>
                   <h2 className={css.groupTitle}>
@@ -1424,7 +1459,7 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
                         </div>
 
                         <div className={css.bondRow}>
-                          <span className={css.bondName} style={{ color: inkOf(r.hue), borderColor: `${r.hue}88`, background: `${r.hue}1e` }}>
+                          <span className={css.bondName} style={{ color: inkOf(r.hue) }}>
                             当前羁绊 {bondName(bond, { gender: r.gender })} · {bond}
                           </span>
                         </div>
@@ -1441,6 +1476,8 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
             </section>
           )
         })}
+          </div>
+        </div>
       </div>
 
       {createPortal(
@@ -1538,7 +1575,7 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
                     「常态顶格 200 / 极限 ∞」这类轴（恋兔光的破坏力、露娜的反现实亲和）
                     画着红条纹却没有任何说明。 */}
                 {focus.axis.includes('∞') || focus.axisLimit.includes('∞') ? (
-                  <div className="tiny muted" style={{ marginTop: 8 }}>带条纹的『∞』读数无法测量——已超出委员会可评定的量程。</div>
+                  <div className="tiny muted" style={{ marginTop: 8 }}>『∞』读数无法测量——已超出委员会可评定的量程。</div>
                 ) : null}
                 <ResearchNote />
               </div>
@@ -1564,11 +1601,11 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
                   <div className="meter meter--thick">
                     <div
                       className="meter__fill"
-                      style={{ width: `${bondNow(focus.id)}%`, background: `linear-gradient(90deg, ${focus.hue}66, ${focus.hue})` }}
+                      style={{ width: `${bondNow(focus.id)}%`, background: focus.hue }}
                     />
                   </div>
                   <div>
-                    <span className={css.bondName} style={{ color: inkOf(focus.hue), borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }}>
+                    <span className={css.bondName} style={{ color: inkOf(focus.hue) }}>
                       {bondNow(focus.id)} · {bondName(bondNow(focus.id), { gender: focus.gender })}
                     </span>
                     {/* 关系档位与羁绊并列摆在这儿 —— 但它们是两回事：上面那条是读数
@@ -1576,9 +1613,7 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
                         （见 data/rel.ts）。摆在一起正是为了让两者的差别看得见。 */}
                     <span
                       className={css.relBadge}
-                      style={focusRel
-                        ? { color: inkOf(focus.hue), borderColor: `${focus.hue}88`, background: `${focus.hue}1e` }
-                        : undefined}
+                      style={focusRel ? { color: inkOf(focus.hue) } : undefined}
                       data-archive-rel={focusRel?.id ?? ''}
                       title={REL_UNSET}
                     >
@@ -1592,7 +1627,7 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
                   const c = confirmOf(focus.id, cur)
                   if (!c || bondNow(focus.id) < 100) return null
                   return (
-                    <div className={css.bondConfirm} data-bond-confirm={focus.id} style={{ borderColor: `${focus.hue}55` }}>
+                    <div className={css.bondConfirm} data-bond-confirm={focus.id}>
                       <b style={{ color: inkOf(focus.hue) }}>{c.title}</b>
                       <p>{c.body}</p>
                     </div>
@@ -1641,11 +1676,3 @@ export function Archive({ onShowNew }: { onShowNew?: () => void } = {}) {
   )
 }
 
-function groupAccent(key: string): string {
-  switch (key) {
-    case 'ao': return '#3fd3bf'
-    case 'kaus': return '#ff5d73'
-    case 'corp': return '#ffb454'
-    default: return '#8f9cb8'
-  }
-}

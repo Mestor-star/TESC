@@ -131,9 +131,8 @@ export function Memory() {
       <span className="panel__title">
         <i className={css.secIc}>{SEC_ICON[s]}</i>
         {s}
-        <span className="slash" />
       </span>
-      <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>{SEC_NOTE[s]}</span>
+      <span className={css.headNote}>{SEC_NOTE[s]}</span>
       <span className={css.grow} />
       {extra}
       <span className={`chip ${n > 0 ? 'chip--on' : 'chip--off'}`} data-mem-count={s}>{n}</span>
@@ -247,21 +246,24 @@ export function Memory() {
                 <div className={css.deedList}>
                   {deeds.map((d) => (
                     <article key={d.eventId} className={css.deed} data-mem-deed={d.eventId}>
-                      <div className={css.deedHead}>
+                      <div className={css.deedAxis}>
                         <span className={css.no}>{String(d.seq).padStart(2, '0')}</span>
-                        <b>{d.title}</b>
-                        {d.diverged ? (
-                          <span className={css.diverge}><GitBranch size={11} weight="bold" /> 分歧</span>
-                        ) : null}
-                        <span className={css.grow} />
                         <span className={css.stamp}>{stamp(d.ts)}</span>
                       </div>
-                      <div className={css.deedMeta}>{d.group} · {d.place}</div>
-                      {d.digest ? (
-                        <p className={css.digest}><Linkified text={d.digest} /></p>
-                      ) : (
-                        <p className={css.digestEmpty}>这一段没有留下经过（旧档只看得到它被收束过）。</p>
-                      )}
+                      <div className={css.deedMain}>
+                        <div className={css.deedHead}>
+                          <b>{d.title}</b>
+                          {d.diverged ? (
+                            <span className={css.diverge}><GitBranch size={11} weight="bold" /> 分歧</span>
+                          ) : null}
+                        </div>
+                        <div className={css.deedMeta}>{d.group} · {d.place}</div>
+                        {d.digest ? (
+                          <p className={css.digest}><Linkified text={d.digest} /></p>
+                        ) : (
+                          <p className={css.digestEmpty}>这一段没有留下经过（旧档只看得到它被收束过）。</p>
+                        )}
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -278,9 +280,8 @@ export function Memory() {
               <span className="panel__title">
                 <i className={css.secIc}><Sword size={15} weight="bold" /></i>
                 战况
-                <span className="slash" />
               </span>
-              <span className="muted tiny" style={{ color: 'var(--ink-faint)' }}>
+              <span className={css.headNote}>
                 最近几场仗留下了什么：连携、破绽、对面换过几个形态 —— 一句话，出自作战记录。
               </span>
               <span className={css.grow} />
@@ -298,20 +299,23 @@ export function Memory() {
                     const one = tieLineOf(r)
                     return (
                       <article key={r.id} className={css.war} data-mem-war-row={r.id}>
-                        <div className={css.warHead}>
-                          <span className="mono tiny" style={{ color: 'var(--ink-faint)' }}>{r.no}</span>
-                          <b>{r.title}</b>
-                          <span className={`chip ${r.outcome === '胜' ? 'chip--on' : 'chip--off'}`}>{r.outcome}</span>
-                          <span className={css.grow} />
+                        <div className={css.warAxis}>
+                          <span className={css.no}>{r.no}</span>
                           <span className={css.stamp}>{stamp(r.at)}</span>
                         </div>
-                        {one ? (
-                          <p className={css.warLine}>{one}</p>
-                        ) : (
-                          <p className={css.warEmpty}>
-                            这一场没有留下战况读数（连携 / 破绽 / 形态那几栏是后立的，旧档里没有）。
-                          </p>
-                        )}
+                        <div className={css.warMain}>
+                          <div className={css.warHead}>
+                            <b>{r.title}</b>
+                            <span className={`chip ${r.outcome === '胜' ? 'chip--on' : 'chip--off'}`}>{r.outcome}</span>
+                          </div>
+                          {one ? (
+                            <p className={css.warLine}>{one}</p>
+                          ) : (
+                            <p className={css.warEmpty}>
+                              这一场没有留下战况读数（连携 / 破绽 / 形态那几栏是后立的，旧档里没有）。
+                            </p>
+                          )}
+                        </div>
                       </article>
                     )
                   })}
@@ -364,7 +368,7 @@ export function Memory() {
                   {sights.map((s) => (
                     <article key={s.id} className={css.sight} data-mem-sight={s.id}>
                       <div className={css.sightHead}>
-                        <span className="mono tiny" style={{ color: 'var(--ink-faint)' }}>No.{s.no}</span>
+                        <span className={css.no}>No.{s.no}</span>
                         <b>{s.name}</b>
                         {s.alias ? <span className="tiny muted">{s.alias}</span> : null}
                         <span className={css.grow} />
@@ -465,7 +469,7 @@ export function Memory() {
             <div className="panel__body" data-fold-body>
               <div className={css.skillTop}>
                 <div className={css.skillPeriod}>
-                  <span className="vhead__kicker" style={{ fontSize: 9 }}>{skills.vol}</span>
+                  <span className={css.kick}>{skills.vol}</span>
                   <b className={css.skillTitle}>{skills.title}</b>
                   <span className="tiny muted">{skills.cls}</span>
                 </div>

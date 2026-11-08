@@ -1,156 +1,221 @@
-/* ===== 终端设置 ===== */
+/* ===== 终端设置：左侧分组导航 + 右侧分节表单 ===== */
 
-.cols {
+.shell {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 16px;
+  grid-template-columns: 164px minmax(0, 1fr);
+  gap: 26px;
   align-items: start;
 }
 
-.cfgGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-  margin-bottom: 16px;
+.nav {
+  position: sticky;
+  top: calc(var(--topbar-h) + 18px);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  padding-right: 12px;
+  border-right: 1px solid var(--line);
 }
 
-.fieldRow { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
-.fieldRow > span {
+.navItem {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--ink-mute);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  cursor: var(--cursor-point);
+}
+.navItem:first-child { border-top: 0; }
+.navItem:hover { color: var(--ink); }
+.navItem i {
+  flex: none;
+  font-style: normal;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.16em;
-  color: var(--ink-mute);
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
 }
-.fieldRow .sub { font-family: inherit; font-size: 12px; letter-spacing: 0.02em; color: var(--ink-faint); text-transform: none; }
 
-.rowInline { display: flex; gap: 10px; align-items: center; }
-.rowInline .field { flex: 1; }
-/* 勾选框那一行的标签（Settings.tsx:767 那枚 `<label className={css.ck}>` 包着
-   「流式生成 STREAM」的 checkbox）。这条类**原来在这个模块里没写** —— 另两处
-   （LorebookModal.module.css:304 / PresetManager.module.css:162）都有，就这儿漏了，
-   于是那一行的标签鼠标扫过去不变手型。补上，一处不多写。 */
-.ck { cursor: var(--cursor-point); }
-.modelRow { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
-.modelRow .field { width: 100%; }
+.sections { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.sections > * { scroll-margin-top: calc(var(--topbar-h) + 14px); }
+.group { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* —— 一行一条：左标签 / 右控件，行与行 1px 分隔 —— */
+.form { display: flex; flex-direction: column; padding: 2px 14px 16px; }
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 12px 0;
+}
+.row + .row { border-top: 1px solid var(--line); }
+
+.rowLabel {
+  flex: 0 0 116px;
+  padding-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-mute);
+}
+.rowLabel i {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.rowCtl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rowInline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rowInline :global(.field) { flex: 1; min-width: 0; }
+
+.hint { font-size: 12px; line-height: 1.6; color: var(--ink-faint); }
+
+.switchLine { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.ck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-mute);
+  cursor: var(--cursor-point);
+}
+
+/* 输入框：零圆角，聚焦只换成 --steel 的边（tokens 里那圈紫环在这页撤掉） */
+.sections :global(.field) { border-radius: 0; }
+.sections :global(.field:focus) { border-color: var(--steel); box-shadow: none; }
+
 .eyeBtn {
   flex: 0 0 auto;
-  width: 42px; height: 42px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm); color: var(--ink-mute); cursor: var(--cursor-point);
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  background: none;
+  color: var(--ink-mute);
+  cursor: var(--cursor-point);
 }
 .eyeBtn:hover { color: var(--ink); border-color: var(--line-3); }
 
+.modelRow { display: flex; flex-direction: column; gap: 6px; }
+.modelRow :global(.field) { width: 100%; }
+
 .tempWrap { display: flex; align-items: center; gap: 12px; }
-.tempWrap input[type='range'] { flex: 1; --slider: var(--steel); }
+.tempWrap input[type='range'] { flex: 1; min-width: 0; }
 .tempVal {
-  flex: 0 0 auto; min-width: 46px; text-align: center;
-  font-family: var(--font-mono); font-size: 12px; color: var(--steel-deep);
-  border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 4px 6px;
+  flex: 0 0 auto;
+  min-width: 46px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+  border: 1px solid var(--line-2);
+  padding: 4px 6px;
 }
 
-/* 底噪开关：一件「要不要」，不是一档音量 —— 所以摆成一枚开关旁边挂一句说明 */
-.bedSw {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-left: 2px solid color-mix(in srgb, var(--amber) 45%, transparent);
-  background: var(--bg-2);
-  border-radius: var(--radius-sm);
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
-.bedSw button { flex: none; }
-.bedSw span { line-height: 1.6; }
+.grow { flex: 1; }
 
-.actions { display: flex; gap: 10px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
-.actions .grow { flex: 1; }
+.resultLine { padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; }
+.okLine { color: var(--ink-mute); word-break: break-all; }
+.errLine { color: var(--red-deep); word-break: break-all; }
+.danger { border-color: var(--red) !important; color: var(--red-deep) !important; }
 
+/* —— 说明段：一段一句话，只留一道 1px 左边线 —— */
 .note {
-  border: 1px solid var(--line);
-  background: var(--bg-2);
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
   font-size: 13px;
   line-height: 1.85;
   color: var(--ink-mute);
 }
-.note b { color: var(--amber-deep); }
-.okLine { font-family: var(--font-mono); font-size: 12px; color: var(--jade-deep); word-break: break-all; }
-.errLine { font-family: var(--font-mono); font-size: 12px; color: var(--red-deep); word-break: break-all; }
+.note b { font-weight: 600; color: var(--ink); }
 
-/* —— 世界书数据管理 —— */
-.grow { flex: 1; }
-.dataLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
+.dataLine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
-/* —— 导入簇：把外部预设 / 方案 / 备份导入排列在一处、显眼可找 —— */
-.importBox {
-  border: 1px solid var(--line-2);
-  background: var(--bg-2);
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* —— 导入簇 —— */
+.importBox { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .importHead { display: flex; align-items: center; gap: 8px; }
-.importHead b { color: var(--amber-deep); letter-spacing: 0.12em; font-size: 11px; }
+.importHead b { font-size: 11px; font-weight: 400; letter-spacing: 0.12em; color: var(--ink-mute); }
 .importHead span { font-size: 11px; color: var(--ink-faint); }
 .importRow {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  background: var(--bg-1);
-  border-radius: var(--radius-sm);
-  padding: 9px 12px;
 }
-.importInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.importInfo b { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
-.importInfo b svg { color: var(--ink-mute); flex: 0 0 auto; }
-.importInfo span { font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
+.importInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.importInfo b { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.importInfo b svg { flex: 0 0 auto; color: var(--ink-mute); }
+.importInfo span { font-size: 12px; line-height: 1.6; color: var(--ink-faint); }
 .importAct { flex: 0 0 auto; }
+
 .confirmNote {
-  border-left: 2px solid var(--red);
-  background: var(--red-soft);
-  border-radius: var(--radius-sm);
-  padding: 7px 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
   font-size: 12px;
-  color: var(--red-deep);
   line-height: 1.7;
+  color: var(--ink-mute);
 }
-.danger { border-color: var(--red) !important; color: var(--red-deep) !important; }
 
 /* —— 方案 —— */
-.schemeBox {
-  border: 1px solid var(--line);
-  background: var(--bg-2);
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+.schemeBox { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
 .schemeHead { display: flex; align-items: center; gap: 10px; }
-.schemeHead b { color: var(--ink-mute); }
+.schemeHead b { font-weight: 600; color: var(--ink); }
 .schemeNew { display: flex; gap: 8px; }
-.schemeNew .field { flex: 1; }
-.schemeList { display: flex; flex-direction: column; gap: 6px; }
+.schemeNew :global(.field) { flex: 1; min-width: 0; }
+.schemeList { display: flex; flex-direction: column; }
 .schemeRow {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
-  background: var(--bg-1);
-  border-radius: var(--radius-sm);
-  padding: 8px 11px;
+  border-top: 0;
   cursor: var(--cursor-point);
 }
-/* 预设调配：已接管几本书的小徽标 */
+.schemeList .schemeRow:first-child { border-top: 1px solid var(--line); }
+.schemeRow:hover { border-color: var(--line-3); }
+.schemeRow.isOn { border-color: var(--ink-mute); cursor: default; }
+.schemeMain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.schemeMain b { font-size: 13px; font-weight: 600; color: var(--ink); }
+.schemeMain span { font-size: 12px; color: var(--ink-faint); }
+.rowActs { display: flex; gap: 6px; }
+
+.onMark {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
 .tuneBadge {
   display: inline-flex;
   align-items: center;
@@ -159,78 +224,26 @@
   height: 14px;
   margin-left: 5px;
   padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--amber);
-  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  color: var(--ink-mute);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
   line-height: 1;
 }
 
-/* 「内置」标：随终端一起发的那两份预设 */
 .builtinTag {
   display: inline-flex;
   align-items: center;
   margin-left: 7px;
   padding: 1px 6px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-  color: var(--ink-faint);
+  border-radius: 2px;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
   line-height: 1.5;
-  vertical-align: middle;
-}
-
-/* 生效态：金框 + 左沿金条 + 淡金底 —— 只换边框颜色太容易被旁边的 hover 盖过去。
-   注意这一笔画的是**正在喂提示词的那一份**，不是鼠标点过的那一份：
-   点一下就会让它生效（见 Settings.tsx 里那一行 onClick），所以两者本来就该合一，
-   而金边必须跟着「生效」走 —— 否则列表上亮着的那一行和实际生效的那一份能对不上。 */
-.schemeRow.isOn {
-  border-color: var(--amber);
-  background: color-mix(in srgb, var(--amber) 8%, var(--bg-1));
-  /* 只留那条 `inset` 硬环（零模糊的一圈金线），外圈的柔光随方贴纸稿撤走。 */
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 38%, transparent);
-  position: relative;
-}
-.schemeRow.isOn::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--amber);
-}
-.onMark {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--amber-deep);
-  border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent);
-  border-radius: var(--radius-pill);
-  padding: 1px 6px;
-}
-.schemeRow:hover { border-color: var(--line-3); }
-.schemeRow.isOn { cursor: default; }
-.schemeRow.isOn:hover { border-color: var(--amber); }
-.schemeMain {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.schemeMain b { font-size: 13px; color: var(--ink); }
-.rowActs { display: flex; gap: 6px; }
-
-@media (max-width: 960px) {
-  .cols, .cfgGrid { grid-template-columns: 1fr; }
+  color: var(--ink-faint);
 }
 
 /* —— 声音面板 —— */
@@ -238,38 +251,31 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
 }
 .vol { display: flex; flex-direction: column; gap: 6px; }
 .volTop { display: flex; align-items: baseline; gap: 7px; }
-.volTop b { font-size: 12px; color: var(--ink); }
-.volTop i { font-style: normal; letter-spacing: 0.08em; }
-.volTop .num { margin-left: auto; font-size: 12px; color: var(--amber-deep); }
-.vol input[type='range'] {
-  width: 100%;
-  --slider: var(--amber);
-  height: 18px;
-  cursor: var(--cursor-point);
-}
+.volTop b { font-size: 13px; font-weight: 600; color: var(--ink); }
+.volTop i { font-style: normal; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint); }
+.volTop :global(.num) { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-mute); }
+.vol input[type='range'] { width: 100%; height: 18px; cursor: var(--cursor-point); }
 .volNote { font-size: 11px; line-height: 1.5; color: var(--ink-faint); }
 
 /* —— 通联日志 —— */
-.logList { display: flex; flex-direction: column; gap: 6px; }
-.logRow {
-  border: 1px solid var(--line);
-  background: var(--bg-2);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
+.logList { display: flex; flex-direction: column; }
+.logRow { border: 1px solid var(--line); border-top: 0; }
+.logList .logRow:first-child { border-top: 1px solid var(--line); }
 .logRow.logBad { border-color: color-mix(in srgb, var(--red) 45%, transparent); }
 .logHead {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 11px;
-  cursor: var(--cursor-point);
+  padding: 9px 11px;
   color: var(--ink-mute);
+  cursor: var(--cursor-point);
 }
-.logHead:hover { background: var(--bg-1); }
+.logHead:hover { background: var(--bg-2); color: var(--ink); }
 .logWhen {
   flex: 1;
   min-width: 0;
@@ -278,45 +284,35 @@
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.02em;
 }
-.logWarnIcon { color: var(--red-deep); flex: none; }
+.logWarnIcon { flex: none; color: var(--red-deep); }
 .logBody {
-  border-top: 1px solid var(--line);
-  padding: 11px 13px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: var(--bg-1);
+  padding: 11px 13px;
+  border-top: 1px solid var(--line);
 }
-.logKv {
-  display: grid;
-  grid-template-columns: 62px 1fr;
-  gap: 4px 10px;
-  font-size: 12px;
-}
+.logKv { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 4px 10px; font-size: 12px; }
 .logKv span { color: var(--ink-faint); }
-.logKv b { font-weight: 400; color: var(--ink-mute); font-family: var(--font-mono); word-break: break-all; }
+.logKv b { font-weight: 400; font-family: var(--font-mono); color: var(--ink-mute); word-break: break-all; }
 .logBlock { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
-.logBlock > b { color: var(--amber-deep); font-size: 12px; letter-spacing: 0.06em; }
+.logBlock > b { font-size: 11px; font-weight: 400; letter-spacing: 0.1em; color: var(--ink-mute); }
 .logHits { display: flex; flex-wrap: wrap; gap: 5px; }
 .logHit {
-  border: 1px solid var(--line-2);
-  background: var(--bg-2);
-  border-radius: var(--radius-pill);
   padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
   font-size: 11px;
   color: var(--ink-mute);
 }
-.logOk { color: var(--jade-deep); }
+.logOk { color: var(--ink-mute); }
 .logNo { color: var(--red-deep); }
 .logPre {
   max-height: 260px;
   overflow: auto;
-  border: 1px solid var(--line);
-  background: var(--bg-2);
-  border-radius: var(--radius-sm);
   padding: 9px 11px;
+  border: 1px solid var(--line);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.7;
@@ -326,23 +322,52 @@
 }
 .logActs { display: flex; gap: 8px; }
 
-/* ============ 手机档（≤720px）============
-   声音面板 `minmax(240px, 1fr)` 在 360 那一档的机子上越界（360 − 面板内边距 < 240）。 */
+/* ============ 窄屏：导航收成顶部横滑，表单单列 ============ */
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .nav {
+    position: static;
+    flex-direction: row;
+    gap: 0;
+    padding: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .navItem {
+    flex: 0 0 auto;
+    width: auto;
+    gap: 6px;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+  .navItem:last-child { border-right: 0; }
+  .row { flex-direction: column; gap: 6px; }
+  .rowLabel { flex: none; padding-top: 0; }
+  .rowLabel i { display: inline; margin-top: 0; margin-left: 6px; }
+  .form { padding: 2px 12px 14px; }
+}
+
+/* 方案行：390 那一档把名字单独占一行，四个小按钮不挤成一条 */
+@media (max-width: 560px) {
+  .schemeRow { flex-wrap: wrap; row-gap: 6px; }
+  .schemeMain { flex: 1 0 100%; }
+  .rowActs { margin-left: auto; }
+}
+
+/* 声音面板 minmax(240px) 在 360 那一档会越界 */
 @media (max-width: 720px) {
   .volGrid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 }
 
-/* 手机档 · 粗指针：那几个方块（音量那枚 42px）与两处可点行（26 / 34px）抬到 44。
-   滑杆那两条也在这一节 —— tokens.css 全局那一段抬不动它们（见下）。 */
+/* 粗指针：方块按钮与两处可点行抬到 44，两条滑杆抬整条可抓高度 */
 @media (pointer: coarse) {
-  .eyeBtn { min-width: 44px; min-height: 44px; }
+  .eyeBtn { width: 44px; height: 44px; }
   .logHead, .schemeRow { min-height: 44px; }
-  /* 温度与三格音量那四枚滑杆（桌面量到 18 / 16px 高，是全站唯二跌破 24 的控件之一）。
-     ⚠️ **必须写在这个模块里**：上面 `.tempWrap / .vol input[type='range']` 那两条是
-     (0,2,1)，压过 tokens.css 的 `input[type='range']`(0,1,1) —— 写在全局那一段，
-     这两支的高度照旧是 16/18。这里同特异度、后写，说了算。
-     抬的是**整条可抓高度**：轨道与滑块本体不动（那两支是伪元素，由 tokens.css 的
-     粗指针段统一放大），浏览器把轨道居中摆在 40px 的盒子里。 */
   .tempWrap input[type='range'],
   .vol input[type='range'] { height: 40px; }
 }

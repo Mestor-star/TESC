@@ -37,7 +37,7 @@
    斜纹底与「整块虚线空框」那一套都撤了 —— 29 个槽位一个没补的时候，
    那一套让每一页都像坏了；留一条淡淡的纸边，够看得见就行。 */
 .slotEmpty {
-  border-style: dashed;
+  border-style: solid;
   border-color: var(--line-3, var(--line));
   align-items: center;
   background: transparent;

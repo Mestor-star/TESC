@@ -4,7 +4,7 @@ import { Lock, PaperPlaneTilt, Stop, Eraser, Plus, Check, Trash, UsersThree, Lis
 import { useTerminal } from '../terminal/Terminal'
 import { TAVERN_PERSONAS, charOf } from '../data/personas'
 import { isCharId } from '../data/chars'
-import { OPERATOR_ID, genderOf, speakerVariants } from '../data/castmeta'
+import { OPERATOR_ID, speakerVariants } from '../data/castmeta'
 import { plotContextFor } from '../lib/crosslink'
 import { nameKey } from '../lib/namekey'
 import { InviteDate } from '../components/InviteDate'
@@ -15,7 +15,7 @@ import type { ApiSettings, ChatTurn } from '../lib/api'
 import { chatCompletion, chatCompletionStream, isReady, loadProfile } from '../lib/api'
 import type { StreamResult } from '../lib/api'
 import { clampBudget } from '../lib/budget'
-import { clock, bondName } from '../lib/format'
+import { clock } from '../lib/format'
 import type { ChatMsg, CharId } from '../data/types'
 import {
   dateReady, extractLiveDisplay, parseDirectorReply, replyDisplayText,
@@ -39,7 +39,6 @@ import {
 } from '../lib/sms'
 import { addTask, listTasks, removeTask, subscribeTasks, tasksVersion, toggleTask } from '../lib/smstasks'
 
-import comm from './Comms.module.css'
 import css from './Tavern.module.css'
 
 /** 线程 id：单聊就是角色 id，群聊是 g:<uuid>（名册见 lib/smsthreads.ts） */
@@ -669,14 +668,10 @@ ${preset.post}` : '')
 
       {inviteOpen ? <InviteDate onClose={() => setInviteOpen(false)} /> : null}
 
-      {/* 左栏 300 是这一页自己的口径（底座 `.wrap` 是 318）—— 从前这一句是**内联**写的，
-          内联样式媒体查询够不着，于是 `Comms.module.css` 里那条「≤960 摞成一栏」
-          永远落不到这一页上：390 屏上左栏照旧占 300，对话框只剩 46px。
-          挪进 `.wrapSms` 之后，窄屏那一条在 Tavern.module.css 末尾把它收回去。 */}
-      <div className={`${comm.wrap} ${css.wrapSms}`}>
+      <div className={css.wrap}>
         {/* 联系人 */}
                 {/* 电话左栏：会话 / 任务 两个页签 */}
-        <aside className={`panel ${comm.contactList}`}>
+        <aside className={`panel ${css.contactList}`}>
           <div className={css.tabs}>
             <button
               className={`${css.tab} ${tab === 'chat' ? css.tabOn : ''}`}
@@ -696,44 +691,43 @@ ${preset.post}` : '')
 
           {tab === 'chat' ? (
             <>
-              <div className={comm.listBody}>
+              <div className={css.listBody}>
                 {TAVN_ALL.map((pid) => {
                   const c = charOf(pid)
                   const meta = TAVERN_PERSONAS.find((p) => p.charId === pid)
                   if (!c || !meta) return null
                   const met = metIds.includes(pid)
-                  const bond = bondNow(pid)
                   const isActive = activeId === pid
                   const un = unreadOf(pid)
+                  const arr = logs[pid]
+                  const last = arr && arr.length ? arr[arr.length - 1] : undefined
                   return (
                     <button
                       key={pid}
-                      className={`${comm.contact} ${isActive ? comm.isActive : ''}`}
+                      className={`${css.contact} ${isActive ? css.isActive : ''}`}
                       onClick={() => enter(pid)}
                       style={{ opacity: met ? 1 : 0.55 }}
                     >
                       {/* 遇见过的用真头像；没遇见的照旧只有一枚纹章 —— 与档案/剧情同口径：
                           未遇见的人不露脸（见 Saga 的登场人物行） */}
                       {met ? (
-                        <Portrait avatarId={pid} name={c.name} hue={c.hue} sigil={c.sigil} size={40} round />
+                        <Portrait avatarId={pid} name={c.name} hue={c.hue} sigil={c.sigil} size={24} round />
                       ) : (
-                        <span className="glyph" style={{ '--g': c.hue, width: 40, height: 40 }}>
+                        <span className="glyph" style={{ '--g': c.hue, width: 24, height: 24 }}>
                           <span>{c.sigil}</span>
                         </span>
                       )}
-                      <span className={comm.contactMain}>
-                        <span className={css.castName}>
-                          {c.name}
-                          {!met ? <Lock size={12} weight="bold" /> : null}
+                      <span className={css.contactMain}>
+                        <span className={css.contactTop}>
+                          <span className={css.castName}>
+                            {c.name}
+                            {!met ? <Lock size={12} weight="bold" /> : null}
+                          </span>
                           {un > 0 ? <i className={css.unreadDot}>{un > 99 ? '99+' : un}</i> : null}
+                          {last ? <span className={css.msgWhen}>{last.time}</span> : null}
                         </span>
                         {met ? (
-                          <>
-                            <span className={css.castSub}>{c.role}</span>
-                            <span className={css.castSub} style={{ color: 'var(--ink-faint)' }}>
-                              {bondName(bond, { gender: genderOf(pid) })} {bond}/100
-                            </span>
-                          </>
+                          <span className={css.castSub}>{last ? last.text : c.role}</span>
                         ) : (
                           <span className={css.castLock}>未遇见 · 待剧情解锁</span>
                         )}
@@ -755,24 +749,27 @@ ${preset.post}` : '')
                 ) : null}
                 {groups.map((g) => {
                   const un = unreadOf(g.id)
+                  const gArr = logs[g.id]
+                  const gLast = gArr && gArr.length ? gArr[gArr.length - 1] : undefined
                   return (
                     <button
                       key={g.id}
-                      className={`${comm.contact} ${activeId === g.id ? comm.isActive : ''}`}
+                      className={`${css.contact} ${activeId === g.id ? css.isActive : ''}`}
                       onClick={() => enter(g.id)}
                     >
                       {/* `--g` 要的是**颜色**（.glyph 拿它掺白当底）。这里从前写的是裸数字
                           `205`，color-mix 不认，背景当场失效 —— 群聊纹章一直是没底的 */}
-                      <span className="glyph" style={{ '--g': 'var(--violet)', width: 40, height: 40 }}>
+                      <span className="glyph" style={{ '--g': 'var(--violet)', width: 24, height: 24 }}>
                         <span>群</span>
                       </span>
-                      <span className={comm.contactMain}>
-                        <span className={css.castName}>
-                          {g.name}
+                      <span className={css.contactMain}>
+                        <span className={css.contactTop}>
+                          <span className={css.castName}>{g.name}</span>
                           {un > 0 ? <i className={css.unreadDot}>{un > 99 ? '99+' : un}</i> : null}
+                          {gLast ? <span className={css.msgWhen}>{gLast.time}</span> : null}
                         </span>
                         <span className={css.castSub}>
-                          {g.charIds.map((id) => charOf(id)?.name ?? id).join('、')}
+                          {gLast ? gLast.text : g.charIds.map((id) => charOf(id)?.name ?? id).join('、')}
                         </span>
                       </span>
                     </button>
@@ -798,16 +795,18 @@ ${preset.post}` : '')
                   return (
                     <button
                       key={rv.id}
-                      className={comm.contact}
+                      className={css.contact}
                       onClick={() => requestDate(rv.id)}
                       title="去「在线推演 · 约会专线」赴这一场"
                       data-sms-date={rv.kind}
                     >
-                      {c ? <Portrait avatarId={rv.charId} name={c.name} hue={c.hue} sigil={c.sigil} size={40} round /> : null}
-                      <span className={comm.contactMain}>
-                        <span className={css.castName}>
-                          {c?.name ?? rv.charId}
-                          {rv.kind === 'intimate' ? <HeartStraight size={12} weight="fill" /> : null}
+                      {c ? <Portrait avatarId={rv.charId} name={c.name} hue={c.hue} sigil={c.sigil} size={24} round /> : null}
+                      <span className={css.contactMain}>
+                        <span className={css.contactTop}>
+                          <span className={css.castName}>
+                            {c?.name ?? rv.charId}
+                            {rv.kind === 'intimate' ? <HeartStraight size={12} weight="fill" /> : null}
+                          </span>
                           {un > 0 ? <i className={css.unreadDot}>{un > 99 ? '99+' : un}</i> : null}
                         </span>
                         <span className={css.castSub}>
@@ -838,7 +837,7 @@ ${preset.post}` : '')
                 <span className="panel__title">托付 <span className="slash" /></span>
                 <span className="muted tiny" style={{ marginLeft: 'auto' }}>{pending} 件未完成</span>
               </div>
-              <div className={comm.listBody} data-sms-tasks>
+              <div className={css.listBody} data-sms-tasks>
                 <input
                   className="field"
                   style={{ margin: '2px 8px 6px', width: 'auto' }}
@@ -885,10 +884,10 @@ ${preset.post}` : '')
         </aside>
 
         {/* 对谈区 */}
-        <section className={`panel ${comm.chatPane}`}>
+        <section className={`panel ${css.chatPane}`}>
           {activeId && activeChar && activeMeta ? (
             <>
-              <div className={comm.chatHead}>
+              <div className={css.chatHead}>
                 {/* 群聊没有一张脸可摆（成员各有各的），照旧用「群」字纹章 */}
                 {activeGroup ? (
                   <span className="glyph" style={{ '--g': 'var(--violet)', width: 44, height: 44 }}>
@@ -900,7 +899,7 @@ ${preset.post}` : '')
                     size={44} round
                   />
                 )}
-                <div className={comm.chatHeadMeta}>
+                <div className={css.chatHeadMeta}>
                   <b>
                     {activeGroup ? activeGroup.name : activeChar.name}{' '}
                     <span className={css.scenarioTag}>· 在线</span>
@@ -911,7 +910,7 @@ ${preset.post}` : '')
                       : activeMeta.scenario}
                   </small>
                 </div>
-                <span className={comm.channelTag}>
+                <span className={css.channelTag}>
                   {activeGroup ? 'GROUP' : 'SMS'} ·{' '}
                   {activeGroup ? activeGroup.charIds.length : activeChar.id.toUpperCase()}
                 </span>
@@ -937,8 +936,8 @@ ${preset.post}` : '')
               {/* 对谈区的下半：会话列（见面不在这儿，见 components/DateLane.tsx） */}
               <div className={css.chatBody}>
                 <div className={css.chatMain}>
-                <div className={comm.thread} data-sms-thread>
-                  <div className={comm.dayLabel}>
+                <div className={css.thread} data-sms-thread>
+                  <div className={css.dayLabel}>
                     苍之学园 · 今日 · 角色短信
                   </div>
                   {activeLog.length === 0 && !busy ? (
@@ -948,13 +947,13 @@ ${preset.post}` : '')
                   ) : null}
                   {activeLog.map((m, i) => (
                     <Fragment key={m.id}>
-                      <div className={`${comm.msg} ${m.from === 'user' ? comm['msg--user'] : comm['msg--them']}`} data-sms-msg={m.from}>
-                        <span className={comm.msgHead}>
+                      <div className={`${css.msg} ${m.from === 'user' ? css['msg--user'] : css['msg--them']}`} data-sms-msg={m.from}>
+                        <span className={css.msgHead}>
                           {avatarOf(m) ? <Portrait avatarId={avatarOf(m)} size={26} round /> : null}
-                          <span className={comm.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
+                          <span className={css.msgAuthor}>{m.from === 'them' ? whoOf(m) : operatorName}</span>
                         </span>
-                        <span className={comm.bubble}><Linkified text={m.text} /></span>
-                        <span className={comm.msgTime}>{m.time}</span>
+                        <span className={css.bubble}><Linkified text={m.text} /></span>
+                        <span className={css.msgTime}>{m.time}</span>
                       </div>
 
                       {m.from === 'them' ? (
@@ -1000,18 +999,18 @@ ${preset.post}` : '')
                     </Fragment>
                   ))}
                   {live && live.charId === activeId && live.text ? (
-                    <div className={`${comm.msg} ${comm['msg--them']}`} data-stream-live="1">
-                      <span className={comm.msgHead}>
+                    <div className={`${css.msg} ${css['msg--them']}`} data-stream-live="1">
+                      <span className={css.msgHead}>
                         {liveAvatarId ? <Portrait avatarId={liveAvatarId} size={26} round /> : null}
-                        <span className={comm.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
+                        <span className={css.msgAuthor}>{activeGroup ? '群聊' : activeChar.name}</span>
                       </span>
-                      <span className={comm.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
-                      <span className={comm.msgTime}>生成中…</span>
+                      <span className={css.bubble}><Linkified text={extractLiveDisplay(live.text)} /></span>
+                      <span className={css.msgTime}>生成中…</span>
                     </div>
                   ) : null}
                   {err ? <div className={css.errLine}>{err}</div> : null}
                   {busy && (!live || live.charId !== activeId || !live.text) ? (
-                    <div className={comm.typing} aria-label="对方正在输入">
+                    <div className={css.typing} aria-label="对方正在输入">
                       <i /><i /><i />
                     </div>
                   ) : null}
@@ -1021,7 +1020,7 @@ ${preset.post}` : '')
                 {/* 这一页**不摆色情状态栏**（主人 2026-09-13 的口径）：短信里只看到
                     「聊得怎么样」，情欲值 / 最近一回 / 内裤湿几分属于**见了面**那一屏 ——
                     在「在线推演 · 约会专线」的右栏，翻转过来看（见 components/DateLane.tsx）。 */}
-                <div className={comm.composer} data-sms-composer>
+                <div className={css.composer} data-sms-composer>
                   <input
                     className="field"
                     placeholder={`${
@@ -1039,12 +1038,12 @@ ${preset.post}` : '')
                     }}
                   />
                   {busy ? (
-                    <button className={`btn btn--amber ${comm.composerBtn}`} onClick={stop} aria-label="中断回复">
+                    <button className={`btn btn--amber ${css.composerBtn}`} onClick={stop} aria-label="中断回复">
                       <Stop size={18} weight="bold" />
                     </button>
                   ) : (
                     <button
-                      className={`btn btn--primary ${comm.composerBtn}`}
+                      className={`btn btn--primary ${css.composerBtn}`}
                       onClick={() => void send()}
                       disabled={!draft.trim()}
                       aria-label="发送"

@@ -3059,7 +3059,7 @@
 /* 破绽归零：**不是**「尽碎」。虚线 + 冷灰 = 「它自己会凝回来」，
    与上面那枚实线绯色的「被人按着、这一回合不许重凝」刻意长得不一样。 */
 .buff[data-buff='guard-zero'] {
-  border-style: dashed;
+  border-style: solid;
   border-color: color-mix(in srgb, var(--line-3) 72%, transparent);
   color: var(--ink-mute);
 }

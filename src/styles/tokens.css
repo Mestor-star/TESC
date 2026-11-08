@@ -667,17 +667,10 @@ input[type='range']::-moz-range-thumb {
   height: 1px;
   border: 0;
   margin: 14px 0;
-  background: linear-gradient(90deg, transparent, var(--line-2) 18%, var(--line-2) 82%, transparent);
+  background: var(--line);
 }
-/* 强调小竖条（名字里的「斜杠」是旧账：从前它 skew(-18deg)，这一版扶正了）。
-   颜色走主调青，别改回 --red —— 那是警戒色，用在装饰上会误报。 */
-.slash {
-  display: inline-block;
-  width: 3px; height: 1.05em;
-  background: var(--steel);
-  border-radius: var(--radius-sm);
-  margin: 0 8px;
-}
+/* 标题后的装饰小竖条：新骨架不留装饰，统一收掉（类名留着，免得去改十一个调用点）。 */
+.slash { display: none; }
 
 /* ============ 动画 ============
  * ⚠️ 这几支住在**全局样式表**里，组件（`*.module.css`）要用得写 `global(名字)`：
@@ -798,150 +791,54 @@ input[type='range']::-moz-range-thumb {
    `backwards` 一样能在挂载那一刻就压住首帧（这里本来也没有 delay，
    加不加它视觉上都等价），动画结束即回落到元素自身样式：`transform` 未声明 = `none`。 */
 .vpage {
-  padding: 24px 26px 56px;
+  padding: 22px 26px 56px;
   max-width: 1320px;
   margin: 0 auto;
   animation: riseIn 300ms var(--ease-out) backwards;
 }
 
-/* 页头改**居中**（2026-09-16 方贴纸稿）。
-   上一版是 `space-between` 的两头撑开：文字块靠左、控件槽靠右。官方那套是
-   单列居中 —— 标题打中间，底下一条三色分段横线收底。
-   改法只有四行（`flex-direction` / `align-items` / `text-align` / 去 `space-between`）：
-   十个屏的 `.vhead` 结构全是「文字块 div + 第二槽」，没有第三个孩子、也没有倒序，
-   所以第二槽在 column 方向里**自然落到第二行**，不用动任何 tsx。
-   （Codex 根本没有第二槽；Missions 的第二槽是它自己的 `.filters` 不是 `.vhead__right`，
-   所以居中这条对十屏**一律成立** —— 若只给 `.vhead__right` 写靠右，Missions 会跟
-   其余八屏不一致。这是选「居中」而不是「第二行靠右」的实打实的理由。）
-   `> :first-child { width: 100% }` 是给 `align-items: center` 擦屁股的：
-   居中会让子项变成 shrink-to-fit，文字块的宽度就成了「最宽的那个孩子说了算」，
-   副标长短不一时块宽会飘。钉成 100% 之后再居中，落点是死的。 */
+/* 页头：左对齐、字阶收住、收底一条细线。
+   十个屏的 `.vhead` 结构都是「文字块 + 可选第二槽」，所以只改排法，不动 tsx。
+   装饰一律挂在 `.vhead` 后代（斜杠 / 三色条 / 斜线阴影全部撤掉）——
+   `.vhead__kicker` 本体另有六处脱离页头的小角标用法（Archive 立绘卡三处、
+   Memory / Saga / Plot 各一处），改本体那六处会一起长出线来。 */
 .vhead {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 22px;
-  padding-bottom: 16px;
+  text-align: left;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
-  /* 收底那一条**三色分段** —— 官方节标题底下量出来的那一笔，逐字照搬：
-     3px 粗，正中一段 600px，五段是「藏蓝 40% │ 绯 6.667% │ 金 6.667% │ 蔚蓝 6.667% │ 藏蓝 40%」。
-     官方那张 `head_*.png` 是 600×71，分隔线正好占满 600px、三个色条各 40px（= 600 的 1/15）。
-     底下那条 `border-bottom` 细线**留着**：官方也是「细线 + 正中一段彩条」两层，
-     只铺彩条会显得孤零零一根浮在那儿。
-     `min(600px, 100%)` 是给窄屏的：小于 600px 时整段等比例缩，色条比例不变。
-     这段颜色只此一处，别再往别的地方抄 —— 全站一条就够认了。 */
-  background-image: linear-gradient(90deg,
-    var(--ink)   0       40%,
-    var(--red)   40%     46.667%,
-    var(--amber) 46.667% 53.333%,
-    var(--steel) 53.333% 60%,
-    var(--ink)   60%     100%);
-  background-size: min(600px, 100%) 3px;
-  background-position: 50% 100%;
-  background-repeat: no-repeat;
 }
-.vhead > :first-child { width: 100%; }
+.vhead > :first-child { min-width: 0; }
 .vhead__kicker {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  font-weight: 400;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--red-deep);
+  color: var(--ink-faint);
 }
-/* 这里原先躺着一条 `.vhead__kicker::before`（26×3 红杠，「细线夹 kicker」那一版的遗物）。
-   2026-09-16 主人拍了「删」：它漏到**六处脱离页头**的小角标上（Archive 三处 / Memory / Saga / Plot，
-   见下面那条注），每个前面都顶着一条红杠。页头那十屏本来就被 `.vhead .vhead__kicker::before` 盖住，
-   所以删掉它页头一个像素都没动 —— 别再把它加回来。 */
-/* 大标题带一层错位重影：青与粉各偏两像素 —— 「次元错位」在这一版里最显眼的一处 */
-.vhead h1 { margin: 6px 0 0; font-size: 32px; font-weight: 900; letter-spacing: 0.01em; line-height: 1.12; text-shadow: var(--duo-shadow); }
-.vhead .vhead__sub { margin-top: 8px; color: var(--ink-mute); font-size: 13.5px; max-width: 560px; }
-.vhead__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-
-/* ---- 页头升到「进门三段」那一套话（2026-09-16）----
-   **斜杠**夹标题 · 细线夹 kicker · 细线收底 —— 与开屏 / 标题页 / 顶栏同一族的锐角记号。
-   （标题两厢那一对从菱形改成了斜杠，是照官方标题两头那两道斜笔；见下面 h1 那条注。）
-   ⚠️ 装饰**一律挂 `.vhead` 后代**，不写进 `.vhead__kicker` 本体：
-   那个类**有六处脱离页头**的小角标用法 —— Archive 的立绘卡三处
-   （`Archive.tsx:238 / 447 / 1167`，`PORTRAIT / 全身`、`PRIVATE DOSSIER / 立绘`），
-   外加 `Memory.tsx:350`、`Saga.tsx:123`、`Plot.tsx:1410` 各一处内联小角标。
-   改本体那六处就会一起长出两条线来。（原先这里记的是「三处」，只数了 Archive ——
-   2026-09-16 方贴纸稿复核时补齐。） */
-.vhead .vhead__kicker {
-  gap: 12px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  color: var(--ink-dim);
+.vhead h1 {
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-shadow: none;
 }
-.vhead .vhead__kicker::before,
-.vhead .vhead__kicker::after {
-  content: "";
-  width: 28px;
-  height: 1px;
-  background: var(--line-3);
-  border-radius: 0;
-}
-/* 标题字号与字距照官方那一档抬（32 → 36 / 0.02em → 0.04em）。
-   `padding: 0 22px` 现在是**斜杠与字之间的间距**（不是块内缩进）——
-   居中之后文字块收缩到字宽，那对斜杠就贴在字的两侧，正是官方标题那个样子；
-   20px 在这个距离上偏挤，放到 22px。 */
-.vhead h1 { position: relative; margin: 10px 0 0; padding: 0 22px; font-size: 36px; letter-spacing: 0.04em; }
-/* 标题两厢那一对记号：上一稿是 9px 的菱形，这一稿改成**斜杠**（照原作标题两头的
-   那两道斜笔）。菱形是「旋转 45° 的方」，斜杠是「切了一刀的竖」——
-   同一族的锐角，但斜杠读起来更快、更像标题的括号。
-   （侧栏角标 / 开屏 / 标题页那三处仍是菱形：那几处要的是「一枚记号」，
-     不是「一对括号」。） */
-.vhead h1::before,
-.vhead h1::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 5px;
-  height: 22px;
-  margin-top: -11px;
-  background: linear-gradient(180deg, var(--steel), var(--red));
-  transform: skewX(-18deg);
-  /* 两厢那对斜杠上原来还压着一层 `0 0 9px` 的青光 —— 随方贴纸稿撤。
-     斜杠本身是实心的青→绯渐变，形状与位置一个字没动，去掉糊光反而更「切得利落」。 */
-  opacity: 0.9;
-  pointer-events: none;
-}
-.vhead h1::before { left: 0; }
-.vhead h1::after { right: 0; }
-/* 页头左上角那一组斜线 —— 照原作标题左上角那一组平行斜杠。
-   挂 `.vhead::before`（`.vhead` 本体没别的伪元素在用）。
-   ⚠️ 不挂 `.vhead__kicker` 本体：那个类在 Archive 立绘卡里还有三处脱离页头的用法。 */
-.vhead { position: relative; }
-.vhead::before {
-  content: "";
-  position: absolute;
-  left: -18px;
-  top: -10px;
-  width: 52px;
-  height: 40px;
-  pointer-events: none;
-  background: repeating-linear-gradient(115deg,
-    color-mix(in srgb, var(--steel) 55%, transparent) 0 2px,
-    transparent 2px 9px);
-  mask-image: linear-gradient(160deg, #000 8%, transparent 76%);
-  opacity: 0.5;
-}
-.vhead .vhead__sub { margin-top: 9px; max-width: 640px; line-height: 1.75; }
+.vhead .vhead__sub { margin-top: 8px; max-width: 620px; color: var(--ink-mute); font-size: 13px; line-height: 1.7; }
+.vhead__right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 720px) {
-  .vhead h1 { font-size: 26px; padding: 0 18px; }
-  /* 窄屏这一对跟着标题缩：`36 → 26` 是 0.72 倍，斜杠就按这个比例从 5×22 收到 4×16
-     （居中仍靠 `margin-top: -height/2`）。
-     ⚠️ 这两行原来停在**菱形**那一版（`7px × 7px / -3px`）—— a2d3f1b 把宽屏那对换成
-     斜杠时漏改了这里，窄屏会把斜杠压回一枚小方块，与宽屏不是同一个记号。 */
-  .vhead h1::before, .vhead h1::after { width: 4px; height: 16px; margin-top: -8px; }
-  .vhead .vhead__kicker::before, .vhead .vhead__kicker::after { width: 18px; }
+  .vhead h1 { font-size: 24px; }
 }
 
 .grid { display: grid; gap: 18px; }
@@ -1014,3 +911,71 @@ input[type='range']::-moz-range-thumb {
      width 一并写死，否则默认尺寸把盒子撑不回来；四件套落在同一条里，单一出处。 */
   input[type='checkbox'] { width: 24px; min-width: 24px; height: 24px; min-height: 24px; }
 }
+
+
+/* ============ 新骨架：面板 / 按钮 / 芯片（2026-11 重排） ============
+   这一节是**当前口径**，后写故覆盖上面几版的老样式（老样式留着是因为还有页面在
+   引用它们的历史注释，删了容易连带删掉别人记的坑）。三条硬口径：
+     · 面：白底 + 1px 细线，零圆角、零投影、零渐变；
+     · 字：400 / 600 两档，标题不加粗影，字距只给 11px 的西文小标；
+     · 强调：只有 --steel 一处，且一屏不超过三处；绯红只危险、金只待办。
+   按钮不再有「按下沉 2px + 实心偏移影」那一套——静态面上不加影，位移只在 hover 一个色阶。 */
+.panel {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+}
+.panel > .panel__head {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: none;
+}
+.panel__title { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
+.panel__body { padding: 16px; }
+
+.btn {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  padding: 8px 16px;
+  color: var(--ink);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  transition: color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
+}
+.btn:hover { background: var(--bg-2); border-color: var(--line-3); color: var(--ink); transform: none; box-shadow: none; }
+.btn:active { transform: none; }
+.btn--primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg-1);
+  box-shadow: none;
+}
+.btn--primary:hover { background: var(--ink-dim); border-color: var(--ink-dim); color: var(--bg-1); transform: none; box-shadow: none; filter: none; }
+.btn--primary:active { transform: none; box-shadow: none; }
+.btn--amber {
+  background: color-mix(in srgb, var(--amber) 14%, var(--bg-1));
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--line-2));
+  color: var(--ink);
+  box-shadow: none;
+}
+.btn--amber:hover { background: color-mix(in srgb, var(--amber) 20%, var(--bg-1)); transform: none; box-shadow: none; filter: none; }
+.btn--ghost { background: transparent; border-color: var(--line-2); color: var(--ink-dim); box-shadow: none; }
+.btn--ghost:hover { background: var(--bg-2); border-color: var(--line-3); color: var(--ink); }
+
+.badge, .chip, .tag {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  padding: 4px 8px;
+  border-radius: 2px;
+  line-height: 1.2;
+  box-shadow: none;
+}
+.badge { font-family: var(--font-mono); letter-spacing: 0.06em; }
+.chip .chip__dot, .badge .badge__dot { width: 5px; height: 5px; box-shadow: none; border-radius: 1px; }
+.chip--danger { animation: none; }
+

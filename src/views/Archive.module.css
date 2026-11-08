@@ -1,1102 +1,1544 @@
-/* ===== 角色档案库 ===== */
+/* ============================================================
+   档案（Archive）—— 新版版式
+   ------------------------------------------------------------
+   口径：docs/前端重构-设计规范.md；骨架取自 tokens.css 的「新骨架」一节。
+   本文件只做版式：左索引 + 右正文的卷宗感，零圆角、零投影、零渐变，字重只 400 / 600。
 
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(336px, 1fr));
-  gap: 20px;
-}
+   立面：白底 + 1px 细线；强调只有 --steel，且只出现在「悬停 / 选中」这一处语义上。
+   ============================================================ */
 
-/* ---- 操作员横幅 ----
-   操作员这一支＝霓虹青（学园系统 / 信息那一侧）——与 App 的 .opAvatar、
-   Plot 的 .youFrame .dlgName 同一支。上一版这里是主调樱粉，粉退位后归青。 */
-.opBanner {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 20px;
-  align-items: center;
-  padding: 22px 26px;
-  margin-bottom: 22px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--steel) 38%, transparent);
-  border-radius: var(--radius);
-  /* 115° 斜纹那层随方贴纸稿撤走（那是 HUD 时期的底纹），色洗那层保留。 */
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--steel) 10%, transparent), transparent 60%),
-    var(--bg-1);
-}
-/* 右上那枚大写的底纹字：浅底上不能靠透明度压，只能拿主调调淡了当水印 */
-.opBanner::after {
-  content: "OPERATOR";
-  position: absolute;
-  right: -8px; top: -22px;
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 74px;
-  letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--steel) 9%, transparent);
-  pointer-events: none;
-  user-select: none;
-}
-/* 白字只剩这一处（mech §41 的 WHITE_OK 具名例外表里独一条）：
-   底走**两档深色**（steel-deep → red-deep），白字在两头是 5.04 / 5.07 ——
-   比 4.5 的正文线还高，「84px 方块」里那枚 30px/800 的姓字自然更稳。 */
-.opGlyph {
-  width: 84px; height: 84px;
-  display: flex; align-items: center; justify-content: center;
-  /* 全站唯一一处白字（mech §41 的具名例外表就这一条）。
-     底是**身份那一对**：青那头 steel-deep、绯那头 red-deep ——
-     白字两头 5.04 / 5.07，连正文的 4.5 线都过（不只是大字的 3:1）。
-     （第一稿这一对是 steel-deep → violet-deep；紫退回点缀后跟着换成绯。） */
-  background: linear-gradient(150deg, var(--steel-deep), var(--red-deep));
-  color: #fff;
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 30px;
-  /* 柔光换**实心位移投影**（官方那条 `0 7px 0`）：这块 84px 的姓字牌是全站
-     唯一一处白字，底又是最深的两档深色，配一条 `--offset-lg` 垫在下沿，
-     它就从「发光的方块」变成了「贴上去的方块」。 */
-  box-shadow: var(--offset-lg);
-  border-radius: var(--radius);
-}
-/* 那一格换成他的头像时：外形照旧（同一个圆角、同一圈青光），只是字换成人。
-   用的是 operator-face 方图，方框对方图，取景不用另外对位。
-   （这一条从前要写 `!important` —— Portrait 那一头压着一句行内的
-   `borderRadius: 0`，是旧版「方角配斜切」留下的。那句话随改版一并删了，
-   行内让位之后这里按常规权重就能盖住 Portrait 自己的兜底圆角。） */
-.opFace {
-  box-shadow: var(--offset-lg);
-  border-radius: var(--radius);
-}
-.opBannerMain h2 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.02em; }
-.opBannerMain h2 em { font-style: normal; color: var(--steel-deep); }
-.opBannerMain p { margin: 6px 0 12px; color: var(--ink-mute); font-size: 13.5px; max-width: 640px; }
-.opChips { display: flex; flex-wrap: wrap; gap: 8px; }
-.opNameEditor { display: flex; gap: 8px; align-items: center; }
-.opAction { align-self: start; justify-self: end; }
-@media (max-width: 760px) {
-  .opBanner { grid-template-columns: auto 1fr; }
-  .opAction { grid-column: 1 / -1; justify-self: end; }
-}
+/* ---------------- 顶部：五轴说明 / 操作员横幅 ---------------- */
 
-/* ---- 所属分组区 ---- */
-.group {
-  margin-top: 30px;
-  padding-top: 22px;
-  border-top: 1px dashed var(--line-2);
-}
-.group:first-of-type { margin-top: 0; border-top: none; padding-top: 0; }
-.groupBand {
+.axisGrid {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
-  padding-left: 10px;
-  border-left: 3px solid var(--ga, var(--violet));
+  gap: 6px;
+  margin-bottom: 10px;
 }
-.groupTitleBox { min-width: 0; }
-.groupTitle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-size: 19px;
-  font-weight: 900;
-  letter-spacing: 0.03em;
-  /* 分组本色是**给黑底挑的**（浅粉浅青那一批），当文字压在晨光白上会糊。
-     这里是纯 CSS，够不着 TSX 那支 inkOf()，就照它的路子往墨色里兑一道 ——
-     色相不动，仍认得出是哪一组。边框/底纹那些装饰处不兑，照旧用原色。 */
-  color: color-mix(in srgb, var(--ga, var(--violet)) 58%, var(--ink));
-}
-.groupTitle i {
-  font-style: normal;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--ink);
-  background: var(--ga, var(--amber));
-  padding: 2px 7px;
-  border-radius: var(--radius-pill);
-}
-.groupNote { margin: 7px 0 0; max-width: 560px; font-size: 12.5px; line-height: 1.8; color: var(--ink-mute); }
 
-/* ---- 角色卡 ---- */
-.card {
-  position: relative;
+.axisGrid .axisTag {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.axisGrid .axisTag b {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.axisGrid .axisTag span {
+  display: block;
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.opBanner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+  padding: 18px 0;
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
+}
+
+.opFace {
+  border: 0;
+}
+
+.opGlyph {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+.opBannerMain {
   display: flex;
   flex-direction: column;
-  --c: var(--violet);
-  overflow: hidden;
-  cursor: var(--cursor-point);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--c) 8%, transparent), transparent 38%),
-    var(--bg-1);
-  transition: transform var(--t-mid) var(--ease-out), border-color var(--t-mid), box-shadow var(--t-mid);
-}
-/* 悬停：抬 2px + 底下冒出实心垫片（走卡片自己的 `--c`，不是 `--offset-*` 那支青的）。
-   原来是抬 4px 配 `--shadow-3` 那层柔影，方贴纸稿换成同一句「贴纸被掀起来一条边」。 */
-.card:hover {
-  transform: translateY(-2px);
-  border-color: var(--c);
-  box-shadow: 0 3px 0 var(--c);
-}
-.card:focus-visible {
-  /* 焦点圈要一眼看见：本色兑墨色，别兑白 —— 浅底上兑白的圈等于没画 */
-  outline: 2px solid color-mix(in srgb, var(--c) 62%, var(--ink));
-  outline-offset: 2px;
-}
-.card:active { transform: translateY(-1px); }
-.card::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  /* 顶上那条色带改**实心**（原来是 `var(--c) → transparent 85%` 的渐隐）。
-     官方那套的色块都是纯色到底，渐隐是玻璃时期的习惯 —— 一根带子要么在要么不在。 */
-  background: var(--c);
-  opacity: 0.85;
+  gap: 6px;
+  min-width: 0;
 }
 
-/* 未遇见 · 封存态：不可点、无色相、留白处只写事实（此人在本终端还未显影） */
-.cardLocked {
-  cursor: default;
-  border-style: dashed;
-  filter: saturate(0.15);
-}
-.cardLocked:hover { transform: none; border-color: var(--line); box-shadow: none; }
-.cardLocked::before { background: var(--ink-faint); opacity: 0.4; }
-.cardLocked .cardQuote { color: var(--ink-faint); font-style: italic; }
-.lockSigil {
-  flex: 0 0 auto;
-  width: 46px; height: 46px;
-  display: grid; place-items: center;
-  border: 1px dashed var(--line-2);
-  border-radius: 50%;
-  font-family: var(--font-mono);
+.opBannerMain h2 {
+  margin: 0;
   font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.opBannerMain h2 em {
+  margin-left: 8px;
+  font-size: 12px;
+  font-style: normal;
   color: var(--ink-faint);
+}
+
+.opArcLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
+.opArcLine b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.opArcLine p {
+  margin: 0;
+  max-width: 46em;
+  line-height: 1.9;
+}
+
+.opArcVol {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.opChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.opAction {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* ---------------- 操作员专档（展开后） ---------------- */
+
+.opArc {
+  display: grid;
+  grid-template-columns: clamp(180px, 22vw, 260px) minmax(0, 1fr);
+  gap: 28px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.opArc[data-op-art='none'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.opArt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.opArtImg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.opArtCap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.opArcBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.opCardHead {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.opCardGlyph {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  font-size: 16px;
+  color: var(--ink-faint);
+}
+
+.opCardTitle {
+  flex: 1;
+  min-width: 0;
+}
+
+.opCardTitle h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.opCardTitle span {
+  display: block;
+  margin-top: 2px;
+}
+
+.opArcAxes {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.opAxis {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.opAxis span {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.opAxisBar {
+  height: 3px;
+  background: var(--line);
+}
+
+.opAxisBar i {
+  display: block;
+  height: 100%;
+  background: var(--ink-mute);
+}
+
+.opAxis b {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: right;
+}
+
+.opPas {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.opPas b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.opPas span {
+  line-height: 1.8;
+}
+
+.opAbilKind {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.opAbilKind[data-kind='终结技'] {
+  color: var(--ink);
+}
+
+.opArm {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 0 10px 12px;
+  border-left: 2px solid var(--line-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.opArm b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.opArm i {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.opArm p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+.opAbil {
+  display: flex;
+  flex-direction: column;
+}
+
+.opAbilRow {
+  display: grid;
+  grid-template-columns: 20px auto minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.opAbilRow b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.opAbilRow span {
+  line-height: 1.8;
+}
+
+.opAbilIco {
+  color: var(--ink-faint);
+}
+
+.opLine {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.opLine li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0 8px 12px;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
+.opLineOn {
+  border-left-color: var(--line-3);
+  color: var(--ink);
+}
+
+.opLineOn b {
+  font-weight: 600;
+}
+
+/* ---------------- 名册：左索引 + 右正文 ---------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 36px;
+  align-items: start;
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-2);
+}
+
+.index {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.idxGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.idxGroupTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+
+.idxGroupTitle i {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.idxRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  padding: 0 0 0 10px;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+
+.idxRow b {
+  font-size: 13px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.idxRow span {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.idxRow:hover {
+  background: var(--bg-2);
+  border-left-color: var(--steel);
+}
+
+.idxRow:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: -2px;
+}
+
+.idxLocked {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.idxLocked:hover {
+  border-left-color: transparent;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  min-width: 0;
+}
+
+/* ---------------- 一组 ---------------- */
+
+.group {
+  min-width: 0;
+}
+
+.groupBand {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.groupTitleBox {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.groupTitle i {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+.groupNote {
+  margin: 0;
+  max-width: 46em;
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ink-mute);
+}
+
+/* ---------------- 一张卡 ---------------- */
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.card {
+  position: relative;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.card::after {
+  content: '';
+  display: block;
+  clear: both;
+}
+
+.card[role='button'] {
+  cursor: pointer;
+}
+
+.card[role='button']:hover {
   background: var(--bg-2);
 }
-.lockTag {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  color: var(--ink-faint);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  padding: 2px 8px;
+
+.card[role='button']:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 2px;
 }
 
-/* 卡面顶图：同一张立绘裁到半身。留出卡顶那 3px 主题色压条（.card::before） */
 .cardArt {
-  position: relative;
-  margin: 3px 0 12px;
-  height: 172px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--c) 10%, var(--bg-2));
+  float: left;
+  width: 96px;
+  margin: 0 18px 8px 0;
 }
+
 .cardArt img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 14%;
   display: block;
+  width: 100%;
+  height: auto;
 }
-/* 底缘渐隐：半身像的下切边化进卡面，不像是被裁断的 */
-.cardArtFade {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 58%;
-  pointer-events: none;
-  background: linear-gradient(180deg, transparent, var(--bg-1));
-}
+
+.cardArtFade,
 .cardArtName {
-  position: absolute;
-  left: 16px;
-  bottom: 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  color: var(--ink-dim);
+  display: none;
 }
 
 .cardHead {
   display: flex;
+  gap: 12px;
   align-items: center;
-  gap: 16px;
-  padding: 18px 18px 12px;
+  padding-bottom: 8px;
 }
-.cardArt + .cardHead { padding-top: 4px; }
 
-/* 外形：人物卡「外貌」一节的逐字摘录 */
-.lookList {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.lookList li { font-size: 13px; line-height: 1.9; color: var(--ink-dim); }
-.lookList li::marker { color: color-mix(in srgb, var(--c, var(--violet)) 72%, transparent); }
 .cardNo {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 11px;
+  letter-spacing: 0.1em;
   color: var(--ink-faint);
-  text-transform: uppercase;
 }
-.cardName { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.cardName h3 { margin: 0; font-size: 20px; font-weight: 900; letter-spacing: 0.01em; overflow-wrap: anywhere; }
-.cardName span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); letter-spacing: 0.06em; }
-.cardEpithet {
-  /* 同上：本色当文字用要先压深（旧版是往白里兑，浅底上得反过来） */
-  color: color-mix(in srgb, var(--c) 58%, var(--ink));
-  font-size: 12.5px;
+
+.cardName {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.cardName h3 {
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  margin-top: 4px;
+  letter-spacing: 0.01em;
+}
+
+.cardName span {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.cardEpithet {
+  font-size: 12px;
+  color: var(--ink-mute);
 }
 
 .cardQuote {
-  position: relative;
-  margin: 2px 18px 14px;
-  padding: 10px 12px 10px 16px;
-  border-left: 3px solid var(--c);
-  background: color-mix(in srgb, var(--c) 7%, transparent);
-  color: var(--ink-dim);
+  max-width: 46em;
+  margin: 4px 0 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-2);
   font-size: 13px;
-  line-height: 1.6;
-  font-style: normal;
-}
-.cardQuote::before { content: "“"; color: var(--c); font-weight: 900; margin-right: 2px; }
-.cardQuote::after { content: "”"; color: var(--c); font-weight: 900; margin-left: 2px; }
-
-.cardBody { padding: 2px 18px 6px; display: flex; flex-direction: column; gap: 12px; }
-.kvBlock { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
-.kvCell small { display: block; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.08em; margin-bottom: 2px; }
-.kvCell b { font-size: 12.5px; font-weight: 700; color: var(--ink-dim); }
-
-/* 末列需容纳「常态/极限」双值（如 53/∞），故较单值时更宽 */
-.stat { display: grid; grid-template-columns: 44px 1fr 58px; align-items: center; gap: 10px; }
-.stat small { color: var(--ink-faint); font-size: 11.5px; }
-.stat .num { font-family: var(--font-mono); font-size: 12px; text-align: right; color: var(--ink-dim); white-space: nowrap; }
-
-/* 极限条：红色，渲染于常态条之下；两者重合处被常态条盖住，
-   只有「极限超出常态」的那一段露出红色 */
-.limitFill { background: linear-gradient(90deg, var(--red-deep), var(--red)); }
-
-.bondRow { display: flex; align-items: center; gap: 10px; }
-.bondName {
-  font-size: 12px;
-  font-weight: 800;
-  /* 徽章里的字同样压深一档；底下那层 14% 的底纹仍是原色 */
-  color: color-mix(in srgb, var(--c) 58%, var(--ink));
-  background: color-mix(in srgb, var(--c) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
+  line-height: 1.9;
+  color: var(--ink-dim);
 }
 
-/* 关系档位那一枚：与羁绊徽章并排，但形状不同 —— 羁绊是读数（实心圆角小徽章），
-   关系是剧情给的定名（虚线框），两者摆在一起是让「不是一回事」看得见。
-   没给过时不留主题色：不拿色相替剧情先定调。 */
-.relBadge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 3px 8px;
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--ink-mute);
-  background: transparent;
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius);
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .cardFoot {
-  margin-top: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 18px 16px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
-.cardStatusNote { flex: 1; font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
 
-/* ---- 详情弹窗（就近锚定：测量卡片 rect → fixed 落位） ---- */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes riseIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+.cardStatusNote {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
 
-/* 半透明底幕：点按即关闭 */
+.cardLocked {
+  color: var(--ink-faint);
+}
+
+.lockSigil {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  font-size: 16px;
+  color: var(--ink-faint);
+}
+
+.lockTag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+
+/* ---------------- 键值格 / 五轴条 ---------------- */
+
+.kvBlock {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.kvCell {
+  min-width: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.kvCell small {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.kvCell b {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+.stat {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 48px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stat small {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.stat .meter {
+  position: relative;
+}
+
+.stat span.num {
+  font-size: 11px;
+  text-align: right;
+  color: var(--ink-dim);
+}
+
+.infFill {
+  background: var(--ink-faint);
+}
+
+.limitFill {
+  background: var(--red);
+}
+
+.overMark {
+  margin-left: 4px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--red-deep);
+}
+
+.bondRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.bondName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* ---------------- 弹窗（就近展开的那一页） ---------------- */
+
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 75;
-  /* 46% → 72%：与全站遮罩统一。原来配着 blur(2px) 才够糊。 */
-  background: color-mix(in srgb, var(--ink) 72%, transparent);
-  animation: fadeIn 200ms ease both;
+  z-index: 40;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
 }
 
 .dialog {
   position: fixed;
-  z-index: 80;
-  width: min(1000px, calc(100vw - 28px));
-  max-height: min(84vh, 760px);
+  z-index: 41;
+  width: min(940px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--line-2);
-  border-top: 3px solid var(--c, var(--violet));
-  border-radius: var(--radius);
   background: var(--bg-1);
-  box-shadow: var(--shadow-3);
-  opacity: 0;
-  pointer-events: none;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  box-shadow: none;
 }
 
-/* 展开的档案：左边三分之一摆立绘整身，右边写档案 */
+.dialog.open {
+  animation: dossierIn 160ms var(--ease-out);
+}
+
+.dialog[data-side='back'],
+.dialog[data-side='combat'] {
+  width: min(980px, calc(100vw - 48px));
+}
+
+.dialog[data-turn='out'] {
+  animation: dossierTurnOut 120ms var(--ease-out) forwards;
+}
+
+.dialog[data-turn='in'] {
+  animation: dossierTurnIn 120ms var(--ease-out);
+}
+
+@keyframes dossierIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes dossierTurnOut {
+  to { opacity: 0; transform: perspective(1200px) rotateY(70deg); }
+}
+
+@keyframes dossierTurnIn {
+  from { opacity: 0; transform: perspective(1200px) rotateY(-70deg); }
+  to { opacity: 1; transform: none; }
+}
+
 .dossier {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 2fr;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.3fr);
 }
+
 .dossierArt {
   position: sticky;
   top: 0;
   align-self: start;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  min-height: min(84vh, 760px);
-  padding: 0 0 18px;
-  overflow: hidden;
-  background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--c, var(--violet)) 22%, transparent), transparent 72%),
-    var(--bg-2);
-}
-/* 有立绘：铺满左栏 —— 上贴顶、下给说明让位，整身完整可见（contain） */
-.dossierArt[data-dossier-art='img'] .artImg {
-  position: absolute;
-  inset: 0 0 92px 0;
-  width: auto;
-  height: auto;
-  border-radius: var(--radius);
-}
-/* 没立绘：纹章占位只摆一小块，别让字号跟着整栏算成一个巨字 */
-.dossierArt[data-dossier-art='sigil'] .artImg {
-  position: absolute;
-  left: 50%;
-  bottom: 92px;
-  transform: translateX(-50%);
-  border-radius: var(--radius);
-}
-/* 右缘渐隐：立绘的右边界化进档案底色，两块拼成一张纸而不是两张并排 */
-.artFade {
-  position: absolute;
-  inset: 0 0 0 auto;
-  width: 46%;
-  pointer-events: none;
-  /* 渐隐那一头是浅底的纸色（旧版压的是暗酒红）—— 立绘的右边界化进档案底色 */
-  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--bg-2) 58%, transparent) 52%, var(--bg-2) 100%);
-}
-.artCap {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 0 18px;
-}
-.artCap .btn { cursor: var(--cursor-point); }
-.dossierText { min-width: 0; }
-.dialog.open {
-  opacity: 1;
-  pointer-events: auto;
-  animation: riseIn 240ms var(--ease-out) both;
-}
-/* 翻到背面（私密档案）时，卡片外圈也转暖 —— 与页内的玫瑰私房同一套。
-   正面那份档案不受影响（选择器带着 data-side='back'）。
-   box-shadow 是一条整体属性，重写就得把基础阴影原样带上。 */
-.dialog[data-side='back'],
-.dialog[data-side='combat'] {
-  border-radius: var(--radius);
-  border-color: color-mix(in srgb, var(--rose) 34%, var(--line-2));
-  border-top-color: color-mix(in srgb, var(--c, var(--rose)) 52%, var(--rose));
-  /* 浮层那一档保留（`--shadow-3` 是全站唯一还留柔影的一处），
-     玫瑰色那圈外发光撤了 —— 翻面这件事已经由边框转暖说清楚了。 */
-  box-shadow: var(--shadow-3);
-}
-.dialogHead {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 22px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-2);
-}
-.dialogTitle h3 { margin: 0; font-size: 24px; font-weight: 900; }
-.dialogTitle small { display: block; margin-top: 4px; color: var(--ink-mute); font-size: 12px; letter-spacing: 0.05em; }
-.dialogClose {
-  margin-left: auto;
-  width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  background: transparent; border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  color: var(--ink-mute); font-size: 16px;
-  transition: all var(--t-fast);
-}
-.dialogClose:hover { color: var(--on-accent); border-color: var(--red); background: var(--red); }
-.dialogBody { padding: 22px 26px 28px; }
-.dialogBio { font-size: 14px; line-height: 1.9; color: var(--ink-dim); white-space: pre-line; }
-.dialogSection { margin-top: 20px; }
-.dialogSection h4 {
-  display: flex; align-items: center; gap: 8px;
-  margin: 0 0 10px;
-  font-size: 12px; font-weight: 800;
-  letter-spacing: 0.12em;
-  color: var(--ink-mute);
-}
-.dialogSection h4::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-
-.relationGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
-
-/* 关系确认：羁绊到满值才出现的那一栏（不是数值，是一句定性的话） */
-.bondConfirm {
-  margin-top: 10px;
-  padding: 9px 11px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
-}
-.bondConfirm b { font-size: 12.5px; letter-spacing: 0.06em; }
-.bondConfirm p { margin: 5px 0 0; font-size: 12px; line-height: 1.85; color: var(--ink-dim); }
-
-/* 带∞的满格读数（条纹在组件内联 background 完成，此处仅收边框高亮） */
-.infFill { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
-
-/* 越过量表基准的读数：基准不是上限，这只提醒「读数已在常规量表之外」 */
-.overMark {
-  margin-left: 4px; padding: 0 4px; border-radius: var(--radius-pill);
-  font-style: normal; font-size: 9px; letter-spacing: 0.06em; vertical-align: 1px;
-  /* 浅底上 9px 的琥珀字读不出来，压深一档（--amber-deep 是这一套给「浅底上的琥珀」备的） */
-  color: var(--amber-deep); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
-}
-
-/* ---- 立绘全图查看器（大图 contain + 半透明幕） ---- */
-.lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 96;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  /* 看大图那一层仍要压暗（图是要看的主体），只是不用旧版那种纯黑，用墨紫。
-     88% 是全站最实的一层遮罩 —— 它**不跟着上面的遮罩提到 72%**：那一层糊化
-     撤了之后本来就靠 88% 撑着，再统一过去大图就压不住了。blur(8px) 一并撤。 */
-  background: color-mix(in srgb, var(--ink) 88%, transparent);
-  animation: fadeIn 200ms ease both;
-}
-.lightboxStage {
-  /* 幕是**暗**的（大图才是主体），所以这一格是全站唯一一个「墨色阶翻过来」的口袋：
-     题注、「点按合上」那行灰、关闭键的描边，在里面照旧写 var(--ink-*)，这里翻一次。
-     ——翻在 stage 上而不是 .lightbox 上：上面那条幕色本来就吃 --ink，
-       翻在外层会把幕自己染白。 */
-  --ink-dim: rgba(255, 255, 255, 0.84);
-  --ink-mute: rgba(255, 255, 255, 0.64);
-  --ink-faint: rgba(255, 255, 255, 0.44);
-  --line-2: rgba(255, 255, 255, 0.30);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  animation: riseIn 240ms var(--ease-out) both;
-}
-.lightboxMeta {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: min(760px, calc(100vw - 48px));
-  color: var(--ink-dim);
-  font-size: 14px;
-}
-.lightboxMeta b { color: #fff; font-size: 16px; }
-.lightboxMeta .dialogClose { margin-left: auto; cursor: var(--cursor-point); }
-.lightboxStage img { box-shadow: var(--shadow-3); border-radius: var(--radius); }
-
-@media (max-width: 820px) {
-  /* 窄屏：立绘退成顶部一条，档案回到单栏（左三右二在手机上会两边都不够宽） */
-  .dossier { grid-template-columns: 1fr; }
-  .dossierArt {
-    position: relative;
-    min-height: 0;
-    height: 300px;
-    padding-bottom: 12px;
-  }
-  .dossierArt[data-dossier-art='img'] .artImg { inset: 0 0 62px 0; }
-  .dossierArt[data-dossier-art='sigil'] .artImg { bottom: 62px; }
-  /* 背面照正面一起退成顶部一条 —— 两栏同一断点，翻面时版面不跳 */
-  .intimBack { grid-template-columns: 1fr; min-height: 0; }
-  .intimBackArt {
-    position: relative;
-    min-height: 0;
-    height: 300px;
-    padding-bottom: 12px;
-  }
-  .intimBackArt figure { inset: 0 0 62px 0; }
-  .artFade { display: none; }
-}
-
-@media (max-width: 680px) {
-  .kvBlock, .relationGrid { grid-template-columns: 1fr; }
-  .cards { grid-template-columns: 1fr; }
-  .dialogHead { flex-wrap: wrap; }
-  .dialogTitle h3 { font-size: 20px; }
-  .cardArt { height: 148px; }
-}
-
-/* ============================================================
-   主角档案 · 言万心叶（随剧情换页）
-   ============================================================ */
-
-.opArcLine { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin: 2px 0 4px; }
-.opArcLine b { font-size: 14px; letter-spacing: 0.04em; color: var(--amber-deep); }
-.opArcVol { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.06em; }
-
-.opArc {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 0 0 18px;
-  padding: 13px 14px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--amber);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-}
-/* 有立绘：左一栏整身、右一栏原来的那些块（与其它角色档案的左三分之一同一路数）。
-   无立绘（data-op-art='none'）不加这一档，整页仍是一列 —— 别为一张没有的图留白。 */
-.opArcBody {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
   min-width: 0;
+  padding: 16px;
+  border-right: 1px solid var(--line);
 }
-.opArc[data-op-art='img'] {
-  display: grid;
-  /* 立绘那一栏给得比别处宽：整身稿是竖的，栏宽就是它的实际大小（约 300×520） */
-  grid-template-columns: minmax(200px, 300px) 1fr;
-  align-items: start;
-  gap: 16px;
-}
-/* 立绘一格：**盒子跟着图走**，不是图去将就盒子。
-   右栏那摞块比立绘高得多，若把这一格拉成行高（stretch），一张 ~0.58 的竖图
-   在又高又窄的框里按 contain 缩下来，只在正中占一条，上下全是空框 ——
-   看着就是「立绘很小、图位空着」。改成 height:auto：图铺满栏宽，盒子到脚为止，
-   下缘的渐隐与「查看全图」正好压在图的脚边（本来就是照着这个位置摆的）。 */
-.opArt {
-  position: relative;
-  align-self: start;
-  min-height: 260px;
-  overflow: hidden;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--steel) 14%, transparent), transparent 72%),
-    var(--bg-2);
-}
-/* 整身完整可见（contain），铺满这一栏靠栏宽，不靠 Portrait 的像素尺寸 */
-.opArtImg {
-  position: relative;
+
+.artImg,
+.dossierArt img,
+.intimBackArt img {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: var(--radius);
 }
-/* 下缘渐隐：立绘的脚化进「查看全图」那一条，不是硬切 */
+
+.artFade,
 .opArtFade {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 92px;
-  pointer-events: none;
-  background: linear-gradient(180deg, transparent 0%, var(--bg-2) 84%);
+  display: none;
 }
-.opArtCap {
-  position: absolute;
-  inset: auto 0 0 0;
+
+.artCap {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 4px;
-  padding: 0 12px 10px;
-}
-.opArtCap .btn { cursor: var(--cursor-point); }
-
-/* 窄屏 / 小屏：左栏并不下，退回一列（立绘限宽居中，别让一张整身稿撑成一屏高） */
-@media (max-width: 860px) {
-  .opArc[data-op-art='img'] { grid-template-columns: 1fr; }
-  .opArt { min-height: 0; }
-  .opArtImg { max-width: 320px; margin: 0 auto; }
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 
-.opArcAxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 9px; }
-.opAxis { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
-.opAxis > span { min-width: 62px; }
-.opAxisBar { height: 5px; border-radius: var(--radius-pill); background: var(--bg-2); overflow: hidden; }
-.opAxisBar i {
+.artCap button {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.dossierText {
+  min-width: 0;
+  padding: 18px 20px 26px;
+}
+
+.dialogHead {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 32px;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.dialogTitle {
+  min-width: 0;
+}
+
+.dialogTitle small {
   display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--violet), color-mix(in srgb, var(--violet) 45%, var(--bg-1)));
-  transition: width 0.35s ease;
-}
-.opAxis b { font-size: 11.5px; color: var(--ink); }
-
-.opArm { display: flex; flex-direction: column; gap: 4px; }
-.opArm b { font-size: 13px; letter-spacing: 0.04em; }
-.opArm i { font-style: normal; font-size: 10px; color: var(--ink-faint); letter-spacing: 0.1em; }
-.opArm p { margin: 3px 0 0; font-size: 11.5px; line-height: 1.75; color: var(--ink-mute); }
-
-.opAbil { display: flex; flex-direction: column; gap: 6px; }
-.opAbilIco { color: var(--amber-deep); opacity: 0.85; align-self: center; }
-/* 被动单独一行、紫色描边：与「能出的手」区分开——它不占回合 */
-.opPas {
-  display: grid;
-  grid-template-columns: auto minmax(120px, auto) 1fr;
-  align-items: baseline;
-  gap: 9px;
-  padding: 7px 9px;
-  margin-bottom: 6px;
-  border: 1px solid color-mix(in srgb, var(--violet) 34%, var(--line));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--violet) 6%, transparent);
-}
-.opPas b { font-size: 12.5px; }
-.opAbilRow {
-  display: grid;
-  grid-template-columns: auto auto minmax(120px, auto) 1fr;
-  align-items: baseline;
-  gap: 9px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-2);
-}
-.opAbilRow b { font-size: 12.5px; }
-.opAbilKind {
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  padding: 1px 5px;
-  border-radius: var(--radius-pill);
-  color: var(--steel-deep);
-  border: 1px solid color-mix(in srgb, var(--steel) 45%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
 }
-.opAbilKind[data-kind='技能'] { color: var(--amber-deep); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
-.opAbilKind[data-kind='启动'] { color: var(--violet-deep); border-color: color-mix(in srgb, var(--violet) 50%, transparent); }
 
-.opLine { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 0; list-style: none; }
-.opLine li {
+.dialogTitle h3 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dialogClose {
+  width: 32px;
+  height: 32px;
   display: grid;
-  grid-template-columns: auto minmax(140px, auto) 1fr;
-  align-items: baseline;
-  gap: 9px;
-  padding: 5px 8px;
-  border-left: 2px solid var(--line-2);
-  opacity: 0.55;
-}
-.opLine li[data-seen='1'] { opacity: 1; }
-.opLineOn { border-left-color: var(--amber) !important; background: color-mix(in srgb, var(--amber) 7%, transparent); }
-.opLine li b { font-size: 12.5px; }
-
-@media (max-width: 700px) {
-  /* 被动那一行（`.opPas`）本来漏在外面 —— 它与 `.opAbilRow` / `.opLine li`
-     是**同一套三栏**（名目 │ 那一段读数 │ 说明），只是少一栏图标。
-     从前只收了两处，被动那一行仍按 `minmax(120px, auto)` 走，窄屏上自己顶出去。 */
-  .opAbilRow, .opLine li, .opPas { grid-template-columns: auto auto 1fr; }
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  color: var(--ink-mute);
+  cursor: pointer;
 }
 
-/* —— 主角专档 · 档案头 —— */
-.opCardHead {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; margin-bottom: 10px;
-  border: 1px solid var(--line-2); border-radius: var(--radius);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--steel) 12%, transparent), transparent 70%);
-}
-/* 天青那一枚是「这一份是主角专档」的记号 —— 浅底上压深字（墨紫），不压白 */
-.opCardGlyph {
-  width: 32px; height: 32px; flex: 0 0 32px;
-  display: grid; place-items: center;
-  border-radius: 50%; font-size: 13px; font-weight: 700;
-  color: var(--ink); background: var(--steel); letter-spacing: 0;
-}
-.opCardTitle { flex: 1 1 auto; min-width: 0; }
-.opCardTitle h3 { margin: 0; font-size: 14px; letter-spacing: .04em; }
-
-/* ============================================================
-   战斗数值：档案卷宗上的评定 ≠ 下场时的那份面板
-   ============================================================ */
-.combat { display: flex; flex-direction: column; gap: 10px; }
-.combatNums {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px;
-}
-.combatNum {
-  display: flex; flex-direction: column; gap: 2px; padding: 7px 9px;
-  border: 1px solid var(--line); border-left: 2px solid var(--amber);
-  background: color-mix(in srgb, var(--bg-2) 68%, transparent);
-}
-.combatNum small { font-size: 9.5px; letter-spacing: 0.14em; color: var(--ink-faint); }
-.combatNum b { font-size: 14px; color: var(--ink); }
-.combatAxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); gap: 6px; }
-.combatAxis {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
-  padding: 4px 8px; border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-1) 72%, transparent);
-}
-.combatAxis small { font-size: 9.5px; color: var(--ink-mute); }
-.combatAxis b { font-size: 13px; color: var(--amber-deep); }
-.combatPassive, .combatGear {
-  display: flex; flex-direction: column; gap: 3px; padding: 8px 10px;
-  border-left: 2px solid var(--violet);
-  background: color-mix(in srgb, var(--bg-2) 66%, transparent);
-  font-size: 11px; line-height: 1.65; color: var(--ink-mute);
-}
-.combatGear { border-left-color: var(--jade); }
-.combatPassive b, .combatGear b { font-size: 12px; color: var(--ink); }
-/* 被动的读数：说明底下把生效的那几个数逐条念出来 */
-.combatNums2 { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
-.combatNums2 i {
-  padding: 0 5px; border: 1px solid color-mix(in srgb, var(--violet) 45%, transparent);
-  border-radius: var(--radius-pill); font-style: normal; font-size: 10px;
-  font-family: var(--font-mono); color: var(--ink);
-}
-.combatArch {
-  padding: 0 5px; border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
-  border-radius: var(--radius-pill); font-family: var(--font-mono); font-size: 9px; line-height: 15px;
-  color: var(--amber-deep);
-}
-.combatSkills { display: flex; flex-direction: column; gap: 6px; }
-
-/* ——— 档案里换反现实辅助装备 ——— */
-.gearSwap { display: flex; flex-direction: column; gap: 6px; }
-.gearSwapHead { display: flex; align-items: baseline; gap: 8px; }
-.gearList { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow-y: auto; }
-.gearRow {
-  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left;
-  padding: 7px 10px; cursor: var(--cursor-point);
-  border: 1px solid var(--line); border-left: 2px solid var(--line-2);
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
-  color: inherit; font: inherit;
-}
-.gearRow:hover:not(:disabled) { border-left-color: var(--jade); }
-.gearRow:disabled { opacity: 0.5; cursor: not-allowed; }
-.gearOn { border-left-color: var(--jade); background: color-mix(in srgb, var(--jade) 8%, transparent); }
-.gearName { font-size: 12.5px; }
-.gearSub {
-  margin-left: 6px; font-style: normal; font-family: var(--font-mono);
-  font-size: 9px; letter-spacing: 0.06em; color: var(--ink-mute);
-}
-.gearMod { grid-column: 2; justify-self: end; font-family: var(--font-mono); font-size: 10px; color: var(--jade-deep); }
-.gearNote { grid-column: 1 / -1; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }
-.gearOn2 {
-  grid-column: 2; justify-self: end; font-family: var(--font-mono);
-  font-size: 9px; color: var(--jade-deep);
-}
-.combatSkill {
-  display: flex; flex-direction: column; gap: 3px; padding: 7px 10px;
-  border: 1px solid var(--line); border-left: 2px solid var(--line-2);
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
-}
-.combatSkill[data-kind='技能'] { border-left-color: var(--amber); }
-.combatSkill[data-kind='启动'] { border-left-color: var(--violet); }
-.combatSkill[data-kind='普攻'] { border-left-color: var(--steel); opacity: 0.86; }
-/* 到达点：这个人的终结技，压在技能表最后、边框最亮 */
-.combatSkill[data-kind='到达点'] {
-  border-left-color: var(--amber);
-  border-left-width: 3px;
-  background: color-mix(in srgb, var(--amber) 6%, transparent);
-}
-.combatSkillTop { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-.combatSkillTop b { font-size: 12.5px; }
-.combatKind {
-  padding: 0 5px; border: 1px solid var(--line-2); border-radius: var(--radius-pill);
-  font-family: var(--font-mono); font-size: 9px; line-height: 15px; color: var(--ink-mute);
-}
-.combatSkillTop .tiny { margin-left: auto; }
-.combatSkill p { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-mute); }
-/* 效果那一行：比描述更硬一点，它是引擎真在算的数 */
-.combatEffect {
-  padding-top: 3px; border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent);
-  font-family: var(--font-mono); font-size: 10px; line-height: 1.65; color: var(--ink-dim);
-}
-
-/* ---------------- 私密档案（只对女角色生效 · 见 Archive.tsx 的 IntimateBack） ----------------
-   这一页不在正面的档案流里，而是**卡的另一面**：点档案最末那一栏的门，整张卡翻过去。
-   配色走玫瑰一系（`--rose`，比主调的樱粉沉、比琥珀冷），与正面紫/蓝的常规档案读数分开，
-   一眼看出是另一档信息。 */
-.intimLock {
-  padding: 10px 12px;
-  border: 1px dashed var(--line-2);
-  border-left: 2px solid var(--rose);
-  background: color-mix(in srgb, var(--rose) 7%, transparent);
-}
-.intimLock b { display: block; font-size: 12.5px; letter-spacing: 0.06em; color: var(--rose-deep); }
-.intimLock p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.85; color: var(--ink-dim); }
-
-/* 正面最末那一栏：解封之后只剩一句提示与一枚「翻到背面」 */
-/* 解封之后这一节里只有一颗按钮 —— 不写抬头、也不写背面记着什么 */
-.intimEnter {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 14px;
-  border: 1px solid color-mix(in srgb, var(--rose) 44%, var(--line));
-  background: color-mix(in srgb, var(--rose) 14%, transparent);
+.dialogClose:hover {
+  background: var(--bg-2);
   color: var(--ink);
-  font-size: 12.5px; letter-spacing: 0.04em;
-  cursor: var(--cursor-point);
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-}
-.intimEnter:hover {
-  border-color: var(--rose);
-  background: color-mix(in srgb, var(--rose) 26%, transparent);
-  color: var(--rose-deep);
-}
-.intimEnter svg { color: var(--rose-deep); }
-
-/* ---- 翻面：整张卡转过去。两拍，中间换内容（见 Archive.tsx 的 flipTo） ---- */
-.dialog[data-turn='out'] { animation: cardTurnOut 120ms ease-in both; }
-.dialog[data-turn='in'] { animation: cardTurnIn 120ms ease-out both; }
-@keyframes cardTurnOut {
-  from { transform: perspective(1600px) rotateY(0deg); }
-  to { transform: perspective(1600px) rotateY(-90deg); opacity: 0.25; }
-}
-@keyframes cardTurnIn {
-  from { transform: perspective(1600px) rotateY(90deg); opacity: 0.25; }
-  to { transform: perspective(1600px) rotateY(0deg); opacity: 1; }
 }
 
-/* ---- 背面：与正面同构（左立绘 / 右档案），只是右边换成五根条 ----
-   这一页的画风是**玫瑰私房**：别处是晨光浅紫，这一间是**一屋子粉色晨光** ——
-   全站最暖的一间，翻过来就知道进了另一间房。
-   只在背面生效（`.intimBack` 是 IntimateBack 的根），正面那份档案一个字不受影响。 */
-.intimBack {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) 2fr;
-  align-items: stretch;
-  min-height: min(84vh, 760px);
-  /* 底是拿 --bg-1 与 rose-deep 混出来的粉（不硬写色值），顶上再压一层暖光晕 */
-  background:
-    radial-gradient(128% 52% at 50% 0%, var(--rose-soft), transparent 68%),
-    color-mix(in srgb, var(--bg-1) 84%, var(--rose-deep));
-}
-/* 左栏：**与正面 .dossierArt 同一套摆法** —— 铺满整栏、sticky 顶住、底色跟着角色色走
-   （`--c` 由 .dialog 按 focus.hue 落下）。翻面时这一栏不该跳位置，所以不另起一套。
-   `.artFade`（右缘渐隐）与 `.artCap`（底部说明带）也是正面那两个，共用。
-   只是底色把她自己的色相往绯红里拉一半 —— 认得出是谁，又统一在暖调里。 */
-.intimBackArt {
-  --warm: color-mix(in srgb, var(--c, var(--rose)) 55%, var(--rose));
-  position: sticky;
-  top: 0;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  min-height: min(84vh, 760px);
-  padding: 0 0 18px;
-  overflow: hidden;
-  background:
-    radial-gradient(120% 62% at 50% 14%, color-mix(in srgb, var(--warm) 24%, transparent), transparent 72%),
-    color-mix(in srgb, var(--bg-2) 78%, var(--rose-deep));
-}
-/* 图位铺满左栏，底下给说明带让位 —— inset 与正面 .dossierArt 那张取同值 */
-.intimBackArt figure { inset: 0 0 92px 0; }
-.intimBackText { min-width: 0; }
-
-/* 抬头与分隔线一并转暖 —— 暖底上压一条冷灰的线会露馅 */
-.intimBack .dialogSection h4 { color: var(--rose-deep); }
-.intimBack .dialogSection h4::after {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--rose) 52%, transparent), transparent);
-}
-/* 状态句 / 正文左缘那条细线同样转暖（原本是冷的 --line-2） */
-.intimBack .intimState,
-.intimBack .intimAct { border-left-color: color-mix(in srgb, var(--rose) 40%, transparent); }
-
-/* ---- 第三面：战斗档案。与私密档案同一个背面家族（同一套暖调外壳），
-   但**单栏** —— 这一面是数据页而不是画页：技能表要一排排铺开，
-   留一个立绘栏反而把数挤窄了。留白交给 .dialogBody（与正面同值），这里不自带 padding。 */
-.combatBack {
-  min-height: min(84vh, 760px);
-  background:
-    radial-gradient(128% 52% at 50% 0%, var(--rose-soft), transparent 68%),
-    color-mix(in srgb, var(--bg-1) 84%, var(--rose-deep));
-}
-/* 抬头与分隔线一并转暖（与 .intimBack 同一套规矩） */
-.combatBack .dialogSection h4 { color: var(--rose-deep); }
-.combatBack .dialogSection h4::after {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--rose) 52%, transparent), transparent);
+.dialogClose:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 2px;
 }
 
-/* 部位读数条：把角色色相往玫瑰里拉一半 —— 整页是玫瑰私房，条不能还是原来那支冷色。
-   JSX 只递进来 `--fill`（角色主题色），混色在这里做，免得组件里写死颜色。 */
-.intimBarFill {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--fill, var(--rose)) 40%, var(--rose-deep)),
-    color-mix(in srgb, var(--fill, var(--rose)) 55%, var(--rose))
-  );
+.dialogBody {
+  max-width: 46em;
+  padding-top: 14px;
 }
 
-/* 一根条 = 一行读数 + 底下一行状态句。读数那行与「能力参数」共用 .stat 骨架，
-   只是多一列档位词（「初识 / 熟稔 / 沉溺」这类人话）。
-   一处两样东西：**条**是开发度（数），**状态句**是她那一处此刻的写法（话）——
-   所以状态句不塞进条里，另起一行、带「状态」二字，一眼看得出这不是读数。 */
-.intimBars { display: flex; flex-direction: column; gap: 10px; }
-.intimStat { display: flex; flex-direction: column; gap: 4px; }
-.intimStat .stat { grid-template-columns: 46px 1fr 30px max-content; }
-.intimStage { font-style: normal; font-size: 10px; color: var(--ink-mute); white-space: nowrap; text-align: right; }
-.intimState {
-  margin: 0 0 0 46px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line-2);
-  font-size: 11.5px;
-  line-height: 1.7;
+.dialogBio {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.9;
   color: var(--ink-dim);
 }
-.intimStateK {
-  margin-right: 6px;
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
+
+.dialogSection {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.dialogSection:first-child {
+  border-top: 0;
+}
+
+.dialogSection h4 {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.lookList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lookList li {
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  font-size: 13px;
+  line-height: 1.9;
   color: var(--ink-mute);
 }
 
-/* 色情度：整幅一条长条，与四处部位那几根分开摆（更粗、读数更大） */
-.intimLewd { display: grid; grid-template-columns: 1fr max-content max-content; align-items: center; gap: 10px; }
-.intimLewd .num { font-family: var(--font-mono); font-size: 15px; color: var(--rose-deep); }
-.intimLewd .meter { height: 14px; }
+.relationGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
 
-/* 「最近的性行为」/「对性行为的看法」：一段话，与状态句同一副骨架 ——
-   左边一条细线，正文照实写出来（这两栏是档案，不是读数，所以没有条）。 */
-.intimAct {
-  margin: 0;
-  padding-left: 10px;
-  border-left: 1px solid var(--line-2);
-  font-size: 11.5px;
+.relBadge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.bondConfirm {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-2);
+}
+
+.bondConfirm b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bondConfirm p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink-mute);
+}
+
+.intimEnter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.intimEnter:hover {
+  background: var(--bg-2);
+  border-color: var(--line-3);
+}
+
+.intimEnter:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 2px;
+}
+
+/* ---------------- 换装具 ---------------- */
+
+.gearSwap {
+  min-width: 0;
+}
+
+.gearSwapHead {
+  margin-bottom: 8px;
+}
+
+.gearList {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gearRow {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 4px 14px;
+  padding: 12px 10px 12px 12px;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gearRow:hover {
+  background: var(--bg-2);
+}
+
+.gearRow:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gearRow:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: -2px;
+}
+
+.gearOn {
+  border-left-color: var(--steel);
+  background: var(--bg-2);
+}
+
+.gearName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gearSub {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+.gearMod {
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
+.gearNote {
+  grid-column: 1 / -1;
+  font-size: 12px;
   line-height: 1.7;
+  color: var(--ink-faint);
+}
+
+.gearOn2 {
+  display: none;
+}
+
+/* ---------------- 卡的背面 · 私密档案 ---------------- */
+
+.intimBack {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.3fr);
+}
+
+.intimBackArt {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  min-width: 0;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+}
+
+.intimBackText {
+  min-width: 0;
+  padding: 18px 20px 26px;
+}
+
+.intimStat {
+  padding: 2px 0;
+}
+
+.intimBarFill {
+  background: var(--fill, var(--ink-mute));
+}
+
+.intimStage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.intimState {
+  display: flex;
+  gap: 8px;
+  margin: 2px 0 8px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+.intimStateK {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.intimLewd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.intimLewd b {
+  font-size: 12px;
+  font-weight: 400;
+  text-align: right;
   color: var(--ink-dim);
 }
 
-.intimFoot { display: grid; grid-template-columns: 120px 1fr; gap: 8px; }
-.intimFootCell {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 7px 10px; border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
-}
-.intimFootCell small { font-size: 9.5px; letter-spacing: 0.08em; color: var(--ink-mute); }
-.intimFootCell b { font-size: 12.5px; color: var(--ink); }
-.intimFootCell[data-intimate-virgin='0'] b { color: var(--rose-deep); }
-
-/* 次数账八栏：四列两行比八列一行好读 —— 标签是中文词，八列会把「内射次数」挤成两行。
-   每一格只摆「名目 + 数」：这儿不写状态，状态在开发度那一栏。 */
-.actGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.actCell {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
-}
-.actCell small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--ink-mute); white-space: nowrap; }
-.actCell b { font-size: 13px; color: var(--ink); }
-/* 0 回的那几栏压暗：账只增不减，没动过就是真没动过 —— 别让「0」读成读数高亮 */
-.actCell b[data-act-count='0'] { color: var(--ink-faint); }
-
-/* ---------------- 此刻的衣物 / 这一场的变化（私密档案第七栏） ----------------
-   与上面几栏同一副骨架，但记的是**此刻**：她可以又穿回去、湿了也能缓过来，
-   所以每件都带一个「此刻那一档」的角标，内裤另带一根湿润条。 */
-.attireList { display: flex; flex-direction: column; gap: 10px; }
-.attirePiece {
-  display: flex; flex-direction: column; gap: 5px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--line-2);
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
-}
-/* 半褪 / 褪下：左沿换色 —— 一眼看得出这一件此刻不在原位 */
-.attirePiece[data-attire-wear='half'] { border-left-color: var(--amber); }
-.attirePiece[data-attire-wear='off'] { border-left-color: var(--rose); }
-.attireHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.attireHead small { font-size: 9.5px; letter-spacing: 0.08em; color: var(--ink-mute); }
-.attireHead b { font-size: 12.5px; color: var(--ink); }
-.attireWear {
-  font-style: normal; font-size: 10px; padding: 1px 6px;
-  border: 1px solid var(--line-2); color: var(--ink-dim);
-}
-.attirePiece[data-attire-wear='half'] .attireWear { border-color: var(--amber); color: var(--amber-deep); }
-.attirePiece[data-attire-wear='off'] .attireWear { border-color: var(--rose); color: var(--rose-deep); }
-/* 湿润的档位词挂在右端：读数（条与数）在下面那行，这里只给一句人话 */
-.attireWet {
-  font-size: 10px; margin-left: auto; color: var(--rose-deep);
-  letter-spacing: 0.06em;
-}
-.attireWetRow {
-  display: grid; grid-template-columns: 1fr max-content; align-items: center; gap: 10px;
-}
-.attireWetRow .num { font-family: var(--font-mono); font-size: 13px; color: var(--rose-deep); }
-.attireWetRow .meter { height: 8px; }
-/* 流水：一条一行，最新的在上（新的那条描金，读得出「刚才动的是这条」） */
-.attireLog { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.attireLog li {
-  font-size: 11.5px; line-height: 1.7; color: var(--ink-dim);
-  padding-left: 10px; border-left: 1px solid var(--line-2);
-}
-.attireLog li:first-child { color: var(--ink); border-left-color: var(--amber); }
-
-@media (max-width: 520px) {
-  /* 单栏退版在 820 那条就做掉了（与正面同断点），这里只管读数那几行的收窄 */
-  .intimStat .stat { grid-template-columns: 40px 1fr 26px max-content; }
-  .intimState { margin-left: 40px; }
-  .intimFoot { grid-template-columns: 1fr; }
-}
-
-/* —— 能力五轴那五格（轴名 + 释义）——
-   这两条从前都是**内联**写在 Archive.tsx 上的，媒体查询够不着；而 `.tag` 本体是全局的
-   （`tokens.css` 的 `.badge, .chip, .tag`：`inline-flex` + `nowrap`），短信 / 剧情
-   那两处小标签也用它，动不得。拆成两个类之后：
-     · `.axisGrid` 管栅格 —— 窄屏单栏；宽屏仍是 auto-fit，一格至少 150；
-     · `.axisTag` 管**竖排** —— 这才是这里的本意（那个释义 <span> 本来就写着
-       `display:'block'` + `marginTop`，只是被全局的 inline-flex 排成了横的）。
-   不这么改的话，`white-space: nowrap` 会把「轴名 + 释义」咬成一整条 236px 的
-   最小宽，而 auto-fit 在 1440 上也不过给到 ~250 —— 每一档都悬在越界边上。 */
-.axisGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.axisTag {
+.intimBars {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  white-space: normal;
-  line-height: 1.5;
-  padding: 8px 10px;
 }
 
-/* ============ 手机档（≤720px）============
-   档案页里两处**定死列数**的栅格在 390 屏上排不下，各退一档。 */
-@media (max-width: 720px) {
-  /* 五轴那五格：auto-fit 在 390 上给到两列 × 177px，释义那一行折得只剩几个字 ——
-     窄屏退回单栏，一格 362 才读得下去。 */
-  .axisGrid { grid-template-columns: 1fr; }
-  /* 四列两行 → 两列四行：八栏的名字都是中文词（「内射次数」四个字），
-     窄屏上四列会把每一格压到只剩 80px 出头、名目全折行。 */
-  .actGrid { grid-template-columns: repeat(2, 1fr); }
-  /* 五轴读数那一行：三栏（标签 44 │ 条 1fr │ 数 58）压到 36 / 46，
-     省下的 20px 全给中间那条，条形才看得出长短。 */
-  .stat { grid-template-columns: 36px 1fr 46px; }
+.intimAct {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink-mute);
 }
 
-/* 手机档 · 粗指针：齿轮那一行（28px）抬到 44 */
+.intimFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.intimFootCell {
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.intimFootCell small {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.intimFootCell b {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+/* ---------------- 此刻的衣物 / 变化流水 ---------------- */
+
+.attireList {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.attirePiece {
+  min-width: 0;
+  padding: 12px 0 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.attireHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.attireHead small {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.attireHead b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.attireWear {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-mute);
+}
+
+.attireWet {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.attireWetRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0 6px;
+}
+
+.attireWetRow b {
+  font-size: 12px;
+  font-weight: 400;
+  text-align: right;
+  color: var(--ink-dim);
+}
+
+.attireLog {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attireLog li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+/* ---------------- 次数账 ---------------- */
+
+.actGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.actCell {
+  padding: 8px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.actCell small {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.actCell b {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* ---------------- 卡的第三面 · 战斗档案 ---------------- */
+
+.combatBack {
+  padding: 18px 20px 26px;
+}
+
+.combat {
+  min-width: 0;
+}
+
+.combatNums,
+.combatAxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.combatNum,
+.combatAxis {
+  min-width: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.combatNum small,
+.combatAxis small {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.combatNum b {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.combatAxis b {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.combatPassive,
+.combatGear {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.combatPassive b,
+.combatGear b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.combatPassive span,
+.combatGear span {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+.combatNums2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.combatNums2 i {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+
+.combatSkills {
+  display: flex;
+  flex-direction: column;
+}
+
+.combatSkill {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.combatSkillTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.combatSkillTop b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.combatSkillTop span:last-child {
+  margin-left: auto;
+}
+
+.combatKind,
+.combatArch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.combatSkill[data-kind='终结技'] .combatKind {
+  color: var(--ink);
+}
+
+.combatSkill p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+.combatEffect {
+  color: var(--ink-faint);
+}
+
+/* ---------------- 立绘全图 ---------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+}
+
+.lightboxStage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  padding: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+}
+
+.lightboxStage > div:first-child img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  width: auto;
+  height: auto;
+}
+
+.lightboxMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.lightboxMeta b {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lightboxMeta span {
+  color: var(--ink-faint);
+}
+
+.lightboxMeta button {
+  margin-left: auto;
+}
+
+/* ---------------- 窄屏 ---------------- */
+
+@media (max-width: 1120px) {
+  .shell {
+    grid-template-columns: 168px minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .opArc,
+  .dossier,
+  .intimBack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dossierArt,
+  .intimBackArt {
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .dossierArt {
+    max-width: 320px;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell {
+    display: block;
+    margin-top: 22px;
+    padding-top: 16px;
+  }
+
+  .index {
+    display: none;
+  }
+
+  .opBanner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .opGlyph {
+    width: 64px;
+    height: 64px;
+    font-size: 16px;
+  }
+
+  .cardArt {
+    float: none;
+    width: 132px;
+    margin: 0 0 10px;
+  }
+
+  .cardHead {
+    align-items: flex-start;
+  }
+
+  .dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  .dossierText,
+  .intimBackText,
+  .combatBack {
+    padding: 14px 14px 20px;
+  }
+
+  .gearRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (pointer: coarse) {
-  .gearRow { min-height: 44px; }
+  .gearRow {
+    min-height: 44px;
+  }
+
+  .idxRow {
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog.open,
+  .dialog[data-turn='out'],
+  .dialog[data-turn='in'] {
+    animation: none;
+  }
+
+  .card,
+  .idxRow {
+    transition: none;
+  }
 }

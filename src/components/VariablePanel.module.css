@@ -58,7 +58,7 @@
   gap: 10px;
 }
 .hint {
-  border: 1px dashed var(--line-2);
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
   background: var(--bg-2);
   padding: 9px 12px;
@@ -107,7 +107,7 @@
 }
 
 .empty {
-  border: 1px dashed var(--line-2);
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
   padding: 20px 16px;
   text-align: center;
@@ -173,7 +173,7 @@
 }
 .danger { border-color: var(--red) !important; color: var(--red-deep) !important; }
 
-.divider { border-top: 1px dashed var(--line-2); margin-top: 8px; }
+.divider { border-top: 1px solid var(--line-2); margin-top: 8px; }
 
 .sysList {
   display: grid;

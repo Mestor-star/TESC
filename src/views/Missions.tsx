@@ -666,17 +666,17 @@ export function Missions() {
           {/* 巡逻任务未放行：先走正史，脏器公寓一案结清后才派单 */}
           {!patrolOpen ? (
             <div className={css.empty} data-patrol-locked>
-              <div style={{ fontSize: 15, letterSpacing: '0.14em', color: 'var(--amber-deep)' }}>巡逻区尚未放行</div>
-              <div className="mono tiny" style={{ letterSpacing: '0.2em', marginTop: 8 }}>
+              <b className={css.emptyTitle}>巡逻区尚未放行</b>
+              <span className={css.emptyHint}>
                 可刷新任务将在主线「{patrolOpenTitle}」结清后开放 · 眼下只走主线
-              </div>
+              </span>
             </div>
           ) : null}
 
           {list.length === 0 ? (
             <div className={css.empty}>
-              <div style={{ fontSize: 26, marginBottom: 8, fontFamily: 'var(--font-mono)' }}>NO ACTIVE TASKS</div>
-              <div className="mono tiny" style={{ letterSpacing: '0.2em' }}>当前筛选下没有任务。第 12 区暂时平稳——去休息一下吧。</div>
+              <b className={css.emptyTitle}>NO ACTIVE TASKS</b>
+              <span className={css.emptyHint}>当前筛选下没有任务。第 12 区暂时平稳——去休息一下吧。</span>
             </div>
           ) : (
             <div className={css.board}>
@@ -684,72 +684,29 @@ export function Missions() {
                 const sev = stageSeverity(m2.stage)
                 const sm = STATUS_META[m2.status]
                 const done = m2.status === '完成'
-                const ribbonCls = m2.status === '完成' ? css.done : m2.status === '压制中' ? css.danger : m2.status === '锁定' ? css.warn : m2.stage >= 6 ? css.danger : m2.stage >= 3 ? css.warn : css.ok
+                const isOpen = openId === m2.id
                 /* 该地 R 值 → 敌人成色：出击前就该看得见，好让人决定带谁去 */
                 const rb = rBadgeOf(m2.place, m2.stage)
                 const amp = Math.round((rb.f.mul - 1) * 100)
                 /* 危险度另挂一份 data-mission-stage：卡面上它是「阶段 S6」这样一行字，
                    要按危险度挑任务得有个准头，别让谁去正则屏上的文案。 */
                 return (
-                  <article key={m2.id} className={`${css.card} ${m2.mainline ? css.cardMain2 : ''}`} data-mission={m2.mainline ? undefined : m2.id} data-mainline-mission={m2.mainline ? m2.id : undefined} data-mission-stage={m2.stage} style={{ '--s': m2.mainline ? 'var(--violet)' : m2.stage >= 6 ? 'var(--red)' : m2.stage >= 3 ? 'var(--amber)' : 'var(--steel)' }}>
-                    <div className={`${css.cardRibbon} ${ribbonCls}`} />
-                    <div className={css.cardMain}>
-                      <div className={css.cardTop}>
-                        <span className={css.cardNo}>
-                          {m2.mainline ? <b className={css.mainTag}>主线 · 观测</b> : null}
-                          档案 {m2.no} / 阶段 S{m2.stage}
-                        </span>
-                        <span className="num badge" style={{ color: sev.color, borderColor: sev.color }}>{sev.label}</span>
-                        <span className={`${sm.cls}`}><span className={css.statusBadge}><span className={css.dot} style={{ background: sm.color }} />{sm.label}</span></span>
-                        <span className={`chip`} style={{ borderColor: 'transparent', background: 'var(--bg-2)' }}>{m2.nature}</span>
-                      </div>
-                      <h3 className={css.cardTitle} style={{ marginTop: 6 }}>{m2.title}</h3>
-                      <div className={css.cardSub}>
-                        <span>地点 {m2.place}</span>
-                        <span className={css.sep}>/</span>
-                        <span
-                          className={css.rChip}
-                          data-mission-r={m2.id}
-                          data-r-known={rb.reading.known ? '1' : undefined}
-                          data-r-src={rb.reading.src}
-                          data-r-amp={amp}
-                          title={`${rb.reading.note}
-    ${rb.f.word}`}
-                        >
-                          R {rb.reading.r.toFixed(3)}
-                          {rb.reading.over ? ' · 量程外' : amp ? ` · 敌 +${amp}%` : ' · 常规'}
-                        </span>
-                        <span className={css.sep}>/</span>
-                        <span className={css.deadline}>期限 · {m2.deadline}</span>
-                        <span className={css.sep}>/</span>
-                        <span>编号 {m2.no}</span>
-                      </div>
-                      <p className={`${css.cardDesc} ${openId === m2.id ? css.open : ''}`}>{m2.desc}</p>
-                      <div className={css.crew}>
-                        <span className="tag tiny" style={{ padding: '4px 8px' }}>推荐小队</span>
-                        {m2.recommend.map((token) => {
-                          // 派单写中文名、剧情作战写 id —— 一律翻成名录里的中文名再上屏
-                          const id = personIdOf(token)
-                          const p = id ? personOf(id) : undefined
-                          return (
-                            <span key={token} className={css.crewChip} style={{ '--crew': p?.hue ?? 'var(--violet)' }}>
-                              <i>{p?.sigil ?? '?'}</i>
-                              {p?.name ?? token}
-                            </span>
-                          )
-                        })}
-                        <button className="linkGo" onClick={() => setOpenId(openId === m2.id ? null : m2.id)} style={{ marginLeft: 'auto' }}>
-                          {openId === m2.id ? '收起' : '展开详情'}
-                        </button>
-                      </div>
+                  <article
+                    key={m2.id}
+                    className={css.row}
+                    data-mission={m2.mainline ? undefined : m2.id}
+                    data-mainline-mission={m2.mainline ? m2.id : undefined}
+                    data-mission-stage={m2.stage}
+                  >
+                    <div className={css.rowMain}>
+                      <span className={css.kind}>{m2.mainline ? '主线 · 观测' : m2.nature}</span>
+                      <h3 className={css.rowTitle}>{m2.title}</h3>
+                      <p className={css.rowDesc} title={m2.desc}>{m2.desc}</p>
+                      <span className={css.rowState} style={{ color: sm.color }}>{sm.label}</span>
                     </div>
 
-                    <div className={css.cardAside}>
-                      <div className={css.rewards}>
-                        {m2.reward.map((rw) => (
-                          <span key={rw} className={css.rewardLine}>{rw}</span>
-                        ))}
-                      </div>
+
+                    <div className={css.rowSide}>
                       <div className={css.asideAction}>
                         {m2.status === '锁定' ? (
                           <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => act(m2)}>
@@ -827,7 +784,51 @@ export function Missions() {
                             )}
                           </>
                         )}
+                        <button className="linkGo" onClick={() => setOpenId(isOpen ? null : m2.id)}>
+                          {isOpen ? '收起' : '展开详情'}
+                        </button>
                       </div>
+                    </div>
+                    <div className={`${css.rowMore} ${isOpen ? css.isOpen : ''}`}>
+                      <div className={css.rowMeta}>
+                        <span className={css.rowNo}>档案 {m2.no} / 阶段 S{m2.stage}</span>
+                        <span className={css.sep}>/</span>
+                        <span>地点 {m2.place}</span>
+                        <span className={css.sep}>/</span>
+                        <span
+                          className={css.rChip}
+                          data-mission-r={m2.id}
+                          data-r-known={rb.reading.known ? '1' : undefined}
+                          data-r-src={rb.reading.src}
+                          data-r-amp={amp}
+                          title={`${rb.reading.note}
+    ${rb.f.word}`}
+                        >
+                          R {rb.reading.r.toFixed(3)}
+                          {rb.reading.over ? ' · 量程外' : amp ? ` · 敌 +${amp}%` : ' · 常规'}
+                        </span>
+                        <span className={css.sep}>/</span>
+                        <span className={css.deadline}>期限 · {m2.deadline}</span>
+                        <span className={css.sep}>/</span>
+                        <span>编号 {m2.no}</span>
+                        <span className={css.sep}>/</span>
+                        <span style={{ color: sev.color }}>{sev.label}</span>
+                        {m2.reward.map((rw) => (
+                          <span key={rw} className={css.rewardLine}>{rw}</span>
+                        ))}
+                      </div>
+                      <span className={css.crewTag}>推荐小队</span>
+                      {m2.recommend.map((token) => {
+                        // 派单写中文名、剧情作战写 id —— 一律翻成名录里的中文名再上屏
+                        const id = personIdOf(token)
+                        const p = id ? personOf(id) : undefined
+                        return (
+                          <span key={token} className={css.crewChip} style={{ '--crew': p?.hue ?? 'var(--violet)' }}>
+                            <i>{p?.sigil ?? '?'}</i>
+                            {p?.name ?? token}
+                          </span>
+                        )
+                      })}
                     </div>
                   </article>
                 )

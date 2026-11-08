@@ -40,40 +40,45 @@ function AudioPanel() {
     { k: 'sfx', cn: '音效', en: 'SFX', note: '按钮、讯息推送与作战演出' },
   ]
   return (
-    <section className="panel" style={{ marginBottom: 16 }} data-audio-panel>
+    <section className="panel" data-audio-panel>
       <div className="panel__head">
         <span className="panel__title"><SpeakerHigh size={15} weight="bold" /> 声音</span>
         <span className="muted tiny" style={{ marginLeft: 'auto' }}>AUDIO / LOCAL</span>
       </div>
-      <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className={css.form}>
         <div className={css.note}>
           <b>底噪与音效都是现场合成的，不占存储。</b><br />
           设置只落在本终端（键名 zts-audio:v1）。切到别的标签页时总音量会自动压下去，回来再抬起来。
           浏览器不许没有操作就出声 —— 所以按下第一个按钮之后才会有动静。
         </div>
         {/* 底噪是「要不要」的一档，不是音量的一档：默认关着，想听才开 */}
-        <label className={css.bedSw} data-audio-bed>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={a.beds}
-            className={`btn ${a.beds ? '' : 'btn--ghost'}`}
-            style={{ fontSize: 12 }}
-            onClick={() => setBeds(!a.beds)}
-          >
-            {a.beds ? '底噪：开' : '底噪：关'}
-          </button>
-          <span className="tiny muted">
-            各模块那段会自己走的垫乐。默认是关的 —— 不替你做主要不要听音乐。
-            关掉它，音效（按钮、作战演出）不受影响。
-          </span>
-        </label>
+        <div className={css.row}>
+          <span className={css.rowLabel}>底噪 <i>BED</i></span>
+          <div className={css.rowCtl}>
+            <label className={css.switchLine} data-audio-bed>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={a.beds}
+                className={`btn ${a.beds ? '' : 'btn--ghost'}`}
+                style={{ fontSize: 12 }}
+                onClick={() => setBeds(!a.beds)}
+              >
+                {a.beds ? '底噪：开' : '底噪：关'}
+              </button>
+              <span className={css.hint}>
+                各模块那段会自己走的垫乐。默认是关的 —— 不替你做主要不要听音乐。
+                关掉它，音效（按钮、作战演出）不受影响。
+              </span>
+            </label>
+          </div>
+        </div>
         <div className={css.volGrid}>
           {rows.map((r) => (
             <label key={r.k} className={css.vol} data-audio-slider={r.k}>
               <span className={css.volTop}>
                 <b>{r.cn}</b>
-                <i className="tiny muted">{r.en}</i>
+                <i>{r.en}</i>
                 <span className="num">{Math.round(a[r.k] * 100)}</span>
               </span>
               <input
@@ -148,8 +153,6 @@ const CH_META: Record<Channel, { title: string; kicker: string; hint: string; te
   },
 }
 
-const SUB_FIELD = { fontFamily: 'inherit', fontSize: 11.5, letterSpacing: 0.02, color: 'var(--ink-faint)', textTransform: 'none' } as const
-
 /**
  * 通联日志。
  * 只回答一个问题：我在这一屏里配的东西，后台 AI 到底收到了没有。
@@ -179,8 +182,7 @@ function AiLogPanel() {
         <span className="panel__title"><ClockCounterClockwise size={15} weight="bold" /> 通联日志</span>
         <span className="muted tiny">最近 {rows.length} 次推演的去向</span>
       </PanelHead>
-      <div className="panel__body" data-fold-body
-        style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className={css.form} data-fold-body>
         <div className={css.note}>
           <b>用来核对后台 AI 有没有真的吃到你配的东西。</b><br />
           每一趟请求都留一条：通道、模型、生效预设**实际进了哪几条**指令、世界书命中多少字、提示词全文、回来的字数与耗时。
@@ -579,37 +581,53 @@ function BackupPanel() {
 function SmsAutoPanel() {
   const on = useAutoOn()
   return (
-    <section className="panel" style={{ marginBottom: 16 }} data-sms-auto-panel>
+    <section className="panel" data-sms-auto-panel>
       <div className="panel__head">
         <span className="panel__title"><ChatsCircle size={15} weight="bold" /> 角色短信</span>
         <span className="muted tiny" style={{ marginLeft: 'auto' }}>PROACTIVE / LOCAL</span>
       </div>
-      <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className={css.form}>
         <div className={css.note}>
           <b>默认关：她不主动，只回你。</b><br />
           关着时只有你发出去的那一条才会招来回复；她不会按节拍自己找你（约你出来那一路也跟着停）。
           打开之后恢复「隔一阵子自己发一条」的老行为。开关存在本终端（键名 zts-sms-auto:v1），
           关掉只是不再<b>产生</b>新的来信 —— 已经收到的线程、未读角标一条都不动。
         </div>
-        <label className={css.bedSw} data-sms-auto>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={on}
-            className={`btn ${on ? '' : 'btn--ghost'}`}
-            style={{ fontSize: 12 }}
-            onClick={() => setAutoOn(!on)}
-          >
-            {on ? '主动来信：开' : '主动来信：关'}
-          </button>
-          <span className="tiny muted">
-            主动来信（她会主动找你）。默认关 —— 想让她自己有动静时才打开。
-          </span>
-        </label>
+        <div className={css.row}>
+          <span className={css.rowLabel}>主动来信 <i>PROACTIVE</i></span>
+          <div className={css.rowCtl}>
+            <label className={css.switchLine} data-sms-auto>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                className={`btn ${on ? '' : 'btn--ghost'}`}
+                style={{ fontSize: 12 }}
+                onClick={() => setAutoOn(!on)}
+              >
+                {on ? '主动来信：开' : '主动来信：关'}
+              </button>
+              <span className={css.hint}>
+                主动来信（她会主动找你）。默认关 —— 想让她自己有动静时才打开。
+              </span>
+            </label>
+          </div>
+        </div>
       </div>
     </section>
   )
 }
+
+/** 左侧分组导航：点哪一节就滚到哪一节（节上挂着同名的 id） */
+const NAV: Array<{ id: string; cn: string; en: string }> = [
+  { id: 'set-channel', cn: '推演通道', en: 'CHANNEL' },
+  { id: 'set-audio', cn: '声音', en: 'AUDIO' },
+  { id: 'set-sms', cn: '角色短信', en: 'SMS' },
+  { id: 'set-backup', cn: '备份与恢复', en: 'BACKUP' },
+  { id: 'set-lore', cn: '世界书与方案', en: 'WORLD' },
+  { id: 'set-security', cn: '存储与安全', en: 'SECURITY' },
+  { id: 'set-log', cn: '通联日志', en: 'LOG' },
+]
 
 export function Settings() {
   const { push, navigate, setupMode } = useTerminal()
@@ -961,118 +979,128 @@ export function Settings() {
           <span className="panel__title"><Icon size={15} weight="bold" /> {meta.title}</span>
           <span className="muted tiny" style={{ marginLeft: 'auto' }}>{meta.kicker}</span>
         </div>
-        <div className="panel__body" style={{ padding: 18 }}>
-          <label className={css.fieldRow}>
-            <span>接口地址 BASE URL</span>
-            <input
-              className="field"
-              value={cfg.baseUrl}
-              onChange={(e) => set(ch, 'baseUrl', e.target.value)}
-              placeholder="https://api.openai.com/v1"
-              spellCheck={false}
-            />
-            <span style={SUB_FIELD}>{meta.hint}</span>
-          </label>
-
-          <label className={css.fieldRow}>
-            <span>接口密钥 API KEY</span>
-            <span className={css.rowInline}>
+        <div className={css.form}>
+          <div className={css.row}>
+            <span className={css.rowLabel}>接口地址 <i>BASE URL</i></span>
+            <div className={css.rowCtl}>
               <input
                 className="field"
-                type={eye[ch] ? 'text' : 'password'}
-                value={cfg.apiKey}
-                onChange={(e) => set(ch, 'apiKey', e.target.value)}
-                placeholder="sk-…（选填；自建本地网关可留空）"
-                autoComplete="off"
+                value={cfg.baseUrl}
+                onChange={(e) => set(ch, 'baseUrl', e.target.value)}
+                placeholder="https://api.openai.com/v1"
                 spellCheck={false}
               />
-              <button className={css.eyeBtn} onClick={() => setEye((prev) => ({ ...prev, [ch]: !prev[ch] }))} aria-label={eye[ch] ? '隐藏密钥' : '显示密钥'}>
-                {eye[ch] ? <EyeSlash size={17} weight="bold" /> : <Eye size={17} weight="bold" />}
-              </button>
-            </span>
-            <span style={SUB_FIELD}>密钥只落在本终端的本地存储区，不写进代码或任何明文文件。</span>
-          </label>
+              <span className={css.hint}>{meta.hint}</span>
+            </div>
+          </div>
 
-          <label className={css.fieldRow}>
-            <span>模型名称 MODEL</span>
-            <span className={css.rowInline}>
-              <input
-                className="field"
-                value={cfg.model}
-                onChange={(e) => set(ch, 'model', e.target.value)}
-                placeholder="如 gpt-4o-mini / deepseek-chat / qwen2.5 …"
-                spellCheck={false}
-              />
-              <button
-                className="btn btn--ghost"
-                style={{ fontSize: 11, flex: '0 0 auto' }}
-                onClick={() => void fetchModels(ch)}
-                disabled={fetchingModels !== null || !cfg.baseUrl.trim()}
-                title="向该接口地址拉取可用模型列表"
-              >
-                <ArrowClockwise size={13} weight="bold" /> {fetchingModels === ch ? '拉取中…' : '拉取模型'}
-              </button>
-            </span>
-            {Array.isArray(modelList[ch]) ? (
-              <span className={css.modelRow}>
-                <select
+          <div className={css.row}>
+            <span className={css.rowLabel}>接口密钥 <i>API KEY</i></span>
+            <div className={css.rowCtl}>
+              <div className={css.rowInline}>
+                <input
+                  className="field"
+                  type={eye[ch] ? 'text' : 'password'}
+                  value={cfg.apiKey}
+                  onChange={(e) => set(ch, 'apiKey', e.target.value)}
+                  placeholder="sk-…（选填；自建本地网关可留空）"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button className={css.eyeBtn} onClick={() => setEye((prev) => ({ ...prev, [ch]: !prev[ch] }))} aria-label={eye[ch] ? '隐藏密钥' : '显示密钥'}>
+                  {eye[ch] ? <EyeSlash size={17} weight="bold" /> : <Eye size={17} weight="bold" />}
+                </button>
+              </div>
+              <span className={css.hint}>密钥只落在本终端的本地存储区，不写进代码或任何明文文件。</span>
+            </div>
+          </div>
+
+          <div className={css.row}>
+            <span className={css.rowLabel}>模型名称 <i>MODEL</i></span>
+            <div className={css.rowCtl}>
+              <div className={css.rowInline}>
+                <input
                   className="field"
                   value={cfg.model}
                   onChange={(e) => set(ch, 'model', e.target.value)}
-                  aria-label="可用模型列表"
+                  placeholder="如 gpt-4o-mini / deepseek-chat / qwen2.5 …"
+                  spellCheck={false}
+                />
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 11, flex: '0 0 auto' }}
+                  onClick={() => void fetchModels(ch)}
+                  disabled={fetchingModels !== null || !cfg.baseUrl.trim()}
+                  title="向该接口地址拉取可用模型列表"
                 >
-                  {!cfg.model ? <option value="">选择模型…</option> : null}
-                  {cfg.model && !(modelList[ch] as string[]).includes(cfg.model) ? (
-                    <option value={cfg.model}>{cfg.model}（当前，不在列表）</option>
-                  ) : null}
-                  {(modelList[ch] as string[]).map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-                <span style={SUB_FIELD}>
-                  共 {(modelList[ch] as string[]).length} 个模型 · 选中即写回上方模型名称
-                </span>
-              </span>
-            ) : null}
-          </label>
+                  <ArrowClockwise size={13} weight="bold" /> {fetchingModels === ch ? '拉取中…' : '拉取模型'}
+                </button>
+              </div>
+              {Array.isArray(modelList[ch]) ? (
+                <div className={css.modelRow}>
+                  <select
+                    className="field"
+                    value={cfg.model}
+                    onChange={(e) => set(ch, 'model', e.target.value)}
+                    aria-label="可用模型列表"
+                  >
+                    {!cfg.model ? <option value="">选择模型…</option> : null}
+                    {cfg.model && !(modelList[ch] as string[]).includes(cfg.model) ? (
+                      <option value={cfg.model}>{cfg.model}（当前，不在列表）</option>
+                    ) : null}
+                    {(modelList[ch] as string[]).map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <span className={css.hint}>
+                    共 {(modelList[ch] as string[]).length} 个模型 · 选中即写回上方模型名称
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </div>
 
-          <label className={css.fieldRow}>
-            <span>温度 TEMPERATURE</span>
-            <span className={css.tempWrap}>
-              <input
-                type="range"
-                min={0}
-                max={1.5}
-                step={0.05}
-                value={cfg.temperature}
-                onChange={(e) => set(ch, 'temperature', Number(e.target.value))}
-              />
-              <span className={css.tempVal}>{cfg.temperature.toFixed(2)}</span>
-            </span>
-            <span style={SUB_FIELD}>{meta.tempNote}</span>
-          </label>
+          <div className={css.row}>
+            <span className={css.rowLabel}>温度 <i>TEMPERATURE</i></span>
+            <div className={css.rowCtl}>
+              <div className={css.tempWrap}>
+                <input
+                  type="range"
+                  min={0}
+                  max={1.5}
+                  step={0.05}
+                  value={cfg.temperature}
+                  onChange={(e) => set(ch, 'temperature', Number(e.target.value))}
+                />
+                <span className={css.tempVal}>{cfg.temperature.toFixed(2)}</span>
+              </div>
+              <span className={css.hint}>{meta.tempNote}</span>
+            </div>
+          </div>
 
-          <label className={css.fieldRow}>
-            <span>输出预算 MAX TOKENS</span>
-            <span className={css.rowInline}>
-              <input
-                type="number"
-                min={MIN_BUDGET}
-                max={MAX_BUDGET}
-                step={256}
-                className="field"
-                style={{ maxWidth: 140 }}
-                value={cfg.maxTokens}
-                onChange={(e) => set(ch, 'maxTokens', clampBudget(Number(e.target.value)))}
-              />
-              <span className="muted tiny" style={{ flex: '0 0 auto' }}>tokens / 回合</span>
-            </span>
-            <span style={SUB_FIELD}>{meta.maxNote}</span>
-          </label>
+          <div className={css.row}>
+            <span className={css.rowLabel}>输出预算 <i>MAX TOKENS</i></span>
+            <div className={css.rowCtl}>
+              <div className={css.rowInline}>
+                <input
+                  type="number"
+                  min={MIN_BUDGET}
+                  max={MAX_BUDGET}
+                  step={256}
+                  className="field"
+                  style={{ maxWidth: 140 }}
+                  value={cfg.maxTokens}
+                  onChange={(e) => set(ch, 'maxTokens', clampBudget(Number(e.target.value)))}
+                />
+                <span className="muted tiny" style={{ flex: '0 0 auto' }}>tokens / 回合</span>
+              </div>
+              <span className={css.hint}>{meta.maxNote}</span>
+            </div>
+          </div>
 
-          <label className={css.fieldRow}>
-            <span>流式生成 STREAM</span>
-            <span className={css.rowInline}>
+          <div className={css.row}>
+            <span className={css.rowLabel}>流式生成 <i>STREAM</i></span>
+            <div className={css.rowCtl}>
               <label className={css.ck}>
                 <input
                   type="checkbox"
@@ -1081,9 +1109,9 @@ export function Settings() {
                 />
                 逐字上屏（对应酒馆预设的 stream_openai）
               </label>
-            </span>
-            <span style={SUB_FIELD}>{meta.streamNote}</span>
-          </label>
+              <span className={css.hint}>{meta.streamNote}</span>
+            </div>
+          </div>
 
           <div className={css.actions}>
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => reset(ch)}>恢复默认地址</button>
@@ -1098,7 +1126,7 @@ export function Settings() {
           </div>
 
           {res ? (
-            <div className={css.note} style={{ marginTop: 16 }}>
+            <div className={css.resultLine}>
               {res.ok ? <span className={css.okLine}>{res.text}</span> : <span className={css.errLine}>{res.text}</span>}
             </div>
           ) : null}
@@ -1126,24 +1154,45 @@ export function Settings() {
         </div>
       </div>
 
-      <div className={css.cfgGrid}>
-        {card('main')}
-        {card('sms')}
-      </div>
+      <div className={css.shell}>
+        <nav className={css.nav} aria-label="设置分组">
+          {NAV.map((s) => (
+            <button
+              key={s.id}
+              className={css.navItem}
+              onClick={() => document.getElementById(s.id)?.scrollIntoView({ block: 'start' })}
+            >
+              {s.cn}
+              <i>{s.en}</i>
+            </button>
+          ))}
+        </nav>
 
-      <AudioPanel />
+        <div className={css.sections}>
+          <div id="set-channel" className={css.group}>
+            {card('main')}
+            {card('sms')}
+          </div>
 
-      <SmsAutoPanel />
+          <div id="set-audio">
+            <AudioPanel />
+          </div>
 
-      <BackupPanel />
+          <div id="set-sms">
+            <SmsAutoPanel />
+          </div>
 
-      {/* 世界书数据管理与方案 */}
-      <section className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel__head">
-          <span className="panel__title"><Database size={15} weight="bold" /> 世界书数据管理</span>
-          <span className="muted tiny" style={{ marginLeft: 'auto' }}>WORLD INFO / LOCAL</span>
-        </div>
-        <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div id="set-backup">
+            <BackupPanel />
+          </div>
+
+          {/* 世界书数据管理与方案 */}
+          <section id="set-lore" className="panel">
+            <div className="panel__head">
+              <span className="panel__title"><Database size={15} weight="bold" /> 世界书数据管理</span>
+              <span className="muted tiny" style={{ marginLeft: 'auto' }}>WORLD INFO / LOCAL</span>
+            </div>
+        <div className={css.form}>
           <div className={css.note}>
             <b>世界书与「方案」只落本终端，绝不包含密钥。</b><br />
             世界书存有本终端从 canon 生成的种子书与你导入／编辑的内容，可整库导出一份备份 JSON；
@@ -1316,11 +1365,11 @@ export function Settings() {
       </section>
 
       {/* 关于与安全 */}
-      <section className="panel">
+      <section id="set-security" className="panel">
         <div className="panel__head">
           <span className="panel__title"><Wrench size={15} weight="bold" /> 存储与安全</span>
         </div>
-        <div className="panel__body" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className={css.form}>
           <div className={css.note}>
             <b>密钥只落在本终端。</b><br />
             两路通道的密钥与模型配置分别写入本终端的本地存储区（键名 api:main / api:sms），不随存档同步，也不会送往任何服务器。
@@ -1336,7 +1385,7 @@ export function Settings() {
             本终端按 OpenAI 的 /chat/completions 规范调用。若网关需要自定义请求头或流式输出，
             可在接口地址旁架设一层兼容代理后填入。
           </div>
-          <div className={css.actions} style={{ marginTop: 2 }}>
+          <div className={css.actions}>
             <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => clearKey('main')}>
               <Trash size={14} weight="bold" /> 清除主线密钥
             </button>
@@ -1347,7 +1396,11 @@ export function Settings() {
         </div>
       </section>
 
-      <AiLogPanel />
+      <div id="set-log">
+        <AiLogPanel />
+      </div>
+        </div>
+      </div>
 
       {/* 预设调配：调的是预设自带的词条滤网，与世界书自身状态互不干扰 */}
       {manageOf && (

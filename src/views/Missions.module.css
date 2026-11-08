@@ -1,214 +1,212 @@
 /* ===== 任务简报板 ===== */
 
-.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .filterBtn {
+  height: 34px;
+  padding: 0 12px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
-  background: var(--bg-2);
+  border-radius: 0;
+  background: transparent;
   color: var(--ink-mute);
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 7px 14px;
-  transition: all var(--t-fast);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
 }
-.filterBtn:hover { color: var(--ink); border-color: var(--line-3); }
-.filterBtn.isOn {
-  color: var(--red-deep);
-  border-color: var(--red);
-  background: var(--red-soft);
-  box-shadow: inset 0 0 0 1px var(--red);
-}
+.filterBtn:hover { color: var(--ink); border-color: var(--line-3); background: var(--bg-2); }
+.filterBtn.isOn { color: var(--ink); border-color: var(--ink-faint); background: var(--bg-2); }
 
 /* ---------- 顶层分区页签：可接任务 / 已完成 ----------
-   两枚按钮沿用 .filterBtn 的形（同一套 tokens、同一档触控目标 ——
-   @media (pointer: coarse) 那条 44px 规则照样罩着它们），
-   这里只补容器：一条线分上下，窄屏横滑不折行。 */
+   34px 一行，只有激活项在底下压一道 2px --steel；容器那条 1px 就是整页的
+   分隔线，不再给按钮描边、填底。 */
 .tabs {
   display: flex;
-  gap: 8px;
-  margin: -2px 0 18px;
-  padding-bottom: 10px;
+  gap: 4px;
+  margin: 0 0 14px;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.tabs::-webkit-scrollbar { display: none; }
-.tab {
+.tabs .tab {
+  position: relative;
   flex: 0 0 auto;
-  min-height: 40px;
-  padding: 0 18px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-mute);
   font-size: 13px;
-  letter-spacing: 0.04em;
+  font-weight: 400;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
+.tabs .tab:hover { color: var(--ink); border: 0; background: none; }
+.tabs .tab.isOn { color: var(--ink); border: 0; background: none; }
+.tabs .tab.isOn::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--steel);
+}
 
-.board { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+.board { display: flex; flex-direction: column; }
 
-.card {
-  --s: var(--steel);
-  position: relative;
+/* ---------- 一条任务 = 一行 ----------
+   旧稿是一张厚卡片（左竖带 + 三栏 + 悬停垫片）；这一版收成表格式的列表行：
+   左栏名称 / 一句说明 / 一行 11px 读数，右栏只留动作。行与行之间 1px —— 
+   没有卡片壳，也没有投影。 */
+.row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 20px;
   align-items: center;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-left: 0;
-  border-radius: var(--radius);
-  background: var(--bg-1);
-  /* 平时无影（贴纸躺在桌上）。原来这里是 `--shadow-1` 那层柔影 +
-     悬停时**向右横移 4px** —— 圆角时代横移有视觉缓冲，方角下那一下会「跳」。
-     改成与全站同一句：抬起来、底下冒出实心垫片。垫片走卡片自己的 `--s`
-     （每张卡的阶段色不同，套 `--offset-*` 会一律变青垫片）。 */
+  min-height: 44px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  transition: background var(--t-fast);
+}
+.row:hover { background: var(--bg-2); }
+
+.rowMain { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.kind {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+.row[data-mainline-mission] .kind { color: var(--violet-deep); border-color: var(--line-3); }
+.rowTitle {
+  flex: 0 1 auto;
+  margin: 0;
+  min-width: 0;
   overflow: hidden;
-  transition: border-color var(--t-mid), transform var(--t-mid) var(--ease-out), box-shadow var(--t-mid);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.card:hover { transform: translateY(-2px); border-color: var(--s); box-shadow: 0 3px 0 var(--s); }
-
-/* 左侧阶段竖带 */
-.cardRibbon {
-  align-self: stretch;
-  width: 8px;
-  background: var(--s);
-  /* `6px` 的模糊收到 0：这一条原来是「竖带往卡片里投一层柔影」，
-     方贴纸稿里改成一条**硬边**（深一档的墨），读起来还是「带子压住了卡片」。 */
-  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--ink) 14%, transparent);
+.rowState { flex: 0 0 auto; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; white-space: nowrap; }
+.rowDesc {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-mute);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.cardRibbon.danger { background: repeating-linear-gradient(180deg, var(--red) 0 10px, #fff 10px 16px); }
-.cardRibbon.warn { background: var(--amber); }
-.cardRibbon.ok { background: var(--steel); }
-.cardRibbon.done { background: var(--jade); }
-
-.cardMain { padding: 14px 0 14px 2px; min-width: 0; }
-.cardTop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.cardNo {
+.rowMeta {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  line-height: 1.6;
   color: var(--ink-faint);
 }
-/* 主线作战：正史的那几场，用紫色与巡逻任务分开 */
+.rowMeta .sep { color: var(--line-3); }
+.rowNo { letter-spacing: 0.02em; }
+.rewardLine { color: var(--ink-dim); }
+
+.rowMore {
+  grid-column: 1 / -1;
+  display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 2px 0 6px;
+}
+.rowMore.isOpen { display: flex; }
+.crewTag { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; color: var(--ink-faint); }
+.crewChip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-dim); }
+.crewChip i { font-style: normal; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+
+.rowSide { justify-self: end; }
+.asideAction { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.rowSide :global(.btn) {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+.rowSide :global(.btn:hover:not(:disabled)) { color: var(--ink); border-color: var(--line-3); background: var(--bg-2); }
+.rowSide :global(.btn--primary) { color: var(--ink); border-color: var(--ink-faint); }
+.rowSide :global(.btn:disabled) { color: var(--ink-faint); border-color: var(--line); }
+.rowSide :global(.linkGo) { color: var(--ink-mute); font-size: 11.5px; letter-spacing: 0.02em; }
+.rowSide :global(.linkGo:hover) { color: var(--ink); }
+
 .mainTag {
   margin-right: 7px;
-  padding: 1px 8px;
-  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--violet) 42%, transparent);
+  border-radius: 2px;
   font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--violet-deep);
-  border: 1px solid color-mix(in srgb, var(--violet) 42%, transparent);
-  background: color-mix(in srgb, var(--violet) 10%, transparent);
 }
-.cardMain2 { border-color: color-mix(in srgb, var(--violet) 30%, var(--line)); }
-.cardTitle {
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: 0.01em;
-}
-.cardSub { display: flex; align-items: center; gap: 12px; margin-top: 6px; color: var(--ink-mute); font-size: 12px; flex-wrap: wrap; }
-.cardSub .sep { color: var(--line-3); }
-.cardDesc {
-  margin-top: 8px;
-  font-size: 12.5px;
-  color: var(--ink-dim);
-  line-height: 1.65;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.cardDesc.open { -webkit-line-clamp: unset; }
-
-.crew { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.crewChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--ink-dim);
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  padding: 4px 9px 4px 5px;
-  border-radius: var(--radius-pill);
-}
-.crewChip i {
-  font-style: normal;
-  width: 16px; height: 16px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  /* --crew 是名册里的色相，深浅不可知 —— 掺白当底再压墨字（见 tokens 的 --on-accent，
-     掺白不得少于 62%）。白字在这儿两头不讨好：撞浅色相只有 1.5:1 上下 */
-  color: var(--on-accent);
-  background: color-mix(in srgb, var(--crew) 30%, #fff);
-  border-radius: 50%;
-}
-
-.cardAside {
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  gap: 8px;
-  padding: 14px 16px 14px 0;
-  min-width: 168px;
-}
-.rewards { display: flex; flex-direction: column; gap: 4px; }
-.rewardLine { display: flex; gap: 7px; font-size: 11px; color: var(--ink-mute); align-items: center; }
-.rewardLine::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--s); }
-.asideAction { display: flex; gap: 6px; margin-top: 4px; }
-
-.deadline { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.02em; }
-
-.statusBadge { display: inline-flex; align-items: center; gap: 6px; }
-.dot { width: 7px; height: 7px; border-radius: 50%; }
+.deadline { font-family: var(--font-mono); font-size: 11px; }
 
 .empty {
-  padding: 60px 20px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-mute);
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-1);
+  text-align: left;
 }
+.emptyTitle { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink-dim); }
+.emptyHint { font-size: 11.5px; line-height: 1.7; color: var(--ink-faint); }
 
-@media (max-width: 980px) {
-  .card { grid-template-columns: auto 1fr; }
-  .cardAside { grid-column: 2; padding: 0 16px 14px 0; flex-direction: row; align-items: center; flex-wrap: wrap; }
+@media (max-width: 860px) {
+  .row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .rowMain { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 6px 10px; }
+  .rowDesc { grid-column: 1 / -1; overflow: visible; white-space: normal; }
+  .rowSide { justify-self: start; }
+  .asideAction { justify-content: flex-start; }
 }
 
 /* ============================================================
    作战子系统：体力条 · 编队 · 作战记录
    ============================================================ */
 
-.asideAction { display: flex; flex-direction: column; gap: 7px; }
-
 .stamina {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 10px 0 14px;
-  padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-1);
+  flex-wrap: wrap;
+  margin: 0 0 14px;
 }
 .staminaBar {
-  width: 190px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
+  width: 180px;
+  height: 2px;
+  background: var(--line-2);
   overflow: hidden;
 }
 .staminaBar i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--jade), color-mix(in srgb, var(--jade) 55%, #fff));
+  background: var(--ink-dim);
   transition: width 0.35s ease;
 }
-.staminaBar i[data-low='1'] { background: linear-gradient(90deg, var(--red), var(--amber)); }
+.staminaBar i[data-low='1'] { background: var(--red); }
 
 /* ---------- 编队面板 ---------- */
 
@@ -231,8 +229,8 @@
   padding: 16px 18px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
-  box-shadow: var(--shadow-3);
+  background: var(--bg-1);
+  box-shadow: none;
 }
 /* 军需处的柜台比编队面板宽一档：装备卡两列才排得开 */
 .modalBoxWide { width: min(980px, 100%); }
@@ -435,14 +433,13 @@
   .pickGrid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
   .loadName { min-width: 96px; }
 
-  /* 底栏吸底 ——「出击」不必再滑到底去找。
-     背景铺一截渐变把滚上来的字压住，不然底栏会跟名单糊在一起。 */
+  /* 底栏吸底 ——「出击」不必再滑到底去找。底色压住滚上来的字，不用渐变。 */
   .modalFoot {
     position: sticky;
     bottom: 0;
     margin-top: auto;
     padding: 9px 0 2px;
-    background: linear-gradient(180deg, transparent, var(--bg-2) 30%);
+    background: var(--bg-1);
   }
 }
 
@@ -457,16 +454,18 @@
   padding-top: 14px;
 }
 .recordsHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-.recordsHead b { font-size: 14px; letter-spacing: 0.06em; }
-.recList { display: flex; flex-direction: column; gap: 8px; }
+.recordsHead b { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; }
+.recList { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .rec {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-1);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: none;
   overflow: hidden;
 }
-.rec[data-outcome='胜'] { border-left: 3px solid var(--jade); }
-.rec[data-outcome='败'] { border-left: 3px solid var(--red); }
+.rec[data-outcome='胜'] { border-left-color: var(--jade); }
+.rec[data-outcome='败'] { border-left-color: var(--red); }
 .recTop {
   display: flex;
   align-items: center;
@@ -480,7 +479,7 @@
   cursor: var(--cursor-point);
   text-align: left;
 }
-.recTop:hover { background: color-mix(in srgb, var(--amber) 10%, transparent); }
+.recTop:hover { background: var(--bg-2); }
 .recOut {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -503,8 +502,8 @@
 .recNarr {
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+  border-radius: 0;
+  background: var(--bg-1);
   font-size: 12.5px;
   line-height: 1.8;
   white-space: pre-wrap;
@@ -528,22 +527,25 @@
 
 /* ---------- 已完成（只读留档） ----------
    一行一条，按打过的/走过的既有记录摆出来；不放会改状态的按钮。
-   左边那 3px 是类别，与作战记录、军需门同一条语汇。 */
+   左边那 2px 是类别，与作战记录同一条语汇：只做标记，不做卡片。 */
 .donePage { margin-top: 4px; }
-.doneHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-.doneHead b { font-size: 14px; letter-spacing: 0.06em; }
-.doneList { display: flex; flex-direction: column; gap: 8px; }
+.doneHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.doneHead b { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; }
+.doneList { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .doneRow {
   display: flex;
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 11px 13px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-1);
+  padding: 11px 10px 11px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid var(--line-2);
+  border-radius: 0;
+  background: none;
+  transition: background var(--t-fast);
 }
+.doneRow:hover { background: var(--bg-2); }
 .doneRow[data-kind='主线'] { border-left-color: var(--violet); }
 .doneRow[data-kind='支线'] { border-left-color: var(--steel); }
 .doneRow[data-kind='委托'] { border-left-color: var(--jade); }
@@ -553,56 +555,43 @@
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.12em;
-  padding: 1px 7px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
-  color: var(--ink-mute);
+  color: var(--ink-faint);
 }
-.doneKind[data-kind='主线'] {
-  color: var(--violet-deep);
-  border-color: color-mix(in srgb, var(--violet) 42%, transparent);
-  background: color-mix(in srgb, var(--violet) 10%, transparent);
-}
-.doneKind[data-kind='委托'] {
-  color: var(--jade-deep);
-  border-color: color-mix(in srgb, var(--jade) 42%, transparent);
-}
-.doneTitle { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
-.doneNote { margin: 0; font-size: 12.5px; line-height: 1.8; color: var(--ink-mute); }
-.doneEmpty { padding: 44px 20px; font-size: 13px; line-height: 1.9; }
-
+.doneTitle { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.doneNote { margin: 0; font-size: 12px; line-height: 1.8; color: var(--ink-mute); }
+.doneEmpty { padding: 26px 0; font-size: 12.5px; line-height: 1.9; }
 /* 军需处那一套（.shopBar / .shopSigil / .shopTabs / .shopItem …）随柜台一并搬进了
    Research.module.css —— 这一页只剩这一枚「去研究」的门。
    `.modal` 系列留在下面：作战档案与编队面板还在用同一套。 */
 .shopJump {
   display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
   margin: 0 0 16px;
-  padding: 10px 13px; border: 1px solid var(--line);
-  border-left: 3px solid var(--amber);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-2) 70%, transparent);
-  color: var(--amber-deep);
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--ink-faint);
 }
 .shopJumpText { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
-.shopJumpText b { font-size: 13px; letter-spacing: 0.05em; color: var(--ink); }
+.shopJumpText b { font-size: 13px; font-weight: 600; letter-spacing: 0.05em; color: var(--ink); }
 .shopJumpText i { font-style: normal; font-size: 11px; line-height: 1.7; color: var(--ink-mute); }
 
 /* 主角那一格是固定位，不给点 */
 .pickFixed { cursor: default; opacity: 0.9; }
 
 /* 主线作战的记录单独描一道边：一眼能从巡逻任务里挑出来 */
-.recMain { border-left: 3px solid var(--violet); }
+.recMain { border-left: 2px solid var(--violet); }
 .recMain .recNarr { border-color: color-mix(in srgb, var(--violet) 28%, var(--line)); }
 
 /* 该地 R 值 → 敌方成色（出击前看得见，好决定带谁去） */
 .rChip {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--steel-deep);
-  border-bottom: 1px dashed color-mix(in srgb, var(--steel) 45%, transparent);
+  color: var(--ink-mute);
+  border-bottom: 1px dotted var(--line-3);
   cursor: help;
 }
-.rChip[data-r-known] { color: var(--amber-deep); }
+.rChip[data-r-known] { color: var(--ink-dim); }
 
 /* ---------- 作战档案：一条记录展开成一整屏 ----------
    内容全部从记录自己身上现算（见 Missions.tsx 的 archRowsOf），
@@ -621,7 +610,7 @@
 .archSection > h4 {
   margin: 0 0 8px;
   font-size: 11.5px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.12em;
   /* 同上：从前是「本色兑墨灰」，换 deep 档 */
   color: var(--amber-deep);
@@ -654,7 +643,7 @@
   display: flex; flex-wrap: wrap; gap: 3px 10px;
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px dashed color-mix(in srgb, var(--line-2) 70%, transparent);
+  border-top: 1px solid var(--line);
   font-size: 11px;
   color: var(--ink-faint);
 }
@@ -669,7 +658,7 @@
   text-align: left;
   padding: 4px 8px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ink-faint);
   border-bottom: 1px solid var(--line-2);
@@ -677,7 +666,7 @@
 .archTable td {
   padding: 4px 8px;
   color: var(--ink-dim);
-  border-bottom: 1px dashed color-mix(in srgb, var(--line-2) 55%, transparent);
+  border-bottom: 1px solid var(--line);
 }
 .archTable td:first-child { color: var(--ink); }
 .archPre {
@@ -699,7 +688,7 @@
    980 那条把 `.cardAside` 折成了横排，但没管它那条 `min-width: 168px` ——
    加在 390 屏上就是卡片里再撑出一条横向滚动条。 */
 @media (max-width: 720px) {
-  .cardAside { min-width: 0; }
+  .rowSide { min-width: 0; }
   /* 体力条原本是固定 190px 的独立一截：窄屏上让它把剩下的宽度吃掉 */
   .staminaBar { width: auto; flex: 1 1 auto; }
 }
@@ -707,6 +696,8 @@
 /* 手机档 · 粗指针：筛选 / 读取 / 那枚拾取（桌面 32 / 21 / 31px）抬到 44 */
 @media (pointer: coarse) {
   .filterBtn, .loadBtn, .pick { min-height: 44px; }
+  .rowSide :global(.btn) { min-height: 44px; }
+  .row { min-height: 52px; }
 }
 
 /* ============ 横屏档（≤560 高 · 横向）============

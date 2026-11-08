@@ -220,7 +220,7 @@
 .line.ready {
   margin-top: 10px;
   padding-top: 14px;
-  border-top: 1px dashed color-mix(in srgb, var(--jade) 28%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--jade) 28%, transparent);
 }
 .line.ready b {
   color: var(--steel-deep);

@@ -1,462 +1,783 @@
-/* 情景记忆库 · 七栏
-   版式：左侧目录（吸顶）+ 右侧七段。窄屏折成一列，目录变成一行横滑。
-   这里是「重排既有的账」，所以样式一律走既有语汇：panel / chip / meter / 等宽数字。 */
+/* 情景记忆库 · 2026-11 重排
+   与「日志」同一套骨架：左栏分组与筛选（目录），右栏正文（七栏 + 战况）。
+   1px 细线成组、零圆角、零投影、零渐变；强调色只用 --steel；字阶 11/12/13/14/16。
+   条目统一按「左栏 11px mono 记号 + 右栏 14px 正文」排，不再给每条套一张厚卡片。 */
 
 .layout {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 208px minmax(0, 1fr);
   align-items: start;
+  gap: 32px;
 }
 
-/* ————————————————— 目录 ————————————————— */
+/* ---------- 左栏：目录 / 分组 ---------- */
 
 .index {
   position: sticky;
-  top: 12px;
+  top: calc(var(--topbar-h) + 16px);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 12px;
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-top: 1px solid var(--line-2);
+  padding-top: 10px;
+  min-width: 0;
 }
 
 .indexHead {
+  padding-bottom: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--ink-faint);
-  margin-bottom: 6px;
 }
 
 .indexRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--ink-dim);
-  font: inherit;
-  font-size: 13px;
+  padding: 8px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
   text-align: left;
-  cursor: var(--cursor-point);
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
-.indexRow:hover { background: var(--bg-3); border-color: var(--line-2); color: var(--ink); }
+
+.indexRow:hover {
+  background: var(--bg-2);
+}
+
+.indexRow:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: -2px;
+}
 
 .indexNo {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }
-.indexIc { display: inline-flex; color: var(--steel-deep); }
-.indexName { flex: 1 1 auto; min-width: 0; }
+
+.indexIc {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-faint);
+}
+
+.indexName {
+  font-size: 13px;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .indexVal {
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
+  font-size: 11px;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
 }
 
 .indexNote {
-  margin-top: 10px;
+  margin-top: 2px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.85;
   color: var(--ink-faint);
 }
 
-/* ————————————————— 七段 ————————————————— */
+/* ---------- 右栏 ---------- */
 
 .col {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   min-width: 0;
 }
 
-.col > section { scroll-margin-top: 12px; }
+.headNote {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-faint);
+}
 
-.secIc { display: inline-flex; color: var(--steel-deep); transform: translateY(1px); }
+.secIc {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-faint);
+  vertical-align: -2px;
+}
 
-.grow { flex: 1 1 auto; }
+.grow {
+  flex: 1;
+}
 
-/* 七栏的收合样式在 components/Fold.module.css（全终端共用一套，见那里的抬头） */
+.kick {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
 
 .no {
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-faint);
   letter-spacing: 0.06em;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 2px 6px;
-  color: var(--ink-mute);
-  font-size: 13px;
-}
-.empty b { color: var(--ink-dim); font-size: 14px; }
-.empty span { line-height: 1.9; }
-
-/* ————————————————— 一、人物关系 ————————————————— */
-
-.relList { display: flex; flex-direction: column; gap: 8px; }
-
-.relRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: var(--cursor-point);
-  transition: border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
-}
-.relRow:hover { border-color: var(--line-3); transform: translateX(2px); }
-
-.relMain { flex: 1 1 auto; min-width: 0; }
-.relTop { display: flex; align-items: baseline; gap: 8px; }
-.relTop b { font-size: 14px; }
-.relStage {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--jade-deep);
-}
-
-.relFoot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 5px;
-  font-size: 12px;
-  color: var(--ink-mute);
-}
-.relFoot .up { color: var(--jade-deep); }
-.relFoot .down { color: var(--red-deep); }
-
-.locked {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--amber-deep);
-}
-
-.relGo { color: var(--ink-faint); flex: 0 0 auto; }
-
-/* ————————————————— 二、事迹 ————————————————— */
-
-.deedList { display: flex; flex-direction: column; gap: 12px; }
-
-.deed {
-  padding: 12px 14px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--line-3);
-  border-radius: var(--radius);
-}
-
-.deedHead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.deedHead b { font-size: 14px; }
-
-.diverge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 7px;
-  font-size: 11px;
-  color: var(--amber-deep);
-  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
-  background: color-mix(in srgb, var(--amber) 10%, transparent);
-  border-radius: var(--radius-pill);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .stamp {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.diverge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--amber-deep);
+}
+
+.locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-faint);
+}
+
+/* 空态：一行 13px 标题 + 一行 13px 说明，居左，不给插图 */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-mute);
+}
+
+.empty b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+
+/* ---------- 人物关系 ---------- */
+
+.relList {
+  display: flex;
+  flex-direction: column;
+}
+
+.relRow {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 14px;
+  align-items: start;
+  gap: 12px;
+  width: calc(100% + 16px);
+  padding: 12px 8px;
+  margin: 0 -8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.relRow:first-child {
+  border-top: 0;
+}
+
+.relRow:hover {
+  background: var(--bg-2);
+}
+
+.relRow:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: -2px;
+}
+
+.relMain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.relTop {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.relTop b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.relStage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--jade-deep);
+  white-space: nowrap;
+}
+
+.relFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.up { color: var(--jade-deep); }
+.down { color: var(--red-deep); }
+
+.relGo {
+  align-self: center;
+  color: var(--ink-faint);
+}
+
+/* ---------- 事迹 ---------- */
+
+.deedList {
+  display: flex;
+  flex-direction: column;
+}
+
+.deed {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.deed:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.deedAxis {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--ink-faint);
+}
+
+.deedMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.deedHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.deedHead b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .deedMeta {
-  margin-top: 4px;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--ink-faint);
-  letter-spacing: 0.04em;
 }
 
 .digest {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   font-size: 14px;
-  line-height: 2;
+  line-height: 1.9;
   color: var(--ink-dim);
 }
+
 .digestEmpty {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-mute);
+}
+
+/* ---------- 战况 ---------- */
+
+.warList {
+  display: flex;
+  flex-direction: column;
+}
+
+.war {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.war:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.warAxis {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
   color: var(--ink-faint);
 }
 
-/* ————————————————— 三、伏笔 ————————————————— */
+.warMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 
-.threadList { display: flex; flex-direction: column; gap: 8px; }
+.warHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.warHead b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.warLine {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-dim);
+}
+
+.warEmpty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-mute);
+}
+
+/* ---------- 伏笔 ---------- */
+
+.threadList {
+  display: flex;
+  flex-direction: column;
+}
 
 .thread {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
 }
-.threadMain { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.threadMain b { font-size: 14px; }
-.threadMain span { line-height: 1.8; }
 
-/* ————————————————— 四、见闻 ————————————————— */
+.thread:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
 
-.sightList { display: flex; flex-direction: column; gap: 10px; }
+.threadMain {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.threadMain b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+
+/* ---------- 见闻 ---------- */
+
+.sightList {
+  display: flex;
+  flex-direction: column;
+}
 
 .sight {
-  padding: 11px 13px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
 }
-.sightHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sightHead b { font-size: 14px; }
+
+.sight:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.sightHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.sightHead b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
 
 .stageChip {
   font-family: var(--font-mono);
   font-size: 11px;
-  padding: 1px 8px;
-  border-radius: var(--radius-pill);
   color: var(--amber-deep);
-  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
-  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  white-space: nowrap;
 }
 
 .origin {
-  margin: 7px 0 0;
+  margin: 6px 0 0;
   font-size: 13px;
-  line-height: 1.95;
+  line-height: 1.85;
   color: var(--ink-mute);
 }
 
-/* ————————————————— 五、心迹 ————————————————— */
+/* ---------- 心迹 ---------- */
 
-.mindList { display: flex; flex-direction: column; gap: 14px; }
+.mindList {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 
 .mindGroup {
-  padding: 12px 14px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
 }
-.mindGroup[data-sealed='1'] { border-style: dashed; opacity: 0.86; }
 
-.mindHead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.mindHead b { font-size: 14px; }
+.mindHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
 
-.mind { padding: 8px 0 8px 12px; border-left: 2px solid color-mix(in srgb, var(--violet) 45%, transparent); }
-.mind + .mind { margin-top: 6px; }
+.mindHead b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
 
-.mindWho { display: flex; align-items: baseline; gap: 8px; }
-.mindWho b { font-size: 13px; color: var(--violet-deep); }
+.mind {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.mindWho {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.mindWho b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--violet-deep);
+}
 
 .mindText {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 14px;
-  line-height: 2;
+  line-height: 1.9;
   color: var(--ink-dim);
 }
 
 .sealed {
+  padding: 10px 0 0;
   font-size: 13px;
-  line-height: 1.9;
-  color: var(--ink-faint);
+  line-height: 1.85;
+  color: var(--ink-mute);
 }
 
-/* ————————————————— 六、技能 ————————————————— */
+/* ---------- 技能 ---------- */
 
-.skillTop { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.skillTop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
 
-.skillPeriod { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.skillTitle { font-size: 16px; }
+.skillPeriod {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.skillTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
 
 .skillNote {
-  flex: 1 1 260px;
-  min-width: 0;
   font-size: 13px;
-  line-height: 1.9;
+  line-height: 1.85;
   color: var(--ink-mute);
 }
 
 .armBox {
-  margin-top: 12px;
-  padding: 11px 13px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-.armHead { display: flex; align-items: center; gap: 8px; color: var(--ink); }
-.armHead svg { color: var(--steel-deep); }
-.armHead b { font-size: 14px; }
-.armNote {
-  margin: 6px 0 0;
-  font-size: 13px;
-  line-height: 1.9;
-  color: var(--ink-mute);
-}
-.passive {
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px dashed var(--line-2);
-  font-size: 13px;
-  color: var(--steel-deep);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
-.skillList { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.armHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.armHead b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.armNote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-mute);
+}
+
+.passive {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-mute);
+}
+
+.skillList {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+}
 
 .skillRow {
-  padding: 9px 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
 }
-.skillRow[data-locked='1'] { opacity: 0.62; }
 
-.skillName { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.skillName b { font-size: 14px; }
+.skillRow[data-locked='1'] {
+  opacity: 0.62;
+}
+
+.skillName {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.skillName b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
 
 .skillDesc {
-  margin: 5px 0 0;
+  margin: 4px 0 0;
   font-size: 13px;
-  line-height: 1.9;
+  line-height: 1.85;
   color: var(--ink-mute);
 }
 
-/* ————————————————— 七、大事记 ————————————————— */
+/* ---------- 大事记 ---------- */
 
-.chronList { display: flex; flex-direction: column; gap: 14px; }
+.chronList {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.chronGroup {
+  display: flex;
+  flex-direction: column;
+}
 
 .chronHead {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding-bottom: 6px;
-  margin-bottom: 4px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
 }
-.chronHead b { font-size: 14px; letter-spacing: 0.02em; }
 
-.chronRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 4px;
-  border-bottom: 1px dashed var(--line-2);
+.chronHead b {
   font-size: 13px;
-}
-.chronRow:last-child { border-bottom: none; }
-.chronRow b { font-weight: 600; }
-.chronRow[data-done='1'] b { color: var(--ink); }
-.chronRow[data-done='0'] b { color: var(--ink-mute); }
-.chronRow[data-unseen='1'] { opacity: 0.55; }
-
-.unseenTitle { letter-spacing: 0.1em; color: var(--ink-faint); }
-
-.chronPlace {
-  font-size: 12px;
-  color: var(--ink-faint);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chronTs {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-faint);
-  flex: 0 0 auto;
-}
-.chronSealed {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-faint);
-  letter-spacing: 0.1em;
-  flex: 0 0 auto;
-}
-
-
-/* ————————————————— 战况 · 最近交战 —————————————————
-   一句话读数，不是账：一行一场。层次靠边分（方贴纸那套），不写柔影。 */
-
-.warList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.war {
-  padding: 9px 11px;
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-}
-
-.warHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.warLine {
-  margin: 5px 0 0;
-  font-size: 12.5px;
-  line-height: 1.65;
+  font-weight: 600;
   color: var(--ink-dim);
 }
 
-.warEmpty {
-  margin: 5px 0 0;
-  font-size: 12px;
+.chronRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.chronRow b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+
+.unseenTitle {
+  font-weight: 400 !important;
+  color: var(--ink-faint) !important;
+}
+
+.chronPlace {
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--ink-faint);
 }
 
-/* ————————————————— 窄屏 ————————————————— */
+.chronTs,
+.chronSealed {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
 
-@media (max-width: 980px) {
-  .layout { grid-template-columns: minmax(0, 1fr); }
+.chronTs { color: var(--ink-faint); }
+.chronSealed { color: var(--ink-faint); }
+
+/* ---------- 窄屏 ---------- */
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  /* 目录收成顶部一行分组：仍是分组与筛选，不再占一整列 */
   .index {
     position: static;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 0;
+    padding-top: 0;
+    border-top: 0;
+    border-bottom: 1px solid var(--line-2);
+    padding-bottom: 10px;
   }
-  .indexHead, .indexNote { display: none; }
-  .indexRow { width: auto; padding: 5px 9px; font-size: 12px; }
-  .indexNo { display: none; }
+
+  .indexHead,
+  .indexNote,
+  .indexNo {
+    display: none;
+  }
+
+  .indexRow {
+    width: auto;
+    grid-template-columns: 16px auto auto;
+    margin: 0 12px 0 0;
+    padding: 6px 0;
+    border-top: 0;
+  }
+
+  .headNote {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
 }
 
-/* 手机档 · 粗指针：索引那一行（33px）与编年那一行（26px）抬到 44 */
+@media (max-width: 860px) {
+  .deed,
+  .war {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .deedAxis,
+  .warAxis {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .deed:first-child .deedAxis,
+  .war:first-child .warAxis {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .thread {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .chronTs,
+  .chronSealed {
+    margin-left: 0;
+  }
+}
+
 @media (pointer: coarse) {
-  .indexRow, .chronRow { min-height: 44px; }
+  .indexRow,
+  .relRow {
+    min-height: 44px;
+  }
 }

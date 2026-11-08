@@ -110,10 +110,10 @@ export function Saga() {
 
   return (
     <div className="vpage">
-      <div className="vhead">
+      <header className="vhead">
         <div>
-          <div className="vhead__kicker">RECORD / WHISPERER LOG</div>
-          <h1>低语者日志</h1>
+          <div className="vhead__kicker">RECORD / TIMELINE</div>
+          <h1>日志</h1>
           <div className="vhead__sub">
             正文的推演与通读都在「剧情推进」进行——本页只读：上方为当前事件，下方为已收束事件陆续归档的记录流。
             读到的人心连成事件，事件落地成记录。
@@ -125,40 +125,37 @@ export function Saga() {
             {unlocked ? <><LockSimpleOpen size={13} weight="bold" /> 作战子系统已解锁</> : <><Lock size={13} weight="bold" /> 任务 / 武装图鉴 / 终末图鉴 / 短信待解锁</>}
           </span>
         </div>
-      </div>
+      </header>
 
-      {/* 进度条。两条 `min-width` 从前是**内联**的（170 / 220）——
-          内联样式媒体查询够不着，390 屏上这两格加起来就 390，正好把整条顶出去。
-          挪进类里之后，窄屏那一条在 Saga.module.css 末尾放开它们。 */}
-      <div className={css.strip}>
-        <div className={`${css.stripCell} ${css.stripCellEvent}`}>
-          <span className="tiny muted" style={{ color: 'var(--ink-faint)', letterSpacing: '0.14em' }}>当前事件</span>
-          <b>{focusEv ? focusEv.title : '全部收束'}</b>
+      <div className={css.sum}>
+        <div className={css.sumCell}>
+          <span className={css.sumLabel}>当前事件</span>
+          <b className={css.sumValue}>{focusEv ? focusEv.title : '全部收束'}</b>
         </div>
-        <div className={`${css.stripCell} ${css.stripCellPct}`}>
-          <div className={css.pctLine}>
-            <span>收束进度 · {doneCount}/{TIMELINE.length}</span>
-            <span>{pct}%</span>
-          </div>
-          <div className="meter meter--thick">
-            <div className="meter__fill" style={{ width: `${pct}%` }} />
+        <div className={css.sumCell}>
+          <span className={css.sumLabel}>收束进度 · {doneCount}/{TIMELINE.length}</span>
+          <div className={css.sumProgress}>
+            <div className="meter" style={{ height: 4 }}>
+              <div className="meter__fill" style={{ width: `${pct}%` }} />
+            </div>
+            <span className={css.sumPct}>{pct}%</span>
           </div>
         </div>
-        <div className={css.stripCell} style={{ gap: 8, marginLeft: 'auto' }}>
-          <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('plot')} disabled={!focusEv}>
+        <div className={css.sumActions}>
+          <button className="btn btn--primary" onClick={() => navigate('plot')} disabled={!focusEv}>
             前往剧情 · 推进此段 <ArrowRight size={13} weight="bold" />
           </button>
           {!focusEv ? (
-            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => navigate('dashboard')}>返回总览</button>
+            <button className="btn btn--ghost" onClick={() => navigate('dashboard')}>返回总览</button>
           ) : null}
         </div>
       </div>
 
       {!unlocked ? (
-        <div className={css.gate}>
+        <p className={css.gate}>
           门禁提示：角色档案 / 武装图鉴 / 任务简报 / 终末图鉴 / 角色短信 需先完成事件「欢迎来到，终末停滞委员会」（第 1 卷 · 序章至第 1 章）。
           于「剧情推进」中收束该事件后自动解锁。
-        </div>
+        </p>
       ) : null}
 
       {/* ============ 世界线 · 锚点脊梁（整段默认收着）============
@@ -166,10 +163,10 @@ export function Saga() {
           data-fold-body，收起由 tokens.css 的一条规则办 —— 栏体不卸 DOM，条数照旧读得到。
           冒烟那几个把手：data-worldline / data-anchor-row / data-anchor-state /
           data-diverged-row / data-diverged-empty。 */}
-      <section className={`panel ${css.worldBox}`} data-worldline>
+      <section className="panel" data-worldline>
         <FoldHead k="worldline" open={folds.isOpen('worldline')} folds={folds} className="panel__head">
-          <span className="panel__title">世界线 · 锚点脊梁 <span className="slash" /></span>
-          <span className="muted tiny" style={{ color: 'var(--ink-faint)' }} data-worldline-count="1">
+          <span className="panel__title">世界线 · 锚点脊梁</span>
+          <span className={css.headMeta} data-worldline-count="1">
             锚点 {worldline.count.total} · 已落地 {worldline.count.landed} · 到期 {worldline.count.due}
           </span>
           <span className={css.grow} />
@@ -182,10 +179,10 @@ export function Saga() {
         </FoldHead>
 
         <div className="panel__body" data-fold-body>
-          <div className={css.wlNote}>
+          <p className={css.wlNote}>
             这 24 条是原文里绕不开的那几件事。结果不动，过程归你 —— 每条下面写着能改的那几样，
             以及「你把它绕开时，它怎么回来」。已落地 / 此刻到期 / 还没到 / 已错过，四档各自有记。
-          </div>
+          </p>
 
           <ol className={css.ancList}>
             {worldline.rows.map((row) => {
@@ -193,7 +190,7 @@ export function Saga() {
               return (
                 <li
                   key={row.id}
-                  className={`${css.ancRow} ${css['anc_' + row.state]} ${row.current ? css.ancCur : ''}`}
+                  className={`${css.ancRow} ${row.current ? css.ancCur : ''}`}
                   data-anchor-row={row.id}
                   data-anchor-state={row.state}
                   data-anchor-current={row.current ? '1' : undefined}
@@ -211,17 +208,19 @@ export function Saga() {
                       {row.stateLabel}
                     </span>
                     <span className={css.ancTitle}>{row.title}</span>
-                    {row.current ? <span className={css.ancHere} data-anchor-here="1">当前段</span> : null}
                     <span className={css.ancSide}>
-                      {row.state === 'landed'
-                        ? `第 ${row.tick} 格 · ${row.howLabel}`
-                        : row.state === 'due'
-                          ? '就在这一段'
-                          : row.dayAfter !== null
-                            ? `第 ${row.dayAfter} 日之后`
-                            : row.state === 'missed'
-                              ? '已错过'
-                              : '时机未到'}
+                      {row.current ? <span className={css.ancHere} data-anchor-here="1">当前段</span> : null}
+                      <span>
+                        {row.state === 'landed'
+                          ? `第 ${row.tick} 格 · ${row.howLabel}`
+                          : row.state === 'due'
+                            ? '就在这一段'
+                            : row.dayAfter !== null
+                              ? `第 ${row.dayAfter} 日之后`
+                              : row.state === 'missed'
+                                ? '已错过'
+                                : '时机未到'}
+                      </span>
                     </span>
                     <CaretDown size={12} weight="bold" className={`${css.ancChev} ${open ? css.ancChevOn : ''}`} />
                   </button>
@@ -261,8 +260,8 @@ export function Saga() {
 
           {/* —— 偏离账本：world.records 里 diverged === true 的那几条 —— */}
           <div className={css.divHead}>
-            <span className="panel__title">偏离账本 <span className="slash" /></span>
-            <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+            <span className={css.subTitle}>偏离账本</span>
+            <span className={css.headMeta}>
               与原著相异的收束 · {worldline.count.diverged} 段
             </span>
           </div>
@@ -273,7 +272,7 @@ export function Saga() {
               <span>偏离由导演在收束时判定：那一段收得与原文不一样才记一笔。记下来之后这里就会多一行。</span>
             </div>
           ) : (
-            <div className={css.divTable}>
+            <div>
               <div className={css.divCols} aria-hidden="true">
                 <span>时间线事件</span>
                 <span>收束方式</span>
@@ -298,15 +297,15 @@ export function Saga() {
         <div className={css.col}>
           {/* 当前事件卡 */}
           {focusEv ? (
-            <section className={`panel ${css.curBox}`}>
+            <section className="panel">
               <div className="panel__head">
-                <span className="panel__title">当前事件 · 未收束 <span className="slash" /></span>
-                <span className="muted tiny" style={{ marginLeft: 'auto' }}>{focusEv.id.toUpperCase()}</span>
+                <span className="panel__title">当前事件 · 未收束</span>
+                <span className={css.headMeta} style={{ marginLeft: 'auto' }}>{focusEv.id.toUpperCase()}</span>
               </div>
               <div className={css.curBody}>
-                <span className="vhead__kicker" style={{ fontSize: 9 }}>{focusEv.group} · {focusEv.phase}</span>
+                <span className={css.curKicker}>{focusEv.group} · {focusEv.phase}</span>
                 <b className={css.curTitle}>{focusEv.title}</b>
-                <div className="muted tiny" style={{ color: 'var(--ink-mute)', marginTop: 2 }}>
+                <div className={css.curPlace}>
                   {focusEv.place}{focusEv.day ? ` · ${focusEv.day}` : ''}
                 </div>
                 <p className={css.curSummary}>{focusEv.summary}</p>
@@ -374,8 +373,8 @@ export function Saga() {
                         )}
                         <div className={css.charMain}>
                           <b>{met ? c.name : '？？？'}</b>
-                          <div className="meter" style={{ height: 5, marginTop: 4 }}>
-                            <div className="meter__fill" style={{ width: `${cur}%`, background: `linear-gradient(90deg, ${c.hue}55, ${c.hue})` }} />
+                          <div className="meter" style={{ height: 4, marginTop: 4 }}>
+                            <div className="meter__fill" style={{ width: `${cur}%`, background: 'var(--ink-faint)' }} />
                           </div>
                         </div>
                         {/* 与右下那一栏同一个写法：本色当字要先过 inkOf（见 lib/hue.ts） */}
@@ -388,7 +387,7 @@ export function Saga() {
                           ) : null}
                         </span>
                         {/* 原著同段只是对照：走到这一段，主角比他更亲近还是更疏远 */}
-                        <span className="tiny muted" style={{ color: 'var(--ink-faint)' }}>
+                        <span className={css.charCanon}>
                           {met ? `原著同段 ${canon}${cur > canon ? ' · 更亲近' : cur < canon ? ' · 更疏远' : ''}` : '未遇见'}
                         </span>
                       </button>
@@ -401,17 +400,17 @@ export function Saga() {
                     本段尚未收束。前往剧情视图——<b>{operatorName || '言万心叶'}</b>以消息推演推进（回执自动落地变量），
                     或在无接口时离线通读原文后归档；收束后自动在此追加一条记录并解锁下一段。
                   </p>
-                  <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => navigate('plot')}>
+                  <button className="btn btn--primary" onClick={() => navigate('plot')}>
                     进入剧情 · 推演或通读 <ArrowRight size={13} weight="bold" />
                   </button>
                 </div>
               </div>
             </section>
           ) : (
-            <section className={`panel ${css.curBox}`}>
-              <div className="panel__body" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
-                <b style={{ fontSize: 18 }}>时间线已全部收束</b>
-                <p className="muted" style={{ margin: 0, lineHeight: 1.9, color: 'var(--ink-mute)' }}>
+            <section className="panel">
+              <div className="panel__body">
+                <b className={css.doneTitle}>时间线已全部收束</b>
+                <p className={css.doneNote}>
                   {TIMELINE.length} 个事件均已归档为记录。若想重新开始，可回终端总览执行「重置世界进度」。
                 </p>
               </div>
@@ -420,8 +419,8 @@ export function Saga() {
 
           {/* 已归档记录流 */}
           <div className={css.feedHead}>
-            <span className="panel__title">已归档 · 记录流 <span className="slash" /></span>
-            <span className="muted tiny" style={{ marginLeft: 'auto', color: 'var(--ink-faint)' }}>
+            <span className={css.subTitle}>已归档 · 记录流</span>
+            <span className={css.headMeta}>
               按阅读序 · 共 {records.length} 条
             </span>
           </div>
@@ -438,42 +437,43 @@ export function Saga() {
                 const md = r.mode
                 return (
                   <article key={r.eventId} className={css.rec}>
-                    <div className={css.recHead}>
+                    <div className={css.recAxis}>
                       <span className={css.recNo}>{String(seqOf(r.eventId)).padStart(2, '0')}</span>
-                      <b className={css.recTitle}>{ev?.title ?? r.eventId}</b>
-                      <span className={`${css.md} ${md === 'online' ? css.mdOn : md === 'offline' ? css.mdOff : css.mdOld}`}>
-                        {REC_MODE_LABEL[md]}
-                      </span>
-                      {r.diverged ? (
-                        <span className={css.diverge}><GitBranch size={11} weight="bold" /> 分歧</span>
+                      <span className={css.recTime}>{r.ts > 0 ? clock(new Date(r.ts)) : '回填'}</span>
+                      {ev ? <span className={css.recDim}>{ev.place}</span> : null}
+                      {ev && ev.entities.some((x) => x !== '——') ? (
+                        <span className={css.recDim}>实体：{ev.entities.filter((x) => x !== '——').slice(0, 3).join('、')}</span>
                       ) : null}
-                      <span className={`muted tiny ${css.recTime}`}>
-                        {r.ts > 0 ? clock(new Date(r.ts)) : '回填'}
-                      </span>
                     </div>
-                    <p className={css.recDigest}><Linkified text={r.digest} /></p>
-                    <div className={css.recMeta}>
-                      <span>{ev ? `${ev.group} · ${ev.phase}` : r.eventId}</span>
-                      {ev ? <span>{ev.place}</span> : null}
-                      {ev && ev.entities.some((x) => x !== '——') ? <span>实体：{ev.entities.filter((x) => x !== '——').slice(0, 3).join('、')}</span> : null}
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 10px', marginTop: 8 }}>
-                      <button
-                        type="button"
-                        className="btn btn--ghost"
-                        style={{ fontSize: 12 }}
-                        data-rewind-event={r.eventId}
-                        data-rewind-arm={rewindArm === r.eventId ? '1' : undefined}
-                        onClick={() => doRewind(r.eventId)}
-                        title="把这一段与它之后的所有记录一并撤下，推演退回这一段之前"
-                      >
-                        {rewindArm === r.eventId ? '再按一次确认' : '回到这一段之前'}
-                      </button>
-                      {rewindArm === r.eventId ? (
-                        <span className="tiny" data-rewind-note="1" style={{ color: 'var(--ink-mute)', lineHeight: 1.7 }}>
-                          这一段与它之后的记录都会撤下；正文、已登记的角色 / 图鉴不会回滚。
+                    <div className={css.recBody}>
+                      <div className={css.recHead}>
+                        <b className={css.recTitle}>{ev?.title ?? r.eventId}</b>
+                        <span className={`${css.md} ${md === 'online' ? css.mdOn : md === 'offline' ? css.mdOff : css.mdOld}`}>
+                          {REC_MODE_LABEL[md]}
                         </span>
-                      ) : null}
+                        {r.diverged ? (
+                          <span className={css.diverge}><GitBranch size={11} weight="bold" /> 分歧</span>
+                        ) : null}
+                      </div>
+                      <p className={css.recDigest}><Linkified text={r.digest} /></p>
+                      <div className={css.recMeta}>
+                        <span>{ev ? `${ev.group} · ${ev.phase}` : r.eventId}</span>
+                        <button
+                          type="button"
+                          className={css.rewind}
+                          data-rewind-event={r.eventId}
+                          data-rewind-arm={rewindArm === r.eventId ? '1' : undefined}
+                          onClick={() => doRewind(r.eventId)}
+                          title="把这一段与它之后的所有记录一并撤下，推演退回这一段之前"
+                        >
+                          {rewindArm === r.eventId ? '再按一次确认' : '回到这一段之前'}
+                        </button>
+                        {rewindArm === r.eventId ? (
+                          <span className={css.recNote} data-rewind-note="1">
+                            这一段与它之后的记录都会撤下；正文、已登记的角色 / 图鉴不会回滚。
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </article>
                 )
@@ -490,12 +490,11 @@ export function Saga() {
         </div>
 
         {/* ============ 侧栏：变量只读 ============ */}
-        <div className={css.side}>
-          <div className={css.widget}>
+        <aside className={css.side}>
+          <section className={css.widget}>
             <div className={css.widgetHead}>
               当前羁绊 · 实时变量
-              <span className={css.grow} />
-              <span className="muted tiny">BOND · {focusEv ? focusEv.phase : '卷未定'}</span>
+              <span className={css.widgetTag}>BOND · {focusEv ? focusEv.phase : '卷未定'}</span>
             </div>
             <div className={css.widgetBody}>
               {CHAR_ORDER.map((id) => {
@@ -511,8 +510,8 @@ export function Saga() {
                     </span>
                     {met ? (
                       <>
-                        <div className="meter" style={{ height: 6 }}>
-                          <div className="meter__fill" style={{ width: `${v}%`, background: `linear-gradient(90deg, ${c.hue}55, ${c.hue})` }} />
+                        <div className="meter" style={{ height: 4 }}>
+                          <div className="meter__fill" style={{ width: `${v}%`, background: 'var(--ink-faint)' }} />
                         </div>
                         <span className={css.val} style={{ color: inkOf(c.hue) }}>
                           {v}
@@ -533,9 +532,9 @@ export function Saga() {
                 少数事件另有门槛（关系先到某个数才进得去）与锁定（那件事之后关系再也回不去，固定满值）。
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className={css.widget}>
+          <section className={css.widget}>
             <div className={css.widgetHead}>观测记录 · 只读</div>
             <div className={css.widgetBody}>
               <div className={css.varGrid}>
@@ -548,8 +547,8 @@ export function Saga() {
                 <b>{displayOp}，</b>记录一旦写入便不可在此处删改——如需重来，使用终端总览的「重置世界进度」。
               </div>
             </div>
-          </div>
-        </div>
+          </section>
+        </aside>
       </div>
     </div>
   )

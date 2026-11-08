@@ -50,7 +50,7 @@
   color: var(--ink);
   background: transparent;
   border: none;
-  border-bottom: 1px dashed var(--line-2);
+  border-bottom: 1px solid var(--line-2);
   padding: 2px 0;
   font-family: var(--font-sans);
 }
@@ -73,7 +73,7 @@
   display: flex;
   gap: 8px;
   padding: 10px 16px;
-  border-bottom: 1px dashed var(--line);
+  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--amber) 6%, transparent);
 }
 .createRow .field { flex: 1; }
@@ -87,14 +87,14 @@
   gap: 10px;
 }
 .listHint {
-  border: 1px dashed var(--line-2);
+  border: 1px solid var(--line-2);
   background: var(--bg-2);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   line-height: 1.7;
 }
 .empty {
-  border: 1px dashed var(--line-2);
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
   padding: 26px 18px;
   display: flex;
@@ -268,7 +268,7 @@
   gap: 12px;
 }
 .formEmpty {
-  border: 1px dashed var(--line-2);
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
   padding: 30px 20px;
   text-align: center;

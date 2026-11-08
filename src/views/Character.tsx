@@ -375,7 +375,7 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
       </div>
 
       <div className={css.stage}>
-        {/* ---- 左：深色竖排页签 ---- */}
+        {/* ---- 左：竖排页签（44px 一行，选中靠左那条竖线） ---- */}
         <nav className={css.rail} data-char-tabs aria-label="角色模块">
           {TABS.map((t, i) => (
             <button

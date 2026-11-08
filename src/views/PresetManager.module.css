@@ -57,7 +57,7 @@
 
 .hint {
   padding: 9px 16px;
-  border-bottom: 1px dashed var(--line);
+  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--amber) 6%, transparent);
   line-height: 1.75;
 }
@@ -88,7 +88,7 @@
   letter-spacing: 0.14em;
   color: var(--ink-faint);
   padding: 9px 8px 4px;
-  border-bottom: 1px dashed var(--line);
+  border-bottom: 1px solid var(--line);
   margin-bottom: 2px;
 }
 

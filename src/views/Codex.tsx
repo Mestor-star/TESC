@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import { CODEX } from '../data/codex'
 import type { EndEntry, OwnEndEntry } from '../data/types'
 import { useTerminal } from '../terminal/Terminal'
@@ -20,14 +19,14 @@ const CANON_ORDER = [
   '侦探',
 ]
 
-const STATE_META: Record<string, { cls: string; color: string; label: string }> = {
-  活跃: { cls: 'chip chip--danger', color: 'var(--red-deep)', label: '活跃' },
-  抑制: { cls: 'chip chip--warn', color: 'var(--amber-deep)', label: '抑制' },
-  收容: { cls: 'chip chip--on', color: 'var(--jade-deep)', label: '收容' },
-  已清除: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '已清除' },
-  运转中: { cls: 'chip chip--warn', color: 'var(--amber-deep)', label: '运转中' },
-  去向不明: { cls: 'chip chip--off', color: 'var(--ink-dim)', label: '去向不明' },
-  存疑: { cls: 'chip chip--off', color: 'var(--ink-mute)', label: '存疑' },
+const STATE_META: Record<string, { label: string }> = {
+  活跃: { label: '活跃' },
+  抑制: { label: '抑制' },
+  收容: { label: '收容' },
+  已清除: { label: '已清除' },
+  运转中: { label: '运转中' },
+  去向不明: { label: '去向不明' },
+  存疑: { label: '存疑' },
 }
 
 /** 图鉴浏览档位：全部 / 仅已遭遇 / 仅封存未解 */
@@ -192,12 +191,11 @@ export function Codex() {
     push('info', '自记条目删除', `「${e.name}」已从操作员自记移除。`, false)
   }
 
-  const statusTag = (e: EndEntry) =>
-    isEndReg(e.id)
-      ? { text: '已遭遇 · 已登记', cls: css.tagMet }
-      : sealedOf(e)
-        ? { text: '封存 · 未解明', cls: css.tagSeal }
-        : { text: '仅档案 · 未遭遇', cls: css.tagIntel }
+  const statusText = (e: EndEntry) =>
+    isEndReg(e.id) ? '已遭遇 · 已登记' : sealedOf(e) ? '封存 · 未解明' : '仅档案 · 未遭遇'
+
+  const openOwn = openId ? ownSorted.find((o) => o.id === openId) ?? null : null
+  const openEnd = openId && !openOwn ? CODEX.find((e) => e.id === openId) ?? null : null
 
   return (
     <div className="vpage" ref={rootRef}>
@@ -213,336 +211,311 @@ export function Codex() {
         </div>
       </div>
 
-      <div className={css.metrics}>
-        <div className={css.metric}>
-          <small>收录档案</small>
-          <b>{counts.total}</b>
-        </div>
-        <div className={css.metric}>
-          <small>已遭遇登记</small>
-          <b style={{ color: 'var(--steel-deep)' }}>{counts.reg}</b>
-        </div>
-        <div className={css.metric}>
-          <small>封存未解</small>
-          <b style={{ color: 'var(--ink-mute)' }}>{counts.sealed}</b>
-        </div>
-        <div className={css.metric}>
-          <small>活跃中</small>
-          <b style={{ color: 'var(--red-deep)' }}>{counts.active}</b>
-        </div>
-        <div className={css.metric}>
-          <small>已清除</small>
-          <b style={{ color: 'var(--jade-deep)' }}>{counts.cleared}</b>
-        </div>
-      </div>
-
-      {/* 档位 + 原法分类筛选 */}
-      <div className={css.controls}>
-        {(
-          [
-            ['all', '全部记录'],
-            ['met', '仅已遭遇'],
-            ['sealed', '仅封存未解'],
-          ] as [CodexMode, string][]
-        ).map(([m, label]) => {
-          const on = mode === m
-          return (
-            <button
-              key={m}
-              className="chip"
-              style={{
-                cursor: 'pointer',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.05em',
-                /* 选中不是「白字压粉底」—— 浅底上那样等于没字。走 -deep 档压在粉洗上 */
-                color: on ? 'var(--red-deep)' : 'var(--ink-dim)',
-                borderColor: on ? 'var(--red)' : 'var(--line-2)',
-                background: on ? 'var(--red-soft)' : 'var(--bg-2)',
-                boxShadow: on ? 'inset 0 0 0 1px var(--red)' : 'none',
-              }}
-              onClick={() => switchMode(m)}
-            >
-              {label}
-            </button>
-          )
-        })}
-
-        <span className={css.split} />
-
-        {['全部', ...classes].map((c) => {
-          const on = cls === c
-          return (
+      <div className={css.shell}>
+        <aside className={css.index}>
+          {['全部', ...classes].map((c) => (
             <button
               key={c}
-              className="chip"
-              style={{
-                cursor: 'pointer',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.05em',
-                /* 选中不是「白字压粉底」—— 浅底上那样等于没字。走 -deep 档压在粉洗上 */
-                color: on ? 'var(--red-deep)' : 'var(--ink-dim)',
-                borderColor: on ? 'var(--red)' : 'var(--line-2)',
-                background: on ? 'var(--red-soft)' : 'var(--bg-2)',
-                boxShadow: on ? 'inset 0 0 0 1px var(--red)' : 'none',
-              }}
+              className={`${css.idxRow} ${cls === c ? css.idxOn : ''}`}
               onClick={() => switchCls(c)}
             >
-              {c}
+              <span className={css.idxLabel}>{c}</span>
             </button>
-          )
-        })}
-      </div>
+          ))}
+        </aside>
 
-      {/* —— 操作员自记 · 观测补录 —— */}
-      <section className={css.ownSection}>
-        <div className={css.groupHead}>
-          <span className={css.groupMark} />
-          <span className={css.groupTitle}>操作员自记</span>
-          <span className={css.groupSub}>OBSERVER NOTES</span>
-          <span className={css.groupCount}>{ownEnds.length} 条</span>
-          <button
-            className="btn btn--ghost"
-            style={{ marginLeft: 'auto', fontSize: 12, padding: '5px 12px' }}
-            onClick={() => setAdding((v) => !v)}
-          >
-            {adding ? '收起录入' : '＋ 新增观测条目'}
-          </button>
-        </div>
-
-        {adding ? (
-          <div className={css.addPanel}>
-            <div className={css.fieldGrid}>
-              <label className={css.field}>
-                <span>条目名称 *</span>
-                <input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="如：深夜的红线" />
-              </label>
-              <label className={css.field}>
-                <span>观测编号</span>
-                <input value={f.no} onChange={(e) => set('no', e.target.value)} placeholder="如 3922（可留空）" />
-              </label>
-              <label className={css.field}>
-                <span>别名 / 学名</span>
-                <input value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="拉丁或代号（可留空）" />
-              </label>
-              <label className={css.field}>
-                <span>Stage 分级</span>
-                <select value={f.stage} onChange={(e) => set('stage', Number(e.target.value))}>
-                  {STAGE_OPTIONS.map((s) => (
-                    <option key={s} value={s}>
-                      {s < 0 ? '未解明' : `Stage ${s}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={css.field}>
-                <span>阶段关键词</span>
-                <input value={f.stageKw} onChange={(e) => set('stageKw', e.target.value)} placeholder="如 『活性化』" />
-              </label>
-              <label className={css.field}>
-                <span>原法分类</span>
-                <select value={f.klass} onChange={(e) => set('klass', e.target.value)}>
-                  {CLASS_OPTIONS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={css.field}>
-                <span>处置状态</span>
-                <select value={f.state} onChange={(e) => set('state', e.target.value as OwnEndEntry['state'])}>
-                  <option value="活跃">活跃</option>
-                  <option value="抑制">抑制</option>
-                  <option value="收容">收容</option>
-                  <option value="已清除">已清除</option>
-                </select>
-              </label>
+        <div className={css.body}>
+          <div className={css.strip}>
+            <div className={css.cell}>
+              <small>收录档案</small>
+              <b>{counts.total}</b>
             </div>
-            <label className={css.field}>
-              <span>来历 *</span>
-              <textarea rows={2} value={f.origin} onChange={(e) => set('origin', e.target.value)} placeholder="在何处遭遇 / 记录缘起……" />
-            </label>
-            <label className={css.field}>
-              <span>详细</span>
-              <textarea rows={3} value={f.detail} onChange={(e) => set('detail', e.target.value)} placeholder="观测细节、特征、相关事件……" />
-            </label>
-            <label className={css.field}>
-              <span>应对要点</span>
-              <textarea rows={2} value={f.counter} onChange={(e) => set('counter', e.target.value)} placeholder="若为反现实实体，写清应对方式……" />
-            </label>
-            <div className={css.saveRow}>
-              <span className={css.saveHint}>自记条目将写入终端存档，仅操作员可见。</span>
-              <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={() => setAdding(false)}>
-                取消
-              </button>
-              <button className="btn btn--primary" style={{ fontSize: 12 }} disabled={!canSave} onClick={doAdd}>
-                写入自记
-              </button>
+            <div className={css.cell}>
+              <small>已遭遇登记</small>
+              <b>{counts.reg}</b>
+            </div>
+            <div className={css.cell}>
+              <small>封存未解</small>
+              <b>{counts.sealed}</b>
+            </div>
+            <div className={css.cell}>
+              <small>活跃中</small>
+              <b>{counts.active}</b>
+            </div>
+            <div className={css.cell}>
+              <small>已清除</small>
+              <b>{counts.cleared}</b>
             </div>
           </div>
-        ) : null}
 
-        {ownSorted.length ? (
-          <div className={css.list} style={{ marginTop: 12 }}>
-            {ownSorted.map((o) => {
-              const open = openId === o.id
-              const st = STATE_META[o.state] ?? { cls: 'chip', color: 'var(--ink-mute)', label: o.state }
-              return (
-                <article key={o.id} data-codex-id={o.id} className={css.item} style={{ '--c': 'var(--amber)' } as CSSProperties}>
-                  <button
-                    className={`${css.itemRow} ${open ? css['open'] : ''}`}
-                    onClick={() => setOpenId(open ? null : o.id)}
-                    aria-expanded={open}
-                  >
-                    <span className={css.itemStage}>
-                      <span className={css['s']} style={{ color: 'var(--amber-deep)', fontSize: 20 }}>{o.stage < 0 ? '?' : o.stage}</span>
-                      <small>{o.stageKw}</small>
-                    </span>
-                    <span className={css.itemMain}>
-                      <b>{o.name}</b>
-                      <span className={css.alias}>{o.alias || o.no || 'SELF-REGISTERED'}</span>
-                      <p className={open ? css['open'] : ''}>{o.origin}</p>
-                    </span>
-                    <span className={css.itemRight}>
-                      <span className={`${st.cls}`}>{st.label}</span>
-                      <span className={css.tagSelf}>自记</span>
-                      <span className={css.chev}>›</span>
-                    </span>
+          <div className={css.modes}>
+            {(
+              [
+                ['all', '全部记录'],
+                ['met', '仅已遭遇'],
+                ['sealed', '仅封存未解'],
+              ] as [CodexMode, string][]
+            ).map(([m, label]) => (
+              <button key={m} className={`chip ${mode === m ? css.chipOn : ''}`} onClick={() => switchMode(m)}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className={`${css.work} ${openOwn || openEnd ? css.workOpen : ''}`}>
+            <div className={css.main}>
+              {/* —— 操作员自记 · 观测补录 —— */}
+              <section className={css.section}>
+                <div className={css.groupHead}>
+                  <span className={css.groupTitle}>操作员自记</span>
+                  <span className={css.groupSub}>OBSERVER NOTES</span>
+                  <span className={css.groupCount}>{ownEnds.length} 条</span>
+                  <button className="btn btn--ghost" onClick={() => setAdding((v) => !v)}>
+                    {adding ? '收起录入' : '＋ 新增观测条目'}
                   </button>
+                </div>
 
-                  <div className={`${css.expand} ${open ? css['open'] : ''}`}>
-                    <div className={css.expBody}>
-                      <div className={css.expLabel}>○ 来历</div>
-                      <p className={css.expText}>{o.origin}</p>
-                      {o.detail ? (
-                        <>
-                          <div className={css.expLabel}>○ 详细</div>
-                          <p className={css.expText}>{o.detail}</p>
-                        </>
-                      ) : null}
-                      {o.counter ? (
-                        <div className={css.counterBox} style={{ marginTop: 12 }}>
-                          <b>应对要点 · COUNTERMEASURE</b>
-                          <span>{o.counter}</span>
-                        </div>
-                      ) : null}
-                      <div className={css.expFoot}>
-                        <span className={css.refChip}>操作员自记 · {fmtTs(o.ts)}</span>
-                        <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 10px', marginLeft: 'auto' }} onClick={() => doRemove(o)}>
-                          删除此条
-                        </button>
-                      </div>
+                {adding ? (
+                  <div className={css.addPanel}>
+                    <div className={css.fieldGrid}>
+                      <label className={css.field}>
+                        <span>条目名称 *</span>
+                        <input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="如：深夜的红线" />
+                      </label>
+                      <label className={css.field}>
+                        <span>观测编号</span>
+                        <input value={f.no} onChange={(e) => set('no', e.target.value)} placeholder="如 3922（可留空）" />
+                      </label>
+                      <label className={css.field}>
+                        <span>别名 / 学名</span>
+                        <input value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="拉丁或代号（可留空）" />
+                      </label>
+                      <label className={css.field}>
+                        <span>Stage 分级</span>
+                        <select value={f.stage} onChange={(e) => set('stage', Number(e.target.value))}>
+                          {STAGE_OPTIONS.map((s) => (
+                            <option key={s} value={s}>
+                              {s < 0 ? '未解明' : `Stage ${s}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={css.field}>
+                        <span>阶段关键词</span>
+                        <input value={f.stageKw} onChange={(e) => set('stageKw', e.target.value)} placeholder="如 『活性化』" />
+                      </label>
+                      <label className={css.field}>
+                        <span>原法分类</span>
+                        <select value={f.klass} onChange={(e) => set('klass', e.target.value)}>
+                          {CLASS_OPTIONS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={css.field}>
+                        <span>处置状态</span>
+                        <select value={f.state} onChange={(e) => set('state', e.target.value as OwnEndEntry['state'])}>
+                          <option value="活跃">活跃</option>
+                          <option value="抑制">抑制</option>
+                          <option value="收容">收容</option>
+                          <option value="已清除">已清除</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className={css.field}>
+                      <span>来历 *</span>
+                      <textarea rows={2} value={f.origin} onChange={(e) => set('origin', e.target.value)} placeholder="在何处遭遇 / 记录缘起……" />
+                    </label>
+                    <label className={css.field}>
+                      <span>详细</span>
+                      <textarea rows={3} value={f.detail} onChange={(e) => set('detail', e.target.value)} placeholder="观测细节、特征、相关事件……" />
+                    </label>
+                    <label className={css.field}>
+                      <span>应对要点</span>
+                      <textarea rows={2} value={f.counter} onChange={(e) => set('counter', e.target.value)} placeholder="若为反现实实体，写清应对方式……" />
+                    </label>
+                    <div className={css.saveRow}>
+                      <span className={css.saveHint}>自记条目将写入终端存档，仅操作员可见。</span>
+                      <button className="btn btn--ghost" onClick={() => setAdding(false)}>
+                        取消
+                      </button>
+                      <button className="btn btn--primary" disabled={!canSave} onClick={doAdd}>
+                        写入自记
+                      </button>
                     </div>
                   </div>
-                </article>
-              )
-            })}
-          </div>
-        ) : (
-          <div className={css.groupEmpty} style={{ fontSize: 12.5 }}>
-            尚无自记条目。阅读正文或推进剧情后，如需补充委员会档案之外的观测，可点上方「新增观测条目」手动补录。
-          </div>
-        )}
-      </section>
+                ) : null}
 
-      {/* —— 委员会收录档案 —— */}
-      {groups.map(([groupKey, list]) => (
-        <section key={groupKey}>
-          <div className={css.groupHead}>
-            <span className={css.groupMark} />
-            <span className={css.groupTitle}>{groupKey}</span>
-            <span className={css.groupSub}>{list[0]?.classes[1] ?? 'primary class'}</span>
-            <span className={css.groupCount}>{list.length} 条</span>
-          </div>
-          <div className={css.list}>
-            {list.map((e) => {
-              const open = openId === e.id
-              const sealed = sealedOf(e)
-              const reg = isEndReg(e.id)
-              const st = STATE_META[e.state] ?? { cls: 'chip', color: 'var(--ink-mute)', label: e.state }
-              const stageNum = e.stage >= 0 ? String(e.stage) : '?'
-              const accent = reg ? 'var(--red)' : sealed ? 'var(--line-2)' : 'var(--steel)'
-              const tag = statusTag(e)
-              return (
-                <article
-                  key={e.id}
-                  data-codex-id={e.id}
-                  className={`${css.item} ${reg ? css['itemReg'] : sealed ? css['itemSeal'] : ''}`}
-                  style={{ '--c': accent } as CSSProperties}
-                >
-                  <button
-                    className={`${css.itemRow} ${open ? css['open'] : ''}`}
-                    onClick={() => setOpenId(open ? null : e.id)}
-                    aria-expanded={open}
-                  >
-                    <span className={css.itemStage}>
-                      <span className={css['s']} style={{ color: reg ? 'var(--red)' : sealed ? 'var(--ink-faint)' : 'var(--ink-mute)' }}>{stageNum}</span>
-                      <small>{e.stageKw}</small>
-                    </span>
-                    <span className={css.itemMain}>
-                      <b>{e.name}</b>
-                      <span className={css.alias}>{e.alias}</span>
-                      <p className={open ? css['open'] : ''}>{sealed ? '封存条目——情报未解封，需登记后方可阅览。' : e.origin}</p>
-                    </span>
-                    <span className={css.itemRight}>
-                      <span className={`${st.cls}`}>{st.label}</span>
-                      <span className={tag.cls}>{tag.text}</span>
-                      <span className={css.chev}>›</span>
-                    </span>
-                  </button>
-
-                  <div className={`${css.expand} ${open ? css['open'] : ''}`}>
-                    <div className={css.expBody}>
-                      {sealed ? (
-                        <div className={css.seal}>
-                          <div className={css.sealTitle}>档案封存 · 未解明</div>
-                          <p className={css.sealText}>
-                            「{e.name}」在委员会档案中处于封存状态。此条目与正文事件暂无编号关联，
-                            无法随剧情自动登记——如你已在某段故事中与之遭遇，可手动解封登记以补全观测记录。
-                          </p>
-                          <button className="btn btn--primary" style={{ fontSize: 12 }} onClick={() => doRegister(e)}>
-                            登记此条 · 解封档案
+                {ownSorted.length ? (
+                  <div className={css.grid}>
+                    {ownSorted.map((o) => {
+                      const open = openId === o.id
+                      const st = STATE_META[o.state] ?? { label: o.state }
+                      return (
+                        <article key={o.id} data-codex-id={o.id} className={`${css.card} ${open ? css.cardOn : ''}`}>
+                          <button
+                            className={css.cardBtn}
+                            onClick={() => setOpenId(open ? null : o.id)}
+                            aria-expanded={open}
+                          >
+                            <span className={css.cardTop}>
+                              <span className={css.stage}>{o.stage < 0 ? '?' : o.stage}</span>
+                              <span className={css.stageKw}>{o.stageKw}</span>
+                              <span className={css.stateLabel}>{st.label}</span>
+                              <span className={css.selfTag}>自记</span>
+                            </span>
+                            <span className={css.name}>{o.name}</span>
+                            <span className={css.alias}>{o.alias || o.no || 'SELF-REGISTERED'}</span>
+                            <span className={css.summary}>{o.origin}</span>
                           </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className={css.expLabel}>○ 来历</div>
-                          <p className={css.expText}>{e.origin}</p>
-                          <div className={css.expLabel}>○ 详细</div>
-                          <p className={css.expText}>{e.detail}</p>
-                          <div className={css.counterBox}>
-                            <b>应对要点 · COUNTERMEASURE</b>
-                            <span>{e.counter}</span>
-                          </div>
-                          <div className={css.expFoot}>
-                            {e.classes.map((c) => (
-                              <span key={c} className={css.classChip}>{c}</span>
-                            ))}
-                            <span className={css.refChip}>主要出处 · {e.ref ?? '—'}</span>
-                            {!reg ? (
-                              <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => doRegister(e)}>
-                                登记为已遭遇
-                              </button>
-                            ) : null}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                        </article>
+                      )
+                    })}
                   </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      ))}
+                ) : (
+                  <div className={css.groupEmpty}>
+                    尚无自记条目。阅读正文或推进剧情后，如需补充委员会档案之外的观测，可点上方「新增观测条目」手动补录。
+                  </div>
+                )}
+              </section>
 
-      {groups.length === 0 ? (
-        <div className={css.groupEmpty}>
-          {mode === 'sealed' ? '当前分类下没有封存未解的记录。' : mode === 'met' ? '当前分类下还没有已遭遇登记。' : '该分类下没有符合条件的记录。'}
+              {/* —— 委员会收录档案 —— */}
+              {groups.map(([groupKey, list]) => (
+                <section key={groupKey} className={css.section}>
+                  <div className={css.groupHead}>
+                    <span className={css.groupTitle}>{groupKey}</span>
+                    <span className={css.groupSub}>{list[0]?.classes[1] ?? 'primary class'}</span>
+                    <span className={css.groupCount}>{list.length} 条</span>
+                  </div>
+                  <div className={css.grid}>
+                    {list.map((e) => {
+                      const open = openId === e.id
+                      const sealed = sealedOf(e)
+                      const st = STATE_META[e.state] ?? { label: e.state }
+                      const stageNum = e.stage >= 0 ? String(e.stage) : '?'
+                      return (
+                        <article
+                          key={e.id}
+                          data-codex-id={e.id}
+                          className={`${css.card} ${open ? css.cardOn : ''}`}
+                        >
+                          <button
+                            className={css.cardBtn}
+                            onClick={() => setOpenId(open ? null : e.id)}
+                            aria-expanded={open}
+                          >
+                            <span className={css.cardTop}>
+                              <span className={css.stage}>{stageNum}</span>
+                              <span className={css.stageKw}>{e.stageKw}</span>
+                              <span className={css.stateLabel}>{st.label}</span>
+                            </span>
+                            <span className={css.name}>{e.name}</span>
+                            <span className={css.alias}>{e.alias}</span>
+                            <span className={css.summary}>
+                              {sealed ? '封存条目——情报未解封，需登记后方可阅览。' : e.origin}
+                            </span>
+                          </button>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
+
+              {groups.length === 0 ? (
+                <div className={css.groupEmpty}>
+                  {mode === 'sealed' ? '当前分类下没有封存未解的记录。' : mode === 'met' ? '当前分类下还没有已遭遇登记。' : '该分类下没有符合条件的记录。'}
+                </div>
+              ) : null}
+            </div>
+
+            {openOwn ? (
+              <aside className={css.side}>
+                <div className={css.sideHead}>
+                  <span className={css.sideName}>{openOwn.name}</span>
+                  <span className={css.sideAlias}>{openOwn.alias || openOwn.no || 'SELF-REGISTERED'}</span>
+                </div>
+                <div className={css.kv}>
+                  <span className={css.k}>来历</span>
+                  <span className={css.v}>{openOwn.origin}</span>
+                </div>
+                {openOwn.detail ? (
+                  <div className={css.kv}>
+                    <span className={css.k}>详细</span>
+                    <span className={css.v}>{openOwn.detail}</span>
+                  </div>
+                ) : null}
+                {openOwn.counter ? (
+                  <div className={css.counter}>
+                    <b>应对要点 · COUNTERMEASURE</b>
+                    <span>{openOwn.counter}</span>
+                  </div>
+                ) : null}
+                <div className={css.sideFoot}>
+                  <span className={css.sideMeta}>操作员自记 · {fmtTs(openOwn.ts)}</span>
+                  <button className="btn btn--ghost" onClick={() => doRemove(openOwn)}>
+                    删除此条
+                  </button>
+                </div>
+              </aside>
+            ) : openEnd ? (
+              sealedOf(openEnd) ? (
+                <aside className={css.side}>
+                  <div className={css.sideHead}>
+                    <span className={css.sideName}>{openEnd.name}</span>
+                    <span className={css.sideAlias}>{openEnd.alias}</span>
+                  </div>
+                  <div className={css.sealTitle}>档案封存 · 未解明</div>
+                  <p className={css.sealText}>
+                    「{openEnd.name}」在委员会档案中处于封存状态。此条目与正文事件暂无编号关联，
+                    无法随剧情自动登记——如你已在某段故事中与之遭遇，可手动解封登记以补全观测记录。
+                  </p>
+                  <div className={css.sideFoot}>
+                    <button className="btn btn--primary" onClick={() => doRegister(openEnd)}>
+                      登记此条 · 解封档案
+                    </button>
+                  </div>
+                </aside>
+              ) : (
+                <aside className={css.side}>
+                  <div className={css.sideHead}>
+                    <span className={css.sideName}>{openEnd.name}</span>
+                    <span className={css.sideAlias}>{openEnd.alias}</span>
+                    <span className={css.sideMeta}>{statusText(openEnd)}</span>
+                  </div>
+                  <div className={css.kv}>
+                    <span className={css.k}>来历</span>
+                    <span className={css.v}>{openEnd.origin}</span>
+                  </div>
+                  <div className={css.kv}>
+                    <span className={css.k}>详细</span>
+                    <span className={css.v}>{openEnd.detail}</span>
+                  </div>
+                  <div className={css.counter}>
+                    <b>应对要点 · COUNTERMEASURE</b>
+                    <span>{openEnd.counter}</span>
+                  </div>
+                  <div className={css.sideClasses}>
+                    {openEnd.classes.map((c) => (
+                      <span key={c}>{c}</span>
+                    ))}
+                  </div>
+                  <div className={css.sideFoot}>
+                    <span className={css.sideMeta}>主要出处 · {openEnd.ref ?? '—'}</span>
+                    {!isEndReg(openEnd.id) ? (
+                      <button className="btn btn--ghost" onClick={() => doRegister(openEnd)}>
+                        登记为已遭遇
+                      </button>
+                    ) : null}
+                  </div>
+                </aside>
+              )
+            ) : null}
+          </div>
         </div>
-      ) : null}
+      </div>
     </div>
   )
 }
