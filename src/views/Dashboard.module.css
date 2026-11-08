@@ -30,7 +30,7 @@
 /* ── 立绘 ───────────────────────────────────────────── */
 .figure {
   position: absolute;
-  left: 47%;
+  left: 36%;
   bottom: 0;
   transform: translateX(-50%);
   display: flex;
@@ -41,9 +41,11 @@
 .portrait {
   position: relative;
   display: block;
-  width: min(56vw, 790px);
-  height: clamp(480px, 74vh, 800px);
+  width: min(50vw, 710px);
+  height: clamp(500px, 84vh, 860px);
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 74%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 74%, transparent 100%);
   margin: 0;
   padding: 0;
   border: 0;
@@ -65,8 +67,6 @@
   height: auto;
   transform: translateX(-50%);
   user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 96%);
-  mask-image: linear-gradient(to bottom, #000 68%, transparent 96%);
   transition: transform 600ms var(--ease-out);
 }
 
@@ -85,15 +85,15 @@
 
 .plate {
   position: absolute;
-  left: 4vw;
-  bottom: 30px;
-  z-index: 2;
+  left: 3vw;
+  bottom: 22px;
+  z-index: 3;
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  padding: 4px 2px;
-  border: 0;
-  background: none;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
   cursor: pointer;
 }
 
@@ -115,7 +115,6 @@
   font-weight: 600;
   letter-spacing: 0.16em;
   color: var(--ink);
-  text-shadow: 0 0 12px var(--bg-0), 0 0 4px var(--bg-0);
 }
 
 .no {
@@ -233,8 +232,8 @@
 /* ── 窄屏 ───────────────────────────────────────────── */
 @media (max-width: 1120px) {
   .ghost { left: 2vw; font-size: clamp(80px, 15vw, 180px); }
-  .figure { left: 44%; }
-  .portrait { width: min(46vw, 520px); height: clamp(380px, 54vh, 560px); }
+  .figure { left: 38%; }
+  .portrait { width: min(46vw, 500px); height: clamp(400px, 68vh, 640px); }
   .cluster { right: calc(5vw - 50px); }
   .action { right: 50px; }
   .action.prime .zh { font-size: 34px; }
