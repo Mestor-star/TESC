@@ -1,71 +1,42 @@
 import { Fragment, useCallback, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent } from 'react'
-import {
-  CaretLeft, CaretRight, Compass, Crosshair, GlobeHemisphereWest, MapTrifold, X,
-} from '@phosphor-icons/react'
+import type { KeyboardEvent } from 'react'
+import { CaretLeft, CaretRight, Crosshair, GlobeHemisphereWest } from '@phosphor-icons/react'
 
 import { useTerminal } from '../terminal/Terminal'
 import { TIMELINE } from '../data/timeline'
 import { EPISODES } from '../lib/freetime'
 import { rSeverity, stageSeverity } from '../lib/format'
 import {
-  MAP_KIND_LABEL, MAP_LAYER_HINT, MAP_LAYER_LABEL, MAP_NODES,
-  mapChildrenOf, mapNodeById, mapNodeOfPlace, mapNodesOf, worldNodeOf,
+  MAP_KIND_LABEL, MAP_LAYER_LABEL, MAP_NODES,
+  mapChildrenOf, mapNodeById, mapNodeOfPlace,
 } from '../data/map'
 import type { MapNodeGeo } from '../data/map'
-import type { MapLayer, MapScale } from '../data/types'
+import type { MapLayer } from '../data/types'
 
 import css from './Map.module.css'
 
 /* ============================================================
-   地图 —— 世界 / 区域 两级索引
+   地图 —— 一张世界图 + 右侧地区介绍
    ------------------------------------------------------------
-   ① **世界档**：一条横向的节点带（地表 + 浮空），窄屏横滑、不折行；
-      「异次元」「▼ 地表以下」这两档不在世界图面上，另起两栏列表铺在带子下面。
-   ② **区域档**：按世界归属分组，组内是节点网格；点一格，详情落到右侧那条面板里。
-   ③ 两档都读得出三态：当前所在（--steel 边）／已去过（--line-2 边 + --ink-dim）／
-      没去过（--line 边 + --ink-faint）。只靠 1px 边与文字色，不发光、不铺底色。
-
-   旧版「球壳 + 真世界底图 + 下钻平面图」的 data 属性钩子一个没丢，只是换了落点
-   （冒烟按名取元素，不认形状）：
-     data-map-globe / -level / -kind → 左栏节点面容器（kind 现在读 band / grid）
-     data-map-base                  → 世界档那条节点带
-     data-map-plan-layer / -plan    → 区域档的组容器 / 组头
-     data-map-stub                  → s-lab 那一格
-
-   口径（依主人 2026-10-23）：
-   · 樱次元**就是我们所处的这一个世界**，不是与死灵次元并列的另一个次元 → 只当归属标注；
-   · 三大学院都在天上（苍之学园 / 卡乌斯学院 / 九灯学院）；
-   · 苍之学园地下 B-267 的研究所是**那座浮空学园自己的地下层**，挂在学园那一柱的正下方。
+    · 图上只放**真在地表上**的点（data/map.ts 里带 geo 的那些）与浮空的那几处
+      （带 anchor：一条虚线挂到它正下方的地面，不假装自己有纬度）。
+    · 点在哪儿，右边就介绍哪儿：层级、读数、原文里怎么说的、区域内还有哪些地方。
+      区域层不再单独一屏 —— 从大区点进场所、再点进房间，右侧面板跟着换，
+      面包屑一路退得回去。
+    · 地下与异次元的世界层几处在世界图上没有坐标，列在图下面那一排。
+    · 三态只靠 1px 边与文字色：当前所在 / 已去过 / 没去过。
    ============================================================ */
 
-const SCALE_LABEL: Record<MapScale, string> = { world: '世界', region: '区域' }
+const BASE = import.meta.env.BASE_URL
 
 const LAYER_ORDER: MapLayer[] = ['surface', 'underground', 'sky', 'otherworld']
 
-/** 父链里有没有踩到这一位（浮空学园地下的那两处靠它认） */
-function underOf(id: string, ancestor: string): boolean {
-  let cur: MapNodeGeo | null = mapNodeById(id)
-  for (let i = 0; i < 8 && cur; i++) {
-    if (cur.id === ancestor) return true
-    cur = cur.parent ? mapNodeById(cur.parent) : null
-  }
-  return false
-}
-
-/** 区域档分组：上溯到最外层的那块区域（大区）—— 大区自己也算自己那一组 */
-function regionRootOf(n: MapNodeGeo): MapNodeGeo {
-  let top = n
-  let cur: MapNodeGeo | null = n
-  for (let i = 0; i < 12 && cur; i++) {
-    top = cur
-    if (!cur.parent) break
-    const p = mapNodeById(cur.parent)
-    if (!p || p.scale === 'world') break
-    cur = p
-  }
-  return top
-}
+/** 经度 → 图上横坐标（等距圆柱投影，与底图 800×400 同一把尺） */
+function lonPct(lon: number): number { return ((lon + 180) / 360) * 100 }
+/** 纬度 → 图上纵坐标（北在上） */
+function latPct(lat: number): number { return ((90 - lat) / 180) * 100 }
+/** 图上那枚小牌只放短名；全名在右栏与 title 里 */
+function shortName(name: string): string { return name.split(/[·・]/)[0].trim() || name }
 
 /** 从最外层一路排到它自己；樱次元那一格由面包屑的根按钮代表，不再重复 */
 function trailOf(id: string): MapNodeGeo[] {
@@ -81,86 +52,65 @@ function trailOf(id: string): MapNodeGeo[] {
 export function Map() {
   const { epDone, placeOfEvent, requestCodex, navigate } = useTerminal()
 
-  const [scale, setScale] = useState<MapScale>('region')
   const [cursorId, setCursorId] = useState<string | null>(null)
   const [selId, setSelId] = useState<string | null>(null)
-  const [offLayers, setOffLayers] = useState<MapLayer[]>([])
   const nodeRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   /* 此刻这一段：与剧情推进同一个指针（EPISODES 里第一段没收束的） */
   const curEv = useMemo(() => EPISODES.find((e) => !epDone[e.id]) ?? null, [epDone])
   const placeNow = curEv ? placeOfEvent(curEv) : ''
   const hereNode = useMemo(() => mapNodeOfPlace(placeNow, curEv?.id), [placeNow, curEv])
-  const hereWorld = hereNode ? worldNodeOf(hereNode) : null
 
-  const level = scale === 'world' ? 1 : 2
-  const nodes = useMemo(() => mapNodesOf(scale), [scale])
-
-  /* ---------- 世界档：一条带子 ---------- */
-  const bandNodes = useMemo(
-    () => (scale === 'world'
-      ? nodes.filter((n) => !n.frame
-        && (n.layer === 'surface' || n.layer === 'sky')
-        && !offLayers.includes(n.layer))
-      : []),
-    [scale, nodes, offLayers],
+  /* ---------- 图上的三组 ---------- */
+  const surfaceNodes = useMemo(
+    () => MAP_NODES.filter((n) => n.layer === 'surface' && !!n.geo)
+      .sort((a, b) => lonPct(a.geo![0]) - lonPct(b.geo![0])),
+    [],
   )
-
-  /* 两个旧插窗：手里拿着的是**整张表**（不止世界层那一档） */
-  const underAll = useMemo(
-    () => MAP_NODES.filter((n) => n.layer === 'underground' && !offLayers.includes(n.layer)),
-    [offLayers],
+  const skyNodes = useMemo(
+    () => MAP_NODES.filter((n) => n.layer === 'sky' && n.anchor !== undefined)
+      .sort((a, b) => lonPct(a.anchor!) - lonPct(b.anchor!)),
+    [],
   )
-  const otherAll = useMemo(
-    () => MAP_NODES.filter((n) => n.layer === 'otherworld' && n.scale === 'world' && !offLayers.includes(n.layer)),
-    [offLayers],
+  /* 世界图上没有坐标的那几处：地下与异次元的世界层节点 */
+  const offNodes = useMemo(
+    () => MAP_NODES.filter((n) => n.scale === 'world' && !n.frame
+      && (n.layer === 'underground' || n.layer === 'otherworld')),
+    [],
   )
+  const onMap = useMemo(() => [...surfaceNodes, ...skyNodes], [surfaceNodes, skyNodes])
 
-  /* ---------- 区域档：按大区分组（大区自己算自己那一组） ---------- */
-  const regionGroups = useMemo(() => {
-    if (scale !== 'region') return []
-    const order: string[] = []
-    const by: Record<string, MapNodeGeo[]> = {}
-    for (const n of nodes) {
-      if (offLayers.includes(n.layer)) continue
-      const key = regionRootOf(n).id
-      if (!by[key]) {
-        by[key] = []
-        order.push(key)
-      }
-      by[key].push(n)
+  /* 键盘走的那一条顺序：跟屏幕上的读取顺序一致 */
+  const navNodes = useMemo(() => [...surfaceNodes, ...skyNodes, ...offNodes], [surfaceNodes, skyNodes, offNodes])
+
+  /* 此刻在哪：从当前那一格往上找，找第一个真出现在图上的祖先 */
+  const hereMarkId = useMemo(() => {
+    const shown = new Set([...onMap, ...offNodes].map((n) => n.id))
+    let cur: MapNodeGeo | null = hereNode
+    for (let i = 0; i < 8 && cur; i++) {
+      if (shown.has(cur.id)) return cur.id
+      cur = cur.parent ? mapNodeById(cur.parent) : null
     }
-    return order.map((id) => ({ id, name: mapNodeById(id)?.name ?? id, items: by[id] }))
-  }, [scale, nodes, offLayers])
+    return null
+  }, [hereNode, onMap, offNodes])
 
-  /* 键盘走的那一条顺序：跟屏幕上排的一致 */
-  const navNodes = useMemo(
-    () => (scale === 'world'
-      ? [...bandNodes, ...otherAll, ...underAll]
-      : regionGroups.flatMap((g) => g.items)),
-    [scale, bandNodes, otherAll, underAll, regionGroups],
-  )
-
-  /* 世界档把「此刻在哪」提到它所在的那个大单元上 */
-  const hereOnThisScale = scale === 'world' ? hereWorld : hereNode
-  const hereId = hereOnThisScale?.id ?? null
+  /* 选中的那一格：没有选中时先给「此刻所在」，再没有就给天空都市 */
+  const sel = selId ? mapNodeById(selId) : null
+  const shown = sel ?? hereNode ?? mapNodeById('w-falktus')!
 
   const curNode = useMemo(() => {
     const hit = cursorId ? navNodes.find((n) => n.id === cursorId) : null
     if (hit) return hit
-    const at = hereId ? navNodes.find((n) => n.id === hereId) : null
+    const at = hereMarkId ? navNodes.find((n) => n.id === hereMarkId) : null
     return at ?? navNodes[0] ?? null
-  }, [cursorId, navNodes, hereId])
+  }, [cursorId, navNodes, hereMarkId])
 
-  const sel = selId ? mapNodeById(selId) : null
-  const selWorld = sel ? worldNodeOf(sel) : null
-  const selLinks = sel ? sel.links.map((id) => mapNodeById(id)).filter((n): n is MapNodeGeo => !!n) : []
-  const selKids = sel ? mapChildrenOf(sel.id) : []
-  const trail = sel ? trailOf(sel.id) : []
+  const selLinks = shown.links.map((id) => mapNodeById(id)).filter((n): n is MapNodeGeo => !!n)
+  const selKids = mapChildrenOf(shown.id)
+  const trail = trailOf(shown.id)
 
-  /* 三态：此刻所在 / 已去过（挂着的时间线段收过一段）/ 还没去过 */
   const markOf = (n: MapNodeGeo): 'here' | 'seen' | 'locked' => {
-    if (n.id === hereId) return 'here'
+    if (n.id === hereMarkId) return 'here'
     const evs = n.refs.events ?? []
     return evs.some((id) => epDone[id]) ? 'seen' : 'locked'
   }
@@ -170,7 +120,7 @@ export function Map() {
     requestAnimationFrame(() => nodeRefs.current[id]?.focus())
   }, [])
 
-  const onNodeClick = (n: MapNodeGeo) => {
+  const pick = (n: MapNodeGeo) => {
     setCursorId(n.id)
     setSelId(n.id)
   }
@@ -185,8 +135,7 @@ export function Map() {
     if (e.key === 'z' || e.key === 'Z') {
       if (!curNode) return
       e.preventDefault()
-      setCursorId(curNode.id)
-      setSelId(curNode.id)
+      pick(curNode)
       return
     }
     const step = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1
@@ -200,68 +149,62 @@ export function Map() {
     focusNode(to.id)
   }
 
-  const toggleLayer = (l: MapLayer) => {
-    setOffLayers((prev) => (prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]))
-  }
-
-  /* 一格 = 1px 边 + 文字色；状态全在边和字上 */
-  const card = (n: MapNodeGeo) => {
+  /* 一格点：地表按经纬落位；浮空的横坐标是锚点经度，竖直那一头在天轨里 */
+  const marker = (n: MapNodeGeo) => {
     const mark = markOf(n)
-    const on = n.id === selId
-    const kids = mapChildrenOf(n.id)
+    const on = n.id === shown.id
+    const sky = n.layer === 'sky'
+    const lon = sky ? n.anchor! : n.geo![0]
+    const x = lonPct(lon)
+    const flip = x > 84
+    const skyRow = sky ? skyNodes.findIndex((s) => s.id === n.id) % 2 : 0
     return (
       <button
         key={n.id}
         type="button"
         ref={(el) => { nodeRefs.current[n.id] = el }}
-        className={[css.card, css['is-' + mark], on ? css.isOn : ''].filter(Boolean).join(' ')}
+        className={[css.mar, sky ? css.marSky : '', 'is-' + mark, on ? css.marOn : '', flip ? css.marFlip : ''].filter(Boolean).join(' ')}
+        style={sky ? { left: x + '%', bottom: skyRow ? 42 : 8 } : { left: x + '%', top: latPct(n.geo![1]) + '%' }}
         data-map-node={n.id}
         data-kind={n.kind}
         data-layer={n.layer}
+        data-map-geo={n.geo ? n.geo[0] + ',' + n.geo[1] : undefined}
         data-here={mark === 'here' ? '1' : undefined}
         data-selected={on ? '1' : undefined}
-        data-map-geo={n.geo ? n.geo[0] + ',' + n.geo[1] : undefined}
-        data-map-expand={kids.length ? n.id : undefined}
-        data-map-stub={n.id === 's-lab' ? 's-lab' : undefined}
         aria-label={n.name + ' · ' + MAP_KIND_LABEL[n.kind] + ' · ' + MAP_LAYER_LABEL[n.layer]
-          + (n.r ? ' · R ' + n.r.toFixed(3) : '') + (kids.length ? ' · 有下一层' : '')}
+          + (n.r ? ' · R ' + n.r.toFixed(3) : '') + (mapChildrenOf(n.id).length ? ' · 有下一层' : '')}
         aria-pressed={on}
         title={n.name}
-        onClick={() => onNodeClick(n)}
+        onClick={() => pick(n)}
       >
-        <span className={css.dot} data-shape={n.layer} />
-        <span className={css.cardName}>{n.name}</span>
-        <span className={css.cardMeta}>{MAP_KIND_LABEL[n.kind]} · {MAP_LAYER_LABEL[n.layer]}</span>
-        {n.id === 's-lab' ? <span className={css.stubTag}>▼ 地下 267 层</span> : null}
+        <i className={css.marDot} data-shape={n.layer} />
+        <span className={css.marName}>{shortName(n.name)}</span>
         {mark === 'here' ? <span className={css.hereTag}>你在这里</span> : null}
       </button>
     )
   }
 
-  /* 不在世界图面上的那两档：一行一处的窄列表 */
-  const insetRow = (n: MapNodeGeo, i: number, side: 'l' | 'r') => {
+  /* 图外的几处：一行一枚小牌 */
+  const offChip = (n: MapNodeGeo) => {
     const mark = markOf(n)
-    const on = n.id === selId
-    const inSchool = underOf(n.id, 's-school')
+    const on = n.id === shown.id
     return (
       <button
-        key={n.id + '#' + i}
+        key={n.id}
         type="button"
         ref={(el) => { nodeRefs.current[n.id] = el }}
-        className={[css.row, css['is-' + mark], on ? css.isOn : ''].filter(Boolean).join(' ')}
+        className={[css.offChip, 'is-' + mark, on ? css.offOn : ''].filter(Boolean).join(' ')}
         data-map-node={n.id}
         data-kind={n.kind}
         data-layer={n.layer}
-        data-map-inset={side}
+        data-map-inset="off"
         data-here={mark === 'here' ? '1' : undefined}
         data-selected={on ? '1' : undefined}
-        onClick={() => onNodeClick(n)}
+        aria-pressed={on}
+        onClick={() => pick(n)}
       >
-        <span className={css.dot} data-shape={n.layer} />
-        <span className={css.rowName}>{n.name}</span>
-        {inSchool ? <span className={css.rowNote}>浮空学园地下</span> : null}
-        {n.via ? <span className={css.rowVia}>经 {n.via}</span> : null}
-        {mark === 'here' ? <span className={css.hereTag}>你在这里</span> : null}
+        <i className={css.marDot} data-shape={n.layer} />
+        {n.name}
       </button>
     )
   }
@@ -270,9 +213,9 @@ export function Map() {
     <div
       className={'vpage ' + css.page}
       onKeyDown={onKeyDown}
-      data-map-scale={scale}
-      data-map-level={level}
-      data-map-here={hereId ?? ''}
+      data-map-scale="world"
+      data-map-level="1"
+      data-map-here={hereMarkId ?? ''}
     >
       <div className="vhead">
         <div>
@@ -280,301 +223,209 @@ export function Map() {
           <h1>地图</h1>
         </div>
         <div className="vhead__right">
-          <span className="chip" data-map-count>{nodes.length} 个节点</span>
-          {scale === 'world' ? (
-            <button
-              type="button"
-              className="chip"
-              data-map-worldmark="w-sakura"
-              onClick={() => { setSelId('w-sakura'); setCursorId('w-sakura') }}
-            >
-              樱次元 · 此刻所在的这一个世界
-            </button>
-          ) : null}
+          <span className="chip" data-map-count>{onMap.length} 处于图上</span>
           <span className={'chip ' + (hereNode ? css.hereChip : css.hereChipOff)}>
             {hereNode ? '你在这里 · ' + hereNode.name : '当前地点不在图上'}
           </span>
-          {curNode ? <span className="chip">方向键选点 · Z 进入 · Esc 退一层</span> : null}
+          <span className="chip">方向键选点 · Z 打开 · Esc 收起</span>
         </div>
       </div>
 
-      {/* 两条横档：一张图 / 四层。都走按钮 —— 键盘 Tab 得到，回车按得下 */}
-      <div className={css.bars}>
-        <div className={css.seg} role="group" aria-label="切换地图">
-          {(['world', 'region'] as MapScale[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={css.segBtn + (scale === s ? ' ' + css.isOn : '')}
-              aria-pressed={scale === s}
-              data-map-scale-btn={s}
-              onClick={() => { setScale(s); setSelId(null); setCursorId(null) }}
-            >
-              {s === 'world' ? <Compass size={14} weight="bold" /> : <MapTrifold size={14} weight="bold" />}
-              {SCALE_LABEL[s]}图
-            </button>
-          ))}
-        </div>
-
-        <div className={css.legend} role="group" aria-label="按层筛选">
-          <span className={css.legendCap}>层</span>
-          {LAYER_ORDER.map((l) => {
-            const off = offLayers.includes(l)
-            return (
-              <button
-                key={l}
-                type="button"
-                className={css.layerBtn + (off ? ' ' + css.isOff : '')}
-                aria-pressed={!off}
-                data-map-layer={l}
-                title={MAP_LAYER_HINT[l]}
-                onClick={() => toggleLayer(l)}
-              >
-                <i className={css.layerDot} data-shape={l} />
-                {MAP_LAYER_LABEL[l]}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* 面包屑：跟着选中的那一格走，每一级都点得回去 */}
-      <div className={css.crumbs} data-map-crumbs>
-        <button
-          type="button"
-          className={css.crumb + (trail.length ? '' : ' ' + css.crumbOn)}
-          data-map-crumb="0"
-          onClick={() => { setSelId(null); setCursorId(null) }}
-        >
-          <GlobeHemisphereWest size={12} weight="bold" /> 樱次元
-        </button>
-        {trail.map((n, i) => (
-          <Fragment key={n.id}>
-            <CaretRight size={10} weight="bold" className={css.crumbSep} />
-            <button
-              type="button"
-              className={css.crumb + (i === trail.length - 1 ? ' ' + css.crumbOn : '')}
-              data-map-crumb={String(i + 1)}
-              onClick={() => { setSelId(n.id); setCursorId(n.id) }}
-            >
-              {n.name}
-            </button>
-          </Fragment>
-        ))}
-        {trail.length ? (
-          <button
-            type="button"
-            className={css.crumbBack}
-            data-map-back
-            onClick={() => {
-              const up = trail.length > 1 ? trail[trail.length - 2].id : null
-              setSelId(up)
-              setCursorId(up)
-            }}
-          >
-            <CaretLeft size={11} weight="bold" /> 退一层
-          </button>
-        ) : null}
-      </div>
-
-      <div className={css.layout}>
-        {/* 节点面：两档共用一块版面，窄屏就整页纵向走 */}
+      <div className={css.body}>
+        {/* 世界图 */}
         <div
-          className={css.surface}
+          className={css.chart}
           data-map-canvas
-          data-map-globe={scale}
-          data-map-globe-level={level}
-          data-map-globe-kind={scale === 'world' ? 'band' : 'grid'}
+          data-map-globe="world"
+          data-map-globe-level="1"
+          data-map-globe-kind="map"
         >
-          {scale === 'world' ? (
-            <>
-              {/* 世界档：一条带子，横滑不折行 */}
-              <div className={css.band} data-map-band data-map-base>
-                {bandNodes.map(card)}
-              </div>
-
-              {otherAll.length || underAll.length ? (
-                <div className={css.insets}>
-                  {otherAll.length ? (
-                    <section className={css.inset} data-map-inset-box="otherworld">
-                      <div className={css.insetHead}>
-                        <i className={css.layerDot} data-shape="otherworld" /> 异次元
-                      </div>
-                      {otherAll.map((n, i) => insetRow(n, i, 'l'))}
-                    </section>
-                  ) : null}
-                  {underAll.length ? (
-                    <section className={css.inset} data-map-inset-box="underground">
-                      <div className={css.insetHead}>
-                        <i className={css.layerDot} data-shape="underground" /> ▼ 地表以下
-                      </div>
-                      {underAll.map((n, i) => insetRow(n, i, 'r'))}
-                    </section>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div className={css.groups}>
-              {regionGroups.map((g) => (
-                <section key={g.id} className={css.group} data-map-plan-layer={g.id}>
-                  <div className={css.groupHead} data-map-plan={g.id}>
-                    <span className={css.groupName}>{g.name}</span>
-                    <span className={css.groupCount}>{g.items.length}</span>
-                  </div>
-                  <div className={css.grid}>{g.items.map(card)}</div>
-                </section>
+          <div className={css.chartHead}>
+            <span className={css.chartTitle}>
+              <GlobeHemisphereWest size={13} weight="bold" /> 世界图 · 樱次元
+            </span>
+            <span className={css.legend} role="group" aria-label="按层区分">
+              {LAYER_ORDER.map((l) => (
+                <span key={l} className={css.legendItem} data-map-layer={l}>
+                  <i data-shape={l} /> {MAP_LAYER_LABEL[l]}
+                </span>
               ))}
+            </span>
+          </div>
+
+          {/* 浮空的那几处：一条天轨，虚线挂到正下方的地面 */}
+          <div className={css.skyRail} data-map-sky>
+            {skyNodes.map((n) => <span key={'d' + n.id} className={css.skyDrop} style={{ left: lonPct(n.anchor!) + '%' }} />)}
+            {skyNodes.map(marker)}
+          </div>
+
+          <div className={css.mapBody} data-map-base>
+            <img className={css.base} src={BASE + 'map/world-location-map.svg'} alt="" aria-hidden="true" />
+            {surfaceNodes.map(marker)}
+          </div>
+
+          {offNodes.length ? (
+            <div className={css.offMap} data-map-inset-box="off">
+              <span className={css.offCap}>图外的几处</span>
+              {offNodes.map(offChip)}
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* 右侧详情：点一格出这一格 */}
+        {/* 地区介绍 */}
         <aside className={css.side} aria-live="polite">
-          {!sel ? (
-            <div className={'panel ' + css.sideEmpty}>
-              <p>点一个地点，这里给出它的层级、读数与出处。</p>
-              <p className={css.hint}>
-                方向键在卡片之间挪，Z 打开这一格的详情，Esc 收起。
-                {curNode ? <><br />此刻选着：<b>{curNode.name}</b></> : null}
-              </p>
+          <div className={'panel ' + css.sidePanel} data-map-detail={shown.id}>
+            <div className={css.sideTop}>
+              <span className={css.sideKicker}>地区介绍 · {MAP_KIND_LABEL[shown.kind]}</span>
+              <span className={css.sideLayer} data-shape={shown.layer}>{MAP_LAYER_LABEL[shown.layer]}</span>
             </div>
-          ) : (
-            <div className={'panel ' + css.sideBody} data-map-detail={sel.id}>
-              <div className={css.sideTop}>
-                <div className={css.sideKicker}>
-                  {SCALE_LABEL[sel.scale]}图 · {MAP_KIND_LABEL[sel.kind]}
-                </div>
-                <button type="button" className={css.iconBtn} aria-label="收起详情" onClick={() => setSelId(null)}>
-                  <X size={14} weight="bold" />
-                </button>
-              </div>
-              <h2 className={css.sideName}>{sel.name}</h2>
-              <div className={css.tags}>
-                <span className={css.tag}>{MAP_LAYER_LABEL[sel.layer]}</span>
-                {sel.id === hereId ? <span className={css.tagHere}>你在这里</span> : null}
-                {sel.geo ? <span className={css.tagFaint}>{sel.geo[0]}° · {sel.geo[1]}°</span> : null}
-                {sel.frame ? <span className={css.tagHere}>本世界的归属</span> : null}
-                {sel.r !== undefined ? (
-                  <span className={css.tagSev} style={{ '--lc': rSeverity(sel.r).tone } as CSSProperties}>
-                    R {sel.r.toFixed(3)} · {rSeverity(sel.r).label}
-                  </span>
-                ) : (
-                  <span className={css.tagFaint}>R 值未标定</span>
-                )}
-                {sel.threat !== undefined ? (
-                  <span className={css.tagSev} style={{ '--lc': stageSeverity(sel.threat).tone } as CSSProperties}>
-                    危险度 S{sel.threat} · {stageSeverity(sel.threat).label}
-                  </span>
-                ) : null}
-              </div>
-              <p className={css.sideNote}>{sel.note}</p>
+            <h2 className={css.sideName}>{shown.name}</h2>
 
-              {sel.via ? (
-                <div className={css.sideRow}>
-                  <span className={css.sideCap}>怎么去</span>
-                  <span className={css.hint}>{sel.via}</span>
-                </div>
+            <div className={css.tags}>
+              {shown.id === hereMarkId ? <span className={css.tagHere}>你在这里</span> : null}
+              {shown.geo ? <span className={css.tagFaint}>{shown.geo[0]}° · {shown.geo[1]}°</span> : null}
+              {shown.frame ? <span className={css.tagHere}>本世界的归属</span> : null}
+              {shown.r !== undefined ? (
+                <span className={css.tagSev} data-sev={rSeverity(shown.r).label}>
+                  R {shown.r.toFixed(3)} · {rSeverity(shown.r).label}
+                </span>
+              ) : <span className={css.tagFaint}>R 值未标定</span>}
+              {shown.threat !== undefined ? (
+                <span className={css.tagSev}>危险度 S{shown.threat} · {stageSeverity(shown.threat).label}</span>
               ) : null}
+            </div>
 
-              {selWorld && selWorld.id !== sel.id ? (
-                <div className={css.sideRow}>
-                  <span className={css.sideCap}>所在</span>
+            <p className={css.sideNote}>{shown.note}</p>
+
+            <div className={css.crumbs} data-map-crumbs>
+              <button
+                type="button"
+                className={css.crumb + (trail.length ? '' : ' ' + css.crumbOn)}
+                data-map-crumb="0"
+                onClick={() => { setSelId('w-sakura'); setCursorId('w-sakura') }}
+              >
+                樱次元
+              </button>
+              {trail.map((n, i) => (
+                <Fragment key={n.id}>
+                  <CaretRight size={10} weight="bold" className={css.crumbSep} />
                   <button
                     type="button"
-                    className={css.jump}
-                    onClick={() => { setScale('world'); setSelId(selWorld.id); setCursorId(selWorld.id) }}
+                    className={css.crumb + (i === trail.length - 1 ? ' ' + css.crumbOn : '')}
+                    data-map-crumb={String(i + 1)}
+                    onClick={() => pick(n)}
                   >
-                    {selWorld.name} <CaretRight size={11} weight="bold" />
+                    {n.name}
                   </button>
-                </div>
-              ) : null}
-
-              {selLinks.length || selKids.length ? (
-                <div className={css.sideBlock}>
-                  <div className={css.sideCap}>可达 / 下钻</div>
-                  <div className={css.jumps}>
-                    {selLinks.map((n) => (
-                      <button
-                        key={n.id}
-                        type="button"
-                        className={css.jump}
-                        data-edge-layer={n.layer !== sel.layer ? n.layer : sel.layer}
-                        onClick={() => { setSelId(n.id); setCursorId(n.id) }}
-                      >
-                        {n.name}
-                      </button>
-                    ))}
-                    {selKids.map((n) => (
-                      <button
-                        key={n.id}
-                        type="button"
-                        className={css.jump + ' ' + css.jumpKid}
-                        onClick={() => { setSelId(n.id); setCursorId(n.id) }}
-                      >
-                        {n.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className={css.sideBlock}>
-                <div className={css.sideCap}>相关事件</div>
-                {sel.refs.events?.length ? (
-                  <ul className={css.refList}>
-                    {sel.refs.events.map((id) => {
-                      const ev = TIMELINE.find((e) => e.id === id)
-                      return (
-                        <li key={id}>
-                          <span className={css.refId}>{id}</span>
-                          <span className={css.refTitle}>{ev ? ev.title : '（时间线上没有这一段）'}</span>
-                          {ev && ev.id === curEv?.id ? <span className={css.refNow}>此刻</span> : null}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : <p className={css.hint}>没有挂着的时间线段。</p>}
-              </div>
-
-              <div className={css.sideBlock}>
-                <div className={css.sideCap}>相关词条</div>
-                {sel.refs.codex?.length ? (
-                  <div className={css.jumps}>
-                    {sel.refs.codex.map((id) => (
-                      <button key={id} type="button" className={css.jump} onClick={() => requestCodex(id)}>
-                        {id}
-                      </button>
-                    ))}
-                  </div>
-                ) : <p className={css.hint}>没有挂着的图鉴条目。</p>}
-              </div>
-
-              {sel.refs.offtext ? (
-                <div className={css.sideRow}>
-                  <span className={css.sideCap}>原文</span>
-                  <span className={css.offChip}>public/offtext/{sel.refs.offtext}.txt</span>
-                </div>
-              ) : null}
-
-              <div className={css.sideFoot}>
+                </Fragment>
+              ))}
+              {trail.length > 1 ? (
                 <button
                   type="button"
-                  className={'btn btn--ghost ' + css.sideFootBtn}
-                  onClick={() => navigate('plot')}
+                  className={css.crumbBack}
+                  data-map-back
+                  onClick={() => pick(trail[trail.length - 2]!)}
                 >
-                  <Crosshair size={12} weight="bold" /> 去剧情推进
+                  <CaretLeft size={11} weight="bold" /> 退一层
                 </button>
-              </div>
+              ) : null}
             </div>
-          )}
-        </aside>
-      </div>
 
-      <div className={css.foot}>
-        <span className="tiny muted">
-          {MAP_NODES.length} 个节点 · 依据只认时间线的地点、图鉴条目与 public/offtext 的原文切片
-        </span>
+            {shown.via ? (
+              <div className={css.sideRow}>
+                <span className={css.sideCap}>怎么去</span>
+                <span className={css.sideVal}>{shown.via}</span>
+              </div>
+            ) : null}
+
+            {selKids.length ? (
+              <div className={css.sideBlock}>
+                <div className={css.sideCap}>区域内的地点 <span className={css.count}>{selKids.length}</span></div>
+                <div className={css.kids}>
+                  {selKids.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      className={css.kid + (n.id === shown.id ? ' ' + css.kidOn : '')}
+                      data-map-node={n.id}
+                      data-map-kid={n.id}
+                      data-map-stub={n.id === 's-lab' ? 's-lab' : undefined}
+                      onClick={() => pick(n)}
+                    >
+                      <i className={css.marDot} data-shape={n.layer} />
+                      <span className={css.kidName}>{n.name}</span>
+                      <span className={css.kidMeta}>
+                        {MAP_LAYER_LABEL[n.layer]} · {MAP_KIND_LABEL[n.kind]}
+                        {n.r !== undefined ? ' · R ' + n.r.toFixed(3) : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {selLinks.length ? (
+              <div className={css.sideBlock}>
+                <div className={css.sideCap}>可达</div>
+                <div className={css.jumps}>
+                  {selLinks.map((n) => (
+                    <button key={n.id} type="button" className={css.jump} data-map-link={n.id} onClick={() => pick(n)}>
+                      {n.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className={css.sideBlock}>
+              <div className={css.sideCap}>相关事件</div>
+              {shown.refs.events?.length ? (
+                <ul className={css.refList}>
+                  {shown.refs.events.map((id) => {
+                    const ev = TIMELINE.find((e) => e.id === id)
+                    return (
+                      <li key={id}>
+                        <span className={css.refId}>{id}</span>
+                        <span className={css.refTitle}>{ev ? ev.title : '（时间线上没有这一段）'}</span>
+                        {ev && ev.id === curEv?.id ? <span className={css.refNow}>此刻</span> : null}
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : <p className={css.sideHint}>没有挂着的时间线段。</p>}
+            </div>
+
+            <div className={css.sideBlock}>
+              <div className={css.sideCap}>相关词条</div>
+              {shown.refs.codex?.length ? (
+                <div className={css.jumps}>
+                  {shown.refs.codex.map((id) => (
+                    <button key={id} type="button" className={css.jump} data-map-codex={id} onClick={() => requestCodex(id)}>
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              ) : <p className={css.sideHint}>没有挂着的图鉴条目。</p>}
+            </div>
+
+            {shown.refs.offtext ? (
+              <div className={css.sideRow}>
+                <span className={css.sideCap}>原文</span>
+                <span className={css.offPath}>public/offtext/{shown.refs.offtext}.txt</span>
+              </div>
+            ) : null}
+
+            <div className={css.sideFoot}>
+              <button
+                type="button"
+                className={'btn btn--ghost ' + css.sideFootBtn}
+                onClick={() => navigate('plot')}
+              >
+                <Crosshair size={12} weight="bold" /> 去剧情推进
+              </button>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   )
