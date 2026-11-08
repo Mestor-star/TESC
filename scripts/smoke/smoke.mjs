@@ -1055,7 +1055,9 @@ try {
   ok('E9 返回剧情不重复开场（v1-3 已就位 · eSeq 仍 3 · rec 仍 2）', eSeq === 3 && (await state()).rec.length === 2, 'eSeq=' + eSeq + ' rec=' + (await state()).rec.length)
   const lunaRaw = await loreEntry('book-canon-char', '露娜')
   const lunaNeed = String((lunaRaw && lunaRaw.content) || '').replace(/\s+/g, ' ').trim().slice(0, 40)
-  const sys1 = () => { const m = (eLast && eLast.messages || []).find((x) => x.role === 'system'); return String((m && m.content) || '') }
+  // 词条正文现在是「字段：值」逐行（lib/loreseed.ts 的 spec），比对前先把两边空白压平
+  const flat = (s) => String(s || '').replace(/\s+/g, ' ')
+  const sys1 = () => { const m = (eLast && eLast.messages || []).find((x) => x.role === 'system'); return flat(m && m.content) }
   // req（v1-3）：叙述里带角色名 → 世界书命中注入（露娜档案）
   await poll(`!!document.querySelector('input[placeholder^="推进事件"]') && !document.body.innerText.includes('导演正在编织叙事…')`, 20000, 'E composer v1-3')
   await sleep(700)

@@ -12,6 +12,7 @@
 
 import type { Lorebook, LorebookEntry } from './tavernlike/types'
 import { LorebookEngine } from './tavernlike/lorebook-engine'
+import { wrapEntry } from './entrytag'
 
 /** 一条命中是否放行进入上下文（由调用方按世界状态构造） */
 export type LoreGate = (entry: LorebookEntry) => boolean
@@ -118,7 +119,7 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
   const HOLD_CAP = Math.min(520, Math.max(240, Math.floor((maxChars * 0.7) / Math.max(holds.length, 1))))
   const KEY_CAP = Math.max(180, Math.floor(maxChars / Math.max(chosen.length, 1)))
 
-  /* 每条首尾用一对 <lore name="…"> 包住：模型看得出这一段是参考、不是要接着写的东西，
+  /* 每条首尾用一对 <词条名> 包住（完全包裹）：模型看得出这一段是参考、不是要接着写的东西，
      几本条规同时在场时也不会串行。抬头与末尾那两句照旧（通联日志按它们认这一段）。 */
   const parts: string[] = [`${LABEL_HEAD}${LABEL_TAIL}`]
   let used = parts[0].length
@@ -133,7 +134,7 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
       .replace(/\n{2,}/g, '\n')
       .trim()
     const bodyCapped = body.length > cap ? body.slice(0, cap) + '…' : body
-    const block = label ? `<lore name="${label}">\n${bodyCapped}\n</lore>` : `<lore>\n${bodyCapped}\n</lore>`
+    const block = wrapEntry(label || '世界书词条', bodyCapped)
     parts.push(block)
     used += block.length
   }

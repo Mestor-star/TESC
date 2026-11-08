@@ -12,7 +12,6 @@ import type { Lorebook, LorebookEntry } from './tavernlike/types'
 import { CHARACTERS } from '../data/chars'
 import { CODEX } from '../data/codex'
 import { LORE } from '../data/lore'
-import { personaCardLines } from '../data/persona'
 import { SIDECAST, type SideCastEntry } from '../data/sidecast'
 import { OP_PERIODS } from './operator-arc'
 import { TIMELINE } from '../data/timeline'
@@ -92,18 +91,49 @@ function splitKeywords(...parts: Array<string | undefined>): string[] {
   return out
 }
 
+/* ---------- 词条骨架 ---------- */
+
+/** 「字段：值」逐行排列 —— 设定条目按档案表写，不写成散文。 */
+function spec(rows: Array<[string, string | undefined | false]>): string {
+  const out: string[] = []
+  for (const [k, v] of rows) {
+    const val = (v ?? '').toString().trim()
+    if (val && val !== '—') out.push(`${k}：${val}`)
+  }
+  return out.join('\n')
+}
+
+/** 使用边界：每条末尾同一句 —— 参考归参考，不据此推断后文，也不写进正文。 */
+const BOUNDARY = '边界：只作设定参考；不据此推断未观测到的后文，也不改写正文里已经发生的事。'
+
+/**
+ * 条目一律第三人称：档案原文里的「你」指操作员本人，折算成「言万心叶」。
+ * 引号里的台词原样保留 —— 台词里的「我」是角色在说话，不是叙述视角。
+ */
+function thirdPerson(text: string): string {
+  return (text ?? '')
+    .split(/(「[^」]*」)/)
+    .map((seg) => (seg.startsWith('「') ? seg : seg.replace(/[你妳]/g, '言万心叶')))
+    .join('')
+}
+
 /* ---------- 世界书：角色档案 ---------- */
 
 function charEntry(c: Character): LorebookEntry {
-  // 有人物卡（分层卡）则以卡代 bio／台词；无卡回退既有 flat 档案
-  const persona = personaCardLines(c.id)
+  // 按档案表写：姓名／代号／身份／所属／终末／潜力／档案／基准台词。
+  // 档案取 bio（第三人称概述），人物卡里那类第一人称摘录不进世界书 —— 那是给角色页读的。
   const content = [
-    `${c.name}（${c.callsign} · ${c.role} · ${c.epithet}）`,
-    `所属：${c.division}`,
-    c.scar ? `终末：${c.scar}` : '',
-    c.potential && c.potential !== '—' ? `终末潜力：${c.potential}` : '',
-    ...(persona ?? [c.bio]),
-    ...(!persona && c.quote ? [`标志性台词：「${c.quote}」`] : []),
+    spec([
+      ['角色', c.name],
+      ['代号', c.callsign],
+      ['身份', [c.role, c.epithet].filter(Boolean).join(' · ')],
+      ['所属', c.division],
+      ['终末', c.scar],
+      ['终末潜力', c.potential],
+      ['档案', thirdPerson(c.bio)],
+      ['基准台词（逐字）', c.quote ? `「${c.quote}」` : ''],
+    ]),
+    BOUNDARY,
   ].filter(Boolean).join('\n')
   return entry(
     `ch-${c.id}`,
@@ -119,7 +149,8 @@ function buildCharBook(): Lorebook {
   return book(
     'book-canon-char',
     '角色档案',
-    '档案全员（主役 + 登场者）：按原文档案/人物卡生成，命中人名/称号/别名即注入其设定参考。',
+    '角色档案：姓名、代号、身份、所属、终末、潜力、档案与基准台词；主役与登场者同册。'
+      + '命中人名／称号即注入。条目只写已确认的设定，不含未观测后文。',
     [...CHARACTERS.map(charEntry), ...SIDECAST.map(sidecastEntry)],
   )
 }
@@ -128,11 +159,16 @@ function buildCharBook(): Lorebook {
 
 function codexEntry(e: EndEntry): LorebookEntry {
   const content = [
-    `No.${e.no || '？？？'}「${e.name}」· Stage ${e.stage >= 0 ? e.stage : '未解明'} ${e.stageKw}`,
-    e.origin ? `来历：${e.origin}` : '',
-    e.detail ? `详细：${e.detail}` : '',
-    e.counter ? `应对要点：${e.counter}` : '',
-  ].filter(Boolean).join('\n')
+    spec([
+      ['条目', `No.${e.no || '？？？'}「${e.name}」`],
+      ['阶段', `Stage ${e.stage >= 0 ? e.stage : '未解明'} · ${e.stageKw}`],
+      ['别名', e.alias],
+      ['来历', e.origin],
+      ['记录', e.detail],
+      ['应对', e.counter],
+    ]),
+    BOUNDARY,
+  ].join('\n')
   return entry(
     `cx-${e.id}`,
     [e.name, e.alias, ...(e.no && e.no !== '？？？' ? [`NO.${e.no}`, e.no] : [])].filter(Boolean),
@@ -144,13 +180,26 @@ function codexEntry(e: EndEntry): LorebookEntry {
 }
 
 function buildCodexBook(): Lorebook {
-  return book('book-canon-codex', '实体图鉴', '已登记进终末图鉴的实体（仅遭遇登记过的会被放行，避免剧透）。', CODEX.map(codexEntry))
+  return book(
+    'book-canon-codex',
+    '实体图鉴',
+    '实体图鉴：编号、阶段、来历、记录与应对。只放行已登记的实体 —— 未遭遇过的不会出现在提示词里。',
+    CODEX.map(codexEntry),
+  )
 }
 
 /* ---------- 世界书：世界 · 势力 · 概念 ---------- */
 
 function loreEntry(e: LoreEntry): LorebookEntry {
-  const content = [`${e.title}（${e.cat} · ${e.sub || ''}）`.trim(), e.body, e.ref ? `出处：${e.ref}` : ''].join('\n')
+  const content = [
+    spec([
+      ['条目', e.title],
+      ['分类', [e.cat, e.sub].filter(Boolean).join(' · ')],
+      ['概述', e.body],
+      ['出处', e.ref],
+    ]),
+    BOUNDARY,
+  ].join('\n')
   return entry(
     `lw-${e.id}`,
     [e.title, e.sub, ...(e.tags ?? [])].filter(Boolean),
@@ -161,7 +210,12 @@ function loreEntry(e: LoreEntry): LorebookEntry {
 }
 
 function buildLoreBook(): Lorebook {
-  return book('book-canon-lore', '世界 · 势力 · 概念', '智库条目：世界观/势力/概念的背景参考。', LORE.map(loreEntry))
+  return book(
+    'book-canon-lore',
+    '世界 · 势力 · 概念',
+    '世界观、势力与概念：条目、分类、概述与出处。只作名词口径与背景参考，不据此推断后文。',
+    LORE.map(loreEntry),
+  )
 }
 
 /* ---------- 世界书：事件回顾（已完成/当前事件才会放行，见 lorescan） ---------- */
@@ -179,11 +233,19 @@ function evEntry(e: TimelineEvent, reading: number): LorebookEntry {
   ]
   // 事件回顾 = 解读式摘要（大纲概述），不再往世界书里拼逐字【原文摘录】——
   // 智库词条属「收束记录落解读口径」，原文细节走导演提示词的 EVENT_NOTES 通道，不进词条。
-  const digestable = e.summary.trim()
+  const content = [
+    spec([
+      ['事件', `${e.group} · ${e.title}`],
+      ['地点', e.place],
+      ['在场', e.entities.filter((x) => x !== '——').join('、')],
+      ['经过', e.summary.trim()],
+    ]),
+    '边界：只记已经过去的这一段；日后走向不据此推断，也不改写正文里已经发生的事。',
+  ].join('\n')
   return entry(
     `ev-${e.id}`,
     keys,
-    digestable,
+    content,
     reading,
     `${e.group} · ${e.title}`,
     { eventId: e.id },
@@ -194,7 +256,8 @@ function buildEventBook(): Lorebook {
   return book(
     'book-canon-events',
     '事件回顾',
-    '各事件的第三人称回顾（按阅读序）：仅当该事件已完成或是当前焦点事件时放行，绝不剧透未推进的事件。',
+    '事件回顾：事件、地点、在场与经过，按阅读序排列。'
+      + '只放行已完成或当前焦点的事件；未推进的事件不出现。',
     TIMELINE.map((e, i) => evEntry(e, i)),
   )
 }
@@ -202,13 +265,18 @@ function buildEventBook(): Lorebook {
 /* ---------- 登场者条目（并入「角色档案」同一册；无 meta → 门控恒放行） ---------- */
 
 function sidecastEntry(s: SideCastEntry): LorebookEntry {
-  // 有人物卡（分层卡）则以卡代 desc／quote；无卡回退既有 flat 档案
-  const persona = personaCardLines(s.id)
+  // 与角色档案同一副表格：姓名／别称／身份／首次登场／档案／台词。
   const content = [
-    `${s.name}（${s.alias} · ${s.role}）`,
-    ...(persona ?? [s.desc, s.quote ? `台词：「${s.quote}」` : '']),
-    `登场：${s.volLabel} · ${s.page}`,
-  ].filter(Boolean).join('\n')
+    spec([
+      ['登场者', s.name],
+      ['别称', s.alias],
+      ['身份', s.role],
+      ['首次登场', `${s.volLabel} · ${s.page}`],
+      ['档案', thirdPerson(s.desc)],
+      ['基准台词（逐字）', s.quote ? `「${s.quote}」` : ''],
+    ]),
+    BOUNDARY,
+  ].join('\n')
   return entry(
     `sc-${s.id}`,
     [s.name, s.alias].filter(Boolean),
@@ -218,17 +286,21 @@ function sidecastEntry(s: SideCastEntry): LorebookEntry {
   )
 }
 
-/** 全部 canon 种子世界书（4 本；「登场者登记」已并入「角色档案」） */
 /* ---------- 世界书：任务作战（回合制子系统的设定与主角位置） ---------- */
 
 function buildOpsBook(): Lorebook {
   const e1 = entry(
     'ops-engage',
     ['任务', '任务简报', '作战', '出击', '交战', '讨伐', '反现实实体'],
-    '任务简报板上的每一条，都是一次可派出的作战。委员会以小队为单位处置反现实实体：'
-      + '按敏捷度排定出手序，以常规接触、武装解放与「到达点」逐次削减敌方的反现实反应，归零即为达成。'
-      + '弹痕、斩击一类武装对反现实实体是本职，打普通目标反而不占优；'
-      + '反过来，体术再强的人，若其武装尚未解封，也打不出应有的分量。',
+    [
+      '作战规则 · 交战',
+      '· 任务简报上的每一条，对应一次可派出的作战；委员会以小队为单位处置反现实实体。',
+      '· 出手序按敏捷度排定。',
+      '· 常规接触、武装解放与「到达点」各自削减一定量的反现实反应；反应归零，作战达成。',
+      '· 武装（弹痕、斩击一类）对反现实实体有效，对普通目标不占优。',
+      '· 武装尚未解封时，体术按未解封口径结算。',
+      BOUNDARY,
+    ].join('\n'),
     10,
     '作战准则',
     { ops: true },
@@ -236,12 +308,13 @@ function buildOpsBook(): Lorebook {
   const e2 = entry(
     'ops-stamina',
     ['体力', '观测间隔', '出击', '撤出', '驻扎', '过载'],
-    '有两本体力账，别混。小队体力是终端上那一池：只在出击时扣一次固定份额，'
-      + '不会因休整而立刻回满——只有操作员继续推进观测、收束新的剧情段，它才随观测间隔缓慢回补；'
-      + '它偏低时仍可强行出击，代价是全场出力打折。'
-      + '而战斗里每一次出手消耗的不是那一池，是各人自己的体力：意志力越厚，本人这一场能出的手越多，'
-      + '普攻、技能、到达点各按自己的份额扣。本人的体力见底时便只剩防御可出——'
-      + '防御会回一口气，但不多，回不回得来要看意志力。',
+    [
+      '作战规则 · 体力',
+      '两套体力，分开计算：',
+      '· 小队体力：终端上那一池。出击时扣固定份额；不随休整立刻回满，只随观测推进（收束新的剧情段）缓慢回补。偏低时仍可出击，全场出力按比例下降。',
+      '· 个人体力：战斗内每次出手单独消耗，普攻、技能、到达点各有份额。见底后只能防御；防御回复少量体力，回复量取决于意志力。',
+      BOUNDARY,
+    ].join('\n'),
     20,
     '体力与观测间隔',
     { ops: true },
@@ -249,10 +322,14 @@ function buildOpsBook(): Lorebook {
   const e3 = entry(
     'ops-operator',
     ['操作员', '指挥', '言万心叶', '低语者', '观测员', '下令'],
-    '言万心叶是这台终端的操作员，也是登记在册的 Stage4『活性化』、低语者（Susurrador）的持有者。'
-      + '他兼指挥与观测——决定由谁出击、以何等手数应敌、目标指向何处，并在每一次收束之后撰写作战记录；'
-      + '但他本人同样是战斗人员：五轴、武装与技能随观测进度换页，编队时可以直接把他放进小队下场出手。'
-      + '（注：低语者之名在体验入学、登记成立之后才对外示出。）',
+    [
+      '作战规则 · 操作员',
+      '· 操作员：言万心叶，本终端使用者；登记为 Stage4「活性化」，低语者（Susurrador）持有者。',
+      '· 职责：决定出击人选、手数与目标，收束之后撰写作战记录。',
+      '· 作战位置：本人可编入小队下场；五轴、武装与技能随观测进度换页。',
+      '· 名称披露：低语者之名在体验入学、登记成立之后才对外示出。',
+      BOUNDARY,
+    ].join('\n'),
     30,
     '操作员的作战位置',
     { ops: true },
@@ -260,7 +337,7 @@ function buildOpsBook(): Lorebook {
   return book(
     'book-canon-ops',
     '任务作战',
-    '回合制作战子系统的设定：交战准则、体力与观测间隔、操作员在作战中的位置。',
+    '回合制作战规则：交战、体力与观测间隔、操作员的作战位置。条目按规则条款写，不作叙述。',
     [e1, e2, e3],
   )
 }
@@ -268,22 +345,24 @@ function buildOpsBook(): Lorebook {
 /* ---------- 世界书：主角专档（言万心叶本人 —— 与角色档案同一副面孔，逐段放行） ---------- */
 
 function buildOperatorBook(): Lorebook {
-  // 行文与 charEntry 同一口径：姓名（别称 · 身份）／所属／终末／终末潜力／本人自述。
-  // 他不是另一个物种的条目 —— 只是把「所属」写成本终端、把面板写成随时期换页。
+  // 与角色档案同一副表格：姓名／称呼／所属／终末／潜力／经历／登记／能力／面板。
+  // 分期词条同样按表写，未观测到的时期由 meta.eventId 闸门挡住。
   const head = entry(
     'op-self',
     ['言万心叶', '心叶', '操作员', '观测员', '主角', '低语者', 'Susurrador', '读心者'],
     [
-      '言万心叶（心叶 · 操作员 · 观测终端）',
-      '所属：终末停滞委员会 · 观测终端（本终端的使用者；本人也是战斗人员）',
-      '终末：低语者（Susurrador）· Stage4「活性化」',
-      '终末潜力：Stage4「活性化」',
-      '落海那一夜之前，他连高中都没上过：初中毕业前就被墨西哥黑手党「桑克雷・奥库尔塔」绑架监禁、当奴隶使唤，前后三年——'
-        + '那段过去是他日后被登记为「低语者」的由来。'
-        + '被丢上船那夜他游向不擅长游泳的拉法；问到他为什么不求饶，他答「因为希望这种东西，从来就没有拯救过我啊」。',
-      '与露娜相遇、被艾莉芙担保入学苍之学园之后，他的终末潜力经测定并登记在册。',
-      '异端审问室里那一百场猜拳，他赢得不靠运气：对方心里先冒出来的那只手，他比谁看得都早 —— 攻击必中，闪避率提升 40%。'
-        + '他的面板不固定：随观测推进的每一段时期，武装、五轴与技能都换一页 —— 详见分期词条。',
+      spec([
+        ['姓名', '言万心叶'],
+        ['称呼', '心叶 · 操作员 · 观测终端'],
+        ['所属', '终末停滞委员会 · 观测终端（本终端使用者；本人也是战斗人员）'],
+        ['终末', '低语者（Susurrador）· Stage4「活性化」'],
+        ['终末潜力', 'Stage4「活性化」'],
+        ['经历', '初中毕业前被墨西哥黑手党「桑克雷・奥库尔塔」绑架监禁、充当奴隶，前后三年；这段过去是他日后被登记为「低语者」的由来。落海那一夜，他被弃于货船甲板，游向不擅长游泳的拉斐尔・加西亚。被问到为什么不求饶时，他的回答是「因为希望这种东西，从来就没有拯救过我啊」。'],
+        ['登记', '与露娜相遇、由艾莉芙・安纳托利亚担保入学苍之学园之后，终末潜力经测定并登记在册。'],
+        ['能力', '异端审问室一百场猜拳全胜：对方心里先成形的那一手，他先读到。登记效果为攻击必中、闪避率提升 40%。'],
+        ['面板', '不固定。随观测推进，武装、五轴与技能按时期换页，见分期条目。'],
+      ]),
+      BOUNDARY,
     ].join('\n'),
     5,
     '言万心叶',
@@ -293,14 +372,19 @@ function buildOperatorBook(): Lorebook {
     `op-p-${p.at}`,
     ['言万心叶', '心叶', p.title, p.arm, p.cls].filter((k) => k && k !== '无'),
     [
-      `${p.title}（${p.cls}）`,
-      '所属：终末停滞委员会 · 观测终端',
-      `所处时期：${p.vol}`,
-      `处境：${p.note}`,
-      `武装：${p.arm}${p.armSub && p.armSub !== '—' ? `（${p.armSub}）` : ''} —— ${p.armNote}`,
-      p.passive ? `被动 · ${p.passive.name}：${p.passive.desc}` : '',
-      `此刻所能做的事：${p.abilities.map((a) => `${a.name}（${a.kind}）`).join('、')}`,
-    ].filter(Boolean).join('\n'),
+      spec([
+        ['姓名', '言万心叶'],
+        ['时期', p.title],
+        ['职阶', p.cls],
+        ['所处卷', p.vol],
+        ['处境', p.note],
+        ['武装', `${p.arm}${p.armSub && p.armSub !== '—' ? `（${p.armSub}）` : ''}。${p.armNote}`],
+        ['被动', p.passive ? `${p.passive.name}：${p.passive.desc}` : ''],
+        ['可用招式', p.abilities.map((a) => `${a.name}（${a.kind}）`).join('、')],
+        ['所属', '终末停滞委员会 · 观测终端'],
+      ]),
+      BOUNDARY,
+    ].join('\n'),
     6 + i,
     `言万心叶 · ${p.title}`,
     { ops: true, eventId: p.at },
@@ -308,8 +392,8 @@ function buildOperatorBook(): Lorebook {
   return book(
     'book-canon-operator',
     '主角专档 · 言万心叶',
-    '言万心叶本人的档案：总档 + 按观测进度分页的时期面板（定位／武装／技能）。'
-      + '未观测到的时期词条不放行，绝不剧透后文。',
+    '言万心叶的档案：总档与按观测进度分页的时期面板。条目只写已确认的设定；'
+      + '未观测到的时期由闸门挡住，不提前放行。',
     [head, ...pages],
   )
 }
@@ -421,8 +505,12 @@ export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
  *              比喻上限、术语与称呼、交战写法）逐条搬到独立一行 —— 原来的写法一段就是一大坨，
  *              注入时挤成一条墙；同时每条压在 520 字内（lib/lorescan.ts 的 HOLD_CAP），
  *              让四条每次都完整带着，而不是被「条数平摊」截掉半条。
+ *   v14 → v15 = 设定册整份重置：角色／登场者／图鉴／世界观／事件／作战／主角七册改成
+ *              「字段：值」的档案表写法（不作比喻、不作叙述），每条末尾附同一句使用边界；
+ *              角色与登场者不再收人物卡里的第一人称摘录，档案里的「你」折算成言万心叶，
+ *              引号内的台词逐字保留。注入层同时改成 <词条名> … </词条名> 完全包裹。
  */
-export const CANON_SEED_VERSION = 14
+export const CANON_SEED_VERSION = 15
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'

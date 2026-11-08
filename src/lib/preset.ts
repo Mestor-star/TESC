@@ -10,6 +10,7 @@
    ============================================================ */
 
 import type { ChatTurn } from './api'
+import { wrapEntry } from './entrytag'
 
 export type PresetEntryKind = '行为' | '格式' | '其它'
 export type PresetEntryPos = 'pre' | 'post'
@@ -138,10 +139,10 @@ export function buildPresetContext(
   const block = (pos: PresetEntryPos, text: string) => {
     const part = hits.filter((e) => e.position === pos && (e.content || '').trim())
     if (!part.length) return ''
-    /* 每一条首尾用一对 <rule name="…"> 包住（与世界书那边同一个记号）：
+    /* 每一条首尾用一对 <词条名> 包住（与世界书那边同一个记号）：
        模型分得清哪几行是一条规矩，条目之间也不会连成一整段。 */
     const body = part
-      .map((e) => `<rule name="${e.name.replace(/"/g, '”')}">\n${e.content.trim()}\n</rule>`)
+      .map((e) => wrapEntry(e.name, e.content.trim()))
       .join('\n')
     return `${text}\n${body}`
   }

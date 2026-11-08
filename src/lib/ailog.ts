@@ -153,8 +153,8 @@ export function digestPrompt(messages: { role: string; content: string }[]): { t
 
 /**
  * 世界书注入块 → 命中的词条名。
- * 现在每条以 `<lore name="…">` 起头；老记录里是「▸ 名字」，一并认下来，
- * 免得翻旧账时那几条被当成「一条都没进」。
+ * 现在每条以 `<词条名>` 起头；更早的记录是 `<lore name="…">` 或「▸ 名字」，
+ * 一并认下来，免得翻旧账时那几条被当成「一条都没进」。
  */
 export function loreHitsOf(block: string): string[] {
   if (!block) return []
@@ -162,6 +162,8 @@ export function loreHitsOf(block: string): string[] {
   for (const l of block.split('\n')) {
     const tag = l.match(/^<lore name="([^"]+)">/)
     if (tag) { out.push(tag[1].trim()); continue }
+    const own = l.match(/^<([^<>/s][^<>]*)>$/)
+    if (own) { out.push(own[1].trim()); continue }
     if (l.startsWith('▸ ')) out.push(l.slice(2).trim())
   }
   return out.filter(Boolean)
