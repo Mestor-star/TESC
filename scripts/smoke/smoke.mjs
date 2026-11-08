@@ -3616,6 +3616,11 @@ try {
 
   /* V2 右栏正常的一面 = 「这一场」：三位都上栏，缺图不占版位（常服立绘这一族一张都没补时的既定取舍） */
   await poll(`!!document.querySelector('[data-date-side]')`, 15000, 'V date side panel')
+  /* 三张图位各自异步探一遍兜底链（probeSceneCg）—— 探完之前 figure 里还没有 img，
+     图位按「没有图」先排版；等三张都落了再量宽度，否则量到的是过渡态。 */
+  await poll(`(()=>{const w=[...document.querySelectorAll('[data-date-wear]')];
+    return w.length===3 && w.every(e=>{const i=e.querySelector('img');return !!i && i.naturalWidth>0})})()`,
+    15000, 'V2 wear art loaded')
   const vGeo = await ev(`(()=>{const q=(s)=>document.querySelector(s);
     const a=q('[data-date-side-pane]').getBoundingClientRect();
     const t=q('[data-date-thread]').getBoundingClientRect();

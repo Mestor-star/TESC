@@ -13,6 +13,10 @@ import { CHARACTERS } from '../data/chars'
 import { CODEX } from '../data/codex'
 import { LORE } from '../data/lore'
 import { SIDECAST, type SideCastEntry } from '../data/sidecast'
+import { ARMS } from '../data/arms'
+import { personaCardOf } from '../data/persona'
+import { COMMITTEE_RANK, SIDE_POTENTIAL, SIDE_TRAIT } from '../data/roster'
+import { ROSTER } from './battle/roster'
 import { OP_PERIODS } from './operator-arc'
 import { TIMELINE } from '../data/timeline'
 import type { Character, EndEntry, LoreEntry, TimelineEvent } from '../data/types'
@@ -119,22 +123,92 @@ function thirdPerson(text: string): string {
 
 /* ---------- 世界书：角色档案 ---------- */
 
+/** 人物卡的一节原文摘录：只取前几行，把「你」折算成操作员（第三人称）。 */
+function personaText(id: string, title: string, max: number): string {
+  const sec = personaCardOf(id)?.sections.find((s) => s.title === title)
+  if (!sec || !sec.lines.length) return ''
+  return sec.lines.slice(0, max).map(thirdPerson).join('')
+}
+
+/** 登场者的出处：page 里已经带了卷次（「第2卷 · 卷首彩页」）就不再重复卷号。 */
+function seenOf(s: SideCastEntry): string {
+  return s.page.includes('卷') ? s.page : `${s.volLabel} · ${s.page}`
+}
+
+/** 挂在某角色名下的武装条目（图鉴里的弹痕／斩击／片羽／特殊武器）。 */
+function armsOf(id: string) {
+  return ARMS.filter((a) => a.holderId === id)
+}
+
+interface CastDossier {
+  id: string
+  name: string
+  /** 首行字段名：角色 / 登场者 */
+  nameLabel: string
+  alias?: string
+  /** 第二行字段名：代号 / 别称 */
+  aliasLabel: string
+  role?: string
+  epithet?: string
+  division?: string
+  scar?: string
+  potential?: string
+  quote?: string
+  bio?: string
+  firstSeen?: string
+}
+
+/**
+ * 角色与登场者共用的一副档案表：先设定（身份、武装、能力、打法、战技），
+ * 再人物卡的原文摘录（性格、说话方式、关系、外貌、背景、日常、战斗场面）。
+ * 摘录保留原叙述人称 —— 那是正文的说法，不改写；只把「你」折算成言万心叶。
+ */
+function castContent(o: CastDossier): string {
+  const role = ROSTER[o.id]
+  const arms = armsOf(o.id)
+  const main = arms[0]
+  const trait = SIDE_TRAIT[o.id]
+  const armor = arms.length
+    ? arms.map((a) => `${a.kind}「${a.name}」`).join('、')
+    : trait
+  const power = main ? main.power : (role?.trait ?? '')
+  const rows: Array<[string, string | undefined | false]> = [
+    [o.nameLabel, o.name],
+    [o.aliasLabel, o.alias],
+    ['身份', [o.role, o.epithet].filter(Boolean).join(' · ')],
+    ['所属', o.division],
+    ['委员会排名', COMMITTEE_RANK[o.id]],
+    ['首次登场', o.firstSeen],
+    ['终末 · 武装', o.scar ?? trait],
+    ['终末潜力', o.potential ?? SIDE_POTENTIAL[o.id]],
+    ['性格（原文）', personaText(o.id, '性格', 2)],
+    ['说话方式（原文）', personaText(o.id, '说话方式', 2) || personaText(o.id, '代表台词', 1)],
+    ['关系（原文）', personaText(o.id, '关系', 3)],
+    ['武装', armor],
+    ['本相', main?.phrase],
+    ['能力', power],
+    ['到达点', main?.awakened],
+    ['战斗方式', role ? [role.cls, role.duty].filter(Boolean).join(' · ') : ''],
+    ['打法', role?.sub],
+    ['机制', main ? role?.trait : ''],
+    ['战技', role?.skills.map((s) => s.name).join('、')],
+    ['外貌（原文）', personaText(o.id, '外貌', 1)],
+    ['背景（原文）', personaText(o.id, '背景', 1)],
+    ['日常一面（原文）', personaText(o.id, '日常一面', 1)],
+    ['战斗场面（原文）', personaText(o.id, '战斗', 2)],
+    ['禁忌 · 雷区（原文）', personaText(o.id, '禁忌 · 雷区', 2)],
+    ['代表台词（逐字）', o.quote ? `「${o.quote}」` : personaText(o.id, '代表台词', 1)],
+    ['档案', o.bio ? thirdPerson(o.bio) : ''],
+  ]
+  return [spec(rows), BOUNDARY].filter(Boolean).join('\n')
+}
+
 function charEntry(c: Character): LorebookEntry {
-  // 按档案表写：姓名／代号／身份／所属／终末／潜力／档案／基准台词。
-  // 档案取 bio（第三人称概述），人物卡里那类第一人称摘录不进世界书 —— 那是给角色页读的。
-  const content = [
-    spec([
-      ['角色', c.name],
-      ['代号', c.callsign],
-      ['身份', [c.role, c.epithet].filter(Boolean).join(' · ')],
-      ['所属', c.division],
-      ['终末', c.scar],
-      ['终末潜力', c.potential],
-      ['档案', thirdPerson(c.bio)],
-      ['基准台词（逐字）', c.quote ? `「${c.quote}」` : ''],
-    ]),
-    BOUNDARY,
-  ].filter(Boolean).join('\n')
+  const content = castContent({
+    id: c.id, name: c.name, nameLabel: '角色', alias: c.callsign, aliasLabel: '代号',
+    role: c.role, epithet: c.epithet, division: c.division,
+    scar: c.scar, potential: c.potential, quote: c.quote, bio: c.bio,
+  })
   return entry(
     `ch-${c.id}`,
     [c.name, c.callsign, c.role, c.epithet].filter(Boolean),
@@ -149,7 +223,8 @@ function buildCharBook(): Lorebook {
   return book(
     'book-canon-char',
     '角色档案',
-    '角色档案：姓名、代号、身份、所属、终末、潜力、档案与基准台词；主役与登场者同册。'
+    '角色档案：身份、所属、委员会排名、终末与武装、能力与到达点、战斗方式与战技，'
+      + '再附人物卡的原文摘录（性格、说话方式、关系、外貌、背景、日常、战斗场面）；主役与登场者同册。'
       + '命中人名／称号即注入。条目只写已确认的设定，不含未观测后文。',
     [...CHARACTERS.map(charEntry), ...SIDECAST.map(sidecastEntry)],
   )
@@ -265,18 +340,12 @@ function buildEventBook(): Lorebook {
 /* ---------- 登场者条目（并入「角色档案」同一册；无 meta → 门控恒放行） ---------- */
 
 function sidecastEntry(s: SideCastEntry): LorebookEntry {
-  // 与角色档案同一副表格：姓名／别称／身份／首次登场／档案／台词。
-  const content = [
-    spec([
-      ['登场者', s.name],
-      ['别称', s.alias],
-      ['身份', s.role],
-      ['首次登场', `${s.volLabel} · ${s.page}`],
-      ['档案', thirdPerson(s.desc)],
-      ['基准台词（逐字）', s.quote ? `「${s.quote}」` : ''],
-    ]),
-    BOUNDARY,
-  ].join('\n')
+  // 与角色档案同一副表格：设定在前，人物卡原文摘录在后。
+  const content = castContent({
+    id: s.id, name: s.name, nameLabel: '登场者', alias: s.alias, aliasLabel: '别称',
+    role: s.role, firstSeen: seenOf(s),
+    quote: s.quote, bio: s.desc,
+  })
   return entry(
     `sc-${s.id}`,
     [s.name, s.alias].filter(Boolean),
@@ -509,8 +578,11 @@ export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
  *              「字段：值」的档案表写法（不作比喻、不作叙述），每条末尾附同一句使用边界；
  *              角色与登场者不再收人物卡里的第一人称摘录，档案里的「你」折算成言万心叶，
  *              引号内的台词逐字保留。注入层同时改成 <词条名> … </词条名> 完全包裹。
+ *   v15 → v16 = 角色与登场者条目加详：补性格、说话方式、关系、外貌、背景、日常一面、
+ *              战斗场面（人物卡原文摘录，叙述人称随原文，「你」仍折算成言万心叶），
+ *              并从武装图鉴与作战名册补武装／能力／到达点／战斗方式／战技。
  */
-export const CANON_SEED_VERSION = 15
+export const CANON_SEED_VERSION = 16
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'

@@ -58,7 +58,7 @@ export interface LoreContextOpts {
   gate: LoreGate
   /** 命中词条上限（默认 8） */
   maxEntries?: number
-  /** 拼块总字数上限（默认 3000） */
+  /** 拼块总字数上限（默认 5200） */
   maxChars?: number
 }
 
@@ -72,7 +72,7 @@ const LABEL_TAIL = '（仅作延续性背景，与本段事件大纲冲突时以
  */
 export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): string {
   const maxEntries = opts.maxEntries ?? 8
-  const maxChars = opts.maxChars ?? 3000
+  const maxChars = opts.maxChars ?? 5200
   const text = (opts.scanText || '').trim()
   if (!books.length || !text) return ''
 
@@ -117,7 +117,10 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
   /* 两条预算各算各的：常驻那几条（文风册）是每一回合都该完整带着的笔法，
      按「条数平摊」只够写完半条句法；命中项按剩下的份额平分。 */
   const HOLD_CAP = Math.min(520, Math.max(240, Math.floor((maxChars * 0.7) / Math.max(holds.length, 1))))
-  const KEY_CAP = Math.max(180, Math.floor(maxChars / Math.max(chosen.length, 1)))
+  /* 角色档案是这一册里最长的条目（性格／说话方式／关系／武装／能力／战技都在一条里）。
+     实测这些字段的起点在 79–478 字之间，战技多在 574–751 —— 命中人数多时也留够 700：
+     读得出这个人是谁、认得谁、会什么，而不是只剩半行身份。 */
+  const KEY_CAP = Math.max(700, Math.floor(maxChars / Math.max(chosen.length, 1)))
 
   /* 每条首尾用一对 <词条名> 包住（完全包裹）：模型看得出这一段是参考、不是要接着写的东西，
      几本条规同时在场时也不会串行。抬头与末尾那两句照旧（通联日志按它们认这一段）。 */
