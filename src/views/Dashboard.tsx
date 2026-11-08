@@ -39,10 +39,11 @@ function readPick(): string {
 export function Dashboard() {
   const { operatorName, navigate, isMet } = useTerminal()
 
-  /* 立绘池：操作员打头，后面只收「已经遇见」的人 —— 没遇见的不进轮换 */
+  /* 立绘池：操作员打头。魔王在第一段就同船登场，不等那一段读完就该在池子里；
+     其余只收「已经遇见」的人 —— 没遇见的不进轮换。 */
   const pool = useMemo(() => {
-    const met = PERSON_IDS.filter((id) => isMet(id))
-    return ['operator', ...met]
+    const met = PERSON_IDS.filter((id) => isMet(id) && id !== 'kuro-no-maou')
+    return ['operator', 'kuro-no-maou', ...met]
   }, [isMet])
 
   const [pick, setPick] = useState<string>(() => readPick())
