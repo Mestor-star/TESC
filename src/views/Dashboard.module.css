@@ -125,6 +125,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── 立绘说的话 ─────────────────────────────────────── */
+.say {
+  position: absolute;
+  left: 3vw;
+  bottom: 76px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: min(34vw, 360px);
+  padding: 11px 14px 12px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  animation: sayIn 220ms var(--ease-out) both;
+}
+
+@keyframes sayIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.sayName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  color: var(--steel-deep);
+}
+
+.sayText {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
 /* ── 右侧动作簇：同一点散开 ──────────────────────────── */
 .cluster {
   position: absolute;
@@ -273,7 +308,7 @@
     position: relative;
     right: auto;
     top: auto;
-    order: 1;
+    order: 2;
     width: 100%;
     height: auto;
     display: flex;
@@ -299,9 +334,18 @@
   .action .zh,
   .action.prime .zh { font-size: 20px; letter-spacing: 0.12em; }
   .num { display: none; }
+  /* 手机档：话排在立绘与动作之间，不压住按钮，也不挂在底条上 */
+  .say {
+    position: static;
+    order: 1;
+    width: calc(100% - 36px);
+    max-width: none;
+    margin: 10px 18px 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .action { transition-duration: 1ms; transition-delay: 0ms; }
   .shot { transition: none; }
+  .say { animation: none; }
 }

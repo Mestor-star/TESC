@@ -1,18 +1,24 @@
 /**
  * 终端主页 —— 一屏只有三样东西：人、影子、右手的五个动作。
  *
- * 立绘裁到半身（只露到头到腰），白色底用 multiply 融进页面，下缘一道渐隐。
+ * 立绘裁到半身（只露到头到腰），下缘一道渐隐。
  * 右侧动作不是一排按钮：它们全部锚在同一个点上，指针靠近才散开（位移 + 缩放 + 去模糊，
  * 逐项延迟），离开 280ms 收回去 —— 打开方式照主人给的参考稿，外观仍走本仓的浅色终端。
+ *
+ * 立绘不是换人键：指针移上去，她说一句自己的话；点一下，再说下一句。
+ * 话取自人物卡与档案里的原文台词，各人有各人的口吻。换人走左下角那一枚。
+ * 操作员本人不上看板 —— 他要说话，去剧情里说。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { PERSON_IDS, personOf } from '../data/castmeta'
+import { HUB_LINES } from '../data/hubquotes'
 import { useTerminal } from '../terminal/Terminal'
 import { useCharImg } from '../components/Portrait'
 import css from './Dashboard.module.css'
 
 const HUB_KEY = 'zts-hub-portrait:v1'
+const HOLD_MS = 4800
 
 interface HubAction {
   go: 'plot' | 'research' | 'archive' | 'missions' | 'tavern'
@@ -37,22 +43,21 @@ function readPick(): string {
 }
 
 export function Dashboard() {
-  const { operatorName, navigate, isMet } = useTerminal()
+  const { navigate, isMet } = useTerminal()
 
-  /* 立绘池：操作员打头。魔王在第一段就同船登场，不等那一段读完就该在池子里；
-     其余只收「已经遇见」的人 —— 没遇见的不进轮换。 */
+  /* 立绘池：魔王先站（第一段就同船登场），随后是已经遇见的人。操作员不进池。 */
   const pool = useMemo(() => {
     const met = PERSON_IDS.filter((id) => isMet(id) && id !== 'kuro-no-maou')
-    return ['operator', 'kuro-no-maou', ...met]
+    return ['kuro-no-maou', ...met]
   }, [isMet])
 
   const [pick, setPick] = useState<string>(() => readPick())
   const idx = Math.max(0, pool.indexOf(pick))
-  const cur = pool[idx] ?? 'operator'
+  const cur = pool[idx] ?? pool[0]
   const person = personOf(cur)
-  const name = cur === 'operator' ? (operatorName.trim() || '言万心叶') : (person?.name ?? cur)
-  const sigil = cur === 'operator' ? '心' : (person?.sigil ?? cur.slice(0, 1))
-  const hue = person?.hue ?? '#008eff'
+  const name = person?.name ?? cur
+  const sigil = person?.sigil ?? cur.slice(0, 1)
+  const hue = person?.hue ?? 'var(--steel)'
   const avatarId = person?.avatarId ?? cur
   const shot = useCharImg(avatarId, 'full')
   /* 半身位用去了白底的裁切版（public/charimg/cut/*.webp）；没有就退回原图，再没有走纹章 */
@@ -62,9 +67,60 @@ export function Dashboard() {
   const src = shot ? (cutFail ? shot : cutUrl) : null
 
   const cycle = () => {
-    const next = pool[(idx + 1) % pool.length] ?? 'operator'
+    const next = pool[(idx + 1) % pool.length] ?? cur
     setPick(next)
     try { localStorage.setItem(HUB_KEY, next) } catch { /* 无痕模式记不住，这一趟照换 */ }
+  }
+
+  /* 立绘说话：悬停一句，点一下再说一句 */
+  const lines = HUB_LINES[cur] ?? []
+  /* 悬停从最短的一句起排，连续移上去会顺着往下换 —— 同一个人也不会只剩一句 */
+  const hoverOrder = useMemo(() => [...lines].sort((a, b) => a.length - b.length), [lines])
+  const [say, setSay] = useState<{ text: string; key: number } | null>(null)
+  const [pokeIdx, setPokeIdx] = useState(1)
+  const hoverIdx = useRef(0)
+  const sayKey = useRef(0)
+  const sayTimer = useRef<number | null>(null)
+  const holdUntil = useRef(0)
+  useEffect(() => {
+    setSay(null)
+    setPokeIdx(1)
+    hoverIdx.current = 0
+    holdUntil.current = 0
+    if (sayTimer.current) { window.clearTimeout(sayTimer.current); sayTimer.current = null }
+  }, [cur])
+  useEffect(() => () => { if (sayTimer.current) window.clearTimeout(sayTimer.current) }, [])
+
+  const showSay = (text: string, hold = 0) => {
+    sayKey.current += 1
+    setSay({ text, key: sayKey.current })
+    if (sayTimer.current) { window.clearTimeout(sayTimer.current); sayTimer.current = null }
+    if (hold) {
+      holdUntil.current = Date.now() + hold
+      sayTimer.current = window.setTimeout(() => setSay(null), hold)
+    } else {
+      holdUntil.current = 0
+    }
+  }
+
+  const enterPortrait = () => {
+    if (!hoverOrder.length) { showSay('……'); return }
+    showSay(hoverOrder[hoverIdx.current % hoverOrder.length])
+    hoverIdx.current += 1
+  }
+
+  const leavePortrait = () => {
+    if (Date.now() < holdUntil.current) return
+    if (sayTimer.current) window.clearTimeout(sayTimer.current)
+    sayTimer.current = window.setTimeout(() => setSay(null), 220)
+  }
+
+  const speak = () => {
+    if (!lines.length) { showSay('……', 1800); return }
+    let i = pokeIdx % lines.length
+    if (lines.length > 1 && lines[i] === say?.text) i = (i + 1) % lines.length
+    setPokeIdx(i + 1)
+    showSay(lines[i], HOLD_MS)
   }
 
   /* 右侧动作簇：指针进来散开，离开 280ms 收回 */
@@ -92,11 +148,14 @@ export function Dashboard() {
         <button
           type="button"
           className={css.portrait}
-          onClick={cycle}
+          onClick={speak}
+          onPointerEnter={enterPortrait}
+          onPointerLeave={leavePortrait}
+          onFocus={enterPortrait}
+          onBlur={leavePortrait}
           data-hub-portrait
-          data-hub-cycle
-          aria-label={'换一位立绘 · 当前 ' + name}
-          title="换一位"
+          aria-label={'当前看板 · ' + name + '（点一下听一句）'}
+          title={name}
         >
           {src ? (
             <img className={css.shot} src={src} alt="" draggable={false} onError={() => setCutFail(true)} />
@@ -105,6 +164,13 @@ export function Dashboard() {
           )}
         </button>
       </div>
+
+      {say ? (
+        <div className={css.say} data-hub-say aria-live="polite" key={say.key}>
+          <b className={css.sayName}>{name}</b>
+          <span className={css.sayText}>{say.text}</span>
+        </div>
+      ) : null}
 
       <button type="button" className={css.plate} onClick={cycle} data-hub-cycle aria-label={'换一位立绘 · 当前 ' + name} title="换一位">
         <span className={css.no}>{String(idx + 1).padStart(2, '0')} / {String(pool.length).padStart(2, '0')}</span>
