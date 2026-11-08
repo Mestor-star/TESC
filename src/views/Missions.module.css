@@ -19,6 +19,29 @@
   box-shadow: inset 0 0 0 1px var(--red);
 }
 
+/* ---------- 顶层分区页签：可接任务 / 已完成 ----------
+   两枚按钮沿用 .filterBtn 的形（同一套 tokens、同一档触控目标 ——
+   @media (pointer: coarse) 那条 44px 规则照样罩着它们），
+   这里只补容器：一条线分上下，窄屏横滑不折行。 */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: -2px 0 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .board { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
 
 .card {
@@ -502,6 +525,51 @@
   white-space: pre-wrap;
   color: var(--ink-mute);
 }
+
+/* ---------- 已完成（只读留档） ----------
+   一行一条，按打过的/走过的既有记录摆出来；不放会改状态的按钮。
+   左边那 3px 是类别，与作战记录、军需门同一条语汇。 */
+.donePage { margin-top: 4px; }
+.doneHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.doneHead b { font-size: 14px; letter-spacing: 0.06em; }
+.doneList { display: flex; flex-direction: column; gap: 8px; }
+.doneRow {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.doneRow[data-kind='主线'] { border-left-color: var(--violet); }
+.doneRow[data-kind='支线'] { border-left-color: var(--steel); }
+.doneRow[data-kind='委托'] { border-left-color: var(--jade); }
+.doneMain { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.doneTop { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.doneKind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  color: var(--ink-mute);
+}
+.doneKind[data-kind='主线'] {
+  color: var(--violet-deep);
+  border-color: color-mix(in srgb, var(--violet) 42%, transparent);
+  background: color-mix(in srgb, var(--violet) 10%, transparent);
+}
+.doneKind[data-kind='委托'] {
+  color: var(--jade-deep);
+  border-color: color-mix(in srgb, var(--jade) 42%, transparent);
+}
+.doneTitle { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.doneNote { margin: 0; font-size: 12.5px; line-height: 1.8; color: var(--ink-mute); }
+.doneEmpty { padding: 44px 20px; font-size: 13px; line-height: 1.9; }
 
 /* 军需处那一套（.shopBar / .shopSigil / .shopTabs / .shopItem …）随柜台一并搬进了
    Research.module.css —— 这一页只剩这一枚「去研究」的门。

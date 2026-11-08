@@ -41,3 +41,7 @@ tmp-open.png
 .smoke-shots/
 # 仓库主人要求把本地屏幕录纳入库（84MB，未超 GitHub 单文件 100MB 上限）；
 # 以后再加视频前先确认体量，别让仓库无谓增重。
+
+# 本地质量门输出（每次跑重新生成）
+mech.out
+smoke.out

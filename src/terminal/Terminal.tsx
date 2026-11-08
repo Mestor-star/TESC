@@ -54,6 +54,24 @@ import scss from '../components/SaveDialog.module.css'
 
 export type ViewId = 'dashboard' | 'plot' | 'map' | 'saga' | 'memory' | 'lore' | 'arms' | 'research' | 'archive' | 'missions' | 'codex' | 'tavern' | 'settings'
 
+/** 各页在终端里的深度。只用来判「前进 / 返回 / 同级」，不是菜单顺序：
+    同一格里换页签（图鉴三册）算同级，从主页往下走算前进。 */
+const VIEW_RANK: Record<ViewId, number> = {
+  dashboard: 0,
+  map: 1,
+  saga: 1,
+  memory: 1,
+  arms: 2,
+  codex: 2,
+  lore: 2,
+  missions: 2,
+  plot: 3,
+  research: 3,
+  archive: 3,
+  tavern: 3,
+  settings: 4,
+}
+
 /**
  * 需完成「欢迎来到，终末停滞委员会」事件才能解锁的视图。
  * 角色档案亦在其列：名册与羁绊是入学之后的凭据，先读剧情才准调阅。
@@ -87,8 +105,13 @@ interface LoadAsk {
 
 export interface TerminalState {
   view: ViewId
-  /** 受门禁保护的导航 */
-  navigate: (v: ViewId) => void
+  /** 受门禁保护的导航。第二参是落页时要选中的分区页签（见 viewTab） */
+  navigate: (v: ViewId, tab?: string) => void
+  /** 这一次切换的方向：fwd=往深走 · back=退回 · side=同级换页 */
+  navDir: 'fwd' | 'back' | 'side'
+  /** 分区页签记忆（按视图 id 存）：missions = open | done */
+  viewTab: Record<string, string>
+  setViewTab: (key: string, tab: string) => void
 
   operatorName: string
   operatorTitle: string
@@ -1002,6 +1025,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   // 初始视图：重挂载若带 pendingView（重置/读档想落脚的页面）则优先
   const [view, setViewRaw] = useState<ViewId>(() => takePendingView() ?? 'dashboard')
+  /* 这一次切换的方向：外壳据此挑转场（前进从右侧推入，返回反向，同级淡入） */
+  const [navDir, setNavDir] = useState<'fwd' | 'back' | 'side'>('side')
+  /* 分区页签记忆：只记「哪一页的哪一档」，具体渲染由页面自己读 */
+  const [viewTab, setViewTabState] = useState<Record<string, string>>({})
   const [operatorName, setOperatorNameState] = useState<string>(initial.operatorName)
   const [focusId, setFocusId] = useState<string | null>(initial.focusId)
   // authed：同会话读档重挂载时经 sessionAuthed 跳过 Boot；冷启动仍回 false
@@ -1160,16 +1187,28 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const dismiss = dismissToast
 
   /* —— 事件门禁 —— */
+  /* 判方向要读「按下这一下之前在哪」，而 setViewRaw 是异步的 —— 用 ref 记当前页 */
+  const viewRef = useRef<ViewId>(view)
+  useEffect(() => { viewRef.current = view }, [view])
+
   const navigate = useCallback(
-    (v: ViewId) => {
+    (v: ViewId, tab?: string) => {
       if (!unlocked && LOCKED_SET.has(v)) {
         push('warn', '权限未解锁', '需先完成事件「欢迎来到，终末停滞委员会」，方可访问该子系统。')
         return
       }
+      const a = VIEW_RANK[viewRef.current] ?? 0
+      const b = VIEW_RANK[v] ?? 0
+      setNavDir(b > a ? 'fwd' : b < a ? 'back' : 'side')
+      if (tab) setViewTabState((prev) => (prev[v] === tab ? prev : { ...prev, [v]: tab }))
+      viewRef.current = v
       setViewRaw(v)
     },
     [unlocked, push],
   )
+  const setViewTab = useCallback((key: string, tab: string) => {
+    setViewTabState((prev) => (prev[key] === tab ? prev : { ...prev, [key]: tab }))
+  }, [])
 
   /** 读档确认面板（null = 没在问）—— 任何「读取」入口都先过这一道 */
   const [loadAsk, setLoadAsk] = useState<LoadAsk | null>(null)
@@ -2268,6 +2307,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const value: TerminalState = {
     view,
     navigate,
+    navDir,
+    viewTab,
+    setViewTab,
     operatorName,
     operatorTitle: opFull(epDone),
     setOperatorName: setOperatorNameState,

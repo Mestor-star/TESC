@@ -515,16 +515,140 @@
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-/* ---------- 响应式：窄屏收窄为图标栏 ---------- */
+/* ---------- 侧轨：收起只留图标，指针（或键盘焦点）进来才展开 ----------
+   收起 78px = 图标那一列本身；展开 252px 是**覆盖**主区，不挤压正文 ——
+   网格列宽始终 78px，展开靠 .rail 自己的 width 溢出到第二列上方。
+   收起态的隐藏一律写成 `:not(:hover):not(:focus-within)`，
+   基础样式（展开态）因此一个字都不用改，手机档也碰不到这一节。 */
+@media (min-width: 861px) {
+  .root { --rail-w: 78px; }
+  .rail {
+    width: var(--rail-w);
+    transition: width var(--t-mid) var(--ease-out), box-shadow var(--t-mid) var(--ease-out);
+  }
+  .rail:hover,
+  .rail:focus-within { width: 252px; box-shadow: var(--shadow-3); }
+  .brand { transition: padding var(--t-mid) var(--ease-out), gap var(--t-mid) var(--ease-out); }
+  .rail:not(:hover):not(:focus-within) .brand { justify-content: center; padding: 18px 8px; gap: 0; }
+  .rail:not(:hover):not(:focus-within) .brandText { display: none; }
+  .rail:not(:hover):not(:focus-within) .navItem { padding-left: 12px; padding-right: 0; }
+  .rail:not(:hover):not(:focus-within) .navItem__label,
+  .rail:not(:hover):not(:focus-within) .navItem__idx { opacity: 0; }
+  .rail:not(:hover):not(:focus-within) .navLabel { justify-content: center; font-size: 0; letter-spacing: 0; padding: 6px 0 10px; }
+  .rail:not(:hover):not(:focus-within) .opCard { padding: 6px 10px; }
+  .rail:not(:hover):not(:focus-within) .opMeta,
+  .rail:not(:hover):not(:focus-within) .opGear,
+  .rail:not(:hover):not(:focus-within) .footLabel,
+  .rail:not(:hover):not(:focus-within) .footBtn .btnLabel { display: none; }
+  .rail:not(:hover):not(:focus-within) .footBtn .btnIconMobile { display: inline-flex; }
+}
+.navItem__label,
+.navItem__idx { transition: opacity 140ms var(--ease-out); }
+
+/* ---------- 图鉴三册的页签条（只在图书架那一格出现） ---------- */
+.sectionTabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 22px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sectionTabs::-webkit-scrollbar { display: none; }
+.sectionTab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.sectionTab b { font-size: 13px; font-weight: 600; }
+.sectionTab i { font-style: normal; font-size: 10px; letter-spacing: 0.12em; color: var(--ink-faint); }
+.sectionTab__ic { display: flex; align-items: center; }
+.sectionTab::after {
+  content: "";
+  position: absolute;
+  left: 12px; right: 12px; bottom: -1px;
+  height: 2px;
+  background: var(--steel);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.sectionTab:hover { color: var(--ink); background: var(--bg-2); }
+.sectionTabOn { color: var(--ink); }
+.sectionTabOn::after { transform: scaleX(1); }
+.sectionTabLocked { opacity: 0.45; }
+
+/* ---------- 换页：三向转场（只动 stage 这一层） ----------
+   前进＝右→左推入带一点透视，返回＝反向，同级＝淡入。
+   460ms / cubic-bezier(.22,1,.36,1) —— 与设计规范第 6 节同一组数字。 */
+.viewStage { min-height: 100%; }
+.viewStage_fwd { animation: stageInFwd 460ms var(--ease-out) both; }
+.viewStage_back { animation: stageInBack 460ms var(--ease-out) both; }
+.viewStage_side { animation: stageInSide 420ms var(--ease-out) both; }
+@keyframes stageInFwd {
+  from { opacity: 0; transform: perspective(1200px) rotateY(-2deg) translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes stageInBack {
+  from { opacity: 0; transform: perspective(1200px) rotateY(2deg) translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes stageInSide {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- 顶栏未读短信 ---------- */
+.pillUnread { border-color: color-mix(in srgb, var(--red) 45%, transparent); background: var(--red-soft); color: var(--red-deep); }
+.pillUnreadNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--red);
+  color: var(--bg-1);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* ---------- 底部系统区的小标题（只在展开态出现） ---------- */
+.footLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 10px 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+.footLabel::before {
+  content: "";
+  width: 5px; height: 5px;
+  background: currentColor;
+  transform: rotate(45deg);
+  opacity: 0.75;
+}
+
+/* ---------- 响应式：窄屏（仅调基准字号，轨道的形态已由上面那节接管） ---------- */
 @media (max-width: 1120px) {
-  .brandText, .navItem__label, .navItem__idx, .opMeta { display: none; }
-  .brand { justify-content: center; padding: 16px 8px; }
-  .nav { align-items: center; padding: 14px 6px; }
-  .navItem { grid-template-columns: 1fr; justify-items: center; padding: 10px 6px; }
-  .navItem::before { left: 50%; top: 4px; transform: translateX(-50%) rotate(45deg) scale(0.4); }
-  .navItem.isActive::before { transform: translateX(-50%) rotate(45deg) scale(1); }
-  .opCard { justify-content: center; padding: 8px 4px; }
-  .navLabel { justify-content: center; letter-spacing: 0; }
+  body { font-size: 14px; }
 }
 
 /* ============ 手机档（≤860px）：左侧轨道 → 屏幕底部横滑条 ============
@@ -624,10 +748,23 @@
     padding: 6px 8px;
     border-top: 0;
     border-left: 1px solid var(--line);
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .railFoot::-webkit-scrollbar { display: none; }
   /* 那根分隔线跟着转 90°：从「上下之间」变成「左右之间」 */
   .footRule { width: 1px; height: 22px; margin: 2px; flex: 0 0 auto; }
-  .opCard { gap: 6px; padding: 4px; }
+  /* 底条只有 390：操作员那一簇**不参与赌宽度** —— 头像留着，代号与头衔不摆
+     （它们的长短由玩家自己起，四五个字就能把整条顶出屏幕）。 */
+  .opCard { flex: 0 0 auto; gap: 6px; padding: 4px; }
+  .opMeta { display: none; }
+  /* 底条总共 390 宽，多一个「系统」小标题就会把整簇顶出屏幕（实测 401）。
+     小标题在横条上本来也读不出层级 —— 收掉；齿轮与底下的「终端设置」是同一个入口，
+     也收掉，把宽度让给左边的导航。操作员只留头像：代号是玩家自己起的，
+     四个字就能把这一条顶穿（实测 401 → 390 之后仍被五字代号顶出去）。 */
+  .footLabel { display: none; }
+  .opGear { display: none; }
 
   .footBtn {
     width: auto;

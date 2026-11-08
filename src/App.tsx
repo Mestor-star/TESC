@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { ArrowLeft, ArrowCounterClockwise, Brain, Gauge, Users, MapPin, MapTrifold, BookOpen, Scroll, Vault, Lock, Bell, X, Info, Warning, Check, Lightning, PenNib, Sword, ChatDots, GearSix, Play, SlidersHorizontal, FloppyDisk, SpeakerHigh, SpeakerSlash, Flask } from '@phosphor-icons/react'
+import { ArrowLeft, BookOpen, Vault, Lock, X, Info, Warning, Check, Lightning, PenNib, Sword } from '@phosphor-icons/react'
 
 import { TerminalProvider, useTerminal, LOCKED_VIEWS } from './terminal/Terminal'
 import type { ViewId } from './terminal/Terminal'
@@ -20,6 +20,7 @@ import { TitleMenu } from './views/Title'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { PvScreen } from './components/PvScreen'
 import { Portrait, useCharImg } from './components/Portrait'
+import { Glyph } from './components/Glyph'
 import { VariablePanel } from './components/VariablePanel'
 import { SaveDialog } from './components/SaveDialog'
 import { Guide } from './components/Guide'
@@ -117,28 +118,44 @@ function ViewLoading() {
   return <div className={css.viewLoading} data-view-loading>正在接通模块…</div>
 }
 
-const NAV: { id: ViewId; en: string; cn: string; icon: ReactNode }[] = [
-  { id: 'dashboard', en: 'DASHBOARD', cn: '终端总览', icon: <Gauge size={21} weight="bold" /> },
-  { id: 'plot', en: 'PLOT / STORY', cn: '剧情推进', icon: <Play size={21} weight="bold" /> },
-  { id: 'map', en: 'FIELD / MAP', cn: '地图', icon: <MapTrifold size={21} weight="bold" /> },
-  { id: 'saga', en: 'RECORD / TIMELINE', cn: '低语者日志', icon: <Scroll size={21} weight="bold" /> },
-  { id: 'memory', en: 'MEMORY / SITUATIONAL', cn: '情景记忆库', icon: <Brain size={21} weight="bold" /> },
-  { id: 'lore', en: 'THINK TANK', cn: '智库', icon: <Vault size={21} weight="bold" /> },
-  { id: 'arms', en: 'ARMORY', cn: '武装图鉴', icon: <Sword size={21} weight="bold" /> },
-  { id: 'research', en: 'RESEARCH', cn: '研究', icon: <Flask size={21} weight="bold" /> },
-  { id: 'archive', en: 'CHARACTER', cn: '角色', icon: <Users size={21} weight="bold" /> },
-  { id: 'missions', en: 'MISSIONS', cn: '任务简报', icon: <MapPin size={21} weight="bold" /> },
-  { id: 'codex', en: 'CODEX', cn: '终末图鉴', icon: <BookOpen size={21} weight="bold" /> },
-  { id: 'tavern', en: 'SMS / CHARACTER CHAT', cn: '短信', icon: <ChatDots size={21} weight="bold" /> },
-  { id: 'settings', en: 'SYSTEM', cn: '终端设置', icon: <GearSix size={21} weight="bold" /> },
+/* 左栏只放「世界」这一侧：终端 / 地图 / 日志 / 记忆库 / 图鉴 / 任务简报。
+   出击、研究、角色、任务、短信不在这条轨道上 —— 它们在终端主页右栏（见 Dashboard），
+   从主页过去。设置与存读档收在轨道底部（悬停展开之后才露字）。 */
+type NavSection = {
+  key: string
+  cn: string
+  en: string
+  icon: ReactNode
+  /** 这一格覆盖哪些视图（图鉴是三册共用一格） */
+  views: ViewId[]
+  /** 点下去落到哪一页；省略取 views[0] */
+  to?: ViewId
+  /** 落页时要选中的分区页签 */
+  tab?: string
+}
+
+const NAV: NavSection[] = [
+  { key: 'dashboard', en: 'TERMINAL', cn: '终端', icon: <Glyph name="terminal" />, views: ['dashboard'] },
+  { key: 'map', en: 'FIELD / MAP', cn: '地图', icon: <Glyph name="map" />, views: ['map'] },
+  { key: 'saga', en: 'RECORD', cn: '日志', icon: <Glyph name="log" />, views: ['saga'] },
+  { key: 'memory', en: 'MEMORY', cn: '记忆库', icon: <Glyph name="memory" />, views: ['memory'] },
+  { key: 'codex', en: 'ARCHIVE DATA', cn: '图鉴', icon: <Glyph name="archive" />, views: ['arms', 'codex', 'lore'] },
+  { key: 'missions', en: 'MISSIONS', cn: '任务简报', icon: <Glyph name="mission" />, views: ['missions'], tab: 'done' },
+]
+
+/* 图鉴三册：同一格里的三个页签，换册算同级切换（淡入） */
+const CODEX_TABS: { id: ViewId; cn: string; en: string; icon: ReactNode }[] = [
+  { id: 'arms', cn: '武装图鉴', en: 'ARMORY', icon: <Sword size={15} weight="bold" /> },
+  { id: 'codex', cn: '终末图鉴', en: 'CODEX', icon: <BookOpen size={15} weight="bold" /> },
+  { id: 'lore', cn: '智库', en: 'THINK TANK', icon: <Vault size={15} weight="bold" /> },
 ]
 
 const TITLE: Record<ViewId, { en: string; cn: string }> = {
-  dashboard: { en: 'TERMINAL / DASHBOARD', cn: '终端总览' },
+  dashboard: { en: 'TERMINAL / HOME', cn: '终端' },
   plot: { en: 'PLOT / STORY', cn: '剧情推进' },
   map: { en: 'FIELD / SURVEY MAP', cn: '地图' },
-  saga: { en: 'RECORD / WHISPERER LOG', cn: '低语者日志' },
-  memory: { en: 'MEMORY / SITUATIONAL', cn: '情景记忆库' },
+  saga: { en: 'RECORD / WHISPERER LOG', cn: '日志' },
+  memory: { en: 'MEMORY / SITUATIONAL', cn: '记忆库' },
   lore: { en: 'DATA / THINK TANK', cn: '智库' },
   arms: { en: 'DATA / ARMORY', cn: '武装图鉴' },
   research: { en: 'RESEARCH / LAB', cn: '研究' },
@@ -188,9 +205,6 @@ function NavRail() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(operatorName)
   const [confirmReset, setConfirmReset] = useState(false)
-  /* 未读短信数：后台主动来信也会让它立刻亮起 */
-  const unread = useSyncExternalStore(subscribeUnread, totalUnread)
-
   const commit = () => {
     const v = draft.trim()
     if (v) setOperatorName(v)
@@ -226,15 +240,20 @@ function NavRail() {
       <div className={css.nav} data-guide="nav">
         <div className={css.navLabel}>终端模块</div>
         {NAV.map((n, i) => {
-          const locked = LOCKED_VIEWS.includes(n.id) && !unlocked
+          const locked = n.views.every((v) => LOCKED_VIEWS.includes(v)) && !unlocked
+          const active = n.views.includes(view)
+          /* 守卫没开时，这一格落到**第一册没上锁的**：图鉴三册里智库一直是通的，
+             所以点「图鉴」会先进智库，而不是撞在武装图鉴的门上。 */
+          const target = n.to ?? n.views.find((v) => unlocked || !LOCKED_VIEWS.includes(v)) ?? n.views[0]
           return (
             <button
-              key={n.id}
-              className={`${css.navItem} ${view === n.id ? css.isActive : ''} ${locked ? css.isLocked : ''}`}
-              data-guide={`nav-${n.id}`}
-              onClick={() => navigate(n.id)}
-              aria-current={view === n.id ? 'page' : undefined}
-              title={locked ? '需完成事件「欢迎来到，终末停滞委员会」后解锁' : undefined}
+              key={n.key}
+              className={`${css.navItem} ${active ? css.isActive : ''} ${locked ? css.isLocked : ''}`}
+              data-guide={`nav-${n.key}`}
+              onClick={() => navigate(target, n.tab)}
+              aria-current={active ? 'page' : undefined}
+              aria-label={n.cn}
+              title={locked ? '需完成事件「欢迎来到，终末停滞委员会」后解锁' : n.cn}
             >
               <span className={css.navItem__icon}>{n.icon}</span>
               <span className={css.navItem__label}>
@@ -244,9 +263,6 @@ function NavRail() {
               <span className={css.navItem__idx}>
                 {locked ? <Lock size={13} weight="bold" /> : String(i + 1).padStart(2, '0')}
               </span>
-              {n.id === 'tavern' && unread > 0 ? (
-                <span className={css.navBadge} data-sms-unread={unread}>{unread > 99 ? '99+' : unread}</span>
-              ) : null}
             </button>
           )
         })}
@@ -297,9 +313,11 @@ function NavRail() {
             </button>
           </div>
         )}
-        {/* 操作员卡与底下这三枚之间的一道细线：上面是「你是谁」，下面是「动这台机器」 */}
+        {/* 操作员卡与底下这几枚之间的一道细线：上面是「你是谁」，下面是「动这台机器」 */}
         <span className={css.footRule} />
-        {/* 三枚动作的文字都包在 `.btnLabel` 里 —— 手机档（≤860px）底条上要**只留图标**，
+        {/* 悬停展开后这四枚前面才有一枚小标题（收起态只剩图标，标签自然隐去） */}
+        <div className={css.footLabel}>系统</div>
+        {/* 这几枚动作的文字都包在 `.btnLabel` 里 —— 收起态与手机档（≤860px）底条上要**只留图标**，
             而它们是裸文本节点，不包一层 CSS 够不着（`display:none` 只吃元素）。
             图标化之后读屏只剩图标，所以每枚都补上 `aria-label`；`title` 照旧留给指针。
             二次确认那一句也跟着换短的：底条上放不下「再次点击确认重置」。 */}
@@ -310,8 +328,18 @@ function NavRail() {
           title="手动存档 / 读档（独立于当前进度，重置不影响）"
           aria-label="存读档"
         >
-          <FloppyDisk size={13} weight="bold" />
+          <Glyph name="save" size={14} />
           <span className={css.btnLabel}>存读档</span>
+        </button>
+        <button
+          className={`btn btn--ghost ${css.footBtn}`}
+          data-guide="nav-settings"
+          onClick={() => navigate('settings')}
+          title="终端设置：推演通道 / 声音 / 显示"
+          aria-label="终端设置"
+        >
+          <Glyph name="settings" size={14} />
+          <span className={css.btnLabel}>终端设置</span>
         </button>
         <button
           className={`btn btn--ghost ${css.footBtn}`}
@@ -320,7 +348,7 @@ function NavRail() {
           title="查看 / 编辑命名变量（AI 推演亦读写同一份）"
           aria-label="查看 / 编辑变量"
         >
-          <SlidersHorizontal size={13} weight="bold" />
+          <Glyph name="tune" size={14} />
           <span className={css.btnLabel}>查看 / 编辑变量</span>
         </button>
         <button
@@ -332,7 +360,7 @@ function NavRail() {
           {/* 这一枚本来**没有图标**（前两枚有）—— 桌面照旧，一枚都不多长：
               `.btnIconMobile` 在宽屏是 `display:none`，只有底条上文字收起来之后才顶上来。 */}
           <span className={css.btnIconMobile}>
-            {confirmReset ? <Check size={13} weight="bold" /> : <ArrowCounterClockwise size={13} weight="bold" />}
+            {confirmReset ? <Check size={13} weight="bold" /> : <Glyph name="reset" size={14} />}
           </span>
           <span className={css.btnLabel}>{confirmReset ? '再次点击确认重置' : '重置世界进度'}</span>
         </button>
@@ -342,7 +370,10 @@ function NavRail() {
 }
 
 function TopStatus({ view }: { view: ViewId }) {
-  const { push, focusRegion: focus } = useTerminal()
+  const { push, navigate, focusRegion: focus } = useTerminal()
+  /* 未读短信：后台主动来信也会让它立刻亮起。挂在这里而不是左栏 ——
+     短信已经不在左栏那六格里了（它在主页右栏），但这枚读数要一直看得见。 */
+  const unread = useSyncExternalStore(subscribeUnread, totalUnread)
   const [now, setNow] = useState(() => new Date())
   const sev = rSeverity(focus.r)
   /* 与总览的威胁条同一个判据：R 值偏离正常区间（两侧都算）即为异常。
@@ -409,8 +440,17 @@ function TopStatus({ view }: { view: ViewId }) {
         <span className={`${css.pill} ${css.clock}`} title="弗尔克图斯本地时间">
           <span className="num">{clock(now)}</span>
         </span>
+        <button
+          className={`${css.pill} ${unread > 0 ? css.pillUnread : ''}`}
+          data-sms-unread={unread}
+          title={unread > 0 ? `${unread} 条未读短信` : '角色短信'}
+          onClick={() => navigate('tavern')}
+        >
+          <Glyph name="message" size={15} />
+          {unread > 0 ? <span className={css.pillUnreadNum}>{unread > 99 ? '99+' : unread}</span> : null}
+        </button>
         <button className={css.pill} title="停滞观测信道状态" onClick={() => push('decode', '观测信道稳定', '与停滞观测网 · 弗尔克图斯分区保持全双工连接', false)}>
-          <Bell size={14} weight="bold" />
+          <Glyph name="bell" size={15} />
         </button>
         <AudioPill />
         </div>
@@ -434,7 +474,7 @@ function AudioPill() {
       title={on ? '声音已开 · 点击静音' : '声音已静 · 点击开启'}
       onClick={() => setAudio({ muted: on })}
     >
-      {on ? <SpeakerHigh size={14} weight="bold" /> : <SpeakerSlash size={14} weight="bold" />}
+      {on ? <Glyph name="sound" size={15} /> : <Glyph name="mute" size={15} />}
     </button>
   )
 }
@@ -460,8 +500,34 @@ function CharacterPage() {
     : <Character onShowOld={() => show(true)} />
 }
 
+/* 图鉴三册的页签条：只在书架这一格里出现，换册不换层（同级淡入） */
+function SectionTabs() {
+  const { view, navigate, unlocked } = useTerminal()
+  if (!CODEX_TABS.some((t) => t.id === view)) return null
+  return (
+    <nav className={css.sectionTabs} data-codex-tabs aria-label="图鉴分册">
+      {CODEX_TABS.map((t) => {
+        const locked = LOCKED_VIEWS.includes(t.id) && !unlocked
+        return (
+          <button
+            key={t.id}
+            className={`${css.sectionTab} ${view === t.id ? css.sectionTabOn : ''} ${locked ? css.sectionTabLocked : ''}`}
+            data-codex-tab={t.id}
+            onClick={() => navigate(t.id)}
+            aria-current={view === t.id ? 'page' : undefined}
+          >
+            <span className={css.sectionTab__ic}>{locked ? <Lock size={14} weight="bold" /> : t.icon}</span>
+            <b>{t.cn}</b>
+            <i>{t.en}</i>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
 function Stage() {
-  const { view } = useTerminal()
+  const { view, navDir } = useTerminal()
   const page = (() => {
     switch (view) {
       case 'dashboard': return <Dashboard />
@@ -480,8 +546,21 @@ function Stage() {
     }
   })()
   /* 边界架在**切换过的那个视图**外面，不是整个主区：等 chunk 的时候
-     侧边栏、顶栏、常驻的来信监听都还在，只有正文那一片在等。 */
-  return <Suspense fallback={<ViewLoading />}>{page}</Suspense>
+     侧边栏、顶栏、常驻的来信监听都还在，只有正文那一片在等。
+
+     key={view} 让整块正文随页换一次 —— 转场动画挂在**新进来那一层**上：
+     旧页立刻交班，新页按方向推入 / 淡入。方向由 Terminal 的 navDir 给
+     （前进 / 返回 / 同级），外壳不猜。 */
+  return (
+    <div
+      key={view}
+      className={`${css.viewStage} ${css['viewStage_' + navDir]}`}
+      data-view-stage={view}
+      data-view-dir={navDir}
+    >
+      <Suspense fallback={<ViewLoading />}>{page}</Suspense>
+    </div>
+  )
 }
 
 function Shell() {
@@ -509,6 +588,7 @@ function Shell() {
       <NavRail />
       <div className={css.main}>
         <TopStatus view={view} />
+        <SectionTabs />
         <main className={css.screen} data-guide="screen">
           <Stage />
         </main>

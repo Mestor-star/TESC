@@ -231,9 +231,54 @@ async function boot() {
   await poll(`!!document.querySelector('[data-boot-seq]')`, 20000, '接入序列 mount after ' + pick.kind)
   await poll(`!!document.querySelector('.app--stage')`, 30000, 'shell mount after ' + pick.kind)
 }
+/* 2026-11 外壳重构之后，左栏只剩六格：出击/研究/角色/任务/短信 在终端主页右栏，
+   图鉴三册（武装 / 终末 / 智库）收在同一个入口的页签里。goto 仍按旧文案调用 ——
+   这里把文案翻成**把手选择器**，上面几十处调用一个字都不用改。 */
+const NAV_GO = {
+  '终端总览': '[data-guide="nav-dashboard"]',
+  '终端': '[data-guide="nav-dashboard"]',
+  '地图': '[data-guide="nav-map"]',
+  '低语者日志': '[data-guide="nav-saga"]',
+  '日志': '[data-guide="nav-saga"]',
+  '情景记忆库': '[data-guide="nav-memory"]',
+  '记忆库': '[data-guide="nav-memory"]',
+  '终端设置': '[data-guide="nav-settings"]',
+}
+/* 左栏「任务简报」按设计只放已完成记录；冒烟要的是能接单的那块板子，
+   所以这一串文案一律从主页右栏的「任务」进（落地 tab=open）。 */
+const HUB_GO = { '剧情推进': 'plot', '研究': 'research', '角色': 'archive', '任务': 'missions', '任务简报': 'missions', '短信': 'tavern' }
+const CODEX_GO = { '武装图鉴': 'arms', '终末图鉴': 'codex', '智库': 'lore' }
+async function waitSel(sel, ms) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    if (await ev(`!!document.querySelector(${JSON.stringify(sel)})`)) return true
+    await sleep(100)
+  }
+  return false
+}
+const clickSel = (sel) => `(()=>{const b=document.querySelector(${JSON.stringify(sel)});if(!b)return false;b.click();return true})()`
+
 async function goto(viewTxt) {
-  const c = await ev(clickTxt(viewTxt))
-  if (!c) throw new Error('click failed: ' + viewTxt)
+  let c
+  let soft = false
+  /* 未解锁时左栏那一格本来就会被拦下（老冒烟也是点了没反应，靠后面的断言兜住），
+     所以这两支只等 4 秒、等不到就当「这一下被门禁吃掉了」，不在这里抛错。 */
+  if (HUB_GO[viewTxt]) {
+    await ev(clickSel('[data-guide="nav-dashboard"]'))
+    if (await waitSel(`[data-hub-action="${HUB_GO[viewTxt]}"]`, 4000)) {
+      c = await ev(clickSel(`[data-hub-action="${HUB_GO[viewTxt]}"]`))
+    } else soft = true
+  } else if (CODEX_GO[viewTxt]) {
+    await ev(clickSel('[data-guide="nav-codex"]'))
+    if (await waitSel(`[data-codex-tab="${CODEX_GO[viewTxt]}"]`, 4000)) {
+      c = await ev(clickSel(`[data-codex-tab="${CODEX_GO[viewTxt]}"]`))
+    } else soft = true
+  } else if (NAV_GO[viewTxt]) {
+    c = await ev(clickSel(NAV_GO[viewTxt]))
+  } else {
+    c = await ev(clickTxt(viewTxt))
+  }
+  if (!c && !soft) throw new Error('click failed: ' + viewTxt)
   /* 视图是**懒加载**的（见 src/App.tsx 的 view()）：切过去那一下正文要等一块 chunk。
      把手是占位块上的 `data-view-loading` —— 不用 sleep 猜时间。
      快的时候（那一块早就拉过、浏览器有缓存）它压根没上过屏，这一句照样立刻返回。 */
@@ -623,10 +668,16 @@ try {
   const gAfter = await ev(`!!document.querySelector('[data-guide-layer]')`)
   ok('AG3 跳过之后换模块不再出现引导', gAfter === false, 'layer=' + gAfter)
   await goto('终端总览')
-  const a0 = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色'));const v=document.querySelector('.vpage');return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length,toast:document.body.innerText.includes('权限未解锁'),sub:v?v.innerText.slice(0,300):''}})()`)
+  /* 重构之后「角色」在主页右栏，左栏里带 LOCKED 的是收着它的那一格（图鉴）；
+     所以锁标记查左栏、拦下与否查点下去之后的提示。 */
+  const a0Lock = await ev(`(()=>{const n=document.querySelector('[data-guide="nav-missions"]');return n?n.innerText.includes('LOCKED'):null})()`)
+  const a0Tap = await ev(`(()=>{const b=document.querySelector('[data-hub-action="archive"]');if(!b)return false;b.click();return true})()`)
+  await sleep(400)
+  const a0 = await ev(`(()=>{const v=document.querySelector('.vpage');return {cards:document.querySelectorAll('[data-archive-card]').length,toast:document.body.innerText.includes('权限未解锁'),sub:v?v.innerText.slice(0,300):''}})()`)
   const preUnlock = await ev(`(${wState}).unlocked`)
   ok('A0 未解锁时「角色」被拦下（导航 LOCKED · 无档案卡 · 提示权限未解锁）',
-    preUnlock === false && a0.navLock === true && a0.cards === 0 && a0.toast === true, 'unlocked=' + preUnlock + ' ' + JSON.stringify(a0))
+    preUnlock === false && a0Lock === true && a0Tap === true && a0.cards === 0 && a0.toast === true,
+    'unlocked=' + preUnlock + ' ' + JSON.stringify({ lock: a0Lock, tap: a0Tap, ...a0 }))
   await goto('剧情推进')
   await poll(`document.body.innerText.includes('剧情推进')`, 20000, 'A plot h1')
   // 未配主线 → 自动离线；读到 v1-1 原文
@@ -652,7 +703,7 @@ try {
   await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'A5b character page')
   await oldDossier()
   await poll(`document.querySelectorAll('[data-archive-card]').length===25`, 20000, 'A5b archive after unlock')
-  const a5b = await ev(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent&&x.textContent.includes('角色'));return {navLock:b?b.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length}})()`)
+  const a5b = await ev(`(()=>{const n=document.querySelector('[data-guide="nav-missions"]');return {navLock:n?n.innerText.includes('LOCKED'):null,cards:document.querySelectorAll('[data-archive-card]').length}})()`)
   ok('A5b 解锁后「角色」开放（导航脱锁 · 旧版档案 25 卡）', a5b.navLock === false && a5b.cards === 25, JSON.stringify(a5b))
   // 低语者日志
   await goto('低语者日志')
@@ -671,7 +722,7 @@ try {
   await ev(`localStorage.setItem('zts-terminal:v3', JSON.stringify({unlocked:true,epDone:{'v1-1':true,'v1-2':true,'v1-3':true,'v1-4':true},cur:'v1-4',operatorName:'迁移测试员',focusId:'gcn'}))`)
   await reloadFresh()
   await boot()
-  await poll(`document.body.innerText.includes('终端总览')`, 20000, 'B dash')
+  await poll(`!!document.querySelector('[data-hub-portrait]')`, 20000, 'B dash')
   await poll(`(${wState}).rec.length===4`, 15000, 'B records backfill')
   st = await state()
   ok('B1 回填 4 条记录', st.rec.length === 4, JSON.stringify(st.rec))
@@ -899,7 +950,7 @@ try {
   await seedApi('sms', `http://127.0.0.1:${ESTUB_PORT}`, 'stub-sms')
   await reloadFresh()
   await boot()
-  await poll(`document.body.innerText.includes('终端总览')`, 20000, 'E dash')
+  await poll(`!!document.querySelector('[data-hub-portrait]')`, 20000, 'E dash')
   // E1 播种幂等：A–D 已多次重载，canon 仍为 7 库、无重复累积（「登场者登记」已并入「角色档案」）
   await poll(`${loreCountSrc()}.then(n=>n===7)`, 10000, 'E canon=7 (char/codex/lore/events/ops/operator/style)')
   ok('E1 播种幂等：多轮重载后 canon 仍为 7 库', true)
@@ -1251,7 +1302,7 @@ try {
   await ev(`(()=>{const k='zts-terminal:v3';const s=JSON.parse(localStorage.getItem(k)||'{}');s.unlocked=true;localStorage.setItem(k,JSON.stringify(s));return true})()`)
   await reloadFresh()
   await boot()
-  await poll(`document.body.innerText.includes('终端总览')`, 20000, 'G dash after unlock')
+  await poll(`!!document.querySelector('[data-hub-portrait]')`, 20000, 'G dash after unlock')
   await goto('角色')
   await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'G character page')
 
@@ -2846,47 +2897,30 @@ try {
     skip('O5 主角立绘：盘上没有 public/charimg/operator.*，专档走字形兜底', '')
   }
 
-  /* 总览八块面板各带折叠：默认摊开（这一屏就是一眼扫的），随手能收掉不看的那一块。 */
+  /* 终端主页在这一版被整体重绘：一屏只剩立绘、英文影子与右栏五个动作。
+     原先那八块折叠面板随旧总览页一起退场，这里改验新主页的三件事：
+     立绘真的加载、五个动作都在、指针靠近时动作簇会散开（收起态只有锚点可见）。 */
   await goto('终端总览')
-  await poll(`document.querySelectorAll('[data-fold-head^="dash-"]').length===8`, 12000, 'O dash fold heads')
-  const dFold = await ev(`(()=>{const heads=[...document.querySelectorAll('[data-fold-head^="dash-"]')];
-    const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
-      return s.display!=='none'&&el.getBoundingClientRect().height>0};
-    const bodyOf=h=>{const p=h.closest('.panel');return p?p.querySelector('.panel__body'):null};
-    return {n:heads.length,allOpen:heads.every(h=>h.getAttribute('aria-expanded')==='true'),
-      allVisible:heads.every(h=>vis(bodyOf(h))===true),
-      boundary:!!document.querySelector('[data-error-boundary]'),
-      equip:(document.body.innerText.match(/装配[\s\S]{0,40}/)||[''])[0].replace(/\\s+/g,' ')}})()`)
-  /* boundary 那一条是这一趟**顺带逮到的另一个毛病**：装具的持有人不一定是同伴名册里的人 ——
-     言万心叶自己上阵也穿装具，而他不在 CHARACTERS。早先那版「装配」只滤了装具、
-     没滤持有人，主角一穿装具整页就崩（在这一条断言之前，这一页只能靠没人来看它蒙过去）。 */
-  ok('O6 总览八块面板各带一个折叠开关，默认都摊开（一屏照旧一眼扫完 · 主角穿装具也不崩）',
-    dFold.n === 8 && dFold.allOpen === true && dFold.allVisible === true && dFold.boundary === false,
-    JSON.stringify(dFold))
-  // 收掉一块（整行可点的那一种）：只动那一块
-  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-scan"]');if(h)h.click();return true})()`)
-  await poll(`document.querySelector('[data-fold-head="dash-scan"]').getAttribute('aria-expanded')==='false'`, 6000, 'O dash scan collapsed')
-  const dFold2 = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
-      return s.display!=='none'&&el.getBoundingClientRect().height>0};
-    const q=k=>{const h=document.querySelector('[data-fold-head="'+k+'"]');
-      return h&&h.closest('.panel')?h.closest('.panel').querySelector('.panel__body'):null};
-    return {scan:vis(q('dash-scan')),squad:vis(q('dash-squad'))}})()`)
-  ok('O6b 收掉一块只动那一块（这一块的体不占版面，别块照旧）',
-    dFold2.scan === false && dFold2.squad === true, JSON.stringify(dFold2))
-  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-scan"]');if(h)h.click();return true})()`)
-  // 再收一块「栏头里有跳转按钮」的（开关退在行右端，栏体的配对靠 :has()）
-  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-rec"]');if(h)h.click();return true})()`)
-  await poll(`document.querySelector('[data-fold-head="dash-rec"]').getAttribute('aria-expanded')==='false'`, 6000, 'O dash rec collapsed')
-  const dFold3 = await ev(`(()=>{const vis=el=>{if(!el)return null;const s=getComputedStyle(el);
-      return s.display!=='none'&&el.getBoundingClientRect().height>0};
-    const p=document.querySelector('[data-fold-head="dash-rec"]').closest('.panel');
-    const link=p?p.querySelector('.linkGo'):null;
-    return {body:vis(p?p.querySelector('.panel__body'):null),
-      link:!!link,title:document.querySelector('[data-fold-head="dash-rec"]').getAttribute('title')}})()`)
-  ok('O6c 栏头里带跳转按钮的那一块也收得起来（开关在行右端 · 跳转按钮不受影响）',
-    dFold3.body === false && dFold3.link === true && !!dFold3.title, JSON.stringify(dFold3))
-  await ev(`(()=>{const h=document.querySelector('[data-fold-head="dash-rec"]');if(h)h.click();return true})()`)
-
+  await poll(`!!document.querySelector('[data-hub-portrait]') && document.querySelectorAll('[data-hub-action]').length===5`, 12000, 'O hub stage')
+  await poll(`(()=>{const i=document.querySelector('[data-hub-portrait] img');return !!i&&i.naturalWidth>0})()`, 12000, 'O hub portrait loaded')
+  const hub = await ev(`(()=>{const img=document.querySelector('[data-hub-portrait] img');
+    const acts=[...document.querySelectorAll('[data-hub-action]')];
+    const vis=el=>{const s=getComputedStyle(el);return s.opacity!=='0'&&s.visibility!=='hidden'};
+    return {acts:acts.length,img:!!img,loaded:img?img.naturalWidth>0:false,
+      collapsed:acts.filter(a=>vis(a)).length,boundary:!!document.querySelector('[data-error-boundary]')}})()`)
+  ok('O6 终端主页：半身立绘真的加载出来，右栏五个动作都在（旧观测台账八块已退场）',
+    hub.acts === 5 && hub.img === true && hub.loaded === true && hub.boundary === false,
+    JSON.stringify(hub))
+  /* 收起态只留「出击」一枚；指针压上去，其余四枚散开。 */
+  await ev(`(()=>{const n=document.querySelector('nav[aria-label="终端动作"]');
+    if(!n)return false;n.dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));return true})()`)
+  await poll(`[...document.querySelectorAll('[data-hub-action]')].filter(a=>getComputedStyle(a).opacity!=='0').length===5`, 4000, 'O hub fan out')
+  const hubOpen = await ev(`(()=>{const a=[...document.querySelectorAll('[data-hub-action]')];
+    const r=a.map(x=>x.getBoundingClientRect());
+    return {vis:a.filter(x=>getComputedStyle(x).opacity!=='0').length,
+      spread:Math.round(Math.max(...r.map(x=>x.top))-Math.min(...r.map(x=>x.top)))}})()`)
+  ok('O6b 右栏动作簇：收起只露锚点，指针靠近后五项散开且纵向拉开',
+    hub.collapsed === 1 && hubOpen.vis === 5 && hubOpen.spread > 120, JSON.stringify({...hub, ...hubOpen}))
   /* ============ Phase R：私密档案（只对女角色 · 整张卡翻到背面 · 五根条） ============
      播一份「露娜的羁绊已经过线、且已经有过几回」的账，看她那张卡：
      正面最末一扇门，翻过去才是背面 —— 左一个立绘位（图待补），右五根读数条
@@ -3697,11 +3731,15 @@ try {
      要证的正是这件事：点名了也不算数，得这一场先走到那一步。
      数法里带上常服立绘那一档（`cg-datewear-*`）：它按同一把尺挂着、此刻就该有一位，
      所以那一位在 = 探针没瞎；此时 shop 数着 0，才是真的「没摆」。 */
-  const v8Probe = async (tag) => {
+  /* `want` —— 这一场**该有**那张画时等到它出现（挂载后 rv 才落到状态里，画要晚一帧，
+     不等就是在跟 React 的渲染顺序赌），该**没有**时反过来等它几帧再确认仍然没有。 */
+  const v8Probe = async (tag, want) => {
     await goto('剧情推进')
     await poll(`!!document.querySelector('[data-plot-lane="date"]')`, 20000, tag + ' lane tab')
     await ev(`(()=>{const b=document.querySelector('[data-plot-lane="date"]');if(b)b.click();return !!b})()`)
     await poll(`!!document.querySelector('[data-date-lane]')`, 15000, tag + ' date lane')
+    if (want === 'shop') await poll(`document.querySelectorAll('[data-cg-slot="cg-date-shop-luna"]').length === 1`, 8000, tag + ' shop cg')
+    else await sleep(800)
     return ev(`(()=>{return {
       shop:document.querySelectorAll('[data-cg-slot="cg-date-shop-luna"]').length,
       wear:document.querySelectorAll('[data-cg-slot^="cg-datewear-"]').length,
@@ -3719,7 +3757,7 @@ try {
     localStorage.setItem('zts-terminal:v3', JSON.stringify(t));
     return true})()`)
   await reloadFresh(); await boot()
-  const vShopNo = await v8Probe('V8')
+  const vShopNo = await v8Probe('V8', 'none')
   ok('V8 导演点了名、但这一场还没走到那一步 → 那张 CG 不摆（节拍没到，点名也不算数）',
     vShopNo.shop === 0 && vShopNo.wear === 1 && vShopNo.named === 'cg-date-shop-luna',
     JSON.stringify(vShopNo))
@@ -3729,7 +3767,7 @@ try {
     a[0].beats=['outfit-tryon'];
     localStorage.setItem('zts-rendezvous:v1', JSON.stringify(a));return true})()`)
   await reloadFresh(); await boot()
-  const vShopYes = await v8Probe('V8b')
+  const vShopYes = await v8Probe('V8b', 'shop')
   ok('V8b 走到那一步之后（beats 落了 outfit-tryon）→ 同一张当场摆上（对照：上一条的 0 不是探针瞎了）',
     vShopYes.shop === 1 && vShopYes.wear === 1, JSON.stringify(vShopYes))
 
@@ -3889,8 +3927,7 @@ try {
   const wClear = `(()=>{try{sessionStorage.removeItem('zts-chunk-retry:v1')}catch(e){}return true})()`
   /* 直接点导航那一枚，不用 `goto` —— 那一位要等 `data-view-loading` 落下去，
      可这一相里它**落不下去**（那一块一直挂在等上），等来的是整页换掉。 */
-  const clickSaga = () => ev(`(()=>{const b=[...document.querySelectorAll('button')]
-    .find(x=>x.textContent&&x.textContent.includes('低语者日志'));if(!b)return false;b.click();return true})()`)
+  const clickSaga = () => ev(`(()=>{const b=document.querySelector('[data-guide="nav-saga"]');if(!b)return false;b.click();return true})()`)
   const wShot = () => ev(`(()=>{const eb=document.querySelector('[data-error-boundary]');
     const box=document.querySelector('[data-error-kind]');
     return {href:location.href, boot:!!document.querySelector('[data-boot-card]'),
@@ -4084,9 +4121,9 @@ try {
      这一条防的是「底条把按钮挪到屏幕外、点到别的东西上」——
      所以不看 `.click()` 的返回值，而是看**标题真的换了**。 */
   const zHead = () => ev(`(()=>{const h=document.querySelector('.vpage h1');return h?h.textContent.trim():''})()`)
-  const zNavHit = async (label) => {
+  const zNavHit = async (sel) => {
     const box = await ev(`(()=>{
-      const b=[...document.querySelectorAll('[data-guide^="nav-"]')].find(x=>x.textContent&&x.textContent.includes(${JSON.stringify(label)}))
+      const b=document.querySelector(${JSON.stringify(sel)})
       if(!b)return null
       b.scrollIntoView({block:'nearest',inline:'center'})
       const r=b.getBoundingClientRect()
@@ -4099,9 +4136,9 @@ try {
     return box
   }
   let zNavBad = []
-  for (const label of ['低语者日志', '智库', '终端设置']) {
+  for (const [label, sel] of [['低语者日志', '[data-guide="nav-saga"]'], ['图鉴', '[data-guide="nav-codex"]'], ['终端设置', '[data-guide="nav-settings"]']]) {
     const before = await zHead()
-    const box = await zNavHit(label)
+    const box = await zNavHit(sel)
     await sleep(900)
     const after = await zHead()
     if (!box || box.b < 0 || box.b > 844 + 1 || box.rr <= 0 || box.l >= 390 || after === before) {

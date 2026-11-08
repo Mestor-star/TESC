@@ -1,581 +1,308 @@
-/* ===== 终端总览 ===== */
+/* 终端主页：只有立绘、英文影子、五个动作。
+   零圆角、1px 线、无投影；白色底的立绘用 multiply 融进 --bg-0，下缘再渐隐。 */
 
-.hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 388px;
-  gap: 20px;
-  align-items: stretch;
-  margin-bottom: 18px;
-}
-
-.heroMain {
+.stage {
   position: relative;
-  padding: 28px 30px;
+  height: calc(100dvh - var(--topbar-h));
+  min-height: 520px;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  /* 本屏没有 `.vhead` —— 这张 hero 卡自己就是页头，所以它得自己收下那一套：
-     居中列（`align-items` + `text-align`）+ 底下那条**三色分段**。
-     第一层就是那段线（配方与 tokens 的 `.vhead` 逐字相同：3px 粗、正中 600px、
-     藏蓝 40% / 绯 6.667% / 金 6.667% / 蔚蓝 6.667% / 藏蓝 40%），
-     第二层是色洗（**保留** —— 那是颜色不是纹理）。原来压在最上面的那层
-     115° 斜纹随方贴纸稿撤走。 */
-  align-items: center;
-  text-align: center;
-  background-color: var(--bg-1);
-  background-image:
-    linear-gradient(90deg,
-      var(--ink)   0       40%,
-      var(--red)   40%     46.667%,
-      var(--amber) 46.667% 53.333%,
-      var(--steel) 53.333% 60%,
-      var(--ink)   60%     100%),
-    /* 色洗由紫改青：这一稿的身份是青→绯，紫退回点缀之后，
-       留在页头大面积铺底的紫就成了唯一一处「还认旧主」的地方。 */
-    linear-gradient(180deg, color-mix(in srgb, var(--steel) 6%, transparent), transparent 45%);
-  background-size: min(600px, 100%) 3px, auto;
-  background-position: 50% 100%, 0 0;
-  background-repeat: no-repeat, no-repeat;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  background: var(--bg-0);
+  isolation: isolate;
 }
-.heroMain::after {
-  content: "TERMINAL";
+
+/* 英文影子：只当排版，不解释任何东西 */
+.ghost {
   position: absolute;
-  right: -14px;
-  bottom: -30px;
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 86px;
-  letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--steel) 10%, transparent);
-  line-height: 1;
+  left: 3.5vw;
+  bottom: 11vh;
+  z-index: 0;
+  font-family: var(--font-sans);
+  font-size: clamp(90px, 13.5vw, 210px);
+  font-weight: 600;
+  line-height: 0.78;
+  letter-spacing: 0.01em;
+  color: var(--bg-3);
   pointer-events: none;
   user-select: none;
+  white-space: nowrap;
 }
 
-/* kicker 走「细线夹」—— 与各页统一页头（tokens.css 的 .vhead）那一支同一套话。
-   本屏没有 .vhead：这枚 hero 卡自己就是页头（kicker + 大标题 + 引文）。 */
-.heroKicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-}
-.heroKicker::before,
-.heroKicker::after {
-  content: "";
-  width: 28px;
-  height: 1px;
-  background: var(--line-3);
-}
-.heroGreet {
-  position: relative;
-  margin: 12px 0 4px;
-  padding: 0 26px;
-  font-size: 36px;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  line-height: 1.18;
-}
-/* 标题两侧各一枚菱形 —— 与 .vhead 的 h1、开屏、标题页同一枚记号 */
-.heroGreet::before,
-.heroGreet::after {
-  content: "";
+/* ── 立绘 ───────────────────────────────────────────── */
+.figure {
   position: absolute;
-  top: 50%;
-  width: 9px;
-  height: 9px;
-  margin-top: -4px;
-  background: linear-gradient(140deg, var(--steel), var(--red));
-  opacity: 0.75;
-  pointer-events: none;
-}
-.heroGreet::before { left: 0; }
-.heroGreet::after { right: 0; }
-.heroGreet em {
-  font-style: normal;
-  color: var(--steel-deep);
-  /* 名字上也错开两像素 —— 全站「次元错位」那一手的同一个写法 */
-  text-shadow: var(--duo-shadow);
-}
-.heroText {
-  color: var(--ink-mute);
-  max-width: 560px;
-  font-size: 14px;
-  margin: 10px auto 18px;   /* `auto` 两侧：居中列里这一行要跟着居中 */
-}
-
-/* 芯片与按钮两行同样居中（父级已是居中列，这里只要别自己撑左） */
-.heroChips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; justify-content: center; }
-.heroActions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-
-/* ---- R 值仪表盘卡 ---- */
-.gaugePanel {
-  padding: 20px 18px;
+  left: 47%;
+  bottom: 0;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  align-items: flex-start;
 }
-.gaugeWrap { position: relative; width: 208px; height: 208px; margin: 4px 0 10px; }
-.gaugeWrap svg { display: block; transform: rotate(-90deg); }
-.ringFg { transition: stroke-dasharray 1.1s var(--ease-out); }
-.gaugeCenter {
+
+.portrait {
+  position: relative;
+  display: block;
+  width: min(56vw, 790px);
+  height: clamp(480px, 74vh, 800px);
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.portrait:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 4px;
+}
+
+/* 675×1200 的整身图：宽度铺满、从头顶裁到腰 */
+.shot {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 100%;
+  height: auto;
+  transform: translateX(-50%);
+  user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 96%);
+  mask-image: linear-gradient(to bottom, #000 68%, transparent 96%);
+  transition: transform 600ms var(--ease-out);
+}
+
+.portrait:hover .shot { transform: translateX(-50%) scale(1.012); }
+
+.sigil {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-.gaugeVal {
-  font-family: var(--font-mono);
-  font-size: 46px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.gaugeVal small { font-size: 18px; }
-.gaugeTag {
-  margin-top: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.gaugeMeta {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
-}
-.gaugeMeta > span {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-mute);
-  letter-spacing: 0.05em;
-}
-.gaugeName { margin-top: 2px; font-weight: 800; font-size: 14px; }
-
-/* ---- 威胁通告条 ---- */
-.threat {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 18px;
-  padding: 14px 18px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--red) 42%, transparent);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--red) 12%, transparent), color-mix(in srgb, var(--red) 3%, transparent));
-  animation: global(flickerIn) 600ms linear both;
-}
-/* 左侧那一块警戒纹：上一版是「主调 + 近黑」，压在晨光浅底上太沉，
-   换成全站的糖纸纹（主调 + 白，见 tokens 的 .hazard）。 */
-.threatHazard {
-  flex: 0 0 auto;
-  width: 96px;
-  align-self: stretch;
-  background: repeating-linear-gradient(-45deg, var(--red) 0 10px, #fff 10px 20px);
-}
-.threatBody { flex: 1; min-width: 0; }
-.threatBody b { font-size: 16px; font-weight: 900; letter-spacing: 0.02em; }
-.threatBody p { margin: 4px 0 0; color: var(--ink-dim); font-size: 13px; }
-.threatStage {
-  flex: 0 0 auto;
-  text-align: center;
-  padding: 0 6px;
-}
-.threatStage .num {
-  font-size: 42px;
-  font-weight: 800;
-  color: var(--red-deep);
-  /* 42px 的大字那一档，装饰影走全站唯一的错位重影（原来是 `0 2px 14px` 的柔光） */
-  text-shadow: var(--duo-shadow);
-  line-height: 1;
-}
-
-/* ---- 通用行 ---- */
-.squadRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--bg-1);
-  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-mid) var(--ease-out);
-}
-.squadRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
-.squadMeta { flex: 1; min-width: 0; }
-.squadMeta b { display: block; font-size: 13.5px; font-weight: 800; }
-.squadMeta small { display: block; color: var(--ink-mute); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bondMini { margin-top: 5px; }
-.miniAction {
-  flex: 0 0 auto;
-  width: 30px; height: 30px;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--line-2);
-  background: transparent;
-  color: var(--ink-mute);
-  font-size: 15px;
-  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
-}
-.miniAction:hover { color: var(--steel-deep); border-color: color-mix(in srgb, var(--steel) 50%, transparent); background: color-mix(in srgb, var(--steel) 10%, transparent); }
-
-.stack { display: flex; flex-direction: column; gap: 8px; }
-
-/* R 区域行 */
-.rRow {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  place-items: center;
+  font-family: var(--font-serif);
+  font-size: clamp(120px, 16vw, 220px);
+  font-weight: 600;
+  opacity: 0.35;
+}
+
+.plate {
+  position: absolute;
+  left: 4vw;
+  bottom: 30px;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
   gap: 12px;
-  align-items: center;
-  padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--bg-1);
-  text-align: left;
-  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-mid) var(--ease-out);
-}
-.rRow:hover { border-color: var(--line-3); background: var(--bg-2); transform: translateY(-1px); }
-.rRow.isFocus { border-color: color-mix(in srgb, var(--steel) 55%, transparent); box-shadow: inset 3px 0 0 var(--steel); }
-.rRowName { min-width: 0; }
-.rRowName b { display: block; font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rRowName small { color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; }
-.rRowBar { min-width: 120px; }
-.rRowVal { font-family: var(--font-mono); font-weight: 700; text-align: right; min-width: 58px; }
-.rRowDelta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); text-align: right; min-width: 60px; }
-
-/* 图鉴威胁行 */
-.codexRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--bg-1);
-  transition: border-color var(--t-fast), background var(--t-fast);
-  width: 100%;
-  text-align: left;
-}
-.codexRow:hover { border-color: var(--line-3); background: var(--bg-2); }
-.codexRowBody { flex: 1; min-width: 0; }
-.codexRowBody b { font-size: 13.5px; font-weight: 800; }
-.codexRowBody small { display: block; color: var(--ink-mute); font-size: 11.5px; margin-top: 2px; }
-
-/* 时间线小条 */
-.tlItem { display: flex; gap: 12px; padding: 9px 4px; border-bottom: 1px dashed var(--line); }
-.tlItem:last-child { border-bottom: 0; }
-.tlWhen { flex: 0 0 auto; text-align: right; font-family: var(--font-mono); }
-.tlWhen b { display: block; font-size: 12px; letter-spacing: 0.04em; }
-.tlWhen small { color: var(--ink-faint); font-size: 10px; }
-.tlBody { min-width: 0; }
-.tlBody b { display: block; font-size: 13px; font-weight: 800; }
-.tlBody p { margin: 3px 0 0; font-size: 12px; color: var(--ink-mute); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-@media (max-width: 1180px) {
-  .hero { grid-template-columns: 1fr; }
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
 
-/* ============================================================
-   总览 · 跟着剧情走的几块
-   ------------------------------------------------------------
-   状态条（终末点数 / 体力 / 记录 / 已遇见 / 时间线）、下一段、
-   以及「下一段所在地」在区域扫描里的标记。
-   ============================================================ */
+.plate:focus-visible { outline: 2px solid var(--steel); outline-offset: 4px; }
 
-.statStrip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 14px;
+.next {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 13px;
+  color: var(--ink-faint);
+  transform: translateY(-1px);
+  transition: transform 200ms var(--ease-out), color 200ms;
 }
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 76px;
-  padding: 6px 11px;
-  border: 1px solid var(--line-2);
-  border-left: 2px solid var(--violet);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-}
-.stat b { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: 0.02em; }
-.stat small { font-size: 10px; letter-spacing: 0.1em; color: var(--ink-mute); }
-.stat[data-stat='coin'] { border-left-color: var(--amber); }
-.stat[data-stat='stamina'] { border-left-color: var(--jade); }
-.stat[data-stat='records'] { border-left-color: var(--steel); }
-.stat[data-stat='progress'] { border-left-color: var(--violet); }
 
-/* 下一段：一张窄条，直接给出「去哪儿、那地方什么成色」 */
-.nextUp {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-2);
-  border-left: 2px solid var(--amber);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--amber) 5%, transparent);
+.plate:hover .next { color: var(--steel); transform: translate(3px, -1px); }
+
+.plate b {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--ink);
+  text-shadow: 0 0 12px var(--bg-0), 0 0 4px var(--bg-0);
 }
-.nextUp[data-all-done] { border-left-color: var(--jade); background: color-mix(in srgb, var(--jade) 5%, transparent); }
-.nextKicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--amber-deep);
-}
-.nextUp[data-all-done] .nextKicker { color: var(--jade-deep); }
-.nextBody { flex: 1; min-width: 0; }
-.nextBody b { display: block; font-size: 14px; font-weight: 800; }
-.nextBody small { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-mute); }
-.nextR {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 1px 7px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-pill);
+
+.no {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--ink-dim);
-  cursor: help;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }
 
-/* 「下一段」所在的那个观测点：加一道琥珀竖边 */
-.rRow.isNext { border-color: color-mix(in srgb, var(--amber) 45%, var(--line-2)); }
-.nextMark {
-  margin-left: 6px;
-  padding: 0 5px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--amber) 20%, transparent);
-  color: var(--amber-deep);
+/* ── 右侧动作簇：同一点散开 ──────────────────────────── */
+.cluster {
+  position: absolute;
+  right: calc(9vw - 60px);
+  top: calc(44% - 230px);
+  z-index: 3;
+  width: 420px;
+  height: 460px;
+}
+
+.action {
+  --tx: 0vw;
+  --ty: 0vh;
+  --s: 0.3;
+  --d: 0ms;
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas: "num zh" "num en";
+  align-items: baseline;
+  justify-items: end;
+  column-gap: 12px;
+  padding: 8px 10px 8px 16px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: right;
+  opacity: 0;
+  filter: blur(6px);
+  transform: translate(0, -50%) scale(var(--s));
+  transform-origin: right center;
+  transition:
+    transform 800ms var(--ease-out) var(--d),
+    opacity 420ms ease var(--d),
+    filter 560ms ease var(--d);
+}
+
+.clusterOpen .action {
+  opacity: 1;
+  filter: blur(0);
+  --s: 1;
+  transform: translate(var(--tx), calc(var(--ty) - 50%)) scale(1);
+}
+
+/* 锚点本身：一直站着的那一个 */
+.action.prime {
+  opacity: 1;
+  filter: none;
+  transform: translate(0, -50%) scale(1);
+  transition: transform 800ms var(--ease-out);
+}
+
+.clusterOpen .action.prime {
+  transform: translate(0, -50%) scale(1);
+}
+
+.num {
+  grid-area: num;
+  font-family: var(--font-mono);
   font-size: 10px;
-  font-style: normal;
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  transform: translateY(-2px);
 }
 
-/* ============================================================
-   总览 · 第二屏与第三屏
-   通讯中枢 / 最近战报 / 军需与装具 / 观测通报 / 收录进度
-   一律复用全局的 .panel / .meter / .chip，这里只添行式版式。
-   ============================================================ */
-
-/* —— 通讯中枢 —— */
-.msgRow {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 7px 10px; border: 1px solid transparent; border-left: 2px solid var(--line-2);
-  border-radius: var(--radius-sm); background: transparent; cursor: var(--cursor-point); text-align: left;
-  transition: background 0.12s, border-color 0.12s, transform 0.12s;
-}
-.msgRow:hover { background: var(--bg-2); border-left-color: var(--steel); transform: translateX(3px); }
-/* 未读 = 提醒那一档，与 Comms 的未读圆牌同一支琥珀 */
-.msgRow[data-unread='1'] { border-left-color: var(--amber); }
-.msgRowBody { flex: 1; min-width: 0; }
-.msgRowBody b { display: block; font-size: 13px; font-weight: 800; }
-.msgRowBody small {
-  display: block; margin-top: 1px; color: var(--ink-mute); font-size: 11px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.badgeUnread {
-  flex: 0 0 auto; min-width: 20px; padding: 1px 6px; border-radius: var(--radius-pill);
-  background: var(--amber); color: var(--on-accent); font-family: var(--font-mono);
-  font-size: 10.5px; font-weight: 700; text-align: center;
+.zh {
+  grid-area: zh;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1.15;
+  color: var(--ink);
+  transition: color 200ms, transform 300ms var(--ease-out);
 }
 
-/* —— 最近战报 —— */
-.recRow { display: flex; gap: 10px; align-items: baseline; padding: 8px 4px; border-bottom: 1px dashed var(--line); }
-.recRow:last-child { border-bottom: 0; }
-.recNo { flex: 0 0 auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
-.recBody { flex: 1; min-width: 0; }
-.recBody b { display: block; font-size: 12.5px; font-weight: 800; }
-.recBody small { display: block; margin-top: 2px; color: var(--ink-mute); font-size: 11px; }
-.resTag {
-  flex: 0 0 auto; padding: 1px 7px; border-radius: var(--radius-pill);
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
-}
-.resTag[data-r='胜'] { background: color-mix(in srgb, var(--jade) 18%, transparent); color: var(--jade-deep); }
-.resTag[data-r='败'] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red-deep); }
-.resTag[data-r='撤'] { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber-deep); }
-
-/* —— 军需 / 装具 / 补给 —— */
-.kv { display: flex; gap: 10px; align-items: baseline; padding: 6px 2px; border-bottom: 1px dashed var(--line); }
-.kv:last-child { border-bottom: 0; }
-.kvKey { flex: 0 0 72px; color: var(--ink-mute); font-size: 11px; letter-spacing: 0.06em; }
-.kvVal { flex: 1; min-width: 0; font-size: 12.5px; }
-.kvVal b { font-family: var(--font-mono); font-weight: 700; }
-.gearTag {
-  display: inline-block; margin: 0 4px 4px 0; padding: 1px 7px;
-  border: 1px solid var(--line-2); border-radius: var(--radius-pill); font-size: 11px; color: var(--ink-dim);
-}
-.gearTag i { font-style: normal; color: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; }
-
-/* —— 观测通报 —— */
-.feedRow { display: flex; gap: 10px; padding: 7px 2px; border-bottom: 1px dashed var(--line); }
-.feedRow:last-child { border-bottom: 0; }
-.feedMark { flex: 0 0 auto; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--steel); }
-.feedMark[data-k='story'] { background: var(--violet); }
-.feedMark[data-k='battle'] { background: var(--amber); }
-.feedBody { flex: 1; min-width: 0; }
-.feedBody b { display: block; font-size: 12.5px; font-weight: 700; }
-.feedBody p {
-  margin: 2px 0 0; font-size: 11.5px; color: var(--ink-mute); line-height: 1.55;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.feedWhen { flex: 0 0 auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
-
-/* —— 收录进度 —— */
-.pRow { padding: 7px 2px; }
-.pRowHead { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
-.pRowHead b { font-weight: 800; }
-.pRowHead span { margin-left: auto; font-family: var(--font-mono); color: var(--ink-dim); font-size: 11.5px; }
-.pRow .meter { height: 5px; margin-top: 6px; }
-
-/* 推算读数（不在标定表上的地点）挂牌 */
-.estTag {
-  margin-left: 6px; padding: 0 5px; border-radius: var(--radius-pill);
-  border: 1px dashed var(--line-3); color: var(--ink-faint);
-  font-size: 10px; font-style: normal; font-weight: 500; letter-spacing: 0.06em;
+.en {
+  grid-area: en;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.26em;
+  color: var(--ink-faint);
+  transition: color 200ms;
 }
 
-/* ============================================================
-   区域干涉扫描 · 单点显示 + 观测点选择器
-   默认只显示当前观测点一个读数；六区列表收进「更换观测地点」后面。
-   ============================================================ */
-.nowSite {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 11px 12px 12px; border: 1px solid var(--line-2);
-  border-left: 3px solid var(--steel); border-radius: var(--radius-sm); background: var(--bg-2);
-}
-.nowSiteBody { flex: 1; min-width: 0; }
-.nowSiteBody b { display: block; font-size: 14.5px; font-weight: 800; }
-.nowSiteBody small {
-  display: block; margin-top: 3px; color: var(--ink-faint);
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
-}
-.nowSiteVal { flex: 0 0 auto; text-align: right; }
-.nowSiteVal b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 800; line-height: 1.15; }
-.nowSiteVal small { display: block; margin-top: 1px; font-size: 10.5px; letter-spacing: 0.08em; }
+.action.prime .zh { font-size: 38px; }
 
-.picker {
-  display: flex; flex-direction: column; gap: 1px; padding: 6px;
-  border: 1px solid var(--line-2); border-radius: var(--radius);
-  background: var(--bg-2);
-}
-.pickerHead { padding: 3px 9px 7px; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.1em; }
-.pickRow {
-  display: flex; align-items: baseline; gap: 8px; width: 100%;
-  padding: 6px 9px; border: 1px solid transparent; border-radius: var(--radius-sm);
-  background: transparent; cursor: var(--cursor-point); text-align: left; transition: background 0.12s, border-color 0.12s;
-}
-.pickRow:hover { background: var(--bg-2); border-color: var(--line-2); }
-.pickRow[data-on='1'] {
-  border-color: color-mix(in srgb, var(--steel) 55%, transparent);
-  background: color-mix(in srgb, var(--steel) 8%, transparent);
-}
-.pickRow b {
-  flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pickRow code { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
-.pickRow i { font-style: normal; font-family: var(--font-mono); font-size: 12px; font-weight: 700; min-width: 46px; text-align: right; }
+.action:hover .zh,
+.action.hot .zh { color: var(--steel); transform: translateX(-6px); }
+.action:hover .en,
+.action.hot .en { color: var(--ink-mute); }
 
-/* ---------- 观测点示意图 ----------
-   svg 是 0~100 的归一化坐标（点位在 data/regions.ts 的 xy），
-   所以字号也按同一套单位给 —— 换容器宽度时整张图等比缩放，不用重算。
-   点一格 = 换观测地点，与下面那张列表同一件事。 */
-.mapWrap {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 8px 10px 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background:
-    radial-gradient(120% 90% at 30% 20%, color-mix(in srgb, var(--steel) 7%, transparent), transparent 70%),
-    var(--bg-1);
+.action:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 6px;
 }
-.mapSvg { width: 100%; height: auto; aspect-ratio: 100 / 74; overflow: visible; }
-.mapEdge { stroke: var(--line-2); stroke-width: 0.4; stroke-dasharray: 1.6 1.4; }
-.mapNode { cursor: var(--cursor-point); }
-.mapHalo {
-  fill: color-mix(in srgb, var(--c) 12%, transparent);
-  stroke: color-mix(in srgb, var(--c) 45%, transparent);
-  stroke-width: 0.5;
-  transition: fill var(--t-fast), stroke var(--t-fast);
+
+/* 收起时不留拖尾：延迟清零，时长压到 280ms */
+.cluster:not(.clusterOpen) .action {
+  transition-duration: 280ms, 200ms, 240ms;
+  transition-delay: 0ms;
 }
-.mapDot { fill: var(--c); transition: r var(--t-fast); }
-.mapNode:hover .mapHalo { fill: color-mix(in srgb, var(--c) 26%, transparent); }
-.mapNode[data-on='1'] .mapHalo {
-  fill: color-mix(in srgb, var(--c) 30%, transparent);
-  stroke: var(--c); stroke-width: 0.9;
-  animation: mapPing 2.4s ease-out infinite;
+
+/* ── 窄屏 ───────────────────────────────────────────── */
+@media (max-width: 1120px) {
+  .ghost { left: 2vw; font-size: clamp(80px, 15vw, 180px); }
+  .figure { left: 44%; }
+  .portrait { width: min(46vw, 520px); height: clamp(380px, 54vh, 560px); }
+  .cluster { right: calc(5vw - 50px); }
+  .action { right: 50px; }
+  .action.prime .zh { font-size: 34px; }
 }
-.mapNode[data-on='1'] .mapDot { fill: #fff; }
-.mapLabel {
-  fill: var(--ink-mute);
-  font-size: 3.1px; font-weight: 700; letter-spacing: 0.06px;
+
+@media (max-width: 860px) {
+  .stage {
+    height: auto;
+    min-height: calc(100dvh - var(--topbar-h));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px 0 28px;
+    overflow-y: auto;
+  }
+  .ghost {
+    left: 50%;
+    bottom: auto;
+    top: 34vh;
+    transform: translateX(-50%);
+    font-size: 26vw;
+  }
+  .figure {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    align-items: center;
+    order: 0;
+  }
+  .portrait {
+    width: min(78vw, 420px);
+    height: min(46vh, 380px);
+  }
+  .plate { left: 50%; bottom: 6px; transform: translateX(-50%); white-space: nowrap; }
+  .cluster {
+    position: relative;
+    right: auto;
+    top: auto;
+    order: 1;
+    width: 100%;
+    height: auto;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 8px;
+    margin-top: 18px;
+    padding: 0 18px;
+  }
+  .action,
+  .action.prime,
+  .clusterOpen .action,
+  .clusterOpen .action.prime {
+    position: relative;
+    right: auto;
+    top: auto;
+    opacity: 1;
+    filter: none;
+    transform: none;
+    padding: 8px 10px;
+    min-height: 44px;
+  }
+  .action .zh,
+  .action.prime .zh { font-size: 20px; letter-spacing: 0.12em; }
+  .num { display: none; }
 }
-.mapNode[data-on='1'] .mapLabel { fill: var(--ink); }
-.mapR { fill: var(--ink-faint); font-family: var(--font-mono); font-size: 2.6px; }
-/* 「在此」= 剧情此刻走到哪，跟选中态（data-on 那圈呼吸光）不是一回事。
-   单开一圈收容色慢转虚线环，名字一并染上 —— 钉在别的格子上查数时，
-   也一眼看得见自己站哪儿。这条排在 data-on 之后：选中时 jade 不被 ink 顶掉。 */
-.mapHere {
-  fill: none; stroke: var(--jade); stroke-width: 0.5; stroke-dasharray: 1.3 1;
-  opacity: 0.9;
-  transform-box: fill-box; transform-origin: center;
-  animation: mapSpin 24s linear infinite;
-}
-/* 图上的字也是字：本色一律走 deep 档（与下一行 amber 那一条同一口径） */
-.mapNode[data-here='1'] .mapLabel { fill: var(--jade-deep); }
-.mapNode[data-here='1'] .mapR { fill: var(--jade-deep); }
-/* 「下一段」压在「在此」之上：两样都占着同一格时（剧情就停在这一格、下一段也在这儿），
-   那句话说的是更该照着办的事 —— 环照旧画，字读 amber。 */
-.mapNode[data-next='1'] .mapR { fill: var(--amber-deep); }
-.mapFoot { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.mapFoot > span { display: inline-flex; align-items: center; gap: 4px; }
-@keyframes mapPing {
-  0% { r: 9.5; opacity: 1; }
-  70% { r: 14; opacity: 0; }
-  100% { r: 14; opacity: 0; }
-}
-@keyframes mapSpin { to { transform: rotate(360deg); } }
-/* 动画里改的是 r（几何属性），prefers-reduced-motion 下直接停掉 */
+
 @media (prefers-reduced-motion: reduce) {
-  .mapNode[data-on='1'] .mapHalo { animation: none; }
-  .mapHere { animation: none; }
-}
-
-/* ============ 手机档（≤720px）============
-   读数那一行（`.rRowBar` 120 + `.rRowVal` 58 + `.rRowDelta` 60 ≈ 304px）在
-   390 屏上叠出去。三处 `min-width` 全部放软 —— 条形本来就是 `flex: 1` 撑的，
-   数字各自按内容宽，这一行自己就缩回来了。 */
-@media (max-width: 720px) {
-  .rRowBar { min-width: 0; }
-  .rRowVal { min-width: 0; }
-  .rRowDelta { min-width: 0; }
-}
-
-/* 手机档 · 粗指针：短信那几行（32px）与卡片上那几枚小动作（30px）抬到 44 */
-@media (pointer: coarse) {
-  .msgRow, .miniAction { min-height: 44px; }
+  .action { transition-duration: 1ms; transition-delay: 0ms; }
+  .shot { transition: none; }
 }

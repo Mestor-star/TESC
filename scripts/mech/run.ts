@@ -4921,10 +4921,23 @@ export function run(): MechReport {
        · boot 那一步对玩家的承诺是「每开一格，你第一次进去，我讲一遍它在管什么」。
          侧栏上有、TOURS 里没有的模块，点进去没人开口 —— 承诺落空。 */
     const appSrc = readFileSync('src/App.tsx', 'utf8')
+    /* 2026-11 起侧栏是 NavSection：key + views，一格可以管好几屏（图鉴管三册）。
+       仍逐行读源码，因为这一条钉的就是「文案与源码不许漂」。 */
     const rail = appSrc.split('\n')
-      .map((l) => /^\s*\{ id: '([a-z]+)', en: '[^']+', cn: '([^']+)'/.exec(l))
+      .map((l) => /^\s*\{ key: '([a-z]+)', en: '[^']+', cn: '([^']+)'.*views: \[([^\]]+)\]/.exec(l))
       .filter((m): m is RegExpExecArray => !!m)
-      .map((m) => ({ id: m[1]!, cn: m[2]! }))
+      .map((m) => ({
+        id: m[1]!, cn: m[2]!,
+        views: [...m[3]!.matchAll(/'([a-z]+)'/g)].map((x) => x[1]!),
+      }))
+    /* 首屏右栏那五个动作与底部的设置不在侧栏上，但也都是进得去的一屏 ——
+       模块讲解名单得把它们算作「真有的地方」，否则对照那一条会误判成孤魂。 */
+    const hubSrc = readFileSync('src/views/Dashboard.tsx', 'utf8')
+    const reachable = new Set<string>([
+      ...rail.flatMap((r) => r.views),
+      ...[...hubSrc.matchAll(/go: '([a-z]+)'/g)].map((m) => m[1]!),
+      'settings',
+    ])
     const bootTour = TOURS.find((t) => t.id === 'boot')
     const navStep = bootTour?.steps.find((s) => s.at === '[data-guide="nav"]')
     const named = lineText(navStep?.lines[0] ?? '').replace(/。$/, '').split('、')
@@ -4938,10 +4951,10 @@ export function run(): MechReport {
       `侧栏 ${rail.length} 格｜引导念 ${named.length} 格：${named.join('、')}`)
     ok('梅芙引导：开篇那句「这一排是终端的 N 个模块」，N 与侧栏实际格数相符',
       NUM[claim] === rail.length, `说的是「${claim}个」· 实际 ${rail.length} 格`)
-    const noTour = rail.filter((r) => !TOURS.some((t) => t.view === r.id)).map((r) => r.cn)
+    const noTour = rail.filter((r) => !TOURS.some((t) => t.view && r.views.includes(t.view))).map((r) => r.cn)
     ok('梅芙引导：侧栏每一格都有一段讲它的（「每开一格，我讲一遍它在管什么」不许落空）',
       noTour.length === 0, noTour.length ? `没人讲：${noTour.join('、')}` : `${rail.length} 格都有`)
-    const noRail = TOURS.filter((t) => t.view && !rail.some((r) => r.id === t.view)).map((t) => t.view!)
+    const noRail = TOURS.filter((t) => t.view && !reachable.has(t.view)).map((t) => t.view!)
     ok('梅芙引导（对照）：反过来，没有哪一段是挂在侧栏不存在的模块上的',
       noRail.length === 0, noRail.length ? `挂着空模块：${noRail.join('、')}` : '没有孤立的模块讲解')
     info.push(`侧栏 ${rail.length} 格 ↔ 模块讲解 ${TOURS.filter((t) => t.view).length} 段，逐格对得上`)
@@ -5902,10 +5915,10 @@ export function run(): MechReport {
     const navNames = [...appSrc.slice(appSrc.indexOf('= [', navStart), appSrc.indexOf('\n]', navStart))
       .matchAll(/cn: '([^']+)'/g)].map((m) => m[1])
     const listed = (MANUAL.find((s) => s.id === 'm-overview')?.items
-      .find((t) => t.includes('左侧模块栏列出全部模块')) ?? '')
+      .find((t) => t.includes('左侧模块栏列出六格')) ?? '')
       .replace(/^[^：]*：/, '').replace(/。$/, '').split('、').filter(Boolean)
     ok('手册 · 模块索引：书上列的就是左侧栏真有的那些模块（不多不少，连顺序都对）',
-      navNames.length > 6 && listed.length === navNames.length && listed.every((x, i) => x === navNames[i]),
+      navNames.length > 0 && listed.length === navNames.length && listed.every((x, i) => x === navNames[i]),
       `手册 ${listed.length}：${listed.join('、')}\n      实际 ${navNames.length}：${navNames.join('、')}`)
 
     /* 记忆库那一节列的那七栏，就是引擎真排出来的七栏 —— 改一栏的名字，手册得跟着改 */
@@ -5932,8 +5945,13 @@ export function run(): MechReport {
 
     /* 每条都写着「主要落在哪个模块」，那个模块名得在模块索引里出现过 ——
        否则读者照着「落在 XX」去找，找不着那一格。 */
+    /* 落点可以是侧栏六格之一，也可以是右栏五个动作、图鉴三册、模块栏底部的系统区 ——
+       它们都是玩家真能走到的地方，只是不在那一列上。 */
+    const hubNames = [...readFileSync('src/views/Dashboard.tsx', 'utf8').matchAll(/zh: '([^']+)'/g)].map((m) => m[1]!)
+    const tabNames = [...appSrc.matchAll(/\{ id: '(?:arms|codex|lore)', cn: '([^']+)'/g)].map((m) => m[1]!)
+    const places = new Set([...navNames, ...hubNames, ...tabNames, '终端设置', '存读档', '作战现场'])
     const areas = [...new Set(MANUAL.map((s) => s.at))]
-    const strayArea = areas.filter((a) => !navNames.includes(a) && !['作战现场', '存读档'].includes(a))
+    const strayArea = areas.filter((a) => !places.has(a))
     ok('手册 · 每节标出的落点都是终端里真有的地方（模块名取自模块栏 · 场内与存档除外）',
       strayArea.length === 0, strayArea.length ? `对不上：${strayArea.join('、')}` : `${areas.length} 个落点：${areas.join('、')}`)
 
