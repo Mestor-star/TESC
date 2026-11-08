@@ -151,14 +151,20 @@ export function digestPrompt(messages: { role: string; content: string }[]): { t
   return { text: trim(text, PROMPT_CAP), turns: messages.length, chars: text.length }
 }
 
-/** 世界书注入块 → 命中的词条名（块里每条都以「▸ 名字」起头 —— 与预设条目同一个记号） */
+/**
+ * 世界书注入块 → 命中的词条名。
+ * 现在每条以 `<lore name="…">` 起头；老记录里是「▸ 名字」，一并认下来，
+ * 免得翻旧账时那几条被当成「一条都没进」。
+ */
 export function loreHitsOf(block: string): string[] {
   if (!block) return []
-  return block
-    .split('\n')
-    .filter((l) => l.startsWith('▸ '))
-    .map((l) => l.slice(2).trim())
-    .filter(Boolean)
+  const out: string[] = []
+  for (const l of block.split('\n')) {
+    const tag = l.match(/^<lore name="([^"]+)">/)
+    if (tag) { out.push(tag[1].trim()); continue }
+    if (l.startsWith('▸ ')) out.push(l.slice(2).trim())
+  }
+  return out.filter(Boolean)
 }
 
 /** 一条记录留给界面的一行摘要 */

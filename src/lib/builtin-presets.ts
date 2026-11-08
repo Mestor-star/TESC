@@ -41,8 +41,12 @@ export const BUILTIN_KEY = 'zts-builtin-presets:v1'
  *   v5 → v6 = 那一条里加「镜头要推近」（私密部位当下是什么样就写什么样、每次都不一样）——
  *            只有「写足」没有「推近」，落地大多还是「那里湿得一塌糊涂」一句带过；
  *            与 lib/worldrules.ts 的 INTIM_DEPTH_RULE、世界书文风册第四条同改，三处逐字对齐。
+ *   v6 → v7 = 两份预设整篇重写：条目首尾不再靠「▸ 名字」，改由注入层包成 <rule name="…">；
+ *            反八股从 465 字中文收成一份英文死句清单（同样的禁令，token 更少）；
+ *            「模型适配」拆成 DeepSeek / Gemini / Claude / 其他（GLM·Qwen）四条，默认只开 DeepSeek，
+ *            用哪家就开哪条 —— 四家的八股不是同一套。
  */
-export const BUILTIN_V = 6
+export const BUILTIN_V = 7
 /**
  * 预算归位那一步的账。**记版本号**：目标值改过两代
  * （1500 → 上限 65536 → 30000），老账本记的是一次已经过时的动作，

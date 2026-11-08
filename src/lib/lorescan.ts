@@ -57,7 +57,7 @@ export interface LoreContextOpts {
   gate: LoreGate
   /** 命中词条上限（默认 8） */
   maxEntries?: number
-  /** 拼块总字数上限（默认 2400） */
+  /** 拼块总字数上限（默认 3000） */
   maxChars?: number
 }
 
@@ -71,7 +71,7 @@ const LABEL_TAIL = '（仅作延续性背景，与本段事件大纲冲突时以
  */
 export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): string {
   const maxEntries = opts.maxEntries ?? 8
-  const maxChars = opts.maxChars ?? 2400
+  const maxChars = opts.maxChars ?? 3000
   const text = (opts.scanText || '').trim()
   if (!books.length || !text) return ''
 
@@ -113,17 +113,27 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
     ...keyed.slice(0, Math.max(0, maxEntries - holds.length)),
     ...holds,
   ].slice(0, maxEntries)
-  const PER_ENTRY = Math.max(160, Math.floor(maxChars / Math.max(chosen.length, 1)))
+  /* 两条预算各算各的：常驻那几条（文风册）是每一回合都该完整带着的笔法，
+     按「条数平摊」只够写完半条句法；命中项按剩下的份额平分。 */
+  const HOLD_CAP = Math.min(520, Math.max(240, Math.floor((maxChars * 0.7) / Math.max(holds.length, 1))))
+  const KEY_CAP = Math.max(180, Math.floor(maxChars / Math.max(chosen.length, 1)))
 
+  /* 每条首尾用一对 <lore name="…"> 包住：模型看得出这一段是参考、不是要接着写的东西，
+     几本条规同时在场时也不会串行。抬头与末尾那两句照旧（通联日志按它们认这一段）。 */
   const parts: string[] = [`${LABEL_HEAD}${LABEL_TAIL}`]
   let used = parts[0].length
   for (const { entry } of chosen) {
     if (used >= maxChars) break
-    const label = entry.comment?.trim() || entry.keys[0] || ''
-    const head = label ? `▸ ${label}` : '▸ 词条'
-    const body = (entry.content || '').replace(/\s+/g, ' ').trim()
-    const bodyCapped = body.length > PER_ENTRY ? body.slice(0, PER_ENTRY) + '…' : body
-    const block = `${head}\n${bodyCapped}`
+    const label = (entry.comment?.trim() || entry.keys[0] || '').replace(/"/g, '”')
+    const cap = entry.constant ? HOLD_CAP : KEY_CAP
+    /* 只压多余空白，不把换行揉平 —— 文风那几条靠分行读，全揉成一段就成了墙 */
+    const body = (entry.content || '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/ *\n */g, '\n')
+      .replace(/\n{2,}/g, '\n')
+      .trim()
+    const bodyCapped = body.length > cap ? body.slice(0, cap) + '…' : body
+    const block = label ? `<lore name="${label}">\n${bodyCapped}\n</lore>` : `<lore>\n${bodyCapped}\n</lore>`
     parts.push(block)
     used += block.length
   }

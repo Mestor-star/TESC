@@ -138,7 +138,11 @@ export function buildPresetContext(
   const block = (pos: PresetEntryPos, text: string) => {
     const part = hits.filter((e) => e.position === pos && (e.content || '').trim())
     if (!part.length) return ''
-    const body = part.map((e) => `▸ ${e.name}\n${e.content.trim()}`).join('\n')
+    /* 每一条首尾用一对 <rule name="…"> 包住（与世界书那边同一个记号）：
+       模型分得清哪几行是一条规矩，条目之间也不会连成一整段。 */
+    const body = part
+      .map((e) => `<rule name="${e.name.replace(/"/g, '”')}">\n${e.content.trim()}\n</rule>`)
+      .join('\n')
     return `${text}\n${body}`
   }
   return {
