@@ -60,6 +60,11 @@ export interface LoreContextOpts {
   maxEntries?: number
   /** 拼块总字数上限（默认 5200） */
   maxChars?: number
+  /**
+   * 词条名 → 补在正文之后的一行动态读数（角色档「此刻（本档）」）。
+   * 在 cap 之后追加，所以不会被字数截断；返回 undefined 就不加。
+   */
+  live?: (label: string) => string | undefined
 }
 
 const LABEL_HEAD = '【世界书 · 命中参考】'
@@ -137,7 +142,8 @@ export function buildLoreContext(books: Lorebook[], opts: LoreContextOpts): stri
       .replace(/\n{2,}/g, '\n')
       .trim()
     const bodyCapped = body.length > cap ? body.slice(0, cap) + '…' : body
-    const block = wrapEntry(label || '世界书词条', bodyCapped)
+    const liveLine = opts.live?.(label)
+    const block = wrapEntry(label || '世界书词条', liveLine ? bodyCapped + '\n' + liveLine : bodyCapped)
     parts.push(block)
     used += block.length
   }

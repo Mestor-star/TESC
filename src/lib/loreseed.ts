@@ -15,6 +15,7 @@ import { LORE } from '../data/lore'
 import { SIDECAST, type SideCastEntry } from '../data/sidecast'
 import { ARMS } from '../data/arms'
 import { personaCardOf } from '../data/persona'
+import { DOSSIER } from '../data/dossiers'
 import { COMMITTEE_RANK, SIDE_POTENTIAL, SIDE_TRAIT } from '../data/roster'
 import { ROSTER } from './battle/roster'
 import { OP_PERIODS } from './operator-arc'
@@ -159,11 +160,12 @@ interface CastDossier {
 }
 
 /**
- * 角色与登场者共用的一副档案表：先设定（身份、武装、能力、打法、战技），
- * 再人物卡的原文摘录（性格、说话方式、关系、外貌、背景、日常、战斗场面）。
- * 摘录保留原叙述人称 —— 那是正文的说法，不改写；只把「你」折算成言万心叶。
+ * 角色与登场者共用的一副档案表：设定（身份、武装、能力、打法、战技）在前，
+ * 性格与关系是**整理过的档案写法**（data/dossiers.ts），不整段搬原文。
+ * 原文只留两处：说话方式的短引文、代表台词；外貌与雷区各取一行。
  */
 function castContent(o: CastDossier): string {
+  const dos = DOSSIER[o.id]
   const role = ROSTER[o.id]
   const arms = armsOf(o.id)
   const main = arms[0]
@@ -181,9 +183,9 @@ function castContent(o: CastDossier): string {
     ['首次登场', o.firstSeen],
     ['终末 · 武装', o.scar ?? trait],
     ['终末潜力', o.potential ?? SIDE_POTENTIAL[o.id]],
-    ['性格（原文）', personaText(o.id, '性格', 2)],
+    ['性格', dos?.persona],
     ['说话方式（原文）', personaText(o.id, '说话方式', 2) || personaText(o.id, '代表台词', 1)],
-    ['关系（原文）', personaText(o.id, '关系', 3)],
+    ['关系', dos?.relations.join('；')],
     ['武装', armor],
     ['本相', main?.phrase],
     ['能力', power],
@@ -193,10 +195,7 @@ function castContent(o: CastDossier): string {
     ['机制', main ? role?.trait : ''],
     ['战技', role?.skills.map((s) => s.name).join('、')],
     ['外貌（原文）', personaText(o.id, '外貌', 1)],
-    ['背景（原文）', personaText(o.id, '背景', 1)],
-    ['日常一面（原文）', personaText(o.id, '日常一面', 1)],
-    ['战斗场面（原文）', personaText(o.id, '战斗', 2)],
-    ['禁忌 · 雷区（原文）', personaText(o.id, '禁忌 · 雷区', 2)],
+    ['禁忌 · 雷区（原文）', personaText(o.id, '禁忌 · 雷区', 1)],
     ['代表台词（逐字）', o.quote ? `「${o.quote}」` : personaText(o.id, '代表台词', 1)],
     ['档案', o.bio ? thirdPerson(o.bio) : ''],
   ]
@@ -223,8 +222,8 @@ function buildCharBook(): Lorebook {
   return book(
     'book-canon-char',
     '角色档案',
-    '角色档案：身份、所属、委员会排名、终末与武装、能力与到达点、战斗方式与战技，'
-      + '再附人物卡的原文摘录（性格、说话方式、关系、外貌、背景、日常、战斗场面）；主役与登场者同册。'
+    '角色档案：身份、所属、委员会排名、终末与武装、能力与到达点、战斗方式与战技；'
+      + '性格与关系按档案写法整理，原文只保留说话方式的短引文与代表台词；主役与登场者同册。'
       + '命中人名／称号即注入。条目只写已确认的设定，不含未观测后文。',
     [...CHARACTERS.map(charEntry), ...SIDECAST.map(sidecastEntry)],
   )
@@ -340,7 +339,7 @@ function buildEventBook(): Lorebook {
 /* ---------- 登场者条目（并入「角色档案」同一册；无 meta → 门控恒放行） ---------- */
 
 function sidecastEntry(s: SideCastEntry): LorebookEntry {
-  // 与角色档案同一副表格：设定在前，人物卡原文摘录在后。
+  // 与角色档案同一副表格：设定在前；性格与关系取整理稿，原文只留短引文与台词。
   const content = castContent({
     id: s.id, name: s.name, nameLabel: '登场者', alias: s.alias, aliasLabel: '别称',
     role: s.role, firstSeen: seenOf(s),
@@ -581,8 +580,12 @@ export const OBSOLETE_CANON_IDS = ['book-canon-sidecast']
  *   v15 → v16 = 角色与登场者条目加详：补性格、说话方式、关系、外貌、背景、日常一面、
  *              战斗场面（人物卡原文摘录，叙述人称随原文，「你」仍折算成言万心叶），
  *              并从武装图鉴与作战名册补武装／能力／到达点／战斗方式／战技。
+ *   v16 → v17 = 性格与关系改成整理过的档案写法（data/dossiers.ts），不再整段搬原文；
+ *              原文只留说话方式的短引文、代表台词，以及外貌／雷区各一行。
+ *              每条在注入时还会补一行「此刻（本档）」—— 羁绊、关系档、称呼、行为偏移
+ *              取自当前存档（lib/liverelation.ts），旧稿那份静态关系从此只是底账。
  */
-export const CANON_SEED_VERSION = 16
+export const CANON_SEED_VERSION = 17
 
 /** 种子内容签名：库 id + 词条数（用于决定是否重播） */
 export const CANON_SEED_KEY = 'zts-lore-seed-v1'

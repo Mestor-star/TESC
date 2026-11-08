@@ -27,6 +27,7 @@ import {
 } from '../lib/rendezvous'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
+import { liveLore } from '../lib/liverelation'
 import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/preset'
 import { loreHitsOf } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
@@ -230,6 +231,7 @@ export function Tavern() {
             scanText,
             contextText: meta.scenario,
             gate: allowGateForTavern({ epDone, ends: world.ends }),
+            live: liveLore(world, epDone, bondNow),
           })
         }
       } catch {
@@ -387,7 +389,7 @@ export function Tavern() {
         abortRef.current = null
       }
     },
-    [settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread],
+    [settings, busy, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world, setThread],
   )
 
   /**
@@ -417,6 +419,7 @@ export function Tavern() {
             scanText,
             contextText: nameOf(g.charIds),
             gate: allowGateForTavern({ epDone, ends: world.ends }),
+            live: liveLore(world, epDone, bondNow),
           })
         }
       } catch {
@@ -555,7 +558,7 @@ ${preset.post}` : '')
         abortRef.current = null
       }
     },
-    [settings, busy, groups, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world.ends, setThread],
+    [settings, busy, groups, push, navigate, operatorName, bondNow, bumpBond, setFlag, epDone, world, setThread],
   )
 
   /** 发一轮：单聊 / 群聊各走各的生成路径，界面只认这一个入口

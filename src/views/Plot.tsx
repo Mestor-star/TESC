@@ -43,6 +43,7 @@ import PresetManager from './PresetManager'
 import type { PresetEntry } from '../lib/preset'
 import { activePresetId } from '../lib/preset'
 import { allowGateFor, buildLoreContext } from '../lib/lorescan'
+import { liveLore } from '../lib/liverelation'
 import { activePresetInfo, buildPresetContext, prefillTurns, readActivePrefill, readActivePreset } from '../lib/preset'
 import { loreHitsOf, pushAiLog } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
@@ -1265,6 +1266,7 @@ export function Plot() {
             scanText,
             contextText: `${ev.group} · ${ev.title} · ${ev.place} ${ev.summary}`,
             gate: allowGateFor({ epDone, ends: world.ends }, ev.id),
+            live: liveLore(world, epDone, bondNow),
           })
         }
       } catch {

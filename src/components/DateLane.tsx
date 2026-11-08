@@ -67,6 +67,7 @@ import {
 } from '../lib/rendezvous'
 import { loadActiveBooks } from '../lib/lorestore'
 import { allowGateForTavern, buildLoreContext } from '../lib/lorescan'
+import { liveLore } from '../lib/liverelation'
 import { activePresetInfo, buildPresetContext, readActivePreset } from '../lib/preset'
 import { loreHitsOf } from '../lib/ailog'
 import type { AiLogMeta } from '../lib/ailog'
@@ -289,6 +290,7 @@ export function DateLane({ rvId, onPick }: DateLaneProps = {}) {
             scanText,
             contextText: `${cur.title} · ${cur.place}`,
             gate: allowGateForTavern({ epDone, ends: world.ends }),
+            live: liveLore(world, epDone, bondNow),
           })
         }
       } catch {
