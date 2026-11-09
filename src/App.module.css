@@ -434,6 +434,15 @@
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
+  /* 内容底：极淡的 30px 方格 + 右上青、左上绯两团径向光。
+     方格给「终端图纸」一点触感，但不压在卡片上 —— 面板仍是实心白。 */
+  background-color: var(--bg-0);
+  background-image:
+    radial-gradient(900px 440px at 88% -8%, color-mix(in srgb, var(--steel) 10%, transparent), transparent 70%),
+    radial-gradient(700px 360px at 0% 0%, color-mix(in srgb, var(--red) 5%, transparent), transparent 66%),
+    linear-gradient(color-mix(in srgb, var(--steel) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--steel) 4%, transparent) 1px, transparent 1px);
+  background-size: auto, auto, 30px 30px, 30px 30px;
 }
 
 /* 等懒加载那一块 chunk 落地时摆的占位。本地静态服务器，通常一闪而过 ——

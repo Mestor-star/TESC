@@ -31,6 +31,11 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--steel);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 5%, transparent), transparent 180px),
+    var(--bg-1);
 }
 
 .listBody {
@@ -55,12 +60,16 @@
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
   border-radius: 0;
   cursor: pointer;
-  transition: background-color 0.12s linear;
+  transition: background-color 0.12s linear, border-color 0.12s linear;
 }
-.contact:hover { background: var(--bg-2); }
-.contact.isActive { background: var(--bg-2); }
+.contact:hover { background: color-mix(in srgb, var(--steel) 3%, var(--bg-2)); }
+.contact.isActive {
+  background: color-mix(in srgb, var(--steel) 6%, var(--bg-1));
+  border-left-color: var(--steel);
+}
 
 .contactMain {
   display: flex;
@@ -199,6 +208,8 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
 }
 
 .chatHead {

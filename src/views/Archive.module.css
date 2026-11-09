@@ -393,7 +393,7 @@
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  gap: 32px;
+  gap: 20px;
   align-items: stretch;
   flex: 1;
   min-height: 0;
@@ -410,7 +410,12 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--steel);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 5%, transparent), transparent 180px),
+    var(--bg-1);
   scrollbar-width: thin;
   scrollbar-color: var(--line-2) transparent;
 }
@@ -435,7 +440,7 @@
   font-weight: 400;
   letter-spacing: 0.12em;
   color: var(--ink-faint);
-  background: var(--bg-0);
+  background: color-mix(in srgb, var(--steel) 4%, var(--bg-1));
 }
 
 .idxGroupTitle i {
@@ -506,8 +511,9 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 10px;
-  padding-bottom: 28px;
+  padding: 16px 16px 28px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
   scrollbar-width: thin;
   scrollbar-color: var(--line-2) transparent;
 }

@@ -23,7 +23,7 @@
   grid-template-columns: 240px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
-  gap: 32px;
+  gap: 20px;
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -36,8 +36,12 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  border-top: 1px solid var(--line-2);
-  padding-top: 10px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--steel);
+  padding: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 5%, transparent), transparent 180px),
+    var(--bg-1);
   scrollbar-width: thin;
   scrollbar-color: var(--line-3) transparent;
 }
@@ -72,7 +76,7 @@
 }
 
 .indexRow[aria-pressed='true'] {
-  background: var(--bg-2);
+  background: color-mix(in srgb, var(--steel) 6%, var(--bg-1));
 }
 
 .indexRow[aria-pressed='true'] .indexName {
@@ -135,7 +139,9 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  padding: 16px 16px 24px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
   scrollbar-width: thin;
   scrollbar-color: var(--line-3) transparent;
 }

@@ -74,15 +74,40 @@
 .split {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
   flex: 1;
   min-height: 0;
 }
-.list { min-width: 0; overflow-y: auto; border-right: 1px solid var(--line); }
-.detail { min-width: 0; overflow-y: auto; padding: 2px 0 0 18px; }
+/* 左索引与右档案各是一块：栏顶一道青线、底下一层极淡的青光。
+   滚动仍在各自栏内，不改锁高。 */
+.list {
+  min-width: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--steel);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 5%, transparent), transparent 180px),
+    var(--bg-1);
+}
+.detail {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 18px 20px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+}
 
 /* 右栏：选中任务的档案 —— 抬头一行是类别与状态，下面才是正题。 */
 .detailHead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.detailTitle { margin: 0 0 6px; font-size: 20px; font-weight: 600; line-height: 1.35; letter-spacing: 0.01em; }
+.detailTitle {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--steel);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+}
 .detailDesc { margin: 0 0 10px; font-size: 12.5px; line-height: 1.8; color: var(--ink-mute); }
 .crewRow {
   display: flex;
@@ -107,8 +132,11 @@
   border-left: 2px solid transparent;
   transition: background var(--t-fast);
 }
-.row:hover { background: var(--bg-2); }
-.rowOn { border-left-color: var(--steel); }
+.row:hover { background: color-mix(in srgb, var(--steel) 3%, var(--bg-2)); }
+.rowOn {
+  border-left-color: var(--steel);
+  background: color-mix(in srgb, var(--steel) 6%, var(--bg-1));
+}
 
 .rowMain { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .kind {

@@ -48,7 +48,7 @@
 .shell {
   display: flex;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 16px;
   align-items: flex-start;
   flex: 1 1 auto;
   min-height: 0;
@@ -64,7 +64,12 @@
   max-width: 100%;
   max-height: 100%;
   overflow: auto;
-  padding-right: 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--steel);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--steel) 5%, transparent), transparent 200px),
+    var(--bg-1);
 }
 .line { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
 /* 三根主干的抬头高度钉成两行：副标长短不一，抬头高一点低一点，下面那棵树就错行了 */
@@ -108,18 +113,24 @@
   text-align: left;
   border: 1px solid var(--line-2);
   border-radius: 0;
-  background: none;
+  background: var(--bg-1);
   cursor: var(--cursor-point);
   transition: border-color var(--t-fast), background var(--t-fast);
 }
-.node:hover { border-color: var(--line-3); background: var(--bg-2); }
+.node:hover { border-color: var(--line-3); background: color-mix(in srgb, var(--steel) 4%, var(--bg-2)); }
 .node:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
 
 /* 状态只有两件事：描边深浅、文字深浅。没有底色、没有影、没有位移 */
 .node[data-research-state='ready'] { border-color: var(--ink-mute); }
-.node[data-research-state='done'] { border-color: var(--line-3); }
+.node[data-research-state='done'] {
+  border-color: var(--line-3);
+  background: color-mix(in srgb, var(--steel) 5%, var(--bg-1));
+}
 .node[data-research-state='locked'] { border-color: var(--line); }
-.node[data-research-on='1'] { border-color: var(--steel); background: var(--bg-2); }
+.node[data-research-on='1'] {
+  border-color: var(--steel);
+  background: color-mix(in srgb, var(--steel) 9%, var(--bg-1));
+}
 .node[data-research-state='locked'] .nodeName { color: var(--ink-mute); }
 
 .dot {
@@ -168,11 +179,10 @@
   display: flex;
   flex-direction: column;
   gap: 9px;
-  padding: 0 0 0 18px;
-  border: 0;
-  border-left: 1px solid var(--line);
+  padding: 16px 14px 18px;
+  border: 1px solid var(--line);
   border-radius: 0;
-  background: none;
+  background: var(--bg-1);
 }
 .detailHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .detailHead b { font-size: 14px; letter-spacing: 0.04em; color: var(--ink); }

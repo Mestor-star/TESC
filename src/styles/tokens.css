@@ -979,3 +979,62 @@ input[type='range']::-moz-range-thumb {
 .chip .chip__dot, .badge .badge__dot { width: 5px; height: 5px; box-shadow: none; border-radius: 1px; }
 .chip--danger { animation: none; }
 
+
+/* ============ 装饰层：页面记号（2026-11 适量装饰） ============
+   新骨架把内容压成「白纸 + 1px 线」，层次全靠间距。这一层只补三种记号，
+   不参与布局、不改交互：
+     · 页头左侧一道竖标，底线前 82px 走青→绯；
+     · 页头小标前一枚 12×6 的框；
+     · 面板栏头左端一枚 3px 青签，面上铺一层从青到透明的淡光。
+   全在伪元素上，pointer-events 不接收事件；手机上竖标让位给留白。 */
+.vpage { position: relative; }
+.vhead { position: relative; border-bottom-color: var(--line-2); }
+.vhead::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 6px;
+  width: 2px;
+  height: 30px;
+  background: linear-gradient(180deg, var(--steel), color-mix(in srgb, var(--red) 55%, transparent));
+  pointer-events: none;
+}
+.vhead::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 94px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--steel) 0 82px, var(--red) 82px 94px, transparent 94px);
+  pointer-events: none;
+}
+.vhead__kicker::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 12px;
+  height: 6px;
+  border: 1px solid color-mix(in srgb, var(--steel) 55%, transparent);
+  border-left-width: 3px;
+  border-left-color: var(--steel);
+}
+.panel > .panel__head {
+  position: relative;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--steel) 5%, transparent), transparent 46%);
+}
+.panel > .panel__head::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 13px;
+  transform: translateY(-50%);
+  background: var(--steel);
+  opacity: 0.7;
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  .vhead::before { display: none; }
+}
+
