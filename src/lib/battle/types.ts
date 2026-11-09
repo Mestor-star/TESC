@@ -1311,9 +1311,9 @@ export interface GearDef {
 /* ============================================================
    敌阵 · 目标池（按场面生成，玩家挑一个打）
    ------------------------------------------------------------
-   这一栏不是「图鉴的索引」，是**这一场原文里可遭遇的那几位**：
-   foePoolOf 以这一段列出的实体 / 指名首领为种子，同族同卷里
-   补一两个变体，每一条都带着「从哪份档案来、为什么在这一段」。
+   这一栏不是「图鉴的索引」，是**这一场现场生成的三位对手**：
+   enemygen 按编号、地点、阶段、性质现造；通道不可用时按同一套规则
+   拼出后备，每一条都带着「从哪来、为什么在这一段」。
    玩家挑中的那一条随之进入 createBattle({ target })，enemiesOf
    拿它当场上头名；不挑（平衡脚本、旧入口）就照旧走现推的观测体。
    ============================================================ */
@@ -1331,6 +1331,34 @@ export interface FoeTargetVariant {
   guardAxis?: AxisKey | null
   /** 换招：把档案里第 index 手（0 起）的说明与效果换掉，名字照旧挂变体标签 */
   tune?: { index: number; effect?: SkillEffect; note: string }
+}
+
+/**
+ * 现场生成的敌体。只存「它是谁、往哪边偏」，不存最终数值：
+ * 同一份 pack 里第 0 位当首领、其余当同行者，五轴与血量要按位次现算
+ * （见 lib/battle/foegen 的 packBossOf）。
+ */
+export interface GenFoe {
+  /** 牌面名 */
+  name: string
+  /** 一字纹章 */
+  sigil: string
+  /** 战斗定位（一行短词） */
+  cls: string
+  /** 它是什么、怎么打（一行，不写比喻） */
+  trait: string
+  /** 名牌色相 #rrggbb */
+  hue: string
+  /** 为什么站在这一场 */
+  why: string
+  /** 生成来源（模型 / 作战系统后备） */
+  origin: string
+  /** 血量偏置（0.85~1.2），最终还要乘档位与时期 */
+  hpBias: number
+  /** 五轴偏置（1 = 不偏） */
+  bias: Partial<Record<AxisKey, number>>
+  /** 三手：0 普攻，1 伤害战技，2 机制 / 防御 */
+  skills: SkillSpec[]
 }
 
 export interface FoeTarget {
@@ -1352,4 +1380,8 @@ export interface FoeTarget {
   variant?: FoeTargetVariant
   /** 它喊上来的同行者（档案 id，按顺序） */
   escortIds?: string[]
+  /** 现场生成的一组敌体：选中哪一条，哪一条排在第 0 位 */
+  pack?: GenFoe[]
+  /** 这一场在观测进度上的位置（0..1），算时期增幅用 */
+  progress?: number
 }

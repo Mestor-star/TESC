@@ -1,4 +1,4 @@
-/* 角色：同一个人，三种读法 —— 左页签认出模块，中间认人，右边读。
+/* 角色：同一个人，三种读法。左页签认出模块，中间认人，右边读。
    零圆角、1px 细线、零渐变零投影；强调只有 --steel，且只落在「选中的那一条」上。
    三栏等高，只有右栏滚；页签与立绘跟着版面走，不进滚动。 */
 
@@ -12,7 +12,7 @@
   overflow: hidden;
 }
 
-/* ── 顶：横向切换栏 ───────────────────────────────── */
+/* ── 顶：横向人物栏。一格一个名字 ─────────────────── */
 .bar {
   display: flex;
   flex: none;
@@ -32,10 +32,9 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: 72px;
-  padding: 6px 4px 8px;
-  border: 0;
-  border-bottom: 2px solid transparent;
+  width: 84px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
   border-radius: 0;
   background: none;
   color: var(--ink-mute);
@@ -43,12 +42,27 @@
   transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
 }
 
-.slot:hover { color: var(--ink); }
-.slot[data-char-sealed='1'] { opacity: 0.45; }
+.slot:hover { border-color: var(--line-3); }
 
 .slotOn {
+  border-color: var(--steel);
+}
+
+.slotName {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.slotOn .slotName {
+  font-weight: 600;
   color: var(--ink);
-  border-bottom-color: var(--steel);
 }
 
 .slotCamp {
@@ -57,6 +71,7 @@
   font-size: 11px;
   line-height: 1.4;
   letter-spacing: 0.04em;
+  color: var(--ink-faint);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -205,7 +220,6 @@
   bottom: 0;
   left: 0;
   padding: 4px 6px;
-  background: var(--bg-0);
   color: var(--ink-faint);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -514,7 +528,7 @@ button.gearCard:hover {
   color: var(--ink-dim);
 }
 
-/* 空态 / 封存：左对齐两行，不套盒子 */
+/* 空态：左对齐两行，不套盒子 */
 .sealed {
   display: grid;
   gap: 6px;

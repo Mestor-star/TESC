@@ -57,8 +57,10 @@ export const BUILTIN_KEY = 'zts-builtin-presets:v1'
  *            去第一人称摘录（CANON_SEED_VERSION 15）；v16 起补回性格与关系；v17 起这两栏
  *            改成整理过的档案写法（data/dossiers.ts，原文只留短引文与台词），注入时
  *            再补一行「此刻（本档）」（lib/liverelation.ts，按当前存档现算）。
+ *   v9 → v10 = 反八股两份清单各补一行：正文与对话一律不写破折号（—— / —），
+ *            停顿改逗号、句号、冒号或断句。与 lib/writing-rules.ts 的 dash 同一条。
  */
-export const BUILTIN_V = 9
+export const BUILTIN_V = 10
 /**
  * 预算归位那一步的账。**记版本号**：目标值改过两代
  * （1500 → 上限 65536 → 30000），老账本记的是一次已经过时的动作，

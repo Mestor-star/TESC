@@ -10,7 +10,6 @@
 import type { PlotBattle } from '../plot'
 import type { Mission } from '../../data/types'
 import { OPERATOR_ID } from '../../data/castmeta'
-import { namedBossOf } from './bosses'
 import { UNGATE, headFoeOf, isMainlineEvent } from './mainline'
 import { TUNING } from './tuning'
 
@@ -57,17 +56,14 @@ export function plotSquadOf(named: string[], isMet: (id: string) => boolean): st
 /**
  * 现场交战 → 作战单（编号 OBS-xxx，性质缺省按反现实实体处理）
  *
- * 头名不由指令说了算：事件本身写着这一场对上的是哪一只（见 mainline 的 EVENT_HEAD），
- * 所以只要这一段的正文里确实有对手，站上来的就是那一位 ——
- * 图鉴上写着「死灵的浮游城」的那一段，打到的不该是一只临时挂牌的观测体。
- * 模型给的 stage / nature 照样用（它读的是这一段的现场），
- * 但**头名与它的血量**归档案：指令是模型写的，图鉴不是。
+ * bossId 仍从事件档案里取（headFoeOf），但只留档：作战屏按现场生成敌体，
+ * 不再把那一位直接搬成对手，也不拿它的血量。
+ * 模型给的 stage / nature 照样用（它读的是这一段的现场）。
  */
 export function battleMissionOf(b: PlotBattle, evId: string): Mission {
   seq += 1
   const stage = clamp(Math.round(b.stage ?? 5), 1, 10)
   const bossId = headFoeOf(evId)
-  const head = namedBossOf(bossId)
   return {
     id: `plot-${evId}-${seq}`,
     no: `OBS-${String(seq).padStart(3, '0')}`,
@@ -80,7 +76,7 @@ export function battleMissionOf(b: PlotBattle, evId: string): Mission {
     status: '压制中',
     deadline: '即刻',
     desc: `${b.name} 出现在现场。交战由观测现场触发——按在场的成员与眼前的敌人开打，打完即回到正文。`
-      + (head ? `\n档案上这一段的头一位是 ${head.name}；${head.from}。` : ''),
+      + '现场的敌体由作战系统按这一段的环境与威胁即时生成，不沿用原文的具名对手。',
     reward: ['现场压制', '观测继续'],
     /* 明写「这一场不能挑」——作战屏读到它就不出选目标那一层，而不是把入口藏起来。 */
     ...(AMBUSH.test(b.name + ' ' + (b.nature ?? '') + ' ' + (b.place ?? '')) ? { forced: true } : {}),

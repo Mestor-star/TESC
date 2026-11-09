@@ -3547,23 +3547,22 @@
   padding: 10px 12px;
   text-align: left;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--steel);
-  border-radius: var(--radius-sm);
-  background: var(--bg-0, var(--bg-1));
+  border-left: 2px solid var(--steel);
+  background: var(--bg-1);
   color: var(--ink);
   cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .pickRow:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 3px 0 var(--steel);
+  border-color: var(--line-2);
+  background: var(--bg-2);
 }
 
 .pickRow[data-focus='1'] {
-  border-color: var(--amber);
+  border-color: var(--amber-deep);
   border-left-color: var(--amber-deep);
-  background: color-mix(in srgb, var(--amber) 10%, var(--bg-1));
+  background: var(--bg-2);
 }
 
 .pickSigil {
@@ -3623,6 +3622,27 @@
   gap: 12px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
+}
+
+.pickWait {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-mute);
+  border: 1px solid var(--line);
+}
+
+.pickNote {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--ink-mute);
+}
+
+.pickActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 @media (max-width: 640px) {

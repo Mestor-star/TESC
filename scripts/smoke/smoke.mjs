@@ -1338,7 +1338,7 @@ try {
   await poll(`!!document.querySelector('[data-character-page]')`, 20000, 'G character page')
 
   /* ---- G0：新版「角色」页自己那几条（星铁风四栏）----
-     ① 顶上那条横栏只摆头像与分类，点一下就换人（左中右一起变）；
+     ① 顶上那条横栏只摆已遇见的人（名字写在头像下），点一下就换人（左中右一起变）；
      ② 六个页签都打得开、各有内容；
      ③ 战术执行里每张卡右上角有「能耗 / 冷却」，卡底有一条分割线 + 加粗的附加效果；
      ④ 世界的色彩六支、最高 7 级、买一级之后等级与合计一起动；
@@ -1346,9 +1346,12 @@ try {
      ⑥ 旧版 → 新版那一枚按钮能来回切。 */
   const g0a = await ev(`(()=>{const bar=document.querySelector('[data-char-bar]');
     const slots=[...document.querySelectorAll('[data-char-switch]')];
-    return {bar:!!bar,slots:slots.length,txt:slots.slice(0,3).map(s=>s.innerText.replace(/\\s+/g,' ').trim())}})()`)
-  ok('G0a 新版「角色」页：顶上横栏 + 全员切换位（只摆头像与分类）',
-    g0a.bar === true && g0a.slots === 26, JSON.stringify(g0a))
+    const txt=slots.map(s=>s.innerText.replace(/\\s+/g,' ').trim());
+    return {bar:!!bar,slots:slots.length,sealed:document.querySelectorAll('[data-char-sealed]').length,
+      txt:txt.slice(0,3),blank:txt.filter(t=>!t||t.includes('？？？')||t.includes('未登记')).length}})()`)
+  ok('G0a 新版「角色」页：顶上横栏只摆已遇见的人，名字写在头像下，不留未遇见的空位',
+    g0a.bar === true && g0a.slots >= 1 && g0a.slots < 26 && g0a.sealed === 0 && g0a.blank === 0,
+    JSON.stringify(g0a))
   // 先认主角：他是**恒定可读**的那一位（别人要 world.met 里有名才显形，见 G1b）
   const g0b = await ev(`(()=>{const b=document.querySelector('[data-char-switch="operator"]');if(!b)return false;b.click();return true})()`)
   await sleep(400)
@@ -2226,7 +2229,9 @@ try {
   await sleep(150)
   await ev(`(()=>{const b=document.querySelector('[data-launch]');if(b)b.click();return true})()`)
   /* 作战屏现在先出「选目标」那一层（可打的目标不止一个时）：方向键挑、Z 开打。
-     只有一个目标时它会自动进入，按不到这一层 —— 所以先探一下，有就按 Z。 */
+     对手是进场后才生成的：先等这一层把三张牌长出来（或只剩一位、直接进了战斗），
+     只有一个目标时按不到这一层 —— 所以探一下，有就按 Z。 */
+  await poll(`!!document.querySelector('[data-battle]') || document.querySelectorAll('[data-target-option]').length > 0`, 20000, 'N picker ready')
   const nPick = await ev(`(()=>{const p=document.querySelector('[data-target-picker]');if(!p)return 0;return p.querySelectorAll('[data-target-option]').length})()`)
   if (nPick) {
     await ev(`(()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',bubbles:true}));return true})()`)
@@ -2374,12 +2379,13 @@ try {
     && nDense.midOk === true && nDense.bal === true,
     JSON.stringify(nDense))
 
-  // N3b：敌方怎么出手 —— 本段已掐掉 api:main，必须落在离线判断上
+  // N3b：敌方怎么出手 —— 全部由作战系统判断，不再经过模型
   const nCmd = await ev(`(()=>{const c=document.querySelector('[data-enemy-command]');const r=document.querySelector('[data-battle]');
     return {chip:!!c, mode:c?c.getAttribute('data-enemy-command'):null, root:r?r.getAttribute('data-command'):null,
       txt:c?c.innerText.replace(/\\s+/g,' '):'', think:document.querySelector('[data-battle]').getAttribute('data-phase')}})()`)
-  ok('N3b 敌方指挥：没接通接口时走离线判断（接通后同一处显示 AI 指挥）',
-    nCmd.chip === true && nCmd.mode === 'offline' && nCmd.root === 'offline' && nCmd.txt.includes('离线'), JSON.stringify(nCmd))
+  ok('N3b 敌方指挥：只有作战系统一种，接口通不通都不过模型',
+    nCmd.chip === true && nCmd.mode === 'offline' && nCmd.root === 'offline'
+    && (nCmd.txt.includes('作战系统') || nCmd.txt.includes('自动')), JSON.stringify(nCmd))
 
   // 需要看版式时：SHOT=<目录> 把作战屏与技能面板各截一张（默认不跑）
   if (process.env.SHOT) {

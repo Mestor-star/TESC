@@ -56,6 +56,8 @@ export interface NamedBoss {
   trait: string
   /** 危险度之外的额外血量倍数（1 = 就是一个标准首领） */
   hpMul: number
+  /** 现场生成的同行者：牌子挂名，但不按「认得出的那位」算（不触发形态链、不抢终结技） */
+  anonymous?: boolean
   /** 五轴。缺省取 roster 的档案读数 */
   axes?: [number, number, number, number, number]
   /**

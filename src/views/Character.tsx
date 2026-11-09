@@ -1,24 +1,25 @@
 /* ============================================================
-   「角色」页 —— 星铁风四栏
+   「角色」页
    ------------------------------------------------------------
    这一格从前是「角色档案」（views/Archive.tsx 那一屏）。现在的主面换成了这一页，
    旧的整屏一个字没动，收在左栏底那枚「旧版显示」后面（开关在 App.tsx 的
    CharacterPage 里，模块变量，不进存档）。
 
    四栏：
-     · 顶：横向可滑的角色切换栏 —— **只有头像与所属分类**，点一下换人；
+     · 顶：横向人物栏。已遇见的人加上操作员本人，一格一个名字，点一下换人；
+           没遇见的角色不占位；
      · 左：深色竖排页签（详情 / 能力体系 / 战术执行 / 世界的色彩 / 反现实武装 / 附属档案）；
-     · 中：立绘。名下有私密立绘的人**点得动**：探针走 lib/cg 的 probeCg，id 与目录
-           照抄私密档案立绘那一套（cg-intim-<id> · lib/rendezvous 的 intimArtDir）；
-           没素材就退回定妆立绘，**不留一个点不动的按钮**；
+     · 中：立绘。半身位取 public/charimg/cut/<id>.webp 的透明底图，没有就退回定妆立绘，
+           再没有走纹章字。名下有私密立绘的人**点得动**：探针走 lib/cg 的 probeCg，
+           id 与目录照抄私密档案立绘那一套（cg-intim-<id> · lib/rendezvous 的 intimArtDir）；
      · 右：主内容区（占这一格的大半）。
 
    数据一律照抄现有那几张表，缺的写「暂无」：
-     · 读数：derive 的 combatantOf —— 与作战里点开同一个人是同一组数
+     · 读数：derive 的 combatantOf，与作战里点开同一个人是同一组数
        （生命 / 节拍 / 五轴；「机动」就是名册五轴里的「敏捷度」）；
      · 武装：data/arms.ts（ARMS 按 holderId 关联；同一人名下后几件是「到达点」那一档）；
      · 成长：lib/growth.ts 的 skillUpsOf / talentUpsOf / canUnlock / unlockWithPoints /
-       colorsOf / buyColor —— 买一级，这一页当场跟着变；
+       colorsOf / buyColor，买一级，这一页当场跟着变；
      · 附属档案：chars/sidecast 的来历、personas 的语音、lore/codex 的智库条目。
 
    ⚠️ 这一页**不自己算任何战斗数值**：一个数都不造，全部从 derive 与成长表读出来。
@@ -64,7 +65,7 @@ import css from './Character.module.css'
    〇、切换栏的一行
    ============================================================ */
 
-/** 阵营四类（主人给的分类口径 —— 与 ROSTER_GROUPS 的组键对得上，'out' 归「非归属」） */
+/** 阵营四类（与 ROSTER_GROUPS 的组键对得上，'out' 归「非归属」） */
 const CAMP_OF: Record<string, string> = {
   ao: '苍之学园',
   kaus: '卡乌斯',
@@ -78,7 +79,7 @@ interface Row {
   name: string
   groupKey: string
   groupLabel: string
-  /** 切换栏下面那一行小字 = 所属分类 */
+  /** 切换栏那一格的小字 = 所属分类 */
   camp: string
   hue: string
   sigil: string
@@ -95,7 +96,7 @@ interface Row {
   page?: string
 }
 
-/** 名录 → 切换栏。次序与旧的档案页同一份（ROSTER_GROUPS），操作员另摆在最前。 */
+/** 名录 → 切换栏。次序与旧的档案页同一份（ROSTER_GROUPS），操作员挨在最前。 */
 function buildRows(): Row[] {
   const core = new Map(CHARACTERS.map((c) => [c.id, c]))
   const side = new Map(SIDECAST.map((e) => [e.id, e]))
@@ -136,7 +137,7 @@ function buildRows(): Row[] {
   return rows
 }
 
-/** 操作员那一条（不在 25 人名册里；切换栏摆他最前 —— 主角） */
+/** 操作员那一条（不在 25 人名册里；切换栏里挨在最前） */
 const OP_ROW: Row = {
   kind: 'operator', id: OPERATOR_ID, name: '言万心叶',
   groupKey: 'op', groupLabel: '终端', camp: '苍之学园',
@@ -153,13 +154,13 @@ const OP_ROW: Row = {
    ------------------------------------------------------------
    七栏照主人给的口径排：生命 · 节拍 · 反现实抗性 · 破坏力 · 机动 · 意志力 · 反现实亲和。
    「机动」就是名册五轴里的「敏捷度」（同一个数，两个叫法：档案叫敏捷度，场上叫机动）；
-   「反现实抗性」走「物理抗性」那条轴 —— 本作数值层里抗性只有一条轴，
+   「反现实抗性」走「物理抗性」那条轴：本作数值层里抗性只有一条轴，
    反现实实体的撞击也走这一条（见 data/growth.ts 黑色奇迹那一格的注）。
    ============================================================ */
 const CORE_ROWS: { key: string; from: (c: Combatant) => number; hint: string }[] = [
   { key: '生命', from: (c) => c.hpMax, hint: '生命上限（含装具、科研与成长）' },
   { key: '节拍', from: (c) => c.tempoMax, hint: '本人那一池节拍的上限' },
-  { key: '反现实抗性', from: (c) => c.axes['物理抗性'], hint: '数值层里的抗性轴 —— 反现实的撞击也走这一条' },
+  { key: '反现实抗性', from: (c) => c.axes['物理抗性'], hint: '数值层里的抗性轴，反现实的撞击也走这一条' },
   { key: '破坏力', from: (c) => c.axes['破坏力'], hint: '主攻轴的读数' },
   { key: '机动', from: (c) => c.axes['敏捷度'], hint: '即名册五轴里的「敏捷度」：出手与走位' },
   { key: '意志力', from: (c) => c.axes['意志力'], hint: '精神韧性；回应与屏障那一类按它算' },
@@ -171,10 +172,10 @@ const CORE_ROWS: { key: string; from: (c: Combatant) => number; hint: string }[]
    ------------------------------------------------------------
    主角在原文里有两副武装面目：弹痕「noapusa」（化身之枪）与斩击之戒「a Session.」
    （灵魂共奏）。这两副在 lib/operator-arc.ts 的 OP_PERIODS 里各是一段**时期**，
-   数据齐全（五轴、武装、技能表都在）—— 所以这里按它来，不另造一套形态表。
+   数据齐全（五轴、武装、技能表都在），这里按它来，不另造形态表。
 
    这一枚按钮只做一件事：**把这一页翻到那一段时期的读数上**。
-   它不写存档、不改编成、不进战斗 —— 战斗侧读的仍是剧情推进到的那一段
+   它不写存档、不改编成、不进战斗；战斗侧读的仍是剧情推进到的那一段
    （opPeriodAt(epDone)）。写在明处，免得有人以为按一下上阵就换了形态。
    ============================================================ */
 type Liturgy = 'scar' | 'cut'
@@ -185,7 +186,7 @@ function periodOfLiturgy(f: Liturgy): OpPeriod {
   return hit ?? OP_PERIODS[0]!
 }
 
-/** 某一时期在时间线上的位置（0..1）—— 与 derive 的 periodProgress 同一把尺 */
+/** 某一时期在时间线上的位置（0..1），与 derive 的 periodProgress 同一把尺 */
 function progressAtEvent(eventId: string): number {
   const i = TIMELINE.findIndex((e) => e.id === eventId)
   if (i < 0) return 0
@@ -205,7 +206,7 @@ const CAT_OF_KIND: Record<string, string> = {
 }
 const SYSTEM_CATS = ['弹痕', '片羽', '斩击', '异常遗物', '终末']
 
-/** 一手技能归哪个标签（攻击 / 牵制 / 辅助）—— 按它挂的框架归纳，不为每个人各编一句 */
+/** 一手技能归哪个标签（攻击 / 牵制 / 辅助）：按它挂的框架归纳 */
 const TAG_OF_ARCH: Record<string, string> = {
   强袭: '攻击', 扫荡: '攻击', 穿甲: '攻击', 连打: '攻击', 乱击: '攻击', 驱逐: '攻击', 震退: '攻击',
   到达点: '攻击', basic: '攻击',
@@ -248,11 +249,15 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
   const [owned, setOwned] = useState<Record<string, number>>({})
   const [coin, setCoin] = useState(0)
   const [note, setNote] = useState('')
-  /** 买完一级要重读成长表 —— 那几张表是同步读 localStorage 的，靠它把这一页推醒 */
+  /** 买完一级要重读成长表。那几张表是同步读 localStorage 的，靠它把这一页推醒 */
   const [ver, setVer] = useState(0)
 
-  const sel = catalog.find((r) => r.id === selId) ?? catalog[0]!
-  const unlocked = sel.kind === 'operator' || isMet(sel.id)
+  /* 顶上只列已遇见的人与操作员本人；未遇见的不占位，也就选不到 */
+  const shown = useMemo(
+    () => catalog.filter((r) => r.kind === 'operator' || isMet(r.id)),
+    [catalog, isMet],
+  )
+  const sel = shown.find((r) => r.id === selId) ?? shown[0]!
 
   useEffect(() => {
     void readEquip().then(setEquip)
@@ -269,7 +274,7 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
     clearProfileRequest()
   }, [profileRequest, isMet, clearProfileRequest])
 
-  /* 换人就回到详情、私密立绘收回去 —— 那是**某一个人**身上的一层，不该跟着走 */
+  /* 换人就回到详情、私密立绘收回去：那一层只属于某一个人，不该跟着走 */
   useEffect(() => { setNsfwOn(false); setNote('') }, [selId])
 
   const progress = useMemo(() => periodProgress(epDone), [epDone])
@@ -278,8 +283,7 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
    * 这一页此刻量的是哪一段：
    *   · 主角：按「天使之律」那一枚翻，默认停在**进度推进到的那一段**上；
    *   · 其余人：就是此刻的推进进度，一段不动。
-   * 翻出来的那一段用它自己的进度去造人 —— 于是五轴、技能表、带出来的手全是**真数据**，
-   * 不是照着现值乘一个系数。
+   * 翻出来的那一段用它自己的进度去造人，五轴、技能表、带出来的手都是**真数据**。
    */
   const shownPeriod = sel.kind === 'operator' && liturgy === 'cut' ? periodOfLiturgy('cut') : livePeriod
   const opProg = sel.kind === 'operator' ? progressAtEvent(shownPeriod.at) : progress
@@ -289,8 +293,12 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
     [sel.id, opProg, equip],
   )
 
-  /* ---- 立绘：定妆那张 + （有素材时）私密那张 ---- */
+  /* ---- 立绘：去白底的裁切图优先，加载失败退回定妆那张，再没有走纹章 ---- */
   const sfwArt = useCharImg(sel.id, 'full')
+  const [deadArt, setDeadArt] = useState<string | null>(null)
+  useEffect(() => { setDeadArt(null) }, [sel.id])
+  const cutArt = import.meta.env.BASE_URL + 'charimg/cut/' + sel.id + '.webp'
+  const stillArt = cutArt !== deadArt ? cutArt : (sfwArt && sfwArt !== deadArt ? sfwArt : null)
   const [nsfwArt, setNsfwArt] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
@@ -298,7 +306,7 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
     void probeCg('cg-intim-' + sel.id, intimArtDir(sel.id)).then((u) => { if (alive) setNsfwArt(u) })
     return () => { alive = false }
   }, [sel.id])
-  const artSrc = nsfwOn && nsfwArt ? nsfwArt : sfwArt
+  const artSrc = nsfwOn && nsfwArt && nsfwArt !== deadArt ? nsfwArt : stillArt
 
   /* ---- 成长：技能 / 天赋 / 色彩 ---- */
   const skills = useMemo(() => skillUpsOf(sel.id, epDone), [sel.id, epDone, ver])
@@ -345,11 +353,10 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
 
   return (
     <div className={`vpage ${css.page}`} data-character-page>
-      {/* ---- 顶：横向切换栏。只摆头像与分类，别的什么也不摆 ---- */}
+      {/* ---- 顶：横向人物栏。只列已遇见的人，一格一个名字 ---- */}
       <div className={css.bar} data-char-bar role="tablist" aria-label="角色切换">
-        {catalog.map((r) => {
+        {shown.map((r) => {
           const on = r.id === sel.id
-          const met = r.kind === 'operator' || isMet(r.id)
           return (
             <button
               key={r.id}
@@ -357,18 +364,12 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
               role="tab"
               aria-selected={on}
               data-char-switch={r.id}
-              data-char-sealed={met ? undefined : '1'}
               className={cx(css.slot, on && css.slotOn)}
               onClick={() => { setSelId(r.id); setTab('detail') }}
             >
-              <Portrait
-                avatarId={r.id}
-                name={met ? r.name : '？？？'}
-                hue={r.hue}
-                sigil={met ? r.sigil : '？'}
-                size={44}
-              />
-              <span className={css.slotCamp}>{met ? r.camp : '未登记'}</span>
+              <Portrait avatarId={r.id} name={r.name} hue={r.hue} sigil={r.sigil} size={44} />
+              <span className={css.slotName}>{r.name}</span>
+              <span className={css.slotCamp}>{r.camp}</span>
             </button>
           )
         })}
@@ -407,13 +408,19 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
             data-char-nsfw={nsfwOn ? '1' : '0'}
             data-char-art-ready={nsfwArt ? '1' : undefined}
             disabled={!nsfwArt}
-            title={nsfwArt ? (nsfwOn ? '点一下换回定妆立绘' : '点一下换私密立绘') : '此人名下还没有另一张立绘'}
+            title={nsfwArt ? (nsfwOn ? '点一下换回定妆立绘' : '点一下换私密立绘') : '没有另一张立绘'}
             onClick={() => { if (nsfwArt) setNsfwOn((v) => !v) }}
           >
             {artSrc ? (
-              <img src={artSrc} alt={sel.name} loading="eager" decoding="async" />
+              <img
+                src={artSrc}
+                alt={sel.name}
+                loading="eager"
+                decoding="async"
+                onError={() => { if (artSrc) setDeadArt(artSrc) }}
+              />
             ) : (
-              <span className={css.artGlyph} style={{ color: inkOf(sel.hue) }}>{unlocked ? sel.sigil : '？'}</span>
+              <span className={css.artGlyph} style={{ color: inkOf(sel.hue) }}>{sel.sigil}</span>
             )}
             {nsfwArt ? (
               <span className={css.artTip}>
@@ -422,19 +429,14 @@ export function Character({ onShowOld }: { onShowOld?: () => void }) {
             ) : null}
           </button>
           <div className={css.artName}>
-            <b>{unlocked ? sel.name : '？？？'}</b>
-            <small>{unlocked ? sel.epithet : '尚未登记'}</small>
+            <b>{sel.name}</b>
+            <small>{sel.epithet}</small>
           </div>
         </div>
 
         {/* ---- 右：主内容区 ---- */}
         <div className={css.main} data-char-panel={tab}>
-          {!unlocked ? (
-            <div className={css.sealed} data-char-sealed-panel>
-              <b>封存</b>
-              <span>此人还没照过面 —— 名册上不显名、不泄数值。遇见了再看。</span>
-            </div>
-          ) : tab === 'detail' ? (
+          {tab === 'detail' ? (
             <DetailTab
               row={sel} c={c} gear={gear} arms={arms}
               isOp={sel.kind === 'operator'} liturgy={liturgy}
@@ -515,8 +517,7 @@ function DetailTab({ row, c, gear, arms, isOp, liturgy, onLiturgy, shownPeriod, 
           })}
         </div>
         <p className={css.foot}>
-          这七个读数与作战里点开同一个人看到的是同一组（同一个 derive）；条宽按本人最高的那一栏归一 ——
-          条满只说明「他这一栏最高」，不是到顶。
+          七项读数与作战中点开同一人看到的是同一组数（同一个 derive）。条宽按本人最高一项归一。
         </p>
       </section>
 
@@ -530,17 +531,17 @@ function DetailTab({ row, c, gear, arms, isOp, liturgy, onLiturgy, shownPeriod, 
             <em>点一下进「反现实武装」换装</em>
           </button>
         ) : arms[0] ? (
-          /* 没另外装配的时候，「自带装具」读的就是**他身上那件反现实武装**（arms.ts 按 holderId 关联）。
-             这不是装具位那件可换的东西 —— 它是本相，所以这里只把他引到武装页去。 */
+          /* 没另外装配具的时候，这一格读的是他身上那件反现实武装（arms.ts 按 holderId 关联）。
+             那是本相，不在装具位上，所以只把人引到武装页。 */
           <button type="button" className={css.gearCard} data-char-gear={arms[0].id} onClick={onArm}>
             <b>{arms[0].name}</b>
             <span>{arms[0].kind} · {arms[0].sub}</span>
-            <em>他身上自带的那件 —— 点一下进「反现实武装」</em>
+            <em>本相武装 · 点开「反现实武装」</em>
           </button>
         ) : (
           <div className={css.gearCard} data-char-gear="__none">
             <b>未装配</b>
-            <span>他身上既没有登记过的武装，也没有装配具 —— 点开「反现实武装」挑一件。</span>
+            <span>没有登记在案的武装，也没有装配具。</span>
           </div>
         )}
 
@@ -554,8 +555,7 @@ function DetailTab({ row, c, gear, arms, isOp, liturgy, onLiturgy, shownPeriod, 
               <span>{shownPeriod.armSub}</span>
               <span>{shownPeriod.armNote}</span>
               <small>
-                这一枚只翻这一页：呈现层，不改存档、不改编成、不进战斗 ——
-                战斗侧读的仍是剧情推进到的那一段（现在是「{livePeriod.title}」）。
+                只翻本页读数，不改存档、不改编成。战斗读的仍是剧情推进到的那一段（现在是「{livePeriod.title}」）。
               </small>
             </div>
           </div>
@@ -644,13 +644,13 @@ function SystemTab({ row, c, arms, ups }: {
               ))}
             </ol>
             <p className={css.foot}>
-              同一人名下的后几件是「到达点」那一档 —— 本相走到尽头才露出来的那副样子，不是另一件东西。
+              同一人名下的后几件属「到达点」一档，是本相走到尽头后的形态。
             </p>
           </>
         ) : (
           <div className={css.sealed}>
             <b>暂无</b>
-            <span>此人名下没有登记过的反现实武装考据（arms.ts 只收有本相可考的人）。</span>
+            <span>没有登记在案的反现实武装。</span>
           </div>
         )}
       </section>
@@ -676,8 +676,8 @@ function SystemTab({ row, c, arms, ups }: {
           })}
         </div>
         <p className={css.foot}>
-          「超限」= 那条线已经练到顶（指向性升级一共三级；终结技另走一条路：到达点）。
-          名册里没有成长线的手（普攻、解封门）不标档。
+          「超限」表示那条线已练到顶。指向性升级共三级，终结技走的是到达点。
+          普攻与解封门没有成长线，不标档。
         </p>
       </section>
     </div>
@@ -688,8 +688,8 @@ function SystemTab({ row, c, arms, ups }: {
    七、战术执行
    ------------------------------------------------------------
    每条 = 【标签】+ 技能名；右上角统一「能耗: X / 冷却: X」；
-   正文是视觉表现 + 机制效果；有附加效果的，卡片底部用一条分割线隔开并加粗
-   —— 那一句就是升级会往上抬的那一项（growth 表的 GrowthLevel.extra）。
+   正文是视觉表现 + 机制效果；有附加效果的，卡片底部用一条分割线隔开并加粗，
+   那一句就是升级会往上抬的那一项（growth 表的 GrowthLevel.extra）。
    ============================================================ */
 function UpCard({ st, kind, spec, coin, note, onBuy }: {
   st: UpState
@@ -776,7 +776,7 @@ function TacticsTab({ id, skills, talents, specs, coin, note, onBuy }: {
           </div>
         ) : (
           <div className={css.sealed}>
-            <b>暂无</b><span>成长表里没有这个人的技能线（它不是名册上的人）。</span>
+            <b>暂无</b><span>成长表里没有这个人的技能线。</span>
           </div>
         )}
       </section>
@@ -790,12 +790,12 @@ function TacticsTab({ id, skills, talents, specs, coin, note, onBuy }: {
           </div>
         ) : (
           <div className={css.sealed}>
-            <b>暂无</b><span>这个人的天赋还没有登记成成长线。</span>
+            <b>暂无</b><span>这个人的天赋没有成长线。</span>
           </div>
         )}
       </section>
       <p className={css.foot}>
-        第 1 级由剧情节点白送（读到那一段自动到位），往上的几级走终末点数。手上：{coin} 点。
+        第 1 级随剧情到位，之后几级用终末点数。持有：{coin} 点。
       </p>
     </div>
   )
@@ -805,7 +805,7 @@ function TacticsTab({ id, skills, talents, specs, coin, note, onBuy }: {
    八、世界的色彩
    ------------------------------------------------------------
    六支原文奇迹，每支只抬一项数值，1→7 级。两条来路：拿终末点数买（价走 growth 的公式），
-   或者击破具名首领掉落（账记在 growth 的 drops 里 —— 这一页不重复记账，只把规则摆出来）。
+   或者击破具名首领掉落（账记在 growth 的 drops 里，这一页只把规则摆出来）。
    ============================================================ */
 const FIELD_NAME: Record<string, string> = {
   atk: '破坏力', hp: '生命上限', res: '物理抗性', aff: '反现实亲和', will: '意志力', evade: '闪避',
@@ -870,7 +870,7 @@ function ColorsTab({ colors, coin, note, sum, onBuy }: {
         </div>
         <p className={css.foot}>{COLOR_DROP_RULE}</p>
         <p className={css.foot}>
-          击破具名首领掉落判定 {(COLOR_DROP_CHANCE * 100).toFixed(0)}%（账记在成长那一支，这一页不另记）。
+          击破具名首领时掉落，判定 {(COLOR_DROP_CHANCE * 100).toFixed(0)}%。
         </p>
       </section>
       {note ? <div className={css.noteLine}>{note}</div> : null}
@@ -882,7 +882,7 @@ function ColorsTab({ colors, coin, note, sum, onBuy }: {
    九、反现实武装
    ------------------------------------------------------------
    这一页两半：**武装本身**（arms.ts，按 holderId 关联，只读）与**装具**（编成里那件，
-   点一下就换 —— 与档案页、作战屏「更换装备」写的是同一份记录，见 battle/store 的 writeEquip）。
+   点一下就换，与档案页、作战屏「更换装备」写的是同一份记录（见 battle/store 的 writeEquip）。
    ============================================================ */
 function ArmTab({ row, c, arms, gear, equip, owned, onPick }: {
   row: Row
@@ -913,7 +913,7 @@ function ArmTab({ row, c, arms, gear, equip, owned, onPick }: {
         ) : (
           <div className={css.sealed}>
             <b>暂无</b>
-            <span>此人名下没有登记过的武装考据 —— 他的入口是终端，不是石像。</span>
+            <span>没有登记在案的武装。</span>
           </div>
         )}
       </section>
@@ -945,7 +945,7 @@ function ArmTab({ row, c, arms, gear, equip, owned, onPick }: {
 
       <section className={css.card}>
         <h3 className={css.cardTitle}>换装具</h3>
-        <p className={css.foot}>每人至多一件 · 不消耗回合、不花点数 · 换完出击就是这一套。</p>
+        <p className={css.foot}>每人至多一件，不耗回合，不花点数。</p>
         {pool.length ? (
           <div className={css.gearList}>
             <button
@@ -955,7 +955,7 @@ function ArmTab({ row, c, arms, gear, equip, owned, onPick }: {
               onClick={() => onPick(null)}
             >
               <b>不装配</b>
-              <span>空着也是空着，但空着不挨罚。</span>
+              <span>不装具也能出击。</span>
             </button>
             {pool.map((g) => {
               const ok = canEquip(row.id, g.id)
@@ -982,7 +982,7 @@ function ArmTab({ row, c, arms, gear, equip, owned, onPick }: {
         ) : (
           <div className={css.sealed}>
             <b>暂无</b>
-            <span>军需处还没换到能装的东西 —— 拿贡献点去兑，或者从打过的敌人身上搜。</span>
+            <span>还没有可装的具。</span>
           </div>
         )}
       </section>
@@ -1035,7 +1035,7 @@ function ExtraTab({ row, arms }: { row: Row; arms: ArmEntry[] }) {
           </ul>
         ) : (
           <div className={css.sealed} data-char-voice-empty>
-            <b>暂无</b><span>这个人还没有录入的台词档。</span>
+            <b>暂无</b><span>没有录入的台词。</span>
           </div>
         )}
       </section>
@@ -1045,8 +1045,7 @@ function ExtraTab({ row, arms }: { row: Row; arms: ArmEntry[] }) {
         <div className={css.sealed} data-char-comment>
           <b>暂无</b>
           <span>
-            名册只登记了学生排行{row.rank ? '（此人 RANK ' + row.rank + '）' : '（此人没有 RANK）'}，
-            没有逐人的委员会评语可引 —— 不替它编。
+            名册只登记学生排行{row.rank ? '（RANK ' + row.rank + '）' : '（没有 RANK）'}，没有逐人评语。
           </span>
         </div>
       </section>
@@ -1064,7 +1063,7 @@ function ExtraTab({ row, arms }: { row: Row; arms: ArmEntry[] }) {
             ))}
           </div>
         ) : (
-          <div className={css.sealed}><b>暂无</b><span>智库按阵营挑不到指向此人的条目。</span></div>
+          <div className={css.sealed}><b>暂无</b><span>没有按阵营关联到的条目。</span></div>
         )}
         {codex ? (
           <div className={css.loreRow} data-char-codex={codex.id}>

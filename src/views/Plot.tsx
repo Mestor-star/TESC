@@ -2911,33 +2911,6 @@ export function Plot() {
                 <div ref={endRef} />
               </div>
 
-              {pendingBattle && pendingBattle.evId === focusEv.id && ready && !busy ? (
-                <div className={css.battleBar} data-plot-battle={pendingBattle.mission.id}>
-                  <div className={css.battleHead}>
-                    <b>交战 · {pendingBattle.name}</b>
-                    <div className={css.battleActs}>
-                      <button
-                        className="btn btn--primary"
-                        style={{ fontSize: 12 }}
-                        data-enter-battle="1"
-                        onClick={() => setPlotBattle({ mission: pendingBattle.mission, squad: pendingBattle.squad })}
-                        title="按现场这几个人开打；打赢了本事件才继续"
-                      >
-                        <Sword size={14} weight="bold" /> 进入战斗
-                      </button>
-                    </div>
-                  </div>
-                  <div className={css.battleRoster}>
-                    {pendingBattle.squad.map((id) => (
-                      <span key={id} className={css.battleWho}>{personOf(id)?.name ?? id}</span>
-                    ))}
-                  </div>
-                  <span className={css.battleNote}>
-                    这一仗要打赢：撤退或战败都回到正文，按钮还在。应敌的只有现场这几个人，别处的人调不过来。
-                  </span>
-                </div>
-              ) : null}
-
               {/* 收束栏（模型宣布过收束）：data-concluded 在冒烟里是「这一段已被判定收束」的把手，
                   含义只归模型那一枚 —— 人工通道另开一格（下面那一栏），别把这枚含义借走。 */}
               {concluded && concluded.evId === focusEv.id && ready && !busy ? (
@@ -3112,6 +3085,35 @@ export function Plot() {
               </div>
             </div>
           )}
+
+          {/* 待战按钮不分在线/离线：离线通读那一路也可能有未了的一仗。 */}
+              {pendingBattle && pendingBattle.evId === focusEv.id && !busy ? (
+                <div className={css.battleBar} data-plot-battle={pendingBattle.mission.id}>
+                  <div className={css.battleHead}>
+                    <b>交战 · {pendingBattle.name}</b>
+                    <div className={css.battleActs}>
+                      <button
+                        className="btn btn--primary"
+                        style={{ fontSize: 12 }}
+                        data-enter-battle="1"
+                        onClick={() => setPlotBattle({ mission: pendingBattle.mission, squad: pendingBattle.squad })}
+                        title="按现场这几个人开打；打赢了本事件才继续"
+                      >
+                        <Sword size={14} weight="bold" /> 进入战斗
+                      </button>
+                    </div>
+                  </div>
+                  <div className={css.battleRoster}>
+                    {pendingBattle.squad.map((id) => (
+                      <span key={id} className={css.battleWho}>{personOf(id)?.name ?? id}</span>
+                    ))}
+                  </div>
+                  <span className={css.battleNote}>
+                    这一仗要打赢：撤退或战败都回到正文，按钮还在。应敌的只有现场这几个人，别处的人调不过来。
+                  </span>
+                </div>
+              ) : null}
+
         </section>
         )}
 

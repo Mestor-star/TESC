@@ -239,9 +239,8 @@ export function mainlineMissions(
     if (!foes.length) return
     const done = won(e.id)
     if (!done) frontier = true
-    // 头名：认得出档案的那一只（见 EVENT_HEAD）。认不出就照旧是现推的观测体
+    // bossId 只留档（图鉴 / 战报 / mech 的 EVENT_HEAD）；作战屏的敌体由现场生成覆盖
     const bossId = headFoeOf(e.id)
-    const head = namedBossOf(bossId)
     out.push({
       id: `main-${e.id}`,
       at: e.id,
@@ -258,8 +257,7 @@ export function mainlineMissions(
       status: done ? '完成' : '压制中',
       deadline: done ? '战果已入档 · 待提交' : '剧情战斗 · 在推演现场发生',
       desc: `${e.summary}`
-        + `\n\n本作战为主线第 ${i + 1} 段「${e.phase}」：对手是 ${foes.join('、')}。`
-        + (head ? `\n站在对面的头一位是 ${head.name}；${head.from}。` : '')
+        + `\n\n本作战为主线第 ${i + 1} 段「${e.phase}」：现场的敌体由作战系统按这一段的环境与威胁即时生成，不沿用原文的具名对手。`
         + (done
           ? `\n现场那一仗已经赢了，战果记在作战记录里 —— 点「提交归档」把这一段收进档案；不提交，它就一直挂在牌面上。`
           : `\n它不在这里下令开打 —— 到剧情推进里走到这一段，现场自然会撞上；那一仗赢了，这一条自己翻成「已完成」。`)

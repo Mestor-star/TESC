@@ -28,7 +28,8 @@ import { resolveEntityToCodexId } from '../../data/codex'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
 import { isFoeEntity, nonFoeReasonOf } from './foeclass'
-import type { AxisKey, FoeTarget, FoeTargetVariant } from './types'
+import { TUNING, enemyAxesAt } from './tuning'
+import type { AxisKey, FoeTarget, FoeTargetVariant, GenFoe } from './types'
 
 const AXES: readonly AxisKey[] = ['破坏力', '敏捷度', '物理抗性', '反现实亲和', '意志力']
 
@@ -80,6 +81,7 @@ function variantFor(seed: string, base: NamedBoss): FoeTargetVariant {
 
 /** 档案 + 变体 → 上场用的那一份（derive 仍走同一条 buildFoe） */
 export function targetBossOf(t: FoeTarget): NamedBoss | undefined {
+  if (t.pack?.length) return packBossOf(t, 0)
   if (!t.bossId) return undefined
   const base = namedBossOf(t.bossId)
   if (!base || !t.variant) return base
@@ -103,6 +105,45 @@ export function targetBossOf(t: FoeTarget): NamedBoss | undefined {
     axes,
     skills,
     ...(v.guardAxis === null ? { guardAxis: undefined } : v.guardAxis ? { guardAxis: v.guardAxis } : {}),
+  }
+}
+
+/**
+ * 现场生成的一组敌体里，第 i 位站上来时是谁。
+ *
+ * 数值在这里现算，不写回生成结果：同一组里第 0 位当首领、其余当同行者，
+ * 换谁排第一都要按那一档重算五轴与血量。模型只给偏置，改不动平衡。
+ */
+export function packBossOf(t: FoeTarget, i: number): NamedBoss | undefined {
+  const g: GenFoe | undefined = t.pack?.[i]
+  if (!g) return undefined
+  const tier = i === 0 ? 'boss' : 'elite'
+  const pf = 1 + Math.max(0, Math.min(1, t.progress ?? 0.5)) * TUNING.enemyProgressGain
+  const base = enemyAxesAt(t.stage, { progressMul: pf })
+  const atkMul = tier === 'boss' ? TUNING.bossAtkMul : TUNING.eliteAtkMul
+  const willMul = tier === 'boss' ? TUNING.bossWillMul : TUNING.eliteWillMul
+  const axes: [number, number, number, number, number] = [
+    Math.round(base.破坏力 * atkMul * (g.bias.破坏力 ?? 1)),
+    Math.round(base.敏捷度 * (g.bias.敏捷度 ?? 1)),
+    Math.round(base.物理抗性 * (g.bias.物理抗性 ?? 1)),
+    Math.round(base.反现实亲和 * (g.bias.反现实亲和 ?? 1)),
+    Math.round(base.意志力 * willMul * (g.bias.意志力 ?? 1)),
+  ]
+  const targetHp = tier === 'boss'
+    ? (t.stage >= TUNING.ultStage ? TUNING.bossHpMul : TUNING.bossHpMulMid)
+    : TUNING.eliteHpMul
+  return {
+    id: t.key + '#' + i,
+    name: g.name,
+    sigil: g.sigil,
+    hue: g.hue,
+    cls: g.cls,
+    trait: g.trait,
+    hpMul: (targetHp / TUNING.bossHpMul) * pf * g.hpBias,
+    axes,
+    skills: g.skills,
+    from: g.origin + ' · ' + g.why,
+    anonymous: i > 0,
   }
 }
 

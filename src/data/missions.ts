@@ -7,16 +7,16 @@ import type { Mission } from './types'
  */
 export const MISSIONS: Mission[] = [
   /* —— 第 2 卷 · 天空竞技祭 代表战（正史复盘）——
-     这三场的对面不是观测体，是 Corporations 的代表选手：
+     这三场的档案里挂着 Corporations 的代表选手：
      梅尔文・格蕾（RANK47）、亚历克斯・凯夫、菲德拉・雷诺兹（RANK14）。
-     所以挂了 bossId —— 见 lib/battle/bosses.ts。 */
+     bossId 只留档（图鉴与战报归档）；作战屏的敌体由现场生成，不按这张表点名。 */
   {
     id: 'mst-v2x1',
     no: 'MST-V2X1',
     title: '天空竞技祭 · 先锋战 · 废校',
     place: '第6区竞技场 · 模拟装置「废校」',
     stage: 6,
-    nature: '指名对手 · 弹痕「愚者的足迹」',
+    nature: '异端 · 现场判定',
     recommend: ['小柴喵呜', '言万心叶', '恋兔光'],
     status: '完成',
     deadline: '复盘已归档',
@@ -34,7 +34,7 @@ export const MISSIONS: Mission[] = [
     title: '天空竞技祭 · 中坚战 · 夜之街',
     place: '第6区竞技场 · 模拟装置「夜之街」',
     stage: 6,
-    nature: '指名对手 · 片羽「午夜降临」',
+    nature: '异界 · 现场判定',
     recommend: ['梅芙莉莎', '恋兔光', '露娜'],
     status: '完成',
     deadline: '复盘已归档',
@@ -52,7 +52,7 @@ export const MISSIONS: Mission[] = [
     title: '天空竞技祭 · 副将战 · 罗马斗兽场',
     place: '第6区竞技场 · 模拟装置「罗马斗兽场」',
     stage: 6,
-    nature: '指名对手 · 片羽「申告虚伪」',
+    nature: '异端 · 现场判定',
     recommend: ['言万心叶', '露娜', '恋兔光'],
     status: '完成',
     deadline: '复盘已归档',

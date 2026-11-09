@@ -26,7 +26,7 @@ import type { GrowthBonus } from '../growth'
 import { ROSTER } from './roster'
 import { namedBossOf } from './bosses'
 import type { NamedBoss } from './bosses'
-import { targetBossOf } from './foegen'
+import { packBossOf, targetBossOf } from './foegen'
 import { critMulOf, critOf } from './duty'
 import { GEAR_OF, gearSkillOf } from './gear'
 import { AXIS_SCALE, START_GATE, TUNING, UNRATED_AXES, enemyAxesAt } from './tuning'
@@ -1026,18 +1026,23 @@ export function enemiesOf(m: Mission, progress = 0, target?: FoeTarget): Combata
   }
   const out: Combatant[] = []
   for (let i = 0; i < count; i++) {
-    // 指名首领：任务挂了 bossId、且那份档案对得上时，场上的头一名就换成他
-    // （见 bosses.ts —— 那一类对手是有名有姓有 RANK 的真人，不是现推的观测体）。
-    /* 玩家挑中的那一条（见 lib/battle/foegen）优先：它带着「这一场打谁」。
-       没挑（平衡脚本 / 旧入口）就照旧读任务挂的 bossId —— 数值一个字节不动。 */
-    const named = i === 0 ? (target ? targetBossOf(target) : namedBossOf(m.bossId)) : undefined
-    // 每一场都得有一个拿得出的对手：头一名是「精英」；危险度到 bossTierStage 时升格为「首领」。
+    /* 现场生成的一组（见 lib/battle/enemygen）优先：挑中的那一位当首领，
+       其余两位当同行者；没挑（平衡脚本 / 旧入口）就照旧读任务挂的 bossId。
+       bossId 现在只留档，作战屏不再按它点名。 */
+    const named = target?.pack?.[i]
+      ? packBossOf(target, i)
+      : i === 0
+        ? (target ? targetBossOf(target) : namedBossOf(m.bossId))
+        : undefined
+    // 有 named 时：第 0 位站首领档，同行者站精英档（现场生成的一组也走这条）。
+    // 没有 named 时：头一名先按精英算，危险度到 bossTierStage 再升格为首领。
     // 一支小队清完一整场却没碰上一个像样的东西，那不算作战，只算打扫。
     // 危险度那道线**不是** ultStage（那管的是终结技能，见 tuning 的 bossTierStage）。
-    // 指名首领恒为「首领」档：他是档案里的人，不该因为这一场排在卷几就被念成精英。
-    const tier: Combatant['tier'] = i > 0
-      ? undefined
-      : named || m.stage >= TUNING.bossTierStage ? 'boss' : 'elite'
+    const tier: Combatant['tier'] = named
+      ? (i === 0 ? 'boss' : 'elite')
+      : i > 0
+        ? undefined
+        : m.stage >= TUNING.bossTierStage ? 'boss' : 'elite'
     out.push(buildFoe(seed, i, tier, named))
   }
   return out
@@ -1151,7 +1156,7 @@ function buildFoe(seed: FoeSeed, i: number, tier: Combatant['tier'], named?: Nam
       trait: named?.trait ?? nature,
       tier,
       // 认人用：场上的 id 只有位次，认不出档案里是谁（见 Combatant.namedId）
-      namedId: named?.id,
+      namedId: named?.anonymous ? undefined : named?.id,
       hp: hpMax,
       hpMax,
       axes,

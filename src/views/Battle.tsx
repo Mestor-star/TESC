@@ -6,36 +6,14 @@ import {
 } from '@phosphor-icons/react'
 
 import {
-  act, bossUltOf, chainOf, chargeOf, createBattle, digestOf, enemysTurn, etaOf, legalSkills,
-  linkBoardOf, lootOddsOf, pendingFoe, rewardOf,
+  act, bossUltOf, chainOf, chargeOf, createBattle, digestOf, etaOf, legalSkills,
+  linkBoardOf, lootOddsOf, rewardOf,
 } from '../lib/battle/engine'
 import type { Command, LinkBoardRow } from '../lib/battle/engine'
-import { intentOf, requestEnemyIntent } from '../lib/battle/ai'
-import type { RawIntent } from '../lib/battle/ai'
 
-/**
- * 等一个请求，但**最多等这么久**。
- *
- * 敌方的这一手不该由模型的快慢说了算：到点还没回话就当没问过（返回 null），
- * 调用方退回引擎自己的判断 —— 宁可敌体打得笨一点，也不让玩家干等。
- * 超时会把请求 abort 掉，省得它回来时没人接、白烧一次 token。
- */
-function withDeadline<T>(p: Promise<T>, ms: number, onTimeout: () => void): Promise<T | null> {
-  return new Promise<T | null>((resolve) => {
-    const timer = window.setTimeout(() => {
-      onTimeout()
-      resolve(null)
-    }, ms)
-    void p.then(
-      (v) => { window.clearTimeout(timer); resolve(v) },
-      () => { window.clearTimeout(timer); resolve(null) },
-    )
-  })
-}
 import { battleBed, sfx } from '../lib/audio'
 import type { SfxName } from '../lib/audio'
 import { isReady, loadProfile } from '../lib/api'
-import type { ApiSettings } from '../lib/api'
 import { inkOf } from '../lib/hue'
 import { iconNameOf, iconOf } from '../lib/battle/icons'
 import { narrateBattle, recordOf } from '../lib/battle/narrate'
@@ -51,14 +29,14 @@ import {
 } from '../lib/battle/skilltext'
 import { archNameOf } from '../lib/battle/atlas'
 import { namedBossOf } from '../lib/battle/bosses'
-import { foePoolOf } from '../lib/battle/foegen'
+import { fallbackFoePool, generateFoePool } from '../lib/battle/enemygen'
 import { enemyFormation } from '../lib/battle/derive'
 import { bondsOf, synergiesOf } from '../lib/battle/synergy'
 import { dutyOf } from '../lib/battle/duty'
 import { rBadgeOf } from '../lib/battle/rvalue'
 import { TUNING } from '../lib/battle/tuning'
 import { endOf, isDebuff } from '../lib/battle/types'
-import type { BattleRecord, BattleState, Combatant, DutyId, EnemyIntent, FoeTarget, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
+import type { BattleRecord, BattleState, Combatant, DutyId, FoeTarget, FxKind, FxTone, SkillSpec, StaminaState } from '../lib/battle/types'
 import type { Mission } from '../data/types'
 import { personOf } from '../data/castmeta'
 import { Portrait } from '../components/Portrait'
@@ -310,218 +288,6 @@ function BattleField({
   }, [])
   /** 结算只走一次（严格模式下 effect 会被重放） */
   const settled = useRef(false)
-  /** 敌方指挥：接口接通了才由模型点这一手，否则引擎自己判断 */
-  const [cfg, setCfg] = useState<ApiSettings | null>(null)
-  /** 提前问回来的敌方那一手（敌体 id → 正在路上的回包），见下面两段 effect */
-  const prefetch = useRef(new Map<string, { p: Promise<RawIntent | null>; ctl: AbortController }>())
-  /** 在途的那一问 —— 单飞：思考相位同一时刻只许一条，而且**掐得动**（见下面那段 effect） */
-  const askCtl = useRef<AbortController | null>(null)
-  /** 已经问过的那一手（`敌体 id#回合`）：同一回合同一只不重复问 */
-  const askedFor = useRef('')
-  /** 最新盘面给 run() 现读 —— 它**不进依赖**，否则思考相位里动一次就重问一次 */
-  const stLive = useRef(st)
-  stLive.current = st
-  /** 演出还没放完（账还没读到头）先不问 */
-  const logPending = shown < st.log.length
-  /** 轮到谁 · 第几回合 —— 这两样合起来才是「这一手」，也是下面那段 effect 的依赖 */
-  const foeKey = st.phase === 'think' ? `${pendingFoe(st)?.id ?? ''}#${st.hand}` : ''
-  /** 页面看不看得见：藏起来就停火（切标签 / 锁屏 / 最小化） */
-  const [hidden, setHidden] = useState(
-    () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
-  )
-  /** 自动那一趟（含一次重试）没成：这一手停在这儿等玩家点（值 = 敌体#回合） */
-  const [stuck, setStuck] = useState<string | null>(null)
-  /** 手点的那一次也没成：按钮留在原地，但**不再发**（值 = 敌体#回合） */
-  const [manualDead, setManualDead] = useState<string | null>(null)
-  /** 正在等玩家点 —— 按钮只有此刻可点 */
-  const [waitingManual, setWaitingManual] = useState(false)
-  /** 那一下点击的兑现口：点一次只兑现一次，连点不会多发 */
-  const manualWait = useRef<(() => void) | null>(null)
-  /** 场上有没有 boss 级敌体 —— 有的话底也要跟着换 */
-  const bossUp = st.enemies.some((c) => bossUltOf(c))
-
-  useEffect(() => {
-    let live = true
-    // 敌方走主通道（与剧情同一个接口）：没填 / 填了但调不通 —— 一律退回离线判断
-    void loadProfile('main').then((c) => {
-      if (!live) return
-      setCfg(c)
-      if (isReady(c)) setSt((s) => (s.command === 'ai' ? s : { ...s, command: 'ai' }))
-    })
-    return () => { live = false }
-  }, [])
-
-  /* ---- 页面一藏就停火：在途的全掐，回来再问 ----
-     线上事故那一回，玩家就是「轮到敌方行动时离开了一会儿」——
-     人不在屏前，发生什么他看不见，钱却照花。所以藏起来这一下要同时做两件事：
-     ①把在途的掐掉（abort 是真掐：prompt 也许已经发出去了，但至少不再有新的）；
-     ②把状态记下来，下面那段 effect 据此**拒绝发起**新的。 */
-  useEffect(() => {
-    const killAsks = () => {
-      askCtl.current?.abort()
-      for (const v of prefetch.current.values()) v.ctl.abort()
-      prefetch.current.clear()
-    }
-    const onVis = () => {
-      const hid = document.visibilityState === 'hidden'
-      setHidden(hid)
-      if (hid) killAsks()
-    }
-    document.addEventListener('visibilitychange', onVis)
-    return () => {
-      document.removeEventListener('visibilitychange', onVis)
-      // 离开这一屏也算「没人接了」：把提前问出去的都掐掉
-      killAsks()
-    }
-  }, [])
-
-  /* ---- 敌方的这一手，什么时候去问模型 ----
-     原来是在「思考」相位里现问现等：轮到敌体 → 发请求 → 等模型回话 → 才动。
-     于是一次往返（一两秒、慢的时候更久）全算在敌方头上，玩家看着就是
-     「敌人想了半天」。可这段时间本来是可以省掉的 —— 我方决定用哪一手的时候，
-     敌方的局面基本已经定了，那一手完全可以**提前问**。
-
-     所以分两步：
-       ① 轮到我方决定（phase=select）时就把在世敌体的这一手全要来，存着；
-       ② 真轮到敌体时先看存着的那份 —— 多半已经到了，**零等待**。
-     只有当提前问没赶上（刚开打、或上一手把局面整个推翻）才现问，
-     而且给一个**截止时间**：超过就用引擎自己的判断打，绝不为了等模型把仗卡住。
-
-     提前问回来的那一手，落地前一律过 `intentOf` 按**此刻**的局面重校验 ——
-     存的是局面，局面会变（技能可能冷却、它瞄的人可能已经倒了）。
-
-     ⚠ 依赖写整份 `st`（同 foeLine 那一节）：`st.enemies` 的引用一辈子不变，
-     写它就等于只问开局那几只 —— 首领半路喊来的召唤物没有提前问过，
-     轮到它时现问，白白多一次往返。 */
-  useEffect(() => {
-    if (st.phase !== 'select') return
-    if (!cfg || !isReady(cfg)) return
-    for (const foe of st.enemies) {
-      if (foe.down) continue
-      // 已经有一份在路上 / 已经拿到，不重复问。
-      // 死掉的敌体留在表里也无妨：它的 id 不会再进入思考相位，不会有人去取。
-      if (prefetch.current.has(foe.id)) continue
-      const ctl = new AbortController()
-      const p = requestEnemyIntent(st, foe, cfg, { signal: ctl.signal }).catch(() => null)
-      prefetch.current.set(foe.id, { p, ctl })
-    }
-  }, [st, cfg])
-
-  /* ---- 轮到敌体：先吃提前问好的那一手，吃不到就现问，但有个硬截止 ----
-
-     一次敌方行动**只发一条请求**（外加失败时那一次重试，见 ai.ts）。四道锁：
-       · 单飞：askCtl 非空就不发第二条；
-       · 去重：askedFor 记着「敌体#回合」，同一手问过就不再问；
-       · 清理：effect 重跑 / 卸载 / 页面藏起来 → abort，并把「问过」退回；
-       · 依赖收窄：只认「轮到谁 · 第几回合 · 演出放完没有 · 页面看不看得见」，
-         **不写整份 st**（写进去就是 2026-09-18 那一小时两千多条请求）。
-
-     自动那一趟没成时**不自动再发**：停在这儿，长出那枚「敌方 AI 重试」按钮，
-     点一次只发一条；不点就按离线打（等 TUNING.enemyManualHoldMs 之后由引擎接手）。 */
-  useEffect(() => {
-    if (st.phase !== 'think') return
-    const foe = pendingFoe(st)
-    if (!foe) return
-    if (hidden || logPending) return
-    if (askCtl.current) return
-    if (askedFor.current === foeKey) return
-    askedFor.current = foeKey
-    const ctl = new AbortController()
-    askCtl.current = ctl
-    let done = false
-    const cached = prefetch.current.get(foe.id)
-    // 用掉就作废：下一回我方决定时会重新问一份，免得一直拿开局那一手打到底
-    if (cached) prefetch.current.delete(foe.id)
-    const started = Date.now()
-
-    /** 等玩家点一下「重试」（或等这一小段窗口过去）。点了 = true，没点 = false。 */
-    const waitManual = (ms: number) => new Promise<boolean>((resolve) => {
-      let closed = false
-      const fin = (v: boolean) => {
-        if (closed) return
-        closed = true
-        manualWait.current = null
-        setWaitingManual(false)
-        window.clearTimeout(timer)
-        resolve(v)
-      }
-      const timer = window.setTimeout(() => fin(false), ms)
-      setWaitingManual(true)
-      manualWait.current = () => fin(true)
-    })
-
-    /** 落这一手。intent 为 null = 模型没给，交**空白意图**让引擎自己打（见下面 settle 的注）。 */
-    const settle = (intent: EnemyIntent | null, keepStuck = false) => {
-      done = true
-      if (askCtl.current === ctl) askCtl.current = null
-      if (!keepStuck) setStuck(null)
-      setSt((s) => (s.phase !== 'think' ? s : {
-        ...enemysTurn(s, intent ?? { foeId: foe.id, skillId: '', by: 'ai' }),
-      }))
-    }
-
-    const run = async () => {
-      let intent: EnemyIntent | null = null
-      if (cfg && isReady(cfg)) {
-        if (cached) {
-          // 提前问好的那一份：多半已经到了，直接读完就出手。
-          // 仍在路上的话也只等到截止 —— 玩家出手快的时候，这一份可能还没回来。
-          const raw = await withDeadline(cached.p, TUNING.enemyWaitMs, () => cached.ctl.abort())
-          intent = intentOf(stLive.current, foe, raw)
-        } else {
-          // 现问 —— 失败时那**一次**重试在 ai.ts 里（预算翻倍）
-          const raw = await requestEnemyIntent(stLive.current, foe, cfg, { signal: ctl.signal })
-          intent = intentOf(stLive.current, foe, raw)
-        }
-      }
-      // 提前问好的那一份是现成的，会**立刻**出手 —— 快得像瞬移，读不出「它决定了」。
-      // 补一个最短喘息：这一小段是演出，不是真在算，所以跟模型快慢无关。
-      const rest = TUNING.enemyThinkMs - (Date.now() - started)
-      if (rest > 0) await new Promise((r) => window.setTimeout(r, rest))
-      // 这一趟被掐了（离开这一屏 / 页面藏起来）—— 什么都不做，清理那一头会把「问过」退回
-      if (ctl.signal.aborted) return
-      if (intent) { settle(intent); return }
-      // 通道没接通 / 没填 —— 本来就没有 AI 可等：直接按离线打，别摆那枚按钮
-      if (!(cfg && isReady(cfg))) { settle(null); return }
-
-      /* ---- 自动那一趟（含它自己那一次重试）没成：停在这儿，等玩家点 ----
-         这一停**不发任何请求** —— 人不在屏前就是一个字节也不花；
-         等过 TUNING.enemyManualHoldMs 还没人点，就由引擎离线接手，仗不会卡住。 */
-      setStuck(foeKey)
-      const took = await waitManual(TUNING.enemyManualHoldMs)
-      if (ctl.signal.aborted) return
-      if (!took) { settle(null); return }
-      // 点了 = **只发一次**（attempts: 1，不带自动重试）
-      const raw = await requestEnemyIntent(stLive.current, foe, cfg!, { signal: ctl.signal, attempts: 1 })
-      if (ctl.signal.aborted) return
-      const again = intentOf(stLive.current, foe, raw)
-      if (again) { settle(again); return }
-      // 重试也没成：按钮留在原地（改成「重试未成」），这一手按离线打，绝不再自动发
-      setManualDead(foeKey)
-      settle(null, true)
-    }
-    void run()
-    return () => {
-      ctl.abort()
-      if (askCtl.current === ctl) askCtl.current = null
-      manualWait.current = null
-      setWaitingManual(false)
-      // 没落子就撤：说明这一趟作废了，下一次挂载要能重新问
-      if (!done) askedFor.current = ''
-    }
-    /* ⚠️ 依赖**不许**写整份 st（也别写 shown）。写进去就等于「思考相位里每变一次
-       就重跑一次」—— 清理函数会 abort 并把单飞位放开，下一跑又发一条。
-       这里只认四样：轮到谁、第几回合、演出放完没有、页面看不看得见。
-       盘面本身由 stLive 现读（见上面那段 run）。 */
-  }, [foeKey, logPending, hidden, cfg])
-
-  /** 玩家点了那枚「重试」：一次点击最多兑现一次请求（manualWait 只兑现一次） */
-  const onAiRetry = useCallback(() => {
-    const fire = manualWait.current
-    manualWait.current = null
-    fire?.()
-  }, [])
-
   /* 战场所在的 R 值（与任务简报同一口径）：出招前知道这地方把敌人抬了多少 */
   const siteR = useMemo(() => rBadgeOf(st.place, st.stage), [st.place, st.stage])
   const playing = shown < st.log.length
@@ -664,6 +430,8 @@ function BattleField({
     const t = window.setTimeout(() => setSurge(null), 1800)
     return () => window.clearTimeout(t)
   }, [st])
+
+  const bossUp = st.enemies.some((c) => bossUltOf(c))
 
   /* ---- 底：一进作战屏就换战斗底，boss 上场再压重一层 ---- */
   useEffect(() => {
@@ -937,8 +705,8 @@ function BattleField({
   const recent = st.log.slice(Math.max(0, shown - 14), shown)
 
   /* ---- 敌方意图：把引擎写下的那一条 `foe-cmd` 挂回它的卡上 ----
-     引擎在真正出手**之前**先落一条「敌方指挥」（skillId 为 foe-cmd，正文在 note 里，
-     离线判断与接口指挥两条路写的是同一个 skillId）。它挂在日志里就只是一行字，
+     引擎在真正出手**之前**先落一条「敌方指挥」（skillId 为 foe-cmd，正文在 note 里）。
+     它挂在日志里就只是一行字，
      可玩家要回答的问题在**卡**上：「它这一拍要做什么」—— 打谁、还是先给自己上壳。
      所以这里从**已经演到的那一段**（shown 之前的账）里按人取最后一条：
      演到哪就说到哪，不提前剧透还没轮到的敌体，也不去猜引擎下一手是什么。
@@ -1434,36 +1202,14 @@ function BattleField({
           {/* 地点挂个本地类：手机档 HUD 折行时它是唯一没写 nowrap 的一段，
               被挤窄就一个一个字往下掉，读出来是一竖列「脏/器/公/寓」 */}
           <span className={`${css.place} tiny muted`}>{st.place}</span>
-          {/* 敌方怎么出手：接通了接口就是模型在指挥，没接通是引擎的离线判断 */}
+          {/* 敌方怎么出手：全部由作战系统按场上的威胁与技能自行判断，不再过一次模型 */}
           <span
             className={css.cmdChip}
             data-enemy-command={st.command}
-            data-thinking={st.phase === 'think' ? '1' : undefined}
-            title={st.command === 'ai'
-              ? '敌方由接入的模型指挥：每一手都由它自己权衡（终结技能不在此列，照旧咏唱）'
-              : '敌方由作战系统离线判断：各按其性质出手'}
+            title="敌方由作战系统按场上的威胁与技能自行判断，不经模型"
           >
-            {st.command === 'ai'
-              ? (st.phase === 'think' ? '敌方指挥中…' : '敌方 · AI 指挥')
-              : '敌方 · 离线判断'}
+            敌方 · 作战系统
           </span>
-          {/* 敌方 AI 自动那一趟（含它自己那一次重试）没成时，这里长出一枚**手动**重试：
-              点一下 = 只发一条请求；不点就不发（一个字节也不花）。
-              同一回合同一只敌体只允许点一次 —— 兑现口只开一次，连点不会连发。 */}
-          {stuck ? (
-            <button
-              type="button"
-              className={`btn btn--ghost ${css.cmdChip}`}
-              data-ai-retry={manualDead === stuck ? 'dead' : 'live'}
-              disabled={manualDead === stuck || !waitingManual}
-              title={manualDead === stuck
-                ? '手点的那一次也没成 —— 这一手按离线打完了，不再自动发'
-                : '敌方 AI 没回话（自动那一趟含一次重试）。点一下**只发一次**；不点就按离线打法继续'}
-              onClick={onAiRetry}
-            >
-              {manualDead === stuck ? '重试未成 · 离线接手' : '敌方 AI 重试（只发一次）'}
-            </button>
-          ) : null}
           {/* 伏击那一场：不能挑对手。字段写在任务上（mission.forced），这里只念出来 */}
           {mission.forced ? (
             <span className={css.cmdChip} data-forced-chip title="被袭击 / 伏击 —— 对手由现场决定，这一场挑不了">
@@ -3463,31 +3209,43 @@ function Result({
 }
 
 /* ============================================================
-   作战屏 · 选目标那一层（按场面生成的目标池）
+   作战屏 · 选目标那一层（按场面现场生成）
    ------------------------------------------------------------
-   进来先看这一段的**敌阵目标池**（lib/battle/foegen 的 foePoolOf）：
+   推演通道可用时，按这一段的编号、地点、阶段、性质生成三位
+   对手；通道没配、超时或回的不是 JSON，就按同一套规则拼出后备阵容。
    不止一位时先让玩家挑打谁；只有一位、或任务明写 forced（被袭击 /
    伏击）时直接进战斗 —— 不是把入口藏起来，是那一条本来就没得选。
    键盘：← → 挑，Z / Enter 开打；鼠标点哪一张就是哪一张。
    ============================================================ */
 function TargetPicker({
-  mission, pool, onPick, onExit,
+  mission, pool, busy, note, onPick, onReroll, onExit,
 }: {
   mission: Mission
   pool: FoeTarget[]
+  busy: boolean
+  note: string
   onPick: (t: FoeTarget) => void
+  onReroll: () => void
   onExit: () => void
 }) {
   const [idx, setIdx] = useState(0)
-  const i = Math.min(idx, Math.max(0, pool.length - 1))
+  const n = pool.length
+  const i = Math.min(idx, Math.max(0, n - 1))
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!n) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          onExit()
+        }
+        return
+      }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault()
-        setIdx((v) => (v + pool.length - 1) % pool.length)
+        setIdx((v) => (v + n - 1) % n)
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault()
-        setIdx((v) => (v + 1) % pool.length)
+        setIdx((v) => (v + 1) % n)
       } else if (e.key === 'z' || e.key === 'Z' || e.key === 'Enter') {
         e.preventDefault()
         const t = pool[i] ?? pool[0]
@@ -3499,10 +3257,15 @@ function TargetPicker({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [i, pool, onPick, onExit])
+  }, [i, n, pool, onPick, onExit])
 
   return createPortal(
-    <div className={css.pickMask} data-target-picker="1" data-forced={mission.forced ? '1' : undefined}>
+    <div
+      className={css.pickMask}
+      data-target-picker="1"
+      data-forced={mission.forced ? '1' : undefined}
+      data-target-loading={busy ? '1' : undefined}
+    >
       <div className={css.pickCard} role="dialog" aria-label="选择交战目标">
         <header className={css.pickHead}>
           <span className="mono tiny">{mission.no} / S{mission.stage}</span>
@@ -3510,9 +3273,14 @@ function TargetPicker({
           <span className="tiny muted">{mission.place}</span>
         </header>
         <p className={css.pickLead}>
-          这一段能撞上的对手不止一位。挑一个打 —— 不同的目标，难度、掉落与情报都不一样。
+          {busy
+            ? '正在按这一段的现场资料生成对手…'
+            : '这些对手是按这一段的现场资料现生成的。挑一个打，不同的目标，难度与掉落都不一样。'}
         </p>
         <div className={css.pickList} role="listbox" aria-label="可遭遇的对手">
+          {busy && !n ? (
+            <div className={css.pickWait}>推演通道正在返回这一场的敌体。</div>
+          ) : null}
           {pool.map((t, k) => (
             <button
               key={t.key}
@@ -3537,11 +3305,19 @@ function TargetPicker({
             </button>
           ))}
         </div>
+        {note ? <p className={css.pickNote} data-target-note>{note}</p> : null}
         <footer className={css.pickFoot}>
-          <span className={css.kbdHint}>← → 挑 · Z 开打</span>
-          <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={onExit}>
-            <ArrowLeft size={13} /> 撤出
-          </button>
+          <span className={css.kbdHint}>{n ? '← → 挑 · Z 开打' : 'Esc 撤出'}</span>
+          <span className={css.pickActions}>
+            {!busy && n ? (
+              <button className="btn btn--ghost" style={{ fontSize: 12 }} data-target-reroll onClick={onReroll}>
+                换一批
+              </button>
+            ) : null}
+            <button className="btn btn--ghost" style={{ fontSize: 12 }} onClick={onExit}>
+              <ArrowLeft size={13} /> 撤出
+            </button>
+          </span>
         </footer>
       </div>
     </div>,
@@ -3552,19 +3328,61 @@ function TargetPicker({
 /**
  * 作战屏入口。
  *
- * 池子只认**这一段**（mission 的 at / bossId / foeSeeds / nature），不是整张图鉴；
- * 同一段多次进入必得同一批（foePoolOf 是确定性哈希）。
- * 挑中的那一位以 target 传进 BattleField → createBattle → enemiesOf，
- * 从「谁站在对面」到「它带什么招」全在档案里，不在这里另写一份。
+ * 对手按这一段的编号、地点、阶段、性质现场生成，不再从原文的具名
+ * 对手里挑。挑中的那一位以 target 传进 BattleField → createBattle → enemiesOf；
+ * 三位同行者按同一套规则各算一套数值，模型只给偏置，改不动平衡。
  */
 export function Battle(props: Props) {
-  const pool = useMemo(() => foePoolOf(props.mission, props.progress), [props.mission, props.progress])
-  const [pick, setPick] = useState<FoeTarget | null>(
-    () => (props.mission.forced || pool.length <= 1 ? pool[0] ?? null : null),
-  )
+  const mission = props.mission
+  const progress = props.progress
+  const [pool, setPool] = useState<FoeTarget[] | null>(null)
+  const [pick, setPick] = useState<FoeTarget | null>(null)
+  const [busy, setBusy] = useState(true)
+  const [note, setNote] = useState('')
+  const [nonce, setNonce] = useState(0)
   const exit = useCallback(() => props.onExit(props.stamina.cur, props.equip), [props])
-  if (!pick) {
-    return <TargetPicker mission={props.mission} pool={pool} onPick={setPick} onExit={exit} />
-  }
-  return <BattleField key={pick.key} {...props} target={pick} />
+
+  useEffect(() => {
+    let alive = true
+    setBusy(true)
+    setPool(null)
+    setNote('')
+    void (async () => {
+      const cfg = await loadProfile('main').catch(() => null)
+      if (!alive) return
+      let list: FoeTarget[]
+      if (!cfg || !isReady(cfg)) {
+        list = fallbackFoePool(mission, progress)
+        if (alive) setNote('推演通道未配置，这一组对手按现场资料拼成。')
+      } else {
+        list = await generateFoePool(mission, progress, cfg)
+        if (!list.length) list = fallbackFoePool(mission, progress)
+      }
+      if (!alive) return
+      setPool(list)
+      setBusy(false)
+      if (mission.forced || list.length <= 1) setPick(list[0] ?? null)
+    })()
+    return () => { alive = false }
+  }, [mission, progress, nonce])
+
+  const reroll = useCallback(() => {
+    setPick(null)
+    setPool(null)
+    setNote('')
+    setNonce((v) => v + 1)
+  }, [])
+
+  if (pick) return <BattleField key={pick.key} {...props} target={pick} />
+  return (
+    <TargetPicker
+      mission={mission}
+      pool={pool ?? []}
+      busy={busy}
+      note={note}
+      onPick={setPick}
+      onReroll={reroll}
+      onExit={exit}
+    />
+  )
 }
