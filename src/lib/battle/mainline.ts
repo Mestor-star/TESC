@@ -189,11 +189,6 @@ function natureOf(foes: string[]): string {
   return '未分类 · 观测记录'
 }
 
-/** 作战目标性质的一句话（记录与简报都读它） */
-function targetLine(foes: string[]): string {
-  return foes.length === 1 ? foes[0] : `${foes[0]} 等 ${foes.length} 个实体`
-}
-
 /**
  * 可复盘的剧情作战 —— 一场一场来。
  *
@@ -226,7 +221,7 @@ export function mainlineMissions(
     if (!epDone[e.id]) return
     const listed = (e.entities ?? []).filter((x) => x && x !== NO_FOE)
     if (!listed.length) return
-    /* 简报上「对手是……」只念**真会站到对面**的那几位：
+    /* 牌面只给这一段真的有仗可打的事件：
        · 图鉴里 nature 是地点 / 现象 / 设施 / 器物的，不算对手（见 foeclass）；
        · 这一段明写着不上场的（sceneExcludes，如 v1-5 的黑曜石），也不算。
        一个都不剩，就说明这一段没有对手 —— 不立牌面。 */
@@ -262,7 +257,7 @@ export function mainlineMissions(
           ? `\n现场那一仗已经赢了，战果记在作战记录里 —— 点「提交归档」把这一段收进档案；不提交，它就一直挂在牌面上。`
           : `\n它不在这里下令开打 —— 到剧情推进里走到这一段，现场自然会撞上；那一仗赢了，这一条自己翻成「已完成」。`)
         + `\n战果以档案为准，不与观测记录冲突；记录会按「详细战斗过程」逐手归档。`,
-      reward: [`${targetLine(foes)} · 处置确认`, '剧情战斗归档'],
+      reward: ['现场敌体 · 处置确认', '剧情战斗归档'],
       mainline: true,
     })
   })
