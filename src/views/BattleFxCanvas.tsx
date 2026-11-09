@@ -27,6 +27,11 @@ export interface FxBurst {
   ult?: boolean
   /** 打出去的是哪一边：我方出手 → 落点在右半（敌阵）；敌方出手落在左半 */
   side?: 'ally' | 'enemy'
+  /** 落点，归一化到画布（0–1）。作战屏按真正挨打的那张卡量出来；不传就按半场估。 */
+  x?: number
+  y?: number
+  /** 这一手打的是一个还是一群：整屏闪只给后者 */
+  scope?: 'one' | 'all'
   /** 低档 / 减少动态：只留一闪与一圈，不铺粒子 */
   calm?: boolean
   seed?: number
@@ -135,8 +140,10 @@ class Engine {
     const R = rng(req.seed ?? 7)
     const p = clamp(req.power ?? 0.5, 0.12, 1.4)
     const heavy = clamp(p * 1.1, 0.25, 1.5) * (req.crit ? 1.25 : 1) * (req.ult ? 1.5 : 1)
-    const cx = this.w * (req.side === 'enemy' ? 0.33 : 0.67)
-    const cy = this.h * (0.44 + (R() - 0.5) * 0.1)
+    /* 落点：默认按半场估（左＝敌阵、右＝我方）；传了归一化坐标就用它 ——
+       一手打在哪张卡上，是作战屏那边量出来的（见 Battle.tsx 的 anchorOf）。 */
+    const cx = this.w * (req.x ?? (req.side === 'enemy' ? 0.33 : 0.67))
+    const cy = this.h * (req.y !== undefined ? req.y + (R() - 0.5) * 0.024 : 0.44 + (R() - 0.5) * 0.1)
     const hue = req.hue
     const area = this.low ? 0.62 : 1
     const spec = req.spec
@@ -148,7 +155,11 @@ class Engine {
     core.a = 0.95
     this.els.push(core)
     const flash = el('flash', 0, 0, req.ult ? 380 : 200, hue)
-    flash.a = 0.14 + 0.2 * Math.min(1, heavy)
+    /* 整屏一闪只留给「一手打一片」与终结技：单体命中还铺满屏，屏幕会一直在泛光，
+       看多了就廉价（并且盖住 HUD 的字）。单体只留很薄的一层气。 */
+    flash.a = req.scope === 'all' || req.ult
+      ? 0.14 + 0.2 * Math.min(1, heavy)
+      : 0.02 + 0.04 * Math.min(1, heavy)
     this.els.push(flash)
 
     const ring = el('ring', cx, cy, 620, hue)

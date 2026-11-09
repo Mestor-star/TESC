@@ -21,12 +21,7 @@
   align-items: center;
   justify-content: center;
   padding: 26px 28px;   /* 12+14 / 14+14 */
-  background:
-    /* 幕布底光：反現実那一侧的电紫 + 学园系统的霓虹青 —— 冷的一对。
-       红在这屏只剩「伤 / 敌方 / 低血」那些**记号**，不再铺底。 */
-    radial-gradient(1100px 620px at 50% -10%, color-mix(in srgb, var(--violet) 10%, transparent), transparent 70%),
-    radial-gradient(880px 560px at 6% 106%, color-mix(in srgb, var(--steel) 9%, transparent), transparent 60%),
-    var(--bg-0);
+  background: var(--bg-0);
   color: var(--ink);
   overflow: hidden;
   animation: battleIn 0.28s ease-out;
@@ -57,10 +52,8 @@
   overflow: hidden;
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--violet) 7%, transparent), transparent 34%),
-    var(--bg-0);
-  box-shadow: var(--shadow-3);
+  background: var(--bg-0);
+  box-shadow: none;
 }
 @keyframes battleIn {
   from { opacity: 0; transform: scale(1.015); }
@@ -1039,7 +1032,7 @@
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink);
 }
 .unitHpNum i { font-style: normal; font-weight: 400; font-size: 9px; color: var(--ink-mute); }
@@ -1141,7 +1134,7 @@
 .dmgNum, .dmgNumBig {
   position: absolute;
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink);
   text-shadow: 0 2px 10px color-mix(in srgb, var(--bg-1) 85%, transparent);
   pointer-events: none;
@@ -1307,7 +1300,7 @@
 .logLine[data-log-side='enemy'] { color: var(--red-deep); }
 .line { display: block; color: var(--amber-deep); font-style: italic; }
 .logTxt { display: block; }
-.dmgTag { color: var(--red-deep); font-family: var(--font-mono); font-weight: 700; }
+.dmgTag { color: var(--red-deep); font-family: var(--font-mono); font-weight: 600; }
 .downTag { color: var(--red-deep); font-family: var(--font-mono); }
 
 .cmd {
@@ -1529,7 +1522,7 @@
   border-bottom: 1px solid var(--line);
 }
 .groupCap b {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
   letter-spacing: 0.1em; color: var(--amber-deep);
 }
 .groupNote { font-size: 9.5px; line-height: 1.3; color: var(--ink-faint); }
@@ -2080,12 +2073,8 @@
   pointer-events: none;
   border: 1px solid color-mix(in srgb, var(--amber) 48%, transparent);
   border-radius: var(--radius);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--amber) 16%, var(--bg-1)) 0%,
-    var(--bg-1) 100%);
-  box-shadow:
-    var(--shadow-3),
-    0 0 36px -8px color-mix(in srgb, var(--amber) 42%, transparent);
+  background: var(--bg-1);
+  box-shadow: none;
   animation: linkPopIn 0.34s cubic-bezier(0.2, 0.9, 0.2, 1) both;
 }
 @keyframes linkPopIn {
@@ -2270,7 +2259,7 @@
 /* 招式名大字。错位重影是本处唯一的装饰 */
 .ultCutName {
   font-size: clamp(26px, 3.2vw, 44px);
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.14;
   letter-spacing: 0.05em;
   color: var(--ink);
@@ -2310,10 +2299,8 @@
   border: 1px solid var(--line-2);
   border-top: 2px solid var(--red);
   border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--red) 6%, transparent), transparent 30%),
-    var(--bg-1);
-  box-shadow: var(--shadow-3);
+  background: var(--bg-1);
+  box-shadow: none;
   animation: foeInfoIn 0.24s cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 @keyframes foeInfoIn {
@@ -3093,7 +3080,7 @@
     max-height: min(52vh, 400px);
     z-index: 30;
     background: var(--bg-1);
-    box-shadow: var(--shadow-3);
+    box-shadow: none;
   }
   .logStrip { overflow: hidden; }
   .linkBoard { max-height: none; flex: 0 0 auto; }
@@ -3163,7 +3150,7 @@
     bottom: calc(min(46vh, 300px) + 16px + env(safe-area-inset-bottom, 0px));
     z-index: 30;
     background: var(--bg-2);
-    box-shadow: var(--shadow-3);
+    box-shadow: none;
     overflow: hidden;
   }
   /* 抽屉里这张表吃满剩下的高度并自己滚 —— 上限不再是 186 / 220 那一档 */
@@ -3456,7 +3443,7 @@
   border-left: 3px solid var(--violet);
   border-radius: var(--radius);
   background: var(--bg-1);
-  box-shadow: var(--shadow-3);
+  box-shadow: none;
 }
 .fxPreviewHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .fxPreviewHead b { font-size: 14px; letter-spacing: 0.05em; }
@@ -3518,7 +3505,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-1);
-  box-shadow: var(--shadow-3);
+  box-shadow: none;
 }
 
 .pickHead {

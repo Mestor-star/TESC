@@ -691,6 +691,21 @@ function BattleField({
     /* 放这一手：立 fx、点名那一响、按 hold 排下一条。整段装成一个函数 ——
        终结技要先让大字报走完再叫它（见下面 isUlt 那一段）。 */
     const play = (): number => {
+      /* 这一下落在哪张卡上：单体技若还按半场中心估，敌阵有几张卡时会打在缝里。
+         量的是卡片中心相对整个作战窗口的归一化坐标，Canvas 那层直接用它。 */
+      const anchor = (() => {
+        if (!e.targetId) return undefined
+        const card = document.querySelector('[data-unit="' + e.targetId + '"]')
+        const host = rootRef.current
+        if (!card || !host) return undefined
+        const a = card.getBoundingClientRect()
+        const b = host.getBoundingClientRect()
+        if (!a.width || !a.height || !b.width || !b.height) return undefined
+        return {
+          x: (a.left + a.width / 2 - b.left) / b.width,
+          y: (a.top + a.height / 2 - b.top) / b.height,
+        }
+      })()
       setFx({
         n: shown, kind: e.fx, tone: e.tone ?? 'strike', scope: e.scope ?? 'one',
         actorId: e.actorId, skillId: e.skillId, skill: e.skill,
@@ -709,7 +724,9 @@ function BattleField({
         hue: fxSeed(e.skillId).hue,
         power: e.dmg && tgt ? e.dmg / Math.max(1, tgt.hpMax) : 0.32,
         crit: e.crit, down: e.down, ult: isUltNow,
-        side: e.side, seed: shown * 31 + 7,
+        side: e.side, scope: e.scope ?? 'one',
+        x: anchor?.x, y: anchor?.y,
+        seed: shown * 31 + 7,
       })
       // 打实的那一下先响暴击 —— 同一个 FxKind 里，暴与不暴得听得出来
       if (e.crit) sfx('crit')
